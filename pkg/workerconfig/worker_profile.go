@@ -27,13 +27,13 @@ const (
 	defaultDeliveryMaxPerEndpointInFlight = 8
 	defaultDeliveryMaxDrainPerTick        = 128
 	defaultDeliveryMaxAttempts            = 6
-	defaultDeliveryRequestTimeout         = 30 * time.Second
+	defaultDeliveryRequestTimeout         = 125 * time.Second
 	defaultDeliveryLaneIdleTimeout        = 750 * time.Millisecond
 
 	defaultReceiveWorkers        = 16
 	defaultReceiveQueueSize      = 1000
 	defaultReceiveEnqueueTimeout = 50 * time.Millisecond
-	defaultReceiveHandlerTimeout = 30 * time.Second
+	defaultReceiveHandlerTimeout = 120 * time.Second
 	defaultReceiveMaxBodyBytes   = 64 << 10
 	defaultReceiveDedupTTL       = 60 * time.Second
 	defaultReceiveDedupTimeout   = 200 * time.Millisecond
