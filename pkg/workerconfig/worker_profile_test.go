@@ -40,6 +40,12 @@ func TestDefaultIrisBotWebhookWorkerProfilePreservesCurrentCapacity(t *testing.T
 	if profile.Receive.MaxBodyBytes != 64<<10 {
 		t.Fatalf("Receive.MaxBodyBytes = %d, want 65536", profile.Receive.MaxBodyBytes)
 	}
+	if profile.BotPool.Workers != 10 {
+		t.Fatalf("BotPool.Workers = %d, want 10", profile.BotPool.Workers)
+	}
+	if profile.BotPool.QueueSize != 100 {
+		t.Fatalf("BotPool.QueueSize = %d, want 100", profile.BotPool.QueueSize)
+	}
 	if len(profile.ProfileHash()) != 64 {
 		t.Fatalf("ProfileHash() length = %d, want 64", len(profile.ProfileHash()))
 	}
@@ -179,6 +185,117 @@ func TestDecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnosticsRejectsMissingPr
 	}
 	if !strings.Contains(err.Error(), "profileEnabled is missing") {
 		t.Fatalf("DecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics() error = %v", err)
+	}
+}
+
+func TestDecodeIrisBotWebhookWorkerProfileWithBotPool(t *testing.T) {
+	profile, err := DecodeIrisBotWebhookWorkerProfile(strings.NewReader(`{
+		"version": 1,
+		"profile_id": "botpool-test",
+		"delivery": {
+			"lane_workers": 32,
+			"lane_queue_capacity": 128,
+			"max_global_in_flight": 32,
+			"max_per_endpoint_in_flight": 8,
+			"max_drain_per_tick": 128,
+			"max_attempts": 6,
+			"request_timeout_ms": 125000,
+			"lane_idle_timeout_ms": 750
+		},
+		"receive": {
+			"workers": 16,
+			"queue_size": 1000,
+			"enqueue_timeout_ms": 50,
+			"handler_timeout_ms": 120000,
+			"max_body_bytes": 65536,
+			"dedup_ttl_ms": 60000,
+			"dedup_timeout_ms": 200
+		},
+		"bot_pool": {
+			"workers": 20,
+			"queue_size": 200
+		},
+		"validation": {
+			"min_queue_per_endpoint_multiplier": 4,
+			"require_receive_capacity_for_endpoint_burst": true
+		}
+	}`))
+	if err != nil {
+		t.Fatalf("DecodeIrisBotWebhookWorkerProfile() error = %v", err)
+	}
+	if profile.BotPool.Workers != 20 {
+		t.Fatalf("BotPool.Workers = %d, want 20", profile.BotPool.Workers)
+	}
+	if profile.BotPool.QueueSize != 200 {
+		t.Fatalf("BotPool.QueueSize = %d, want 200", profile.BotPool.QueueSize)
+	}
+	if !strings.Contains(string(profile.CanonicalJSON()), `"bot_pool"`) {
+		t.Fatalf("CanonicalJSON() missing bot_pool section")
+	}
+}
+
+func TestFromWireFallsBackToDefaultBotPoolWhenMissing(t *testing.T) {
+	profile, err := DecodeIrisBotWebhookWorkerProfile(strings.NewReader(`{
+		"version": 1,
+		"profile_id": "no-botpool",
+		"delivery": {
+			"lane_workers": 32,
+			"lane_queue_capacity": 128,
+			"max_global_in_flight": 32,
+			"max_per_endpoint_in_flight": 8,
+			"max_drain_per_tick": 128,
+			"max_attempts": 6,
+			"request_timeout_ms": 125000,
+			"lane_idle_timeout_ms": 750
+		},
+		"receive": {
+			"workers": 16,
+			"queue_size": 1000,
+			"enqueue_timeout_ms": 50,
+			"handler_timeout_ms": 120000,
+			"max_body_bytes": 65536,
+			"dedup_ttl_ms": 60000,
+			"dedup_timeout_ms": 200
+		},
+		"validation": {
+			"min_queue_per_endpoint_multiplier": 4,
+			"require_receive_capacity_for_endpoint_burst": true
+		}
+	}`))
+	if err != nil {
+		t.Fatalf("DecodeIrisBotWebhookWorkerProfile() error = %v", err)
+	}
+	if profile.BotPool.Workers != 10 {
+		t.Fatalf("BotPool.Workers = %d, want 10 (default fallback)", profile.BotPool.Workers)
+	}
+	if profile.BotPool.QueueSize != 100 {
+		t.Fatalf("BotPool.QueueSize = %d, want 100 (default fallback)", profile.BotPool.QueueSize)
+	}
+}
+
+func TestValidateRejectsBotPoolZeroWorkers(t *testing.T) {
+	profile := DefaultIrisBotWebhookWorkerProfile()
+	profile.BotPool.Workers = 0
+
+	err := profile.Validate()
+	if err == nil {
+		t.Fatal("Validate() error = nil, want bot_pool.workers error")
+	}
+	if !strings.Contains(err.Error(), "bot_pool.workers") {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+func TestValidateRejectsBotPoolZeroQueueSize(t *testing.T) {
+	profile := DefaultIrisBotWebhookWorkerProfile()
+	profile.BotPool.QueueSize = 0
+
+	err := profile.Validate()
+	if err == nil {
+		t.Fatal("Validate() error = nil, want bot_pool.queue_size error")
+	}
+	if !strings.Contains(err.Error(), "bot_pool.queue_size") {
+		t.Fatalf("Validate() error = %v", err)
 	}
 }
 
