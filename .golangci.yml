@@ -1,0 +1,214 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+# v2: linters + formatters are configured separately.
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+
+    - bodyclose
+    - rowserrcheck
+    - sqlclosecheck
+
+    - contextcheck
+    - noctx
+
+    - errorlint
+    - errname
+    # wrapcheck disabled: 공용 라이브러리는 외부 에러를 직접 반환하는 것이 의도적 설계
+    # - wrapcheck
+
+    - dupl
+    - goconst
+    - gocritic
+    - intrange
+    - modernize
+    - misspell
+    - predeclared
+    - revive
+    - wastedassign
+    - whitespace
+
+    - gocyclo
+    - gocognit
+    - funlen
+
+    - prealloc
+
+    - bidichk
+    - gosec
+
+    - sloglint
+
+    - durationcheck
+    - unconvert
+    - nakedret
+
+  settings:
+    errcheck:
+      # 공용 라이브러리는 엄격한 에러 검사 필요
+      check-type-assertions: true
+      check-blank: true
+      exclude-functions:
+        - (*os.File).Close
+        - (io.Closer).Close
+
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+
+    gocyclo:
+      min-complexity: 17
+
+    gocognit:
+      min-complexity: 31
+
+    dupl:
+      threshold: 200
+
+    goconst:
+      min-len: 3
+      min-occurrences: 5
+
+    misspell:
+      locale: US
+
+    nakedret:
+      max-func-lines: 30
+
+    prealloc:
+      simple: true
+      range-loops: true
+      for-loops: false
+
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - experimental
+        - opinionated
+        - performance
+        - style
+      disabled-checks:
+        - dupImport
+        - ifElseChain
+        - octalLiteral
+        - whyNoLint
+        - exitAfterDefer
+        - paramTypeCombine
+        - unnamedResult
+        - filepathJoin
+        - hugeParam
+        - emptyStringTest
+
+    funlen:
+      lines: 90
+      statements: 45
+
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+        - name: package-comments
+          disabled: true
+
+    wrapcheck:
+      ignoreSigs:
+        - .Errorf(
+        - errors.New(
+        - errors.Unwrap(
+        - .Error()
+        - .Err()
+        - .Marshal(
+        - .Unmarshal(
+        - .Encode(
+        - .MarshalIndent(
+        - .Submit(
+        - .Shutdown(
+        - .DialContext(
+        - .ReadAll(
+        - .AsInt64(
+        - .NewPool(
+      ignorePackageGlobs:
+        - encoding/*
+        - github.com/stretchr/testify/*
+        # Valkey 클라이언트 에러는 직접 반환
+        - github.com/valkey-io/valkey-go
+        - github.com/valkey-io/valkey-go/*
+        # 외부 라이브러리 에러 직접 반환 허용
+        - github.com/bytedance/sonic
+        - github.com/bytedance/sonic/*
+        - github.com/panjf2000/ants/*
+        - google.golang.org/grpc
+        - google.golang.org/grpc/*
+        - io
+        - net/http
+        - context
+
+  exclusions:
+    rules:
+      - linters:
+          - contextcheck
+        text: 'Non-inherited new context'
+
+      - linters:
+          - gocyclo
+          - errcheck
+          - dupl
+          - funlen
+        path: _test\.go
+
+      - linters:
+          - gosec
+        text: "G115:"
+
+      - linters:
+          - gosec
+        text: "G117:"
+
+      - linters:
+          - gosec
+        text: "G704:"
+
+    paths:
+      - '.*\.pb\.go$'
+      - '.*_test\.go$'
+      - vendor
+
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - goimports
+
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/park285/llm-kakao-bots/shared-go)
+      custom-order: true
+
+    goimports:
+      local-prefixes:
+        - github.com/park285/llm-kakao-bots/shared-go
+
+  exclusions:
+    paths:
+      - '.*\.pb\.go$'
+      - '.*_test\.go$'
+      - vendor
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  uniq-by-line: true
+  new: false

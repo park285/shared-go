@@ -22,7 +22,7 @@
 //   - (*JSONClient).Do, (*JSONClient).CheckStatus, (*JSONClient).DecodeJSON, (*JSONClient).DiscardBody: 요청 실행과 response 처리를 위임합니다.
 //   - CheckStatus: non-2xx response를 APIError로 변환합니다.
 //   - DecodeJSON: response body를 decode하고 닫습니다.
-//   - APIError, AsAPIError, IsStatus, IsCode: API error unwrap과 분기 helper입니다.
+//   - APIError, AsAPIError, IsStatus: API error unwrap과 분기 helper입니다.
 //
 // # 주요 사용 패턴
 //

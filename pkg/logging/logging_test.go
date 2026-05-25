@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/park285/shared-go/pkg/logging/archive"
 )
 
 func TestNewLogger(t *testing.T) {
@@ -188,26 +190,6 @@ func TestEnableFileLogging_UsesRestrictedFileAndDirectoryPerms(t *testing.T) {
 	}
 }
 
-func TestNewLoggerWithLevel(t *testing.T) {
-	tests := []struct {
-		name  string
-		level string
-	}{
-		{name: "debug level", level: "debug"},
-		{name: "info level", level: "info"},
-		{name: "invalid level falls back", level: "invalid_level"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			logger := NewLoggerWithLevel(tt.level)
-			if logger == nil {
-				t.Fatalf("NewLoggerWithLevel(%q) returned nil", tt.level)
-			}
-		})
-	}
-}
-
 func TestEnableFileLoggingWithLevel(t *testing.T) {
 	logDir := t.TempDir()
 	config := Config{
@@ -227,95 +209,34 @@ func TestEnableFileLoggingWithLevel(t *testing.T) {
 	}
 }
 
-func TestLogError_LogsWarnWithErrField(t *testing.T) {
+func TestEnableFileLogging_DoesNotCreateCombinedLog(t *testing.T) {
 	t.Parallel()
 
-	handler := newCaptureLogHandler(true)
-	logger := slog.New(handler)
-	testErr := errors.New("something broke")
+	logDir := t.TempDir()
+	config := Config{
+		Level:      "info",
+		Dir:        logDir,
+		MaxSizeMB:  10,
+		MaxBackups: 5,
+		MaxAgeDays: 7,
+	}
 
-	LogError(logger, "op.failed", testErr)
+	if _, err := EnableFileLogging(config, "service.log"); err != nil {
+		t.Fatalf("EnableFileLogging() error = %v", err)
+	}
 
-	if len(handler.records) != 1 {
-		t.Fatalf("got %d records, want 1", len(handler.records))
-	}
-	rec := handler.records[0]
-	if rec.level != slog.LevelWarn {
-		t.Fatalf("level = %v, want %v", rec.level, slog.LevelWarn)
-	}
-	errVal, ok := rec.attrs["err"]
-	if !ok {
-		t.Fatal("record missing \"err\" attr")
-	}
-	if errVal.String() != testErr.Error() {
-		t.Fatalf("err attr = %q, want %q", errVal.String(), testErr.Error())
+	if _, err := os.Stat(filepath.Join(logDir, "combined.log")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("combined.log stat error = %v, want %v", err, os.ErrNotExist)
 	}
 }
 
-func TestLogError_NilLoggerNoops(t *testing.T) {
+func TestEnableFileLogging_UsesArchiveConstants(t *testing.T) {
 	t.Parallel()
 
-	defer func() {
-		if r := recover(); r != nil {
-			t.Fatalf("LogError panicked with nil logger: %v", r)
-		}
-	}()
-
-	LogError(nil, "op.failed", errors.New("err"))
-}
-
-func TestLogError_NilErrorNoops(t *testing.T) {
-	t.Parallel()
-
-	handler := newCaptureLogHandler(true)
-	logger := slog.New(handler)
-
-	LogError(logger, "op.failed", nil)
-
-	if len(handler.records) != 0 {
-		t.Fatalf("got %d records, want 0", len(handler.records))
+	if archive.LogFilePerm != 0o640 {
+		t.Fatalf("LogFilePerm = %o, want 0640", archive.LogFilePerm)
 	}
-}
-
-func TestLogInfo_LogsInfoWithFields(t *testing.T) {
-	t.Parallel()
-
-	handler := newCaptureLogHandler(true)
-	logger := slog.New(handler)
-
-	LogInfo(logger, "sync.done", "count", 42, "source", "yt")
-
-	if len(handler.records) != 1 {
-		t.Fatalf("got %d records, want 1", len(handler.records))
+	if archive.LogDirPerm != 0o750 {
+		t.Fatalf("LogDirPerm = %o, want 0750", archive.LogDirPerm)
 	}
-	rec := handler.records[0]
-	if rec.level != slog.LevelInfo {
-		t.Fatalf("level = %v, want %v", rec.level, slog.LevelInfo)
-	}
-	countVal, ok := rec.attrs["count"]
-	if !ok {
-		t.Fatal("record missing \"count\" attr")
-	}
-	if countVal.String() != "42" {
-		t.Fatalf("count attr = %q, want \"42\"", countVal.String())
-	}
-	sourceVal, ok := rec.attrs["source"]
-	if !ok {
-		t.Fatal("record missing \"source\" attr")
-	}
-	if sourceVal.String() != "yt" {
-		t.Fatalf("source attr = %q, want \"yt\"", sourceVal.String())
-	}
-}
-
-func TestLogInfo_NilLoggerNoops(t *testing.T) {
-	t.Parallel()
-
-	defer func() {
-		if r := recover(); r != nil {
-			t.Fatalf("LogInfo panicked with nil logger: %v", r)
-		}
-	}()
-
-	LogInfo(nil, "sync.done", "key", "value")
 }

@@ -21,11 +21,10 @@
 //   - OperationOptions, RunOperation: start/success/failure lifecycle 로그와 duration/error attr를 자동화합니다.
 //   - NewID: 정상 경로에서 "<sanitized_prefix>_<unixMillis>_<hex>" 형식의 correlation ID를 생성합니다.
 //     단, rand.Read 실패 시 "<sanitized_prefix>_<unixNano>" 형식으로 폴백합니다.
-//   - Config, ParseLevel, NewLogger, NewLoggerWithLevel, NewTestLogger, NewTestLoggerWithOutput: 로거 설정과 생성 진입점입니다.
+//   - Config, ParseLevel, NewLogger, NewTestLogger, NewTestLoggerWithOutput: 로거 설정과 생성 진입점입니다.
 //   - EnableFileLogging, EnableFileLoggingWithLevel, EnableFileLoggingWithOTel: 콘솔/파일 로깅, archive, OTel 상관관계를 구성합니다.
 //   - OTelHandler, NewOTelHandler: 활성 span의 trace_id와 span_id를 record에 추가합니다.
 //   - SanitizeHandler, NewSanitizeHandler: token, password, key 계열 값을 로그 출력 전에 마스킹합니다.
-//   - LogError, LogInfo: 기존 호출부 호환을 위한 얇은 slog wrapper입니다.
 //
 // # 주요 사용 패턴
 //
