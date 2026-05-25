@@ -114,13 +114,6 @@ func TestAPIErrorHelpersMatchWrappedErrors(t *testing.T) {
 	if IsStatus(err, http.StatusConflict) {
 		t.Fatal("IsStatus() = true for wrong status")
 	}
-	if !IsCode(err, "no_subscribed_members") {
-		t.Fatal("IsCode() = false, want true")
-	}
-	if IsCode(err, "notification_in_progress") {
-		t.Fatal("IsCode() = true for wrong code")
-	}
-
 	apiErr, ok := AsAPIError(err)
 	if !ok {
 		t.Fatal("AsAPIError() ok = false, want true")

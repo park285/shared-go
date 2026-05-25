@@ -60,11 +60,6 @@ func IsStatus(err error, statusCode int) bool {
 	return ok && apiErr.StatusCode == statusCode
 }
 
-func IsCode(err error, code string) bool {
-	apiErr, ok := AsAPIError(err)
-	return ok && apiErr.Code == code
-}
-
 func CheckStatus(resp *http.Response) error {
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return nil

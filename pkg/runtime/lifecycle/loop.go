@@ -1,4 +1,4 @@
-package loop
+package lifecycle
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 	"time"
 )
 
-// RunTickerLoop는 interval마다 onTick을 실행하고 context 종료 또는 tick error에서 멈춥니다.
 func RunTickerLoop(ctx context.Context, interval time.Duration, onTick func(context.Context) error) error {
 	if err := validateTickerLoop(interval, onTick); err != nil {
 		return err

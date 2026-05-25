@@ -1,4 +1,4 @@
-package logging
+package archive
 
 import (
 	"bytes"
@@ -12,28 +12,7 @@ import (
 	"time"
 )
 
-func TestEnableFileLogging_DoesNotCreateCombinedLog(t *testing.T) {
-	t.Parallel()
-
-	logDir := t.TempDir()
-	config := Config{
-		Level:      "info",
-		Dir:        logDir,
-		MaxSizeMB:  10,
-		MaxBackups: 5,
-		MaxAgeDays: 7,
-	}
-
-	if _, err := EnableFileLogging(config, "service.log"); err != nil {
-		t.Fatalf("EnableFileLogging() error = %v", err)
-	}
-
-	if _, err := os.Stat(filepath.Join(logDir, "combined.log")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("combined.log stat error = %v, want %v", err, os.ErrNotExist)
-	}
-}
-
-func TestArchiveCompressedLogFiles_MovesAndPrunesBackups(t *testing.T) {
+func TestMoveAndPrune_MovesAndPrunesBackups(t *testing.T) {
 	t.Parallel()
 
 	logDir := t.TempDir()
@@ -44,9 +23,9 @@ func TestArchiveCompressedLogFiles_MovesAndPrunesBackups(t *testing.T) {
 
 	now := time.Now().UTC()
 	names := []string{
-		"service-" + now.Add(-48*time.Hour).Format(backupTimeFormat) + ".log.gz",
-		"service-" + now.Add(-24*time.Hour).Format(backupTimeFormat) + ".log.gz",
-		"service-" + now.Add(-(31*24)*time.Hour).Format(backupTimeFormat) + ".log.gz",
+		"service-" + now.Add(-48*time.Hour).Format(BackupTimeFmt) + ".log.gz",
+		"service-" + now.Add(-24*time.Hour).Format(BackupTimeFmt) + ".log.gz",
+		"service-" + now.Add(-(31*24)*time.Hour).Format(BackupTimeFmt) + ".log.gz",
 	}
 	for _, name := range names {
 		if err := os.WriteFile(filepath.Join(logDir, name), []byte(name), 0o644); err != nil {
@@ -54,11 +33,11 @@ func TestArchiveCompressedLogFiles_MovesAndPrunesBackups(t *testing.T) {
 		}
 	}
 
-	if err := archiveCompressedLogFiles(logPath, 2, 30); err != nil {
-		t.Fatalf("archiveCompressedLogFiles() error = %v", err)
+	if err := MoveAndPrune(logPath, 2, 30); err != nil {
+		t.Fatalf("MoveAndPrune() error = %v", err)
 	}
 
-	archiveDir := filepath.Join(logDir, archiveDirName)
+	archiveDir := filepath.Join(logDir, DirName)
 	entries, err := os.ReadDir(archiveDir)
 	if err != nil {
 		t.Fatalf("read archive dir failed: %v", err)
@@ -130,11 +109,11 @@ func TestEnsureLogFilePerm_CorrectsExistingFileMode(t *testing.T) {
 		t.Fatalf("write log file failed: %v", err)
 	}
 
-	if err := ensureLogFilePerm(logPath); err != nil {
-		t.Fatalf("ensureLogFilePerm() error = %v", err)
+	if err := EnsureLogFilePerm(logPath); err != nil {
+		t.Fatalf("EnsureLogFilePerm() error = %v", err)
 	}
 
-	assertPathPerm(t, logPath, logFilePerm)
+	assertPathPerm(t, logPath, LogFilePerm)
 }
 
 func TestEnsureLogFilePerm_CreatesMissingFile(t *testing.T) {
@@ -142,33 +121,33 @@ func TestEnsureLogFilePerm_CreatesMissingFile(t *testing.T) {
 
 	logPath := filepath.Join(t.TempDir(), "service.log")
 
-	if err := ensureLogFilePerm(logPath); err != nil {
-		t.Fatalf("ensureLogFilePerm() error = %v", err)
+	if err := EnsureLogFilePerm(logPath); err != nil {
+		t.Fatalf("EnsureLogFilePerm() error = %v", err)
 	}
 
 	assertPathExists(t, logPath)
-	assertPathPerm(t, logPath, logFilePerm)
+	assertPathPerm(t, logPath, LogFilePerm)
 }
 
 func TestEnsureLogDirPerm_CreatesAndCorrectsDirectoryMode(t *testing.T) {
 	t.Parallel()
 
 	logDir := filepath.Join(t.TempDir(), "logs", "nested")
-	if err := ensureLogDirPerm(logDir); err != nil {
-		t.Fatalf("ensureLogDirPerm() create error = %v", err)
+	if err := EnsureLogDirPerm(logDir); err != nil {
+		t.Fatalf("EnsureLogDirPerm() create error = %v", err)
 	}
-	assertPathPerm(t, logDir, logDirPerm)
+	assertPathPerm(t, logDir, LogDirPerm)
 
 	if err := os.Chmod(logDir, 0o700); err != nil {
 		t.Fatalf("chmod log dir failed: %v", err)
 	}
-	if err := ensureLogDirPerm(logDir); err != nil {
-		t.Fatalf("ensureLogDirPerm() chmod error = %v", err)
+	if err := EnsureLogDirPerm(logDir); err != nil {
+		t.Fatalf("EnsureLogDirPerm() chmod error = %v", err)
 	}
-	assertPathPerm(t, logDir, logDirPerm)
+	assertPathPerm(t, logDir, LogDirPerm)
 }
 
-func TestArchiveAwareWriterWrite_TriggersArchiverOnSuccessAndFailure(t *testing.T) {
+func TestAwareWriterWrite_TriggersArchiverOnSuccessAndFailure(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -185,20 +164,20 @@ func TestArchiveAwareWriterWrite_TriggersArchiverOnSuccessAndFailure(t *testing.
 
 			logDir := t.TempDir()
 			logPath := filepath.Join(logDir, "service.log")
-			if err := os.WriteFile(logPath, []byte("active\n"), logFilePerm); err != nil {
+			if err := os.WriteFile(logPath, []byte("active\n"), LogFilePerm); err != nil {
 				t.Fatalf("write log file failed: %v", err)
 			}
 			backupPath := writeCompressedBackup(t, logDir, "service.log", time.Now().UTC())
 
-			writer := &archiveAwareWriter{
-				inner:    tt.inner,
-				archiver: newCompressedLogArchiver(logPath, 5, 7, true),
+			writer := &AwareWriter{
+				Inner:    tt.inner,
+				Archiver: NewCompressedLogArchiver(logPath, 5, 7, true),
 			}
 
 			_, _ = writer.Write([]byte("entry\n"))
 
 			assertPathMissing(t, backupPath)
-			assertPathExists(t, filepath.Join(logDir, archiveDirName, filepath.Base(backupPath)))
+			assertPathExists(t, filepath.Join(logDir, DirName, filepath.Base(backupPath)))
 		})
 	}
 }
@@ -208,12 +187,12 @@ func TestCompressedLogArchiverTrigger_RunsOnlyOnceWithinScanInterval(t *testing.
 
 	logDir := t.TempDir()
 	logPath := filepath.Join(logDir, "service.log")
-	if err := os.WriteFile(logPath, []byte("active\n"), logFilePerm); err != nil {
+	if err := os.WriteFile(logPath, []byte("active\n"), LogFilePerm); err != nil {
 		t.Fatalf("write log file failed: %v", err)
 	}
 
 	firstBackup := writeCompressedBackup(t, logDir, "service.log", time.Now().UTC().Add(-1*time.Minute))
-	archiver := newCompressedLogArchiver(logPath, 5, 7, true)
+	archiver := NewCompressedLogArchiver(logPath, 5, 7, true)
 	archiver.Trigger()
 	assertPathMissing(t, firstBackup)
 
@@ -221,7 +200,7 @@ func TestCompressedLogArchiverTrigger_RunsOnlyOnceWithinScanInterval(t *testing.
 	archiver.Trigger()
 
 	assertPathExists(t, secondBackup)
-	archiveEntries := archiveEntryNames(t, filepath.Join(logDir, archiveDirName))
+	archiveEntries := archiveEntryNames(t, filepath.Join(logDir, DirName))
 	if len(archiveEntries) != 1 {
 		t.Fatalf("archive entry count = %d, want 1; entries=%v", len(archiveEntries), archiveEntries)
 	}
@@ -243,7 +222,7 @@ func writeCompressedBackup(t *testing.T, dir, baseName string, timestamp time.Ti
 	t.Helper()
 
 	prefix, ext := backupPrefixAndExt(baseName)
-	name := fmt.Sprintf("%s%s%s%s", prefix, timestamp.Format(backupTimeFormat), ext, compressSuffix)
+	name := fmt.Sprintf("%s%s%s%s", prefix, timestamp.Format(BackupTimeFmt), ext, CompressSuffix)
 	path := filepath.Join(dir, name)
 	if err := os.WriteFile(path, []byte(name), 0o644); err != nil {
 		t.Fatalf("write compressed backup failed: %v", err)

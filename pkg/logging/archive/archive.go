@@ -1,7 +1,6 @@
-package logging
+package archive
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,15 +10,24 @@ import (
 	"time"
 )
 
-type archiveAwareWriter struct {
-	inner    io.Writer
-	archiver *compressedLogArchiver
+const (
+	CompressSuffix             = ".gz"
+	BackupTimeFmt              = "2006-01-02T15-04-05.000"
+	DirName                    = "archive"
+	ScanInterval               = 5 * time.Second
+	LogFilePerm    os.FileMode = 0o640
+	LogDirPerm     os.FileMode = 0o750
+)
+
+type AwareWriter struct {
+	Inner    io.Writer
+	Archiver *CompressedLogArchiver
 }
 
-func (w *archiveAwareWriter) Write(p []byte) (int, error) {
-	n, err := w.inner.Write(p)
-	if w.archiver != nil {
-		w.archiver.Trigger()
+func (w *AwareWriter) Write(p []byte) (int, error) {
+	n, err := w.Inner.Write(p)
+	if w.Archiver != nil {
+		w.Archiver.Trigger()
 	}
 	if err != nil {
 		return n, fmt.Errorf("archive aware writer: write: %w", err)
@@ -27,7 +35,7 @@ func (w *archiveAwareWriter) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-type compressedLogArchiver struct {
+type CompressedLogArchiver struct {
 	logPath    string
 	maxBackups int
 	maxAgeDays int
@@ -37,25 +45,25 @@ type compressedLogArchiver struct {
 	lastRun time.Time
 }
 
-func newCompressedLogArchiver(logPath string, maxBackups, maxAgeDays int, enabled bool) *compressedLogArchiver {
+func NewCompressedLogArchiver(logPath string, maxBackups, maxAgeDays int, enabled bool) *CompressedLogArchiver {
 	if !enabled || strings.TrimSpace(logPath) == "" {
 		return nil
 	}
 
-	return &compressedLogArchiver{
+	return &CompressedLogArchiver{
 		logPath:    logPath,
 		maxBackups: maxBackups,
 		maxAgeDays: maxAgeDays,
 	}
 }
 
-func (a *compressedLogArchiver) Trigger() {
+func (a *CompressedLogArchiver) Trigger() {
 	if a == nil {
 		return
 	}
 
 	a.mu.Lock()
-	if a.running || (!a.lastRun.IsZero() && time.Since(a.lastRun) < archiveScanInterval) {
+	if a.running || (!a.lastRun.IsZero() && time.Since(a.lastRun) < ScanInterval) {
 		a.mu.Unlock()
 		return
 	}
@@ -63,7 +71,7 @@ func (a *compressedLogArchiver) Trigger() {
 	a.lastRun = time.Now()
 	a.mu.Unlock()
 
-	err := archiveCompressedLogFiles(a.logPath, a.maxBackups, a.maxAgeDays)
+	err := MoveAndPrune(a.logPath, a.maxBackups, a.maxAgeDays)
 
 	a.mu.Lock()
 	a.running = false
@@ -74,10 +82,10 @@ func (a *compressedLogArchiver) Trigger() {
 	}
 }
 
-func archiveCompressedLogFiles(logPath string, maxBackups, maxAgeDays int) error {
+func MoveAndPrune(logPath string, maxBackups, maxAgeDays int) error {
 	logDir := filepath.Dir(logPath)
-	archiveDir := filepath.Join(logDir, archiveDirName)
-	if err := ensureLogDirPerm(archiveDir); err != nil {
+	archiveDir := filepath.Join(logDir, DirName)
+	if err := EnsureLogDirPerm(archiveDir); err != nil {
 		return fmt.Errorf("prepare archive dir: %w", err)
 	}
 
@@ -89,7 +97,7 @@ func archiveCompressedLogFiles(logPath string, maxBackups, maxAgeDays int) error
 	for _, name := range names {
 		source := filepath.Join(logDir, name)
 		target := filepath.Join(archiveDir, name)
-		if err := os.Rename(source, target); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err := os.Rename(source, target); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("move compressed backup %s: %w", name, err)
 		}
 	}

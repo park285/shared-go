@@ -1,4 +1,4 @@
-package logging
+package archive
 
 import (
 	"errors"
@@ -22,7 +22,7 @@ func matchingCompressedBackupNames(dir, baseName string) ([]string, error) {
 	}
 
 	prefix, ext := backupPrefixAndExt(baseName)
-	suffix := ext + compressSuffix
+	suffix := ext + CompressSuffix
 	names := make([]string, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() {
@@ -110,7 +110,7 @@ func archivedCompressedBackups(archiveDir, baseName string) ([]archivedLogFile, 
 	}
 
 	prefix, ext := backupPrefixAndExt(baseName)
-	suffix := ext + compressSuffix
+	suffix := ext + CompressSuffix
 	files := make([]archivedLogFile, 0, len(entries))
 	for _, entry := range entries {
 		files = appendArchivedCompressedBackup(files, archiveDir, prefix, suffix, entry)
@@ -161,7 +161,7 @@ func backupTimestampFromName(name, prefix, suffix string) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("unexpected backup name: %s", name)
 	}
 
-	parsed, err := time.Parse(backupTimeFormat, timestamp)
+	parsed, err := time.Parse(BackupTimeFmt, timestamp)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("backup timestamp from name: parse %q: %w", timestamp, err)
 	}

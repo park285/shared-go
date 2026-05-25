@@ -14,24 +14,17 @@ import (
 	"github.com/mattn/go-isatty"
 	"go.opentelemetry.io/otel/trace"
 	"gopkg.in/natefinch/lumberjack.v2"
-)
 
-const (
-	logFilePerm         os.FileMode = 0o640
-	logDirPerm          os.FileMode = 0o750
-	compressSuffix                  = ".gz"
-	backupTimeFormat                = "2006-01-02T15-04-05.000"
-	archiveDirName                  = "archive"
-	archiveScanInterval             = 5 * time.Second
+	"github.com/park285/shared-go/pkg/logging/archive"
 )
 
 type Config struct {
-	Level      string // 로그 레벨 (debug, info, warn, error)
-	Dir        string // 로그 파일 디렉터리
-	MaxSizeMB  int    // 단일 파일 최대 크기 (MB)
-	MaxBackups int    // 보관할 백업 파일 수
-	MaxAgeDays int    // 백업 파일 보관 일수
-	Compress   bool   // 백업 파일 압축 여부
+	Level      string
+	Dir        string
+	MaxSizeMB  int
+	MaxBackups int
+	MaxAgeDays int
+	Compress   bool
 }
 
 func ParseLevel(level string) slog.Level {
@@ -47,20 +40,6 @@ func ParseLevel(level string) slog.Level {
 	}
 }
 
-func LogError(logger *slog.Logger, event string, err error) {
-	if logger == nil || err == nil {
-		return
-	}
-	logger.Warn(event, "err", err)
-}
-
-func LogInfo(logger *slog.Logger, event string, fields ...any) {
-	if logger == nil {
-		return
-	}
-	logger.Info(event, fields...)
-}
-
 func NewLogger() *slog.Logger {
 	return slog.New(tint.NewHandler(os.Stdout, &tint.Options{
 		Level:      slog.LevelInfo,
@@ -68,15 +47,6 @@ func NewLogger() *slog.Logger {
 		AddSource:  true,
 		NoColor:    shouldDisableColor(os.Stdout),
 	}))
-}
-
-func NewLoggerWithLevel(level string) *slog.Logger {
-	config := Config{Level: level}
-	logger, err := EnableFileLogging(config, "")
-	if err != nil || logger == nil {
-		return NewLogger()
-	}
-	return logger
 }
 
 func NewTestLogger() *slog.Logger {
@@ -108,16 +78,16 @@ func EnableFileLoggingWithOTel(config Config, fileName string, enableOTel bool) 
 		return nil, fmt.Errorf("invalid log config: size=%d backups=%d age_days=%d", config.MaxSizeMB, config.MaxBackups, config.MaxAgeDays)
 	}
 
-	if err := ensureLogDirPerm(logDir); err != nil {
+	if err := archive.EnsureLogDirPerm(logDir); err != nil {
 		return nil, fmt.Errorf("prepare log dir failed: %w", err)
 	}
 
 	logPath := filepath.Join(logDir, fileName)
-	if err := ensureLogFilePerm(logPath); err != nil {
+	if err := archive.EnsureLogFilePerm(logPath); err != nil {
 		return nil, fmt.Errorf("prepare log file failed: %w", err)
 	}
 
-	logArchiver := newCompressedLogArchiver(logPath, config.MaxBackups, config.MaxAgeDays, config.Compress)
+	logArchiver := archive.NewCompressedLogArchiver(logPath, config.MaxBackups, config.MaxAgeDays, config.Compress)
 	logFile := &lumberjack.Logger{
 		Filename:   logPath,
 		MaxSize:    config.MaxSizeMB,
@@ -126,7 +96,7 @@ func EnableFileLoggingWithOTel(config Config, fileName string, enableOTel bool) 
 		Compress:   config.Compress,
 	}
 
-	w := io.MultiWriter(os.Stdout, &archiveAwareWriter{inner: logFile, archiver: logArchiver})
+	w := io.MultiWriter(os.Stdout, &archive.AwareWriter{Inner: logFile, Archiver: logArchiver})
 
 	var handler slog.Handler
 	handler = tint.NewHandler(w, &tint.Options{
@@ -144,7 +114,7 @@ func EnableFileLoggingWithOTel(config Config, fileName string, enableOTel bool) 
 	slog.SetDefault(logger)
 	logger.Info("file_logging_enabled",
 		slog.String("path", logFile.Filename),
-		slog.String("archive_dir", filepath.Join(logDir, archiveDirName)),
+		slog.String("archive_dir", filepath.Join(logDir, archive.DirName)),
 		slog.Bool("otel_correlation", enableOTel),
 	)
 	logArchiver.Trigger()

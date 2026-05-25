@@ -114,6 +114,51 @@ func TestComputeExponentialBackoff_NegativeAttempt(t *testing.T) {
 	}
 }
 
+func TestComputeExponentialBackoff_ZeroMaxIntervalIsUnbounded(t *testing.T) {
+	base := 100 * time.Millisecond
+
+	tests := []struct {
+		name    string
+		attempt int
+		want    time.Duration
+	}{
+		{name: "attempt zero", attempt: 0, want: 100 * time.Millisecond},
+		{name: "attempt one", attempt: 1, want: 200 * time.Millisecond},
+		{name: "attempt two", attempt: 2, want: 400 * time.Millisecond},
+		{name: "attempt three", attempt: 3, want: 800 * time.Millisecond},
+		{name: "attempt ten no cap", attempt: 10, want: 100 * time.Millisecond * (1 << 10)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ComputeExponentialBackoff(tt.attempt, base, 0, 0)
+			if got != tt.want {
+				t.Fatalf("ComputeExponentialBackoff() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestComputeExponentialBackoff_ZeroMaxIntervalWithJitter(t *testing.T) {
+	base := 100 * time.Millisecond
+	jitter := 50 * time.Millisecond
+
+	for range 100 {
+		got := ComputeExponentialBackoff(0, base, 0, jitter)
+		if got < base || got >= base+jitter {
+			t.Fatalf("ComputeExponentialBackoff() = %v, want in [%v, %v)", got, base, base+jitter)
+		}
+	}
+
+	for range 100 {
+		got := ComputeExponentialBackoff(2, base, 0, jitter)
+		expected := 400 * time.Millisecond
+		if got < expected || got >= expected+jitter {
+			t.Fatalf("ComputeExponentialBackoff() = %v, want in [%v, %v)", got, expected, expected+jitter)
+		}
+	}
+}
+
 func TestComputeExponentialBackoffHalfJitter_RangeIsHalfToFullOfCappedBase(t *testing.T) {
 	base := 2 * time.Second
 	maxInterval := 10 * time.Second
