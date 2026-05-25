@@ -38,6 +38,9 @@ const (
 	defaultReceiveDedupTTL       = 60 * time.Second
 	defaultReceiveDedupTimeout   = 200 * time.Millisecond
 
+	defaultBotPoolWorkers   = 10
+	defaultBotPoolQueueSize = 100
+
 	defaultMinQueuePerEndpointMultiplier = 4
 	timeoutNetworkMargin                 = 5 * time.Second
 )
@@ -49,6 +52,7 @@ type IrisBotWebhookWorkerProfile struct {
 	ProfileID  string                                `json:"profile_id"`
 	Delivery   IrisWebhookDeliveryWorkerProfile      `json:"delivery"`
 	Receive    BotWebhookReceiveWorkerProfile        `json:"receive"`
+	BotPool    BotPoolWorkerProfile                  `json:"bot_pool"`
 	Validation IrisBotWebhookWorkerProfileValidation `json:"validation"`
 }
 
@@ -73,6 +77,11 @@ type BotWebhookReceiveWorkerProfile struct {
 	DedupTimeout   time.Duration `json:"-"`
 }
 
+type BotPoolWorkerProfile struct {
+	Workers   int `json:"-"`
+	QueueSize int `json:"-"`
+}
+
 type IrisBotWebhookWorkerProfileValidation struct {
 	MinQueuePerEndpointMultiplier          int  `json:"min_queue_per_endpoint_multiplier"`
 	RequireReceiveCapacityForEndpointBurst bool `json:"require_receive_capacity_for_endpoint_burst"`
@@ -83,7 +92,13 @@ type wireIrisBotWebhookWorkerProfile struct {
 	ProfileID  string                                `json:"profile_id"`
 	Delivery   wireWebhookDeliveryWorkerProfile      `json:"delivery"`
 	Receive    wireWebhookReceiveWorkerProfile       `json:"receive"`
+	BotPool    wireBotPoolWorkerProfile              `json:"bot_pool"`
 	Validation IrisBotWebhookWorkerProfileValidation `json:"validation"`
+}
+
+type wireBotPoolWorkerProfile struct {
+	Workers   int `json:"workers"`
+	QueueSize int `json:"queue_size"`
 }
 
 type wireWebhookDeliveryWorkerProfile struct {
@@ -129,6 +144,10 @@ func DefaultIrisBotWebhookWorkerProfile() IrisBotWebhookWorkerProfile {
 			MaxBodyBytes:   defaultReceiveMaxBodyBytes,
 			DedupTTL:       defaultReceiveDedupTTL,
 			DedupTimeout:   defaultReceiveDedupTimeout,
+		},
+		BotPool: BotPoolWorkerProfile{
+			Workers:   defaultBotPoolWorkers,
+			QueueSize: defaultBotPoolQueueSize,
 		},
 		Validation: IrisBotWebhookWorkerProfileValidation{
 			MinQueuePerEndpointMultiplier:          defaultMinQueuePerEndpointMultiplier,
@@ -247,6 +266,8 @@ func (p IrisBotWebhookWorkerProfile) Validate() error {
 	}
 	problems = appendPositiveDuration(problems, p.Receive.DedupTTL, "receive.dedup_ttl_ms")
 	problems = appendPositiveDuration(problems, p.Receive.DedupTimeout, "receive.dedup_timeout_ms")
+	problems = appendPositiveInt(problems, p.BotPool.Workers, "bot_pool.workers")
+	problems = appendPositiveInt(problems, p.BotPool.QueueSize, "bot_pool.queue_size")
 	problems = appendPositiveInt(problems, p.Validation.MinQueuePerEndpointMultiplier, "validation.min_queue_per_endpoint_multiplier")
 
 	if len(problems) == 0 {
@@ -302,11 +323,26 @@ func (p IrisBotWebhookWorkerProfile) toWire() wireIrisBotWebhookWorkerProfile {
 			DedupTTLMS:       int(p.Receive.DedupTTL / time.Millisecond),
 			DedupTimeoutMS:   int(p.Receive.DedupTimeout / time.Millisecond),
 		},
+		BotPool: wireBotPoolWorkerProfile{
+			Workers:   p.BotPool.Workers,
+			QueueSize: p.BotPool.QueueSize,
+		},
 		Validation: p.Validation,
 	}
 }
 
 func fromWire(wire wireIrisBotWebhookWorkerProfile) IrisBotWebhookWorkerProfile {
+	botPool := BotPoolWorkerProfile{
+		Workers:   wire.BotPool.Workers,
+		QueueSize: wire.BotPool.QueueSize,
+	}
+	if botPool.Workers == 0 {
+		botPool.Workers = defaultBotPoolWorkers
+	}
+	if botPool.QueueSize == 0 {
+		botPool.QueueSize = defaultBotPoolQueueSize
+	}
+
 	return IrisBotWebhookWorkerProfile{
 		Version:   wire.Version,
 		ProfileID: strings.TrimSpace(wire.ProfileID),
@@ -329,6 +365,7 @@ func fromWire(wire wireIrisBotWebhookWorkerProfile) IrisBotWebhookWorkerProfile 
 			DedupTTL:       time.Duration(wire.Receive.DedupTTLMS) * time.Millisecond,
 			DedupTimeout:   time.Duration(wire.Receive.DedupTimeoutMS) * time.Millisecond,
 		},
+		BotPool:    botPool,
 		Validation: wire.Validation,
 	}
 }
