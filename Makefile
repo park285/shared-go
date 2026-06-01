@@ -1,6 +1,6 @@
 GO ?= go
 GOLANGCI_LINT ?= golangci-lint
-GOLANGCI_CONFIG ?= ../.golangci.yml
+GOLANGCI_CONFIG ?= .golangci.yml
 
 .PHONY: lint
 lint:
