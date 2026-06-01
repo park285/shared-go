@@ -49,9 +49,7 @@ func pruneArchivedCompressedBackups(archiveDir, baseName string, maxBackups, max
 	removeByPath := make(map[string]struct{})
 	collectArchivedBackupsOlderThan(files, maxAgeDays, removeByPath)
 
-	slices.SortFunc(files, func(a, b archivedLogFile) int {
-		return compareArchivedLogFileNewestFirst(a, b)
-	})
+	slices.SortFunc(files, compareArchivedLogFileNewestFirst)
 	collectArchivedBackupsBeyondLimit(files, maxBackups, removeByPath)
 
 	return removeArchivedCompressedBackupPaths(removeByPath)
