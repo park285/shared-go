@@ -178,6 +178,24 @@ linters:
           - gosec
         text: "G704:"
 
+      # comma-ok 타입 단언에서 ok를 버리는 것이 의도적 설계 (zero-value fallback)
+      - linters:
+          - errcheck
+        path: pkg/logging/context\.go
+        source: 'ctx\.Value\('
+
+      # backoff jitter는 보안 목적이 아닌 분산 지연용 — math/rand 사용이 의도적
+      - linters:
+          - gosec
+        path: pkg/backoff/
+        text: "G404:"
+
+      # 내부 로그 파일 경로로 os.OpenFile 호출 — 외부 입력이 아님
+      - linters:
+          - gosec
+        path: pkg/logging/archive/
+        text: "G304:"
+
     paths:
       - '.*\.pb\.go$'
       - '.*_test\.go$'

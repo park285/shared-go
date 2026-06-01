@@ -35,19 +35,19 @@ func ComputeExponentialBackoffHalfJitter(attempt int, base, maxInterval time.Dur
 		return 0
 	}
 
-	cap := capInterval(computeCandidate(attempt, base, maxInterval), maxInterval)
-	if cap <= 0 {
+	capped := capInterval(computeCandidate(attempt, base, maxInterval), maxInterval)
+	if capped <= 0 {
 		return 0
 	}
 
-	half := cap / 2
-	upper := cap - half
+	half := capped / 2
+	upper := capped - half
 	if upper <= 0 {
-		return cap
+		return capped
 	}
 	result := half + time.Duration(rand.Int63n(int64(upper)))
 	if result <= 0 {
-		return cap
+		return capped
 	}
 	return result
 }

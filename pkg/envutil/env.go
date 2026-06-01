@@ -9,6 +9,11 @@ import (
 	"time"
 )
 
+const (
+	boolTrue  = "true"
+	boolFalse = "false"
+)
+
 func String(key, def string) string {
 	value := strings.TrimSpace(os.Getenv(key))
 	if value == "" {
@@ -75,7 +80,7 @@ func Bool(key string, def bool) bool {
 		return def
 	}
 	value = strings.ToLower(value)
-	return value == "true" || value == "1" || value == "yes" || value == "y"
+	return value == boolTrue || value == "1" || value == "yes" || value == "y"
 }
 
 func BoolStrict(key string, def bool) bool {
@@ -84,14 +89,14 @@ func BoolStrict(key string, def bool) bool {
 		return def
 	}
 	value = strings.ToLower(value)
-	if value != "true" && value != "false" {
+	if value != boolTrue && value != boolFalse {
 		slog.Warn("invalid boolean value for environment variable",
 			"key", key,
 			"value_present", true,
 			"returning_default", def)
 		return def
 	}
-	return value == "true"
+	return value == boolTrue
 }
 
 func Float(key string, def float64) float64 {
