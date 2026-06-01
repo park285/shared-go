@@ -194,12 +194,12 @@ formatters:
       sections:
         - standard
         - default
-        - prefix(github.com/park285/llm-kakao-bots/shared-go)
+        - prefix(github.com/park285/shared-go)
       custom-order: true
 
     goimports:
       local-prefixes:
-        - github.com/park285/llm-kakao-bots/shared-go
+        - github.com/park285/shared-go
 
   exclusions:
     paths:
