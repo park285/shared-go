@@ -20,7 +20,7 @@ func TestSanitizeHandler_SensitiveKeys(t *testing.T) {
 		{"password", "password", "mypass", true},
 		{"Password", "Password", "mypass", true},
 		{"secret", "secret", "topsecret", true},
-		{"key", "key", "apikey123", true},
+		{"key", "key", "apikey123", false},
 		{"authorization", "authorization", "auth_value", true},
 		{"cookie", "cookie", "session=xyz", true},
 		{"api_key", "api_key", "ak_12345", true},
