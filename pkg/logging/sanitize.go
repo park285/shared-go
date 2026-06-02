@@ -26,7 +26,9 @@ func (h *SanitizeHandler) Enabled(ctx context.Context, level slog.Level) bool {
 }
 
 func (h *SanitizeHandler) Handle(ctx context.Context, record slog.Record) error {
-	newRecord := slog.NewRecord(record.Time, record.Level, record.Message, record.PC)
+	msg := bearerTokenRegex.ReplaceAllString(record.Message, "${1}***REDACTED***")
+	msg = querySecretRegex.ReplaceAllString(msg, "${1}***REDACTED***")
+	newRecord := slog.NewRecord(record.Time, record.Level, msg, record.PC)
 	record.Attrs(func(attr slog.Attr) bool {
 		newRecord.AddAttrs(sanitizeAttr(attr))
 		return true
@@ -85,7 +87,6 @@ func isSensitiveKey(key string) bool {
 		"refresh_token":  true,
 		"password":       true,
 		"secret":         true,
-		"key":            true,
 		"client_secret":  true,
 		"api_key":        true,
 		"apikey":         true,

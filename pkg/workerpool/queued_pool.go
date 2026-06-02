@@ -2,6 +2,9 @@ package workerpool
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
+	"runtime/debug"
 	"sync"
 )
 
@@ -19,14 +22,24 @@ type QueuedPool struct {
 	stopOnce  sync.Once
 	workers   int
 	queueSize int
+	logger    *slog.Logger
 }
 
 func NewQueued(config QueuedConfig) *QueuedPool {
+	return NewQueuedWithLogger(config, slog.Default())
+}
+
+// NewQueuedWithLogger는 panic recover 로그에 사용할 logger를 주입한다.
+// logger가 nil이면 slog.Default()를 사용한다.
+func NewQueuedWithLogger(config QueuedConfig, logger *slog.Logger) *QueuedPool {
 	if config.Workers < 1 {
 		config.Workers = 1
 	}
 	if config.QueueSize < 1 {
 		config.QueueSize = 1
+	}
+	if logger == nil {
+		logger = slog.Default()
 	}
 
 	p := &QueuedPool{
@@ -34,6 +47,7 @@ func NewQueued(config QueuedConfig) *QueuedPool {
 		stopCh:    make(chan struct{}),
 		workers:   config.Workers,
 		queueSize: config.QueueSize,
+		logger:    logger,
 	}
 	for range config.Workers {
 		p.workerWG.Add(1)
@@ -152,6 +166,19 @@ func (p *QueuedPool) worker() {
 		if task == nil {
 			continue
 		}
-		task()
+		p.safeRun(task)
 	}
+}
+
+func (p *QueuedPool) safeRun(task func()) {
+	defer func() {
+		if r := recover(); r != nil {
+			stack := debug.Stack()
+			p.logger.Error("worker: task panicked",
+				slog.Any("panic", fmt.Sprintf("%v", r)),
+				slog.String("stack", string(stack)),
+			)
+		}
+	}()
+	task()
 }
