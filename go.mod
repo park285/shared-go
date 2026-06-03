@@ -2,6 +2,8 @@ module github.com/park285/shared-go
 
 go 1.26.2
 
+toolchain go1.26.4
+
 require (
 	github.com/bytedance/sonic v1.15.1
 	github.com/gin-gonic/gin v1.12.0
