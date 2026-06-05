@@ -19,6 +19,10 @@ go test ./...
 go build ./...
 ```
 
+## CI Policy
+
+This repo follows the stack-wide CI weight split: GitHub Actions keeps only a fast PR gate in `.github/workflows/ci.yml` and non-PR security scanning in `.github/workflows/security.yml`. Heavy verification stays local before push, including full test suites, dependency hygiene, race checks, and any cross-repo consumer validation.
+
 ## Subtree Rules
 
 - Assume active parent and subagent work may legitimately take time and that sufficient computing power is available for their scoped work.
