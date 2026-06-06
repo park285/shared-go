@@ -16,7 +16,9 @@ type OperationOptions struct {
 	SuccessEvent string
 	FailureEvent string
 	SkipStartLog bool
-	Attrs        []slog.Attr
+	// Level은 started/succeeded 로그 레벨. zero value는 slog.LevelInfo로 기존 동작 유지. failed는 항상 Error.
+	Level slog.Level
+	Attrs []slog.Attr
 }
 
 func RunOperation(ctx context.Context, logger *slog.Logger, opts OperationOptions, fn func(context.Context) error) error {
@@ -26,7 +28,7 @@ func RunOperation(ctx context.Context, logger *slog.Logger, opts OperationOption
 
 	start := time.Now()
 	if !opts.SkipStartLog {
-		Info(ctx, logger, eventOrDefault(opts.StartEvent, name+".started"), "operation started", baseAttrs...)
+		Log(ctx, logger, opts.Level, eventOrDefault(opts.StartEvent, name+".started"), "operation started", baseAttrs...)
 	}
 
 	err := fn(ctx)
@@ -39,7 +41,7 @@ func RunOperation(ctx context.Context, logger *slog.Logger, opts OperationOption
 		return err
 	}
 
-	Info(ctx, logger, eventOrDefault(opts.SuccessEvent, name+".succeeded"), "operation succeeded", attrs...)
+	Log(ctx, logger, opts.Level, eventOrDefault(opts.SuccessEvent, name+".succeeded"), "operation succeeded", attrs...)
 	return nil
 }
 
