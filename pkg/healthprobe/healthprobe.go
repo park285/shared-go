@@ -22,9 +22,14 @@ const (
 
 // https는 H3(QUIC)로, http는 HTTP/1.1로 1회 GET 후 2xx 여부를 검사한다.
 func CheckURL(rawURL string) error {
+	_, err := FetchURL(rawURL)
+	return err
+}
+
+func FetchURL(rawURL string) ([]byte, error) {
 	parsed, err := ParseURL(rawURL)
 	if err != nil {
-		return fmt.Errorf("validate url: %w", err)
+		return nil, fmt.Errorf("validate url: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
@@ -37,7 +42,7 @@ func CheckURL(rawURL string) error {
 			ServerName: os.Getenv(ServerNameEnv),
 		})
 		if clientErr != nil {
-			return clientErr
+			return nil, clientErr
 		}
 		defer closeFn()
 		client = h3Client
@@ -45,23 +50,26 @@ func CheckURL(rawURL string) error {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, http.NoBody)
 	if err != nil {
-		return fmt.Errorf("build request: %w", err)
+		return nil, fmt.Errorf("build request: %w", err)
 	}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("request %s: %w", rawURL, err)
+		return nil, fmt.Errorf("request %s: %w", rawURL, err)
 	}
 
 	defer func() { _ = resp.Body.Close() }()
 
-	_, _ = io.Copy(io.Discard, resp.Body) //nolint:errcheck // drain 실패는 결과에 무관
-
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return fmt.Errorf("%s status: %d", rawURL, resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read body %s: %w", rawURL, err)
 	}
 
-	return nil
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, fmt.Errorf("%s status: %d", rawURL, resp.StatusCode)
+	}
+
+	return body, nil
 }
 
 func ParseURL(raw string) (*url.URL, error) {
