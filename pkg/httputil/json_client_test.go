@@ -68,6 +68,36 @@ func TestJSONClient_NewRequestAppliesAPIKeyWithoutBody(t *testing.T) {
 	}
 }
 
+func TestNewJSONClientWithHTTPClientUsesProvidedClient(t *testing.T) {
+	t.Parallel()
+
+	rt := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if got, want := req.URL.String(), "https://example.com/ping"; got != want {
+			t.Fatalf("request URL = %s, want %s", got, want)
+		}
+		return &http.Response{
+			StatusCode: http.StatusNoContent,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Header:     make(http.Header),
+			Request:    req,
+		}, nil
+	})
+	client := NewJSONClientWithHTTPClient("https://example.com", "token", &http.Client{Transport: rt})
+
+	req, err := client.NewRequest(context.Background(), http.MethodGet, "/ping")
+	if err != nil {
+		t.Fatalf("NewRequest() error = %v", err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("Do() error = %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("StatusCode = %d, want %d", resp.StatusCode, http.StatusNoContent)
+	}
+}
+
 func TestJSONClient_DiscardBodyClosesResponse(t *testing.T) {
 	t.Parallel()
 
@@ -252,4 +282,10 @@ func newEchoServer(t *testing.T) *httptest.Server {
 	}))
 	t.Cleanup(ts.Close)
 	return ts
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }
