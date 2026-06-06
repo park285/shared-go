@@ -23,10 +23,18 @@ type JSONClient struct {
 
 // NewJSONClient는 공통 internal service client를 생성합니다.
 func NewJSONClient(baseURL, apiKey string, timeout time.Duration) *JSONClient {
+	return NewJSONClientWithHTTPClient(baseURL, apiKey, NewInternalServiceClient(timeout))
+}
+
+// NewJSONClientWithHTTPClient는 caller가 준비한 http.Client로 JSONClient를 생성합니다.
+func NewJSONClientWithHTTPClient(baseURL, apiKey string, httpClient *http.Client) *JSONClient {
+	if httpClient == nil {
+		httpClient = NewInternalServiceClient(0)
+	}
 	return &JSONClient{
 		baseURL:    strings.TrimRight(strings.TrimSpace(baseURL), "/"),
 		apiKey:     strings.TrimSpace(apiKey),
-		httpClient: NewInternalServiceClient(timeout),
+		httpClient: httpClient,
 	}
 }
 
