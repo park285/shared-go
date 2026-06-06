@@ -30,6 +30,33 @@ func TestCheckURLAcceptsSuccessStatus(t *testing.T) {
 	}
 }
 
+func TestFetchURLReturnsBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"mode":"active-active"}`))
+	}))
+	defer server.Close()
+
+	body, err := FetchURL(server.URL)
+	if err != nil {
+		t.Fatalf("FetchURL(%q): %v", server.URL, err)
+	}
+	if string(body) != `{"mode":"active-active"}` {
+		t.Fatalf("FetchURL body = %q, want active-active json", body)
+	}
+}
+
+func TestFetchURLRejectsServerErrorWithoutBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("boom"))
+	}))
+	defer server.Close()
+
+	if body, err := FetchURL(server.URL); err == nil || body != nil {
+		t.Fatalf("FetchURL(%q) = (%q, %v), want nil body and error for 500", server.URL, body, err)
+	}
+}
+
 func TestCheckURLRejectsServerError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
