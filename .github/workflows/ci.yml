@@ -25,6 +25,12 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
+      - name: Workflow secret boundary
+        run: bash scripts/ci/check-workflow-secrets.sh
+
+      - name: Workflow secret boundary tests
+        run: bash scripts/ci/check-workflow-secrets_test.sh
+
       - name: gofmt
         run: |
           mapfile -t files < <(find . -path './.git' -prune -o -name '*.go' -print)
