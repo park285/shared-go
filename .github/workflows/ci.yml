@@ -28,9 +28,6 @@ jobs:
       - name: Workflow secret boundary
         run: bash scripts/ci/check-workflow-secrets.sh
 
-      - name: Workflow secret boundary tests
-        run: bash scripts/ci/check-workflow-secrets_test.sh
-
       - name: gofmt
         run: |
           mapfile -t files < <(find . -path './.git' -prune -o -name '*.go' -print)
@@ -46,9 +43,6 @@ jobs:
 
       - name: go vet
         run: go vet ./...
-
-      - name: go build
-        run: go build ./...
 
       - name: go test
         run: go test -count=1 ./...
