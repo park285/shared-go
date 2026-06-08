@@ -1,9 +1,9 @@
-Cross-runtime project canon for `hololive-bot/shared-go`.
-Keep this file limited to always-needed subtree rules.
+Cross-runtime project canon for `shared-go` (`github.com/park285/shared-go`).
+Keep this file limited to always-needed project rules.
 
 ## Project Identity
 
-This subtree is a pure shared Go library consumed across the monorepo.
+This repository is a standalone shared Go library consumed by the iris-stack projects (`hololive-bot`, `chat-bot-go-kakao`, and other Go consumers).
 
 ## Working Defaults
 
@@ -23,7 +23,7 @@ go build ./...
 
 This repo follows the stack-wide CI weight split: GitHub Actions keeps only a fast PR gate in `.github/workflows/ci.yml` and non-PR security scanning in `.github/workflows/security.yml`. Heavy verification stays local before push, including full test suites, dependency hygiene, race checks, and any cross-repo consumer validation.
 
-## Subtree Rules
+## Project Rules
 
 - Assume active parent and subagent work may legitimately take time and that sufficient computing power is available for their scoped work.
 - Do not treat elapsed time alone as a reason to recall, restart, close, or abandon a running subagent or workstream.
@@ -35,4 +35,4 @@ This repo follows the stack-wide CI weight split: GitHub Actions keeps only a fa
 
 ## Reference
 
-Use the root [AGENTS.md](../AGENTS.md) for monorepo-wide rules.
+In the `iris-stack` workspace checkout, use the workspace [AGENTS.md](../AGENTS.md) for stack-wide rules; in a standalone clone that file is absent.
