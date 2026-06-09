@@ -45,6 +45,29 @@ func TestFetchURLReturnsBody(t *testing.T) {
 	}
 }
 
+func TestFetchURLWithHeadersSendsConfiguredHeaders(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-API-Key"); got != "probe-secret" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		_, _ = w.Write([]byte(`ok`))
+	}))
+	defer server.Close()
+
+	if _, err := FetchURL(server.URL); err == nil {
+		t.Fatal("FetchURL() error = nil, want unauthorized without API key header")
+	}
+
+	body, err := FetchURLWithHeaders(server.URL, map[string]string{"X-API-Key": "probe-secret"})
+	if err != nil {
+		t.Fatalf("FetchURLWithHeaders(%q): %v", server.URL, err)
+	}
+	if string(body) != "ok" {
+		t.Fatalf("FetchURLWithHeaders body = %q, want ok", body)
+	}
+}
+
 func TestFetchURLRejectsServerErrorWithoutBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
