@@ -26,26 +26,6 @@ func Normalize(s string) string {
 	return strings.ToLower(strings.TrimSpace(s))
 }
 
-// 여러 개행 패턴을 시도하여 가장 적절한 방식으로 제거합니다.
-func StripLeadingHeader(text, header string) string {
-	if TrimSpace(text) == "" || TrimSpace(header) == "" {
-		return text
-	}
-	candidates := []string{
-		header + "\r\n\r\n",
-		header + "\n\n",
-		header + "\r\n",
-		header + "\n",
-		header,
-	}
-	for _, candidate := range candidates {
-		if after, ok := strings.CutPrefix(text, candidate); ok {
-			return after
-		}
-	}
-	return text
-}
-
 // Unicode를 올바르게 처리하며, 다양한 특수문자(공백, 하이픈, 언더스코어 등)를 제거합니다.
 func NormalizeKey(s string) string {
 	s = Normalize(s)

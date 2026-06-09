@@ -104,7 +104,3 @@ func NewInternalServiceClient(timeout time.Duration) *http.Client {
 	profile.Timeout = timeout
 	return NewProfiledClient(profile)
 }
-
-func DefaultClient() *http.Client {
-	return NewExternalAPIClient(30 * time.Second)
-}

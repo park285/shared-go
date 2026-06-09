@@ -79,8 +79,14 @@ func Bool(key string, def bool) bool {
 	if value == "" {
 		return def
 	}
-	value = strings.ToLower(value)
-	return value == boolTrue || value == "1" || value == "yes" || value == "y"
+	switch strings.ToLower(value) {
+	case "1", boolTrue, "yes", "y", "on":
+		return true
+	case "0", boolFalse, "no", "n", "off":
+		return false
+	default:
+		return def
+	}
 }
 
 func BoolStrict(key string, def bool) bool {
@@ -139,4 +145,76 @@ func StringAny(keys ...string) string {
 		}
 	}
 	return ""
+}
+
+func List(key string) []string {
+	return ListWithFallback(key, "")
+}
+
+func ListWithFallback(key, fallback string) []string {
+	raw := StringOrFile(key, fallback)
+	if raw == "" {
+		return nil
+	}
+
+	parts := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == '\n' || r == '\r' || r == '\t' || r == ' '
+	})
+	out := make([]string, 0, len(parts))
+
+	seen := make(map[string]struct{}, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+
+		if _, ok := seen[part]; ok {
+			continue
+		}
+
+		seen[part] = struct{}{}
+		out = append(out, part)
+	}
+
+	return out
+}
+
+func Map(key string) map[string]string {
+	raw := StringOrFile(key, "")
+	if raw == "" {
+		return nil
+	}
+
+	parts := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == '\n' || r == '\r' || r == '\t'
+	})
+
+	out := make(map[string]string, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+
+		idx := strings.IndexAny(part, ":=")
+		if idx <= 0 || idx >= len(part)-1 {
+			continue
+		}
+
+		entryKey := strings.TrimSpace(part[:idx])
+
+		value := strings.TrimSpace(part[idx+1:])
+		if entryKey == "" || value == "" {
+			continue
+		}
+
+		out[entryKey] = value
+	}
+
+	if len(out) == 0 {
+		return nil
+	}
+
+	return out
 }

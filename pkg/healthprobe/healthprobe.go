@@ -35,7 +35,7 @@ func FetchURLWithHeaders(rawURL string, headers map[string]string) ([]byte, erro
 }
 
 func fetchURL(rawURL string, headers map[string]string) ([]byte, error) {
-	parsed, err := ParseURL(rawURL)
+	parsed, err := parseURL(rawURL)
 	if err != nil {
 		return nil, fmt.Errorf("validate url: %w", err)
 	}
@@ -86,7 +86,7 @@ func fetchURL(rawURL string, headers map[string]string) ([]byte, error) {
 	return body, nil
 }
 
-func ParseURL(raw string) (*url.URL, error) {
+func parseURL(raw string) (*url.URL, error) {
 	parsed, err := url.Parse(raw)
 	if err != nil {
 		return nil, fmt.Errorf("parse url: %w", err)
