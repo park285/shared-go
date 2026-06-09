@@ -27,6 +27,14 @@ func CheckURL(rawURL string) error {
 }
 
 func FetchURL(rawURL string) ([]byte, error) {
+	return fetchURL(rawURL, nil)
+}
+
+func FetchURLWithHeaders(rawURL string, headers map[string]string) ([]byte, error) {
+	return fetchURL(rawURL, headers)
+}
+
+func fetchURL(rawURL string, headers map[string]string) ([]byte, error) {
 	parsed, err := ParseURL(rawURL)
 	if err != nil {
 		return nil, fmt.Errorf("validate url: %w", err)
@@ -51,6 +59,12 @@ func FetchURL(rawURL string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
+	}
+	for name, value := range headers {
+		if name == "" {
+			continue
+		}
+		req.Header.Set(name, value)
 	}
 
 	resp, err := client.Do(req)
