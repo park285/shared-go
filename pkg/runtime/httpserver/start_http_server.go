@@ -1,26 +1,11 @@
 package httpserver
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 )
-
-func StartHTTPServer(server *http.Server, logger *slog.Logger, errCh chan<- error) {
-	if server == nil {
-		return
-	}
-	StartServerWithPrefix(server, "HTTP server error", logger, errCh)
-}
-
-func ShutdownHTTPServer(ctx context.Context, server *http.Server) error {
-	if server == nil {
-		return nil
-	}
-	return Shutdown(ctx, server, "HTTP server shutdown failed")
-}
 
 func StartServerWithPrefix(server Server, errorText string, logger *slog.Logger, errCh chan<- error) {
 	Start(listenErrorPrefixServer{

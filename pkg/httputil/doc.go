@@ -16,13 +16,13 @@
 //   - TransportProfile: timeout, pool, HTTP/2 정책을 담는 client profile입니다.
 //   - NewClient: timeout만 지정한 단순 http.Client를 생성합니다.
 //   - NewProfiledClient: TransportProfile을 적용한 http.Client를 생성하는 기본 진입점입니다.
-//   - NewExternalAPIClient, NewInternalServiceClient, DefaultClient: 목적별 표준 profile client를 생성합니다.
+//   - NewExternalAPIClient, NewInternalServiceClient: 목적별 표준 profile client를 생성합니다.
 //   - JSONClient, NewJSONClient: 내부 서비스 JSON API 호출용 client wrapper입니다.
 //   - (*JSONClient).NewRequest, (*JSONClient).NewJSONRequest: API key와 JSON header를 적용한 request를 생성합니다.
 //   - (*JSONClient).Do, (*JSONClient).CheckStatus, (*JSONClient).DecodeJSON, (*JSONClient).DiscardBody: 요청 실행과 response 처리를 위임합니다.
 //   - CheckStatus: non-2xx response를 APIError로 변환합니다.
 //   - DecodeJSON: response body를 decode하고 닫습니다.
-//   - APIError, AsAPIError, IsStatus: API error unwrap과 분기 helper입니다.
+//   - APIError, IsStatus: API error unwrap과 분기 helper입니다.
 //
 // # 주요 사용 패턴
 //

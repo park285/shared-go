@@ -171,61 +171,6 @@ func TestNormalize(t *testing.T) {
 	}
 }
 
-func TestStripLeadingHeader(t *testing.T) {
-	tests := []struct {
-		name   string
-		text   string
-		header string
-		want   string
-	}{
-		{
-			name:   "더블 개행",
-			text:   "Header\n\nBody content",
-			header: "Header",
-			want:   "Body content",
-		},
-		{
-			name:   "싱글 개행",
-			text:   "Header\nBody content",
-			header: "Header",
-			want:   "Body content",
-		},
-		{
-			name:   "CRLF 개행",
-			text:   "Header\r\n\r\nBody content",
-			header: "Header",
-			want:   "Body content",
-		},
-		{
-			name:   "개행 없음",
-			text:   "HeaderBody content",
-			header: "Header",
-			want:   "Body content",
-		},
-		{
-			name:   "헤더 없음",
-			text:   "Body content",
-			header: "Header",
-			want:   "Body content",
-		},
-		{
-			name:   "빈 헤더",
-			text:   "Body content",
-			header: "",
-			want:   "Body content",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := StripLeadingHeader(tt.text, tt.header)
-			if result != tt.want {
-				t.Errorf("StripLeadingHeader(%q, %q) = %q, want %q", tt.text, tt.header, result, tt.want)
-			}
-		})
-	}
-}
-
 func TestNormalizeKey(t *testing.T) {
 	tests := []struct {
 		name  string

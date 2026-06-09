@@ -19,20 +19,6 @@ func TestNewClient(t *testing.T) {
 	}
 }
 
-func TestDefaultClient(t *testing.T) {
-	t.Parallel()
-
-	client := DefaultClient()
-	if client == nil {
-		t.Fatal("DefaultClient() returned nil")
-	}
-
-	const wantTimeout = 30 * time.Second
-	if client.Timeout != wantTimeout {
-		t.Fatalf("DefaultClient() timeout = %s, want %s", client.Timeout, wantTimeout)
-	}
-}
-
 func TestNewProfiledClient(t *testing.T) {
 	t.Parallel()
 

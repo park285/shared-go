@@ -114,13 +114,6 @@ func TestAPIErrorHelpersMatchWrappedErrors(t *testing.T) {
 	if IsStatus(err, http.StatusConflict) {
 		t.Fatal("IsStatus() = true for wrong status")
 	}
-	apiErr, ok := AsAPIError(err)
-	if !ok {
-		t.Fatal("AsAPIError() ok = false, want true")
-	}
-	if apiErr.StatusCode != http.StatusNotFound {
-		t.Fatalf("AsAPIError().StatusCode = %d, want %d", apiErr.StatusCode, http.StatusNotFound)
-	}
 }
 
 func TestDecodeJSON(t *testing.T) {

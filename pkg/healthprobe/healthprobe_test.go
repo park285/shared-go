@@ -99,7 +99,7 @@ func TestCheckURLRejectsMissingCAFile(t *testing.T) {
 	}
 }
 
-func TestParseURLRejectsInvalidInputs(t *testing.T) {
+func TestCheckURLRejectsInvalidInputs(t *testing.T) {
 	tests := []struct {
 		name string
 		raw  string
@@ -111,8 +111,8 @@ func TestParseURLRejectsInvalidInputs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, err := ParseURL(tt.raw); err == nil {
-				t.Fatalf("ParseURL(%q) error = nil, want error", tt.raw)
+			if err := CheckURL(tt.raw); err == nil {
+				t.Fatalf("CheckURL(%q) error = nil, want error", tt.raw)
 			}
 		})
 	}
