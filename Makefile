@@ -14,6 +14,10 @@ fmt:
 test:
 	$(GO) test ./...
 
+.PHONY: test-race
+test-race:
+	$(GO) test -race -count=1 ./...
+
 .PHONY: vulncheck
 vulncheck:
 	govulncheck ./...
