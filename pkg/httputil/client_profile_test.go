@@ -221,6 +221,27 @@ func TestBaseProfiledTransportUsesDefaultBaseline(t *testing.T) {
 	}
 }
 
+func TestBaseProfiledTransportIsolatedFromGlobal(t *testing.T) {
+	t.Parallel()
+
+	global, ok := http.DefaultTransport.(*http.Transport)
+	if !ok || global == nil {
+		t.Fatal("http.DefaultTransport is not *http.Transport")
+	}
+
+	got := baseProfiledTransport()
+	if got == global {
+		t.Fatal("baseProfiledTransport() returned the global http.DefaultTransport pointer")
+	}
+
+	beforeMaxIdle := global.MaxIdleConns
+	got.MaxIdleConns = beforeMaxIdle + 4242
+	got.MaxConnsPerHost = global.MaxConnsPerHost + 99
+	if global.MaxIdleConns != beforeMaxIdle {
+		t.Fatalf("mutating returned transport changed global.MaxIdleConns: %d, want %d", global.MaxIdleConns, beforeMaxIdle)
+	}
+}
+
 func TestNewProfiledClientTimeout(t *testing.T) {
 	t.Parallel()
 
