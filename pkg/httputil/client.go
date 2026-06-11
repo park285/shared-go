@@ -13,6 +13,7 @@ type TransportProfile struct {
 	TLSHandshakeTimeout   time.Duration
 	ResponseHeaderTimeout time.Duration
 	IdleConnTimeout       time.Duration
+	MaxIdleConns          int
 	MaxConnsPerHost       int
 	MaxIdleConnsPerHost   int
 	DisableHTTP2          bool
@@ -23,6 +24,7 @@ var externalAPITransportProfile = TransportProfile{
 	TLSHandshakeTimeout:   5 * time.Second,
 	ResponseHeaderTimeout: 15 * time.Second,
 	IdleConnTimeout:       90 * time.Second,
+	MaxIdleConns:          128,
 	MaxConnsPerHost:       32,
 	MaxIdleConnsPerHost:   16,
 }
@@ -32,6 +34,7 @@ var internalServiceTransportProfile = TransportProfile{
 	TLSHandshakeTimeout:   5 * time.Second,
 	ResponseHeaderTimeout: 10 * time.Second,
 	IdleConnTimeout:       90 * time.Second,
+	MaxIdleConns:          256,
 	MaxConnsPerHost:       64,
 	MaxIdleConnsPerHost:   32,
 }
@@ -81,6 +84,9 @@ func applyTransportProfile(transport *http.Transport, profile TransportProfile) 
 	}
 	if profile.IdleConnTimeout > 0 {
 		transport.IdleConnTimeout = profile.IdleConnTimeout
+	}
+	if profile.MaxIdleConns > 0 {
+		transport.MaxIdleConns = profile.MaxIdleConns
 	}
 	if profile.MaxConnsPerHost > 0 {
 		transport.MaxConnsPerHost = profile.MaxConnsPerHost
