@@ -1,6 +1,7 @@
 package backoff
 
 import (
+	"math"
 	"testing"
 	"time"
 )
@@ -136,6 +137,36 @@ func TestComputeExponentialBackoff_ZeroMaxIntervalIsUnbounded(t *testing.T) {
 				t.Fatalf("ComputeExponentialBackoff() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestComputeExponentialBackoff_ZeroMaxIntervalDoesNotOverflow(t *testing.T) {
+	base := 100 * time.Millisecond
+
+	for _, attempt := range []int{54, 55, 56, 100, 1000} {
+		got := ComputeExponentialBackoff(attempt, base, 0, 0)
+		if got <= 0 {
+			t.Fatalf("ComputeExponentialBackoff(%d, %v, 0, 0) = %v, want > 0", attempt, base, got)
+		}
+		if got > time.Duration(math.MaxInt64) {
+			t.Fatalf("ComputeExponentialBackoff(%d, %v, 0, 0) = %v, want <= MaxInt64", attempt, base, got)
+		}
+	}
+}
+
+func TestComputeExponentialBackoff_ZeroMaxIntervalMonotonicNonDecreasing(t *testing.T) {
+	base := 100 * time.Millisecond
+
+	prev := time.Duration(-1)
+	for attempt := 50; attempt <= 200; attempt++ {
+		got := ComputeExponentialBackoff(attempt, base, 0, 0)
+		if got <= 0 {
+			t.Fatalf("ComputeExponentialBackoff(%d, %v, 0, 0) = %v, want > 0", attempt, base, got)
+		}
+		if got < prev {
+			t.Fatalf("ComputeExponentialBackoff(%d) = %v decreased below prev %v", attempt, got, prev)
+		}
+		prev = got
 	}
 }
 

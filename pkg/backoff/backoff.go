@@ -1,7 +1,8 @@
 package backoff
 
 import (
-	"math/rand"
+	"math"
+	"math/rand/v2"
 	"time"
 )
 
@@ -45,7 +46,7 @@ func ComputeExponentialBackoffHalfJitter(attempt int, base, maxInterval time.Dur
 	if upper <= 0 {
 		return capped
 	}
-	result := half + time.Duration(rand.Int63n(int64(upper)))
+	result := half + time.Duration(rand.Int64N(int64(upper)))
 	if result <= 0 {
 		return capped
 	}
@@ -68,6 +69,9 @@ func doubleWithCap(current, maxInterval time.Duration) time.Duration {
 	if maxInterval > 0 && current > maxInterval/2 {
 		return maxInterval
 	}
+	if current > math.MaxInt64/2 {
+		return time.Duration(math.MaxInt64)
+	}
 	return current * 2
 }
 
@@ -82,5 +86,5 @@ func addJitter(candidate, jitter time.Duration) time.Duration {
 	if jitter <= 0 {
 		return candidate
 	}
-	return candidate + time.Duration(rand.Int63n(int64(jitter)))
+	return candidate + time.Duration(rand.Int64N(int64(jitter)))
 }

@@ -38,6 +38,52 @@ func TestNewClientUsesConstrainedInitialPacketSize(t *testing.T) {
 	}
 }
 
+func TestNewClientQUICConfigMirrorsServerLiveness(t *testing.T) {
+	t.Parallel()
+
+	cfg := newClientQUICConfig()
+
+	if cfg.InitialPacketSize != initialPacketSize {
+		t.Errorf("InitialPacketSize = %d, want %d", cfg.InitialPacketSize, initialPacketSize)
+	}
+	if cfg.HandshakeIdleTimeout != clientHandshakeIdleTimeout {
+		t.Errorf("HandshakeIdleTimeout = %s, want %s", cfg.HandshakeIdleTimeout, clientHandshakeIdleTimeout)
+	}
+	if cfg.MaxIdleTimeout != serverMaxIdleTimeout {
+		t.Errorf("MaxIdleTimeout = %s, want %s (server symmetry)", cfg.MaxIdleTimeout, serverMaxIdleTimeout)
+	}
+	if cfg.KeepAlivePeriod != serverKeepAlivePeriod {
+		t.Errorf("KeepAlivePeriod = %s, want %s (server symmetry)", cfg.KeepAlivePeriod, serverKeepAlivePeriod)
+	}
+}
+
+func TestNewClientAppliesQUICConfig(t *testing.T) {
+	t.Parallel()
+
+	client, closeFn, err := NewClient(0, ClientOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeFn()
+
+	transport, ok := client.Transport.(*http3.Transport)
+	if !ok {
+		t.Fatalf("Transport = %T, want *http3.Transport", client.Transport)
+	}
+	if transport.QUICConfig == nil {
+		t.Fatal("QUICConfig = nil")
+	}
+	if transport.QUICConfig.KeepAlivePeriod != serverKeepAlivePeriod {
+		t.Fatalf("KeepAlivePeriod = %s, want %s", transport.QUICConfig.KeepAlivePeriod, serverKeepAlivePeriod)
+	}
+	if transport.QUICConfig.MaxIdleTimeout != serverMaxIdleTimeout {
+		t.Fatalf("MaxIdleTimeout = %s, want %s", transport.QUICConfig.MaxIdleTimeout, serverMaxIdleTimeout)
+	}
+	if transport.QUICConfig.HandshakeIdleTimeout != clientHandshakeIdleTimeout {
+		t.Fatalf("HandshakeIdleTimeout = %s, want %s", transport.QUICConfig.HandshakeIdleTimeout, clientHandshakeIdleTimeout)
+	}
+}
+
 func TestNewClientRejectsMissingCAFile(t *testing.T) {
 	t.Parallel()
 

@@ -317,17 +317,19 @@ func TestProvider_Shutdown_Success(t *testing.T) {
 	}
 }
 
-func TestProvider_Shutdown_Error(t *testing.T) {
+func TestProvider_Shutdown_CancelledParentStillFlushes(t *testing.T) {
 	prevTP := otel.GetTracerProvider()
 	prevProp := otel.GetTextMapPropagator()
+	prevHandler := otel.GetErrorHandler()
 	t.Cleanup(func() {
 		otel.SetTracerProvider(prevTP)
 		otel.SetTextMapPropagator(prevProp)
+		otel.SetErrorHandler(prevHandler)
 	})
 
 	provider, err := NewProvider(context.Background(), Config{
 		Enabled:      true,
-		ServiceName:  "shutdown-err-test",
+		ServiceName:  "shutdown-cancelled-test",
 		OTLPEndpoint: "localhost:4317",
 		OTLPInsecure: true,
 		SampleRate:   1.0,
@@ -339,12 +341,8 @@ func TestProvider_Shutdown_Error(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err = provider.Shutdown(ctx)
-	if err == nil {
-		t.Fatal("shutdown with cancelled context should return error")
-	}
-	if !strings.Contains(err.Error(), "shutdown otel tracer provider") {
-		t.Fatalf("expected wrapped error message, got: %v", err)
+	if err := provider.Shutdown(ctx); err != nil {
+		t.Fatalf("shutdown must detach a cancelled parent and flush, got error: %v", err)
 	}
 }
 

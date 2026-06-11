@@ -18,6 +18,9 @@ const (
 
 	serverKeepAlivePeriod = 10 * time.Second
 	serverMaxIdleTimeout  = 60 * time.Second
+
+	// 죽은 피어에 묶이지 않도록 quic-go 기본(5s)보다 약간 관대한 핸드셰이크 상한.
+	clientHandshakeIdleTimeout = 10 * time.Second
 )
 
 func NewServer(addr string, handler http.Handler, certFile, keyFile string) (*http3.Server, error) {
@@ -72,9 +75,7 @@ func NewClient(timeout time.Duration, opts ClientOptions) (*http.Client, func(),
 
 	transport := &http3.Transport{
 		TLSClientConfig: tlsConfig,
-		QUICConfig: &quic.Config{
-			InitialPacketSize: initialPacketSize,
-		},
+		QUICConfig:      newClientQUICConfig(),
 	}
 
 	client := &http.Client{
@@ -85,6 +86,15 @@ func NewClient(timeout time.Duration, opts ClientOptions) (*http.Client, func(),
 	return client, func() {
 		_ = transport.Close() //nolint:errcheck // 종료 시 transport 정리 실패는 무시
 	}, nil
+}
+
+func newClientQUICConfig() *quic.Config {
+	return &quic.Config{
+		InitialPacketSize:    initialPacketSize,
+		HandshakeIdleTimeout: clientHandshakeIdleTimeout,
+		MaxIdleTimeout:       serverMaxIdleTimeout,
+		KeepAlivePeriod:      serverKeepAlivePeriod,
+	}
 }
 
 func loadRootCAs(path string) (*x509.CertPool, error) {
