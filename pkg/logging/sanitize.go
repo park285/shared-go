@@ -55,7 +55,7 @@ func containsFold(s, substr string) bool {
 		// 짧은 입력이라도 non-ASCII가 있으면 게이트를 통과시켜 정규식에 위임한다.
 		return hasNonASCII(s)
 	}
-	for i := 0; i < len(s); i++ {
+	for i := range len(s) {
 		if s[i] >= 0x80 {
 			return true
 		}
@@ -67,7 +67,7 @@ func containsFold(s, substr string) bool {
 }
 
 func hasNonASCII(s string) bool {
-	for i := 0; i < len(s); i++ {
+	for i := range len(s) {
 		if s[i] >= 0x80 {
 			return true
 		}
