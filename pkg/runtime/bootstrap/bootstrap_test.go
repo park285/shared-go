@@ -163,6 +163,41 @@ func TestRun_BuildsRunsAndClosesRuntime(t *testing.T) {
 	}
 }
 
+func TestRun_ZeroBuildTimeoutMeansNoDeadline(t *testing.T) {
+	t.Parallel()
+
+	rt := &testRuntime{}
+	var hadDeadline bool
+
+	exitCode := Run(Options[*testConfig, *testRuntime]{
+		Version:    "v1",
+		Initialize: func(string) {},
+		LoadConfig: func() (*testConfig, error) { return &testConfig{}, nil },
+		NewLogger: func(*testConfig) (*slog.Logger, error) {
+			return slog.New(slog.DiscardHandler), nil
+		},
+		BuildTimeout: 0,
+		BuildRuntime: func(ctx context.Context, _ *testConfig, _ *slog.Logger) (*testRuntime, error) {
+			_, hadDeadline = ctx.Deadline()
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			return rt, nil
+		},
+		Stderr: &bytes.Buffer{},
+	})
+
+	if exitCode != 0 {
+		t.Fatalf("Run() exitCode = %d, want 0", exitCode)
+	}
+	if hadDeadline {
+		t.Fatal("BuildRuntime() context should not have a deadline when BuildTimeout is zero")
+	}
+	if rt.runCalls != 1 {
+		t.Fatalf("runtime.Run() calls = %d, want 1", rt.runCalls)
+	}
+}
+
 func TestRun_ReturnsExitCodeOneWhenBuildRuntimeFails(t *testing.T) {
 	t.Parallel()
 
