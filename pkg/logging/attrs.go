@@ -67,45 +67,55 @@ type retryableError interface{ Retryable() bool }
 // 한 번만 순회하며 두 인터페이스를 동시에 탐지한다. Unwrap() error와 Unwrap() []error
 // 양쪽을 처리해 errors.As와 동일한 분기 의미를 유지한다.
 func probeErrorInterfaces(err error) (codedError, retryableError) {
-	var coded codedError
-	var retryable retryableError
+	var p errorInterfaceProbe
+	p.walk(err)
+	return p.coded, p.retryable
+}
 
-	var walk func(error)
-	walk = func(e error) {
-		for e != nil {
-			if coded == nil {
-				if c, ok := e.(codedError); ok {
-					coded = c
-				}
-			}
-			if retryable == nil {
-				if r, ok := e.(retryableError); ok {
-					retryable = r
-				}
-			}
-			if coded != nil && retryable != nil {
-				return
-			}
+type errorInterfaceProbe struct {
+	coded     codedError
+	retryable retryableError
+}
 
-			switch x := e.(type) {
-			case interface{ Unwrap() error }:
-				e = x.Unwrap()
-			case interface{ Unwrap() []error }:
-				for _, sub := range x.Unwrap() {
-					walk(sub)
-					if coded != nil && retryable != nil {
-						return
-					}
-				}
-				return
-			default:
-				return
-			}
+func (p *errorInterfaceProbe) done() bool {
+	return p.coded != nil && p.retryable != nil
+}
+
+func (p *errorInterfaceProbe) inspect(e error) {
+	if p.coded == nil {
+		if c, ok := e.(codedError); ok {
+			p.coded = c
 		}
 	}
-	walk(err)
+	if p.retryable == nil {
+		if r, ok := e.(retryableError); ok {
+			p.retryable = r
+		}
+	}
+}
 
-	return coded, retryable
+func (p *errorInterfaceProbe) walk(e error) {
+	for e != nil {
+		p.inspect(e)
+		if p.done() {
+			return
+		}
+
+		switch x := e.(type) { //nolint:errorlint // unwrap 트리 직접 순회가 이 함수의 목적 (errors.As 대체)
+		case interface{ Unwrap() error }:
+			e = x.Unwrap()
+		case interface{ Unwrap() []error }:
+			for _, sub := range x.Unwrap() {
+				p.walk(sub)
+				if p.done() {
+					return
+				}
+			}
+			return
+		default:
+			return
+		}
+	}
 }
 
 func errorType(err error) string {
