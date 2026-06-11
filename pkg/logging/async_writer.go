@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"fmt"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -88,8 +89,13 @@ func (w *asyncDropWriter) Write(p []byte) (int, error) {
 func (w *asyncDropWriter) Close() error {
 	w.stop.Do(func() { close(w.done) })
 
+	// stopped 분기에서만 run goroutine이 종료를 마쳐 target에 동시 기록이 없다.
+	// 타임아웃 분기에서는 run이 아직 forward 중일 수 있어 요약 기록을 생략한다.
 	select {
 	case <-w.stopped:
+		if dropped := w.dropped.Load(); dropped > 0 {
+			fmt.Fprintf(w.target, "[logging] async stdout writer dropped %d lines\n", dropped) //nolint:errcheck // best-effort 진단 라인, 실패 무시
+		}
 	case <-time.After(asyncDropWriterCloseTimeout):
 	}
 

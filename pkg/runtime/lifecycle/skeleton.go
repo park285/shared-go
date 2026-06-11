@@ -81,9 +81,21 @@ func waitForStop(
 	select {
 	case sig := <-sigCh:
 		handleSignal(onSignal, sig)
+		drainRuntimeError(errCh, onError)
 	case err := <-errCh:
 		handleRuntimeError(onError, err)
 	case <-baseCtx.Done():
+		drainRuntimeError(errCh, onError)
+	}
+}
+
+func drainRuntimeError(errCh <-chan error, onError func(error)) {
+	select {
+	case err := <-errCh:
+		if err != nil {
+			handleRuntimeError(onError, err)
+		}
+	default:
 	}
 }
 

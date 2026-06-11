@@ -3,6 +3,8 @@ package telemetry
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
@@ -113,6 +115,21 @@ func installGlobalProvider(tp *sdktrace.TracerProvider) {
 			propagation.Baggage{},
 		),
 	)
+	otel.SetErrorHandler(slogErrorHandler{})
+}
+
+type slogErrorHandler struct{}
+
+func (slogErrorHandler) Handle(err error) {
+	slog.Warn("otel export error", "error", err.Error())
+}
+
+// 시그널 핸들러 defer의 이미 취소된 ctx가 와도 마지막 배치를 flush할 수 있도록
+// 취소를 분리하고 5초 윈도우로 제한합니다.
+const flushTimeout = 5 * time.Second
+
+func flushContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), flushTimeout)
 }
 
 // 버퍼에 남은 span들을 flush하여 데이터 유실을 방지합니다.
@@ -120,7 +137,9 @@ func (p *Provider) Shutdown(ctx context.Context) error {
 	if p.tracerProvider == nil {
 		return nil
 	}
-	if err := p.tracerProvider.Shutdown(ctx); err != nil {
+	flushCtx, cancel := flushContext(ctx)
+	defer cancel()
+	if err := p.tracerProvider.Shutdown(flushCtx); err != nil {
 		return fmt.Errorf("shutdown otel tracer provider: %w", err)
 	}
 	return nil

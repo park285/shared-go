@@ -240,6 +240,85 @@ func TestRun_CustomSignals(t *testing.T) {
 	}
 }
 
+func TestDrainRuntimeError_FiresOnErrorWhenErrorPending(t *testing.T) {
+	t.Parallel()
+
+	pendingErr := errors.New("pending runtime error")
+	errCh := make(chan error, 1)
+	errCh <- pendingErr
+
+	var gotErr error
+	drainRuntimeError(errCh, func(err error) { gotErr = err })
+
+	if !errors.Is(gotErr, pendingErr) {
+		t.Fatalf("OnError() error = %v, want %v", gotErr, pendingErr)
+	}
+}
+
+func TestDrainRuntimeError_NoOpWhenEmpty(t *testing.T) {
+	t.Parallel()
+
+	errCh := make(chan error, 1)
+	called := false
+	drainRuntimeError(errCh, func(error) { called = true })
+
+	if called {
+		t.Fatal("OnError() should not fire when errCh is empty")
+	}
+}
+
+func TestDrainRuntimeError_SkipsNilError(t *testing.T) {
+	t.Parallel()
+
+	errCh := make(chan error, 1)
+	errCh <- nil
+	called := false
+	drainRuntimeError(errCh, func(error) { called = true })
+
+	if called {
+		t.Fatal("OnError() should not fire for a nil error")
+	}
+}
+
+func TestRun_SignalWithPendingErrorStillFiresOnError(t *testing.T) {
+	t.Parallel()
+
+	const iterations = 30
+	runtimeErr := errors.New("runtime boom on signal race")
+
+	for i := 0; i < iterations; i++ {
+		var onErrorCount atomic.Int32
+		var gotErr atomic.Value
+
+		signalCh := make(chan os.Signal, 1)
+
+		err := Run(Options{
+			NotifySignals: func(...os.Signal) (<-chan os.Signal, func()) {
+				return signalCh, func() {}
+			},
+			Start: func(_ context.Context, errCh chan<- error) {
+				errCh <- runtimeErr
+				signalCh <- syscall.SIGTERM
+			},
+			OnError: func(err error) {
+				onErrorCount.Add(1)
+				gotErr.Store(err)
+			},
+			Shutdown: func(context.Context) error { return nil },
+		})
+		if err != nil {
+			t.Fatalf("iteration %d: Run() error = %v, want nil", i, err)
+		}
+		if onErrorCount.Load() != 1 {
+			t.Fatalf("iteration %d: OnError() called %d times, want exactly 1", i, onErrorCount.Load())
+		}
+		stored, _ := gotErr.Load().(error)
+		if !errors.Is(stored, runtimeErr) {
+			t.Fatalf("iteration %d: OnError() error = %v, want %v", i, stored, runtimeErr)
+		}
+	}
+}
+
 func TestDefaultSignalNotifier(t *testing.T) {
 	t.Parallel()
 
