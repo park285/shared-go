@@ -34,6 +34,29 @@ var querySecretTokens = []string{
 	"client_secret", "secret", "private_key", "secret_key",
 }
 
+var sensitiveExactKeys = map[string]struct{}{
+	"token":            {},
+	"bot_token":        {},
+	"access_token":     {},
+	"refresh_token":    {},
+	"password":         {},
+	"pwd":              {},
+	"passwd":           {},
+	"secret":           {},
+	"client_secret":    {},
+	tokenAPIKey:        {},
+	tokenAPIKeyCompact: {},
+	"private_key":      {},
+	"secret_key":       {},
+	"authorization":    {},
+	"auth_header":      {},
+	"cookie":           {},
+	"webhook_url":      {},
+	"database_url":     {},
+	"postgres_dsn":     {},
+	"connection_url":   {},
+}
+
 func mightContainBearer(s string) bool {
 	return containsFold(s, "bearer")
 }
@@ -96,6 +119,22 @@ func (h *SanitizeHandler) Enabled(ctx context.Context, level slog.Level) bool {
 
 func (h *SanitizeHandler) Handle(ctx context.Context, record slog.Record) error {
 	msg := redactSecrets(record.Message)
+	changed := msg != record.Message
+
+	if !changed {
+		record.Attrs(func(attr slog.Attr) bool {
+			if _, attrChanged := sanitizeAttrChanged(attr); attrChanged {
+				changed = true
+				return false
+			}
+			return true
+		})
+	}
+
+	if !changed {
+		return h.inner.Handle(ctx, record)
+	}
+
 	newRecord := slog.NewRecord(record.Time, record.Level, msg, record.PC)
 	record.Attrs(func(attr slog.Attr) bool {
 		newRecord.AddAttrs(sanitizeAttr(attr))
@@ -117,26 +156,45 @@ func (h *SanitizeHandler) WithGroup(name string) slog.Handler {
 }
 
 func sanitizeAttr(attr slog.Attr) slog.Attr {
-	attr.Value = attr.Value.Resolve()
+	out, _ := sanitizeAttrChanged(attr)
+	return out
+}
+
+// sanitizeAttrChanged는 sanitizeAttr와 동일한 정규화를 수행하되, 결과가 원본 attr과
+// byte-identical하게 같은지(changed=false) 여부를 함께 반환한다. Handle의 fast-path는
+// 이 신호로 변경이 전혀 없을 때 record 재구축을 건너뛴다. Resolve로 값이 달라지거나
+// redaction이 일어나면 changed=true가 되어 재구축 경로가 그 결과를 반영한다.
+func sanitizeAttrChanged(attr slog.Attr) (slog.Attr, bool) {
+	resolved := attr.Value.Resolve()
+	changed := !resolved.Equal(attr.Value)
+	attr.Value = resolved
 
 	if attr.Value.Kind() == slog.KindGroup {
 		groupAttrs := attr.Value.Group()
 		sanitized := make([]any, 0, len(groupAttrs))
 		for _, groupAttr := range groupAttrs {
-			sanitized = append(sanitized, sanitizeAttr(groupAttr))
+			out, c := sanitizeAttrChanged(groupAttr)
+			if c {
+				changed = true
+			}
+			sanitized = append(sanitized, out)
 		}
-		return slog.Group(attr.Key, sanitized...)
+		return slog.Group(attr.Key, sanitized...), changed
 	}
 
 	if attr.Value.Kind() != slog.KindString {
-		return attr
+		return attr, changed
 	}
 
 	if isSensitiveKey(attr.Key) {
-		return slog.String(attr.Key, "***REDACTED***")
+		return slog.String(attr.Key, "***REDACTED***"), true
 	}
 
-	return slog.String(attr.Key, redactSecrets(attr.Value.String()))
+	redacted := redactSecrets(attr.Value.String())
+	if redacted != attr.Value.String() {
+		changed = true
+	}
+	return slog.String(attr.Key, redacted), changed
 }
 
 func isSensitiveKey(key string) bool {
@@ -145,29 +203,7 @@ func isSensitiveKey(key string) bool {
 		return false
 	}
 
-	exact := map[string]bool{
-		"token":            true,
-		"bot_token":        true,
-		"access_token":     true,
-		"refresh_token":    true,
-		"password":         true,
-		"pwd":              true,
-		"passwd":           true,
-		"secret":           true,
-		"client_secret":    true,
-		tokenAPIKey:        true,
-		tokenAPIKeyCompact: true,
-		"private_key":      true,
-		"secret_key":       true,
-		"authorization":    true,
-		"auth_header":      true,
-		"cookie":           true,
-		"webhook_url":      true,
-		"database_url":     true,
-		"postgres_dsn":     true,
-		"connection_url":   true,
-	}
-	if exact[normalized] {
+	if _, ok := sensitiveExactKeys[normalized]; ok {
 		return true
 	}
 
