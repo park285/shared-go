@@ -42,7 +42,7 @@ func NewClient(timeout time.Duration) *http.Client {
 
 // 기본 keep-alive, proxy, TLS 기본 동작은 유지하고 timeout/pool/HTTP2 정책만 profile로 주입합니다.
 func NewProfiledClient(profile TransportProfile) *http.Client {
-	transport := baseProfiledTransport().Clone()
+	transport := baseProfiledTransport()
 	applyTransportProfile(transport, profile)
 
 	return &http.Client{
@@ -54,7 +54,7 @@ func NewProfiledClient(profile TransportProfile) *http.Client {
 func baseProfiledTransport() *http.Transport {
 	baseTransport, ok := http.DefaultTransport.(*http.Transport)
 	if ok && baseTransport != nil {
-		return baseTransport
+		return baseTransport.Clone()
 	}
 
 	return &http.Transport{
