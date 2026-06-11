@@ -3,7 +3,7 @@ package logging
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -12,9 +12,19 @@ func NewID(prefix string) string {
 	prefix = sanitizeIDPrefix(prefix)
 	random := make([]byte, 6)
 	if _, err := rand.Read(random); err != nil {
-		return fmt.Sprintf("%s_%d", prefix, time.Now().UnixNano())
+		var b strings.Builder
+		b.WriteString(prefix)
+		b.WriteByte('_')
+		b.WriteString(strconv.FormatInt(time.Now().UnixNano(), 10))
+		return b.String()
 	}
-	return fmt.Sprintf("%s_%d_%s", prefix, time.Now().UnixMilli(), hex.EncodeToString(random))
+	var b strings.Builder
+	b.WriteString(prefix)
+	b.WriteByte('_')
+	b.WriteString(strconv.FormatInt(time.Now().UnixMilli(), 10))
+	b.WriteByte('_')
+	b.WriteString(hex.EncodeToString(random))
+	return b.String()
 }
 
 func sanitizeIDPrefix(prefix string) string {
