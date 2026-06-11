@@ -41,7 +41,28 @@ func Extract(text string) ([]byte, error) {
 }
 
 func ExtractToMap(text string) (map[string]any, error) {
-	data, err := Extract(text)
+	text = strings.TrimSpace(text)
+
+	// 코드펜스 후보는 단일 Unmarshal로 valid 판정과 디코드를 겸한다(Valid+Unmarshal 이중 파싱 제거).
+	// 기존 Extract 의미상 코드펜스가 valid JSON이면 거기서 확정하므로, valid지만 object가
+	// 아니면 에러로 끝내고(폴백하지 않음), invalid일 때만 bracket 폴백으로 넘어간다.
+	if matches := fenceRe.FindStringSubmatch(text); len(matches) > 1 {
+		candidate := []byte(strings.TrimSpace(matches[1]))
+		var v any
+		if err := json.Unmarshal(candidate, &v); err == nil {
+			switch m := v.(type) {
+			case map[string]any:
+				return m, nil
+			case nil:
+				// JSON null은 map[string]any로 디코드하면 nil map(에러 없음)이 된다 — 기존 동작 보존.
+				return nil, nil
+			default:
+				return nil, fmt.Errorf("unmarshal json: not a JSON object")
+			}
+		}
+	}
+
+	data, err := extractFirstJSON(text)
 	if err != nil {
 		return nil, err
 	}
@@ -57,8 +78,20 @@ func ExtractToMap(text string) (map[string]any, error) {
 // 문자열 내 괄호와 이스케이프를 정확히 처리합니다.
 func extractFirstJSON(text string) ([]byte, error) {
 	b := []byte(text)
+	// suffix 닫는 괄호 카운트: 시작점 뒤에 같은 타입 닫는 괄호가 0개면 findMatchingEnd가
+	// 반드시 -1이므로 꼬리 재스캔 없이 건너뛴다. 닫힘 없는 괄호 홍수의 O(n²)을 선형화한다.
+	objClose, arrClose := suffixCloseCounts(b)
 	for i := range b {
-		if b[i] != jsonObjectOpen && b[i] != jsonArrayOpen {
+		switch b[i] {
+		case jsonObjectOpen:
+			if objClose[i] == 0 {
+				continue
+			}
+		case jsonArrayOpen:
+			if arrClose[i] == 0 {
+				continue
+			}
+		default:
 			continue
 		}
 		end := findMatchingEnd(b, i)
@@ -71,6 +104,23 @@ func extractFirstJSON(text string) ([]byte, error) {
 		}
 	}
 	return nil, ErrNoJSONFound
+}
+
+func suffixCloseCounts(b []byte) (obj, arr []int) {
+	n := len(b)
+	obj = make([]int, n+1)
+	arr = make([]int, n+1)
+	for i := n - 1; i >= 0; i-- {
+		obj[i] = obj[i+1]
+		arr[i] = arr[i+1]
+		switch b[i] {
+		case jsonObjectClose:
+			obj[i]++
+		case jsonArrayClose:
+			arr[i]++
+		}
+	}
+	return obj, arr
 }
 
 // findMatchingEnd: 문자열/이스케이프를 인식하여 매칭되는 닫는 괄호 위치를 반환합니다.
