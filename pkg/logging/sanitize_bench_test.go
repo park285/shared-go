@@ -65,3 +65,49 @@ func BenchmarkSanitizeHandlerSensitive(b *testing.B) {
 		_ = h.Handle(ctx, newSensitiveRecord())
 	}
 }
+
+func newGroupNoSecretRecord() slog.Record {
+	r := slog.NewRecord(testTime(), slog.LevelInfo, "plain message no secrets here", 0)
+	r.AddAttrs(
+		slog.String("username", "alice"),
+		slog.Group("request",
+			slog.String("method", "GET"),
+			slog.String("path", "/api/users"),
+			slog.Int("status", 200),
+		),
+		slog.Int("user_id", 42),
+	)
+	return r
+}
+
+func newGroupWithSecretRecord() slog.Record {
+	r := slog.NewRecord(testTime(), slog.LevelInfo, "plain message no secrets here", 0)
+	r.AddAttrs(
+		slog.String("username", "alice"),
+		slog.Group("request",
+			slog.String("method", "GET"),
+			slog.String("path", "/api/users"),
+			slog.String("authorization", "Bearer abc123.def456.ghi"),
+		),
+		slog.Int("user_id", 42),
+	)
+	return r
+}
+
+func BenchmarkSanitizeHandlerGroupNoSecret(b *testing.B) {
+	h := NewSanitizeHandler(discardHandler{})
+	ctx := context.Background()
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = h.Handle(ctx, newGroupNoSecretRecord())
+	}
+}
+
+func BenchmarkSanitizeHandlerGroupWithSecret(b *testing.B) {
+	h := NewSanitizeHandler(discardHandler{})
+	ctx := context.Background()
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = h.Handle(ctx, newGroupWithSecretRecord())
+	}
+}
