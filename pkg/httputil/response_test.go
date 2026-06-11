@@ -137,7 +137,8 @@ func TestDecodeJSON(t *testing.T) {
 }
 
 type errorReadCloser struct {
-	err error
+	err    error
+	closed bool
 }
 
 func (e *errorReadCloser) Read(_ []byte) (int, error) {
@@ -145,7 +146,25 @@ func (e *errorReadCloser) Read(_ []byte) (int, error) {
 }
 
 func (e *errorReadCloser) Close() error {
+	e.closed = true
 	return nil
+}
+
+func TestCheckStatus_ClosesBodyOnReadFailure(t *testing.T) {
+	t.Parallel()
+
+	rc := &errorReadCloser{err: fmt.Errorf("read fail")}
+	resp := &http.Response{
+		StatusCode: http.StatusInternalServerError,
+		Body:       rc,
+	}
+
+	if err := CheckStatus(resp); err == nil {
+		t.Fatal("CheckStatus() expected error")
+	}
+	if !rc.closed {
+		t.Fatal("CheckStatus() did not close body on read failure")
+	}
 }
 
 type trackCloseReadCloser struct {
@@ -210,6 +229,66 @@ func TestDecodeJSON_MalformedJSON(t *testing.T) {
 	}
 	if !rc.closed {
 		t.Fatal("DecodeJSON() expected body close even on error")
+	}
+}
+
+type drainTrackReadCloser struct {
+	*strings.Reader
+	closed    bool
+	readBytes int
+}
+
+func (d *drainTrackReadCloser) Read(p []byte) (int, error) {
+	n, err := d.Reader.Read(p)
+	d.readBytes += n
+	return n, err
+}
+
+func (d *drainTrackReadCloser) Close() error {
+	d.closed = true
+	return nil
+}
+
+func TestCheckStatus_DrainsAndClosesBodyOnError(t *testing.T) {
+	t.Parallel()
+
+	bodyLen := 4096 + 5000
+	rc := &drainTrackReadCloser{Reader: strings.NewReader(strings.Repeat("y", bodyLen))}
+	resp := &http.Response{
+		StatusCode: http.StatusBadGateway,
+		Body:       rc,
+	}
+
+	if err := CheckStatus(resp); err == nil {
+		t.Fatal("CheckStatus() expected error")
+	}
+	if !rc.closed {
+		t.Fatal("CheckStatus() did not close body on error")
+	}
+	if rc.readBytes < bodyLen {
+		t.Fatalf("CheckStatus() drained %d bytes, want full body %d", rc.readBytes, bodyLen)
+	}
+}
+
+func TestCheckStatus_DrainCapAndClose(t *testing.T) {
+	t.Parallel()
+
+	const drainCap = 256 * 1024
+	bodyLen := 4096 + drainCap + 100000
+	rc := &drainTrackReadCloser{Reader: strings.NewReader(strings.Repeat("z", bodyLen))}
+	resp := &http.Response{
+		StatusCode: http.StatusServiceUnavailable,
+		Body:       rc,
+	}
+
+	if err := CheckStatus(resp); err == nil {
+		t.Fatal("CheckStatus() expected error")
+	}
+	if !rc.closed {
+		t.Fatal("CheckStatus() did not close body when over drain cap")
+	}
+	if rc.readBytes > 4096+drainCap {
+		t.Fatalf("CheckStatus() drained %d bytes, want <= %d (bounded drain)", rc.readBytes, 4096+drainCap)
 	}
 }
 
