@@ -15,8 +15,10 @@ type archivedLogFile struct {
 	timestamp time.Time
 }
 
+var readDirFn = os.ReadDir
+
 func matchingCompressedBackupNames(dir, baseName string) ([]string, error) {
-	entries, err := os.ReadDir(dir)
+	entries, err := readDirFn(dir)
 	if err != nil {
 		return nil, fmt.Errorf("matching compressed backup names: read dir: %w", err)
 	}
@@ -99,7 +101,7 @@ func removeArchivedCompressedBackupPaths(removeByPath map[string]struct{}) error
 }
 
 func archivedCompressedBackups(archiveDir, baseName string) ([]archivedLogFile, error) {
-	entries, err := os.ReadDir(archiveDir)
+	entries, err := readDirFn(archiveDir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
