@@ -20,7 +20,9 @@
 //   - JSONClient, NewJSONClient: 내부 서비스 JSON API 호출용 client wrapper입니다.
 //   - (*JSONClient).NewRequest, (*JSONClient).NewJSONRequest: API key와 JSON header를 적용한 request를 생성합니다.
 //   - (*JSONClient).Do, (*JSONClient).CheckStatus, (*JSONClient).DecodeJSON, (*JSONClient).DiscardBody: 요청 실행과 response 처리를 위임합니다.
-//   - CheckStatus: non-2xx response를 APIError로 변환합니다.
+//   - CheckStatus: non-2xx response를 APIError로 변환하며, 이때 response body를
+//     상한까지 drain하고 닫아 keep-alive 재사용을 보장합니다. 2xx에서는 body를
+//     건드리지 않으므로 success 경로의 body read 책임은 caller에게 있습니다.
 //   - DecodeJSON: response body를 decode하고 닫습니다.
 //   - APIError, IsStatus: API error unwrap과 분기 helper입니다.
 //
@@ -31,6 +33,8 @@
 //	if err != nil {
 //	    return err
 //	}
+//	// non-2xx 시 CheckStatus가 body를 drain+close하므로 아래 defer는 no-op이 됩니다.
+//	// 2xx success 경로에서는 caller가 body를 읽고 닫습니다.
 //	defer resp.Body.Close()
 //	if err := httputil.CheckStatus(resp); err != nil {
 //	    return err
@@ -48,6 +52,7 @@
 //	if err != nil {
 //	    return err
 //	}
+//	// non-2xx 시 CheckStatus가 body를 drain+close하므로 아래 defer는 no-op이 됩니다.
 //	defer resp.Body.Close()
 //	if err := api.CheckStatus(resp); err != nil {
 //	    return err

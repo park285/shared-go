@@ -137,7 +137,8 @@ func TestDecodeJSON(t *testing.T) {
 }
 
 type errorReadCloser struct {
-	err error
+	err    error
+	closed bool
 }
 
 func (e *errorReadCloser) Read(_ []byte) (int, error) {
@@ -145,7 +146,25 @@ func (e *errorReadCloser) Read(_ []byte) (int, error) {
 }
 
 func (e *errorReadCloser) Close() error {
+	e.closed = true
 	return nil
+}
+
+func TestCheckStatus_ClosesBodyOnReadFailure(t *testing.T) {
+	t.Parallel()
+
+	rc := &errorReadCloser{err: fmt.Errorf("read fail")}
+	resp := &http.Response{
+		StatusCode: http.StatusInternalServerError,
+		Body:       rc,
+	}
+
+	if err := CheckStatus(resp); err == nil {
+		t.Fatal("CheckStatus() expected error")
+	}
+	if !rc.closed {
+		t.Fatal("CheckStatus() did not close body on read failure")
+	}
 }
 
 type trackCloseReadCloser struct {
