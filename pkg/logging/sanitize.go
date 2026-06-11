@@ -45,12 +45,30 @@ func mightContainQuerySecret(s string) bool {
 	return false
 }
 
+// containsFold는 ASCII-only 입력에서만 고정 폭 윈도우로 substr를 fold-검색한다.
+// (?i) 정규식·EqualFold는 ſ(U+017F)↔s, K(U+212A)↔k처럼 토큰과 바이트 폭이 다른
+// 멀티바이트 룬을 fold-equivalent로 보므로, non-ASCII 바이트가 있으면 윈도우가
+// 정렬되지 않아 superset 불변식이 깨진다. 이 경우 true를 반환해 정규식이 직접
+// 판정하도록 위임한다(게이트는 정규식 매치의 superset이어야 한다).
 func containsFold(s, substr string) bool {
 	if len(substr) > len(s) {
-		return false
+		// 짧은 입력이라도 non-ASCII가 있으면 게이트를 통과시켜 정규식에 위임한다.
+		return hasNonASCII(s)
 	}
-	for i := 0; i+len(substr) <= len(s); i++ {
-		if strings.EqualFold(s[i:i+len(substr)], substr) {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 {
+			return true
+		}
+		if i+len(substr) <= len(s) && strings.EqualFold(s[i:i+len(substr)], substr) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasNonASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 {
 			return true
 		}
 	}

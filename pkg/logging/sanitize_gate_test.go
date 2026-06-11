@@ -50,6 +50,47 @@ func TestRedactSecrets_NoMatchUnchanged(t *testing.T) {
 	}
 }
 
+// I2 회귀: Unicode case-fold trap. (?i) 정규식·EqualFold는 ſ(U+017F)↔s,
+// K(U+212A, Kelvin)↔k를 fold-equivalent로 보지만, 멀티바이트 룬은 토큰과
+// 바이트 폭이 달라 고정 폭 게이트가 skip할 수 있다. 게이트 출력은 정규식 직접
+// 호출 결과와 byte-identical이어야 한다 (superset 불변식).
+func TestRedactSecrets_UnicodeFoldTrap(t *testing.T) {
+	cases := []string{
+		"?paſsword=LEAKEDPW",        // long-s ſ ↔ s in "password"
+		"?toKen=LEAKEDTOK",          // Kelvin K ↔ k in "token"
+		"?Key=LEAKEDKEY",            // Kelvin K ↔ k in "key"
+		"?ſecret=LEAKEDSEC",         // long-s ſ ↔ s in "secret"
+		"?api_Key=LEAKEDAK",         // Kelvin K ↔ k in "api_key"
+		";paſswd=LEAKEDPW",          // long-s in "passwd", semicolon sep
+		"prefixſ ?password=PLAINPW", // non-ASCII present but ASCII token also matches
+	}
+	for _, in := range cases {
+		want := bearerTokenRegex.ReplaceAllString(in, "${1}***REDACTED***")
+		want = querySecretRegex.ReplaceAllString(want, "${1}***REDACTED***")
+		if got := redactSecrets(in); got != want {
+			t.Errorf("redactSecrets(%q) = %q, want %q (gate must be superset of regex)", in, got, want)
+		}
+	}
+}
+
+// I2: 게이트는 정규식 직접 호출의 superset이어야 한다 — 임의 입력에서 출력 byte-identical.
+func FuzzRedactSecrets_GateIsSuperset(f *testing.F) {
+	seeds := []string{
+		"", "?token=v", "?paſsword=v", "?toKen=v", "Bearer x.y",
+		"plain text", "ſſſ", "?api_Key=ſ", "key=ſ", "?secret=ſecret",
+	}
+	for _, s := range seeds {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, in string) {
+		want := bearerTokenRegex.ReplaceAllString(in, "${1}***REDACTED***")
+		want = querySecretRegex.ReplaceAllString(want, "${1}***REDACTED***")
+		if got := redactSecrets(in); got != want {
+			t.Fatalf("gate diverged from regex: redactSecrets(%q) = %q, want %q", in, got, want)
+		}
+	})
+}
+
 // I2: 게이트 통과 후 정규식 결과가 직접 호출과 동일해야 한다.
 func TestRedactSecrets_MatchesDirectRegex(t *testing.T) {
 	in := "url=https://x.test?token=secret123&Bearer foo.bar"
