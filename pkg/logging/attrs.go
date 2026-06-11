@@ -1,7 +1,6 @@
 package logging
 
 import (
-	"errors"
 	"log/slog"
 	"reflect"
 	"time"
@@ -49,17 +48,64 @@ func ErrorAttrs(err error) []slog.Attr {
 		slog.String("error_message", err.Error()),
 	}
 
-	var coded interface{ Code() string }
-	if errors.As(err, &coded) && coded.Code() != "" {
+	coded, retryable := probeErrorInterfaces(err)
+	if coded != nil && coded.Code() != "" {
 		attrs = append(attrs, slog.String("error_code", coded.Code()))
 	}
-
-	var retryable interface{ Retryable() bool }
-	if errors.As(err, &retryable) {
+	if retryable != nil {
 		attrs = append(attrs, slog.Bool("retryable", retryable.Retryable()))
 	}
 
 	return attrs
+}
+
+type codedError interface{ Code() string }
+
+type retryableError interface{ Retryable() bool }
+
+// probeErrorInterfaces는 errors.As 두 번(각각 full chain walk) 대신 unwrap chain을
+// 한 번만 순회하며 두 인터페이스를 동시에 탐지한다. Unwrap() error와 Unwrap() []error
+// 양쪽을 처리해 errors.As와 동일한 분기 의미를 유지한다.
+func probeErrorInterfaces(err error) (codedError, retryableError) {
+	var coded codedError
+	var retryable retryableError
+
+	var walk func(error)
+	walk = func(e error) {
+		for e != nil {
+			if coded == nil {
+				if c, ok := e.(codedError); ok {
+					coded = c
+				}
+			}
+			if retryable == nil {
+				if r, ok := e.(retryableError); ok {
+					retryable = r
+				}
+			}
+			if coded != nil && retryable != nil {
+				return
+			}
+
+			switch x := e.(type) {
+			case interface{ Unwrap() error }:
+				e = x.Unwrap()
+			case interface{ Unwrap() []error }:
+				for _, sub := range x.Unwrap() {
+					walk(sub)
+					if coded != nil && retryable != nil {
+						return
+					}
+				}
+				return
+			default:
+				return
+			}
+		}
+	}
+	walk(err)
+
+	return coded, retryable
 }
 
 func errorType(err error) string {

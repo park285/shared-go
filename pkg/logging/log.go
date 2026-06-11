@@ -33,11 +33,12 @@ func Log(ctx context.Context, logger *slog.Logger, level slog.Level, event, mess
 		return
 	}
 
-	merged := make([]slog.Attr, 0, 1+len(ContextAttrs(ctx))+len(attrs))
+	contextAttrs := ContextAttrs(ctx)
+	merged := make([]slog.Attr, 0, 1+len(contextAttrs)+len(attrs))
 	if strings.TrimSpace(event) != "" {
 		merged = append(merged, Event(event))
 	}
-	merged = append(merged, ContextAttrs(ctx)...)
+	merged = append(merged, contextAttrs...)
 	merged = append(merged, attrs...)
 
 	logger.LogAttrs(ctx, level, logMessage(event, message), merged...)
