@@ -52,7 +52,7 @@ func Run[Config any, Runtime runtime](opts Options[Config, Runtime]) int {
 		logger.Info(message, startupFields(opts, config)...)
 	}
 
-	buildCtx, buildCancel := context.WithTimeout(context.Background(), opts.BuildTimeout)
+	buildCtx, buildCancel := buildContext(opts.BuildTimeout)
 	defer buildCancel()
 
 	rt, err := opts.BuildRuntime(buildCtx, config, logger)
@@ -64,6 +64,13 @@ func Run[Config any, Runtime runtime](opts Options[Config, Runtime]) int {
 
 	rt.Run()
 	return 0
+}
+
+func buildContext(timeout time.Duration) (context.Context, context.CancelFunc) {
+	if timeout > 0 {
+		return context.WithTimeout(context.Background(), timeout)
+	}
+	return context.Background(), func() {}
 }
 
 func initializeRuntime(initialize func(version string), version string) {
