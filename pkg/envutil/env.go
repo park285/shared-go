@@ -12,7 +12,22 @@ import (
 const (
 	boolTrue  = "true"
 	boolFalse = "false"
+
+	logKeyValue = "value"
 )
+
+func warnParse(key, value, kind string, err error, def any) {
+	attrs := []any{
+		"key", key,
+		logKeyValue, value,
+		"kind", kind,
+		"returning_default", def,
+	}
+	if err != nil {
+		attrs = append(attrs, "error", err.Error())
+	}
+	slog.Warn("invalid value for environment variable", attrs...)
+}
 
 func String(key, def string) string {
 	value := strings.TrimSpace(os.Getenv(key))
@@ -37,6 +52,7 @@ func Int(key string, def int) int {
 	}
 	parsed, err := strconv.Atoi(value)
 	if err != nil {
+		warnParse(key, value, "int", err, def)
 		return def
 	}
 	return parsed
@@ -49,6 +65,7 @@ func IntRaw(key string, def int) int {
 	}
 	parsed, err := strconv.Atoi(value)
 	if err != nil {
+		warnParse(key, value, "int", err, def)
 		return def
 	}
 	return parsed
@@ -69,6 +86,7 @@ func Int64(key string, def int64) int64 {
 	}
 	parsed, err := strconv.ParseInt(value, 10, 64)
 	if err != nil {
+		warnParse(key, value, "int64", err, def)
 		return def
 	}
 	return parsed
@@ -85,6 +103,7 @@ func Bool(key string, def bool) bool {
 	case "0", boolFalse, "no", "n", "off":
 		return false
 	default:
+		warnParse(key, value, "bool", nil, def)
 		return def
 	}
 }
@@ -112,6 +131,7 @@ func Float(key string, def float64) float64 {
 	}
 	parsed, err := strconv.ParseFloat(value, 64)
 	if err != nil {
+		warnParse(key, value, "float", err, def)
 		return def
 	}
 	return parsed
@@ -124,6 +144,7 @@ func Duration(key string, def time.Duration) time.Duration {
 	}
 	parsed, err := time.ParseDuration(value)
 	if err != nil {
+		warnParse(key, value, "duration", err, def)
 		return def
 	}
 	return parsed
