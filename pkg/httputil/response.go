@@ -70,7 +70,7 @@ func CheckStatus(resp *http.Response) error {
 			Err:        fmt.Errorf("read body: %w", err),
 		}
 	}
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxDrainLen))
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxDrainLen)) //nolint:errcheck // best-effort drain, 실패해도 아래 Close로 정리
 	_ = resp.Body.Close()
 	return newAPIError(resp.StatusCode, strings.TrimSpace(string(body)))
 }

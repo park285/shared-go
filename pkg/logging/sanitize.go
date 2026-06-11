@@ -21,11 +21,16 @@ var (
 	querySecretRegex = regexp.MustCompile(`(?i)([?&;](?:key|api_key|apikey|token|password|pwd|passwd|client_secret|secret|private_key|secret_key)=)[^&\s]+`)
 )
 
+const (
+	tokenAPIKey        = "api_key"
+	tokenAPIKeyCompact = "apikey"
+)
+
 // querySecretTokens는 querySecretRegex가 매치할 수 있는 키 이름 집합으로,
 // 정규식 실행 전 싼 substring pre-check 게이트에 쓰인다. 정규식이 매치하는
 // 입력은 반드시 이 토큰 중 하나를 case-insensitive로 포함하므로 게이트는 안전하다.
 var querySecretTokens = []string{
-	"key", "api_key", "apikey", "token", "password", "pwd", "passwd",
+	"key", tokenAPIKey, tokenAPIKeyCompact, "token", "password", "pwd", "passwd",
 	"client_secret", "secret", "private_key", "secret_key",
 }
 
@@ -141,26 +146,26 @@ func isSensitiveKey(key string) bool {
 	}
 
 	exact := map[string]bool{
-		"token":          true,
-		"bot_token":      true,
-		"access_token":   true,
-		"refresh_token":  true,
-		"password":       true,
-		"pwd":            true,
-		"passwd":         true,
-		"secret":         true,
-		"client_secret":  true,
-		"api_key":        true,
-		"apikey":         true,
-		"private_key":    true,
-		"secret_key":     true,
-		"authorization":  true,
-		"auth_header":    true,
-		"cookie":         true,
-		"webhook_url":    true,
-		"database_url":   true,
-		"postgres_dsn":   true,
-		"connection_url": true,
+		"token":            true,
+		"bot_token":        true,
+		"access_token":     true,
+		"refresh_token":    true,
+		"password":         true,
+		"pwd":              true,
+		"passwd":           true,
+		"secret":           true,
+		"client_secret":    true,
+		tokenAPIKey:        true,
+		tokenAPIKeyCompact: true,
+		"private_key":      true,
+		"secret_key":       true,
+		"authorization":    true,
+		"auth_header":      true,
+		"cookie":           true,
+		"webhook_url":      true,
+		"database_url":     true,
+		"postgres_dsn":     true,
+		"connection_url":   true,
 	}
 	if exact[normalized] {
 		return true

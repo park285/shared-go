@@ -94,7 +94,7 @@ func (w *asyncDropWriter) Close() error {
 	select {
 	case <-w.stopped:
 		if dropped := w.dropped.Load(); dropped > 0 {
-			fmt.Fprintf(w.target, "[logging] async stdout writer dropped %d lines\n", dropped)
+			fmt.Fprintf(w.target, "[logging] async stdout writer dropped %d lines\n", dropped) //nolint:errcheck // best-effort 진단 라인, 실패 무시
 		}
 	case <-time.After(asyncDropWriterCloseTimeout):
 	}
