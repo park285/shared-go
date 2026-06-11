@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -175,6 +177,7 @@ func TestAwareWriterWrite_TriggersArchiverOnSuccessAndFailure(t *testing.T) {
 			}
 
 			_, _ = writer.Write([]byte("entry\n"))
+			writer.Archiver.wait()
 
 			assertPathMissing(t, backupPath)
 			assertPathExists(t, filepath.Join(logDir, DirName, filepath.Base(backupPath)))
@@ -194,16 +197,116 @@ func TestCompressedLogArchiverTrigger_RunsOnlyOnceWithinScanInterval(t *testing.
 	firstBackup := writeCompressedBackup(t, logDir, "service.log", time.Now().UTC().Add(-1*time.Minute))
 	archiver := NewCompressedLogArchiver(logPath, 5, 7, true)
 	archiver.Trigger()
+	archiver.wait()
 	assertPathMissing(t, firstBackup)
 
 	secondBackup := writeCompressedBackup(t, logDir, "service.log", time.Now().UTC())
 	archiver.Trigger()
+	archiver.wait()
 
 	assertPathExists(t, secondBackup)
 	archiveEntries := archiveEntryNames(t, filepath.Join(logDir, DirName))
 	if len(archiveEntries) != 1 {
 		t.Fatalf("archive entry count = %d, want 1; entries=%v", len(archiveEntries), archiveEntries)
 	}
+}
+
+func TestCompressedLogArchiverTrigger_ReturnsBeforeScanCompletes(t *testing.T) {
+	logDir := t.TempDir()
+	logPath := filepath.Join(logDir, "service.log")
+	if err := os.WriteFile(logPath, []byte("active\n"), LogFilePerm); err != nil {
+		t.Fatalf("write log file failed: %v", err)
+	}
+	writeCompressedBackup(t, logDir, "service.log", time.Now().UTC())
+
+	release := make(chan struct{})
+	entered := make(chan struct{})
+	var enteredOnce sync.Once
+	restore := setReadDirFn(func(name string) ([]os.DirEntry, error) {
+		enteredOnce.Do(func() { close(entered) })
+		<-release
+		return os.ReadDir(name)
+	})
+	defer restore()
+
+	archiver := NewCompressedLogArchiver(logPath, 5, 7, true)
+	archiver.Trigger()
+
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		close(release)
+		t.Fatal("MoveAndPrune never started; Trigger may be running synchronously")
+	}
+
+	close(release)
+	archiver.wait()
+}
+
+func TestCompressedLogArchiverTrigger_ConcurrentRunsAtMostOnce(t *testing.T) {
+	logDir := t.TempDir()
+	logPath := filepath.Join(logDir, "service.log")
+	if err := os.WriteFile(logPath, []byte("active\n"), LogFilePerm); err != nil {
+		t.Fatalf("write log file failed: %v", err)
+	}
+	writeCompressedBackup(t, logDir, "service.log", time.Now().UTC())
+
+	release := make(chan struct{})
+	var concurrent, peak atomic.Int32
+	restore := setReadDirFn(func(name string) ([]os.DirEntry, error) {
+		now := concurrent.Add(1)
+		for {
+			old := peak.Load()
+			if now <= old || peak.CompareAndSwap(old, now) {
+				break
+			}
+		}
+		<-release
+		concurrent.Add(-1)
+		return os.ReadDir(name)
+	})
+	defer restore()
+
+	archiver := NewCompressedLogArchiver(logPath, 5, 7, true)
+
+	const triggers = 16
+	var wg sync.WaitGroup
+	wg.Add(triggers)
+	for i := 0; i < triggers; i++ {
+		go func() {
+			defer wg.Done()
+			archiver.Trigger()
+		}()
+	}
+	wg.Wait()
+	close(release)
+	archiver.wait()
+
+	if got := peak.Load(); got > 1 {
+		t.Fatalf("peak concurrent MoveAndPrune = %d, want at most 1", got)
+	}
+}
+
+func TestMoveAndPrune_SetsArchivedBackupPerm(t *testing.T) {
+	t.Parallel()
+
+	logDir := t.TempDir()
+	logPath := filepath.Join(logDir, "service.log")
+	if err := os.WriteFile(logPath, []byte("active\n"), LogFilePerm); err != nil {
+		t.Fatalf("write log file failed: %v", err)
+	}
+
+	name := fmt.Sprintf("service-%s.log.gz", time.Now().UTC().Format(BackupTimeFmt))
+	backupPath := filepath.Join(logDir, name)
+	if err := os.WriteFile(backupPath, []byte(name), 0o600); err != nil {
+		t.Fatalf("write compressed backup failed: %v", err)
+	}
+
+	if err := MoveAndPrune(logPath, 5, 7); err != nil {
+		t.Fatalf("MoveAndPrune() error = %v", err)
+	}
+
+	assertPathPerm(t, filepath.Join(logDir, DirName, name), LogFilePerm)
 }
 
 type failingWriter struct{}
