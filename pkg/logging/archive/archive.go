@@ -43,6 +43,8 @@ type CompressedLogArchiver struct {
 	mu      sync.Mutex
 	running bool
 	lastRun time.Time
+
+	inflight sync.WaitGroup
 }
 
 func NewCompressedLogArchiver(logPath string, maxBackups, maxAgeDays int, enabled bool) *CompressedLogArchiver {
@@ -69,7 +71,14 @@ func (a *CompressedLogArchiver) Trigger() {
 	}
 	a.running = true
 	a.lastRun = time.Now()
+	a.inflight.Add(1)
 	a.mu.Unlock()
+
+	go a.run()
+}
+
+func (a *CompressedLogArchiver) run() {
+	defer a.inflight.Done()
 
 	err := MoveAndPrune(a.logPath, a.maxBackups, a.maxAgeDays)
 
@@ -80,6 +89,13 @@ func (a *CompressedLogArchiver) Trigger() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "log archive warning: path=%s err=%v\n", a.logPath, err)
 	}
+}
+
+func (a *CompressedLogArchiver) wait() {
+	if a == nil {
+		return
+	}
+	a.inflight.Wait()
 }
 
 func MoveAndPrune(logPath string, maxBackups, maxAgeDays int) error {
@@ -97,8 +113,14 @@ func MoveAndPrune(logPath string, maxBackups, maxAgeDays int) error {
 	for _, name := range names {
 		source := filepath.Join(logDir, name)
 		target := filepath.Join(archiveDir, name)
-		if err := os.Rename(source, target); err != nil && !os.IsNotExist(err) {
+		if err := os.Rename(source, target); err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
 			return fmt.Errorf("move compressed backup %s: %w", name, err)
+		}
+		if err := os.Chmod(target, LogFilePerm); err != nil {
+			fmt.Fprintf(os.Stderr, "log archive warning: chmod %s err=%v\n", target, err)
 		}
 	}
 
