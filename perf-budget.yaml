@@ -1,0 +1,35 @@
+schemaVersion: 1
+repo: shared-go
+defaults:
+  critical:
+    max_ns_regression_percent: 10
+    max_bytes_regression_percent: 10
+    allow_alloc_increase: false
+  hotpath:
+    max_ns_regression_percent: 15
+    max_bytes_regression_percent: 15
+    allow_alloc_increase: false
+  build_path:
+    max_ns_regression_percent: 20
+    max_bytes_regression_percent: 20
+    allow_alloc_increase: warn
+  non_critical:
+    max_ns_regression_percent: 25
+    max_bytes_regression_percent: 25
+    allow_alloc_increase: warn
+benchmarks:
+  BenchmarkNewProfiledClient: { package: ./pkg/httputil, class: build_path, gate: pr }
+  BenchmarkIsSensitiveKey: { package: ./pkg/logging, class: hotpath, gate: pr }
+  BenchmarkSanitizeHandlerClean: { package: ./pkg/logging, class: hotpath, gate: pr }
+  BenchmarkSanitizeHandlerSensitive: { package: ./pkg/logging, class: hotpath, gate: pr }
+  BenchmarkSanitizeHandlerGroupNoSecret: { package: ./pkg/logging, class: hotpath, gate: nightly }
+  BenchmarkSanitizeHandlerGroupWithSecret: { package: ./pkg/logging, class: hotpath, gate: nightly }
+  BenchmarkQueuedPoolSubmitSingle: { package: ./pkg/workerpool, class: hotpath, gate: pr }
+  BenchmarkQueuedPoolSubmitParallel: { package: ./pkg/workerpool, class: hotpath, gate: pr }
+  BenchmarkQueuedPoolTrySubmitFull: { package: ./pkg/workerpool, class: hotpath, gate: nightly }
+  BenchmarkBackoffHalfJitter: { package: ./pkg/backoff, class: hotpath, gate: pr }
+settings:
+  mode: warn
+  benchstat_alpha: 0.05
+  min_count: 6
+  noise_floor_ns: 50
