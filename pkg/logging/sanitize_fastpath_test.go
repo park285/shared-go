@@ -76,6 +76,29 @@ func TestSanitizeHandler_RebuildMasksSensitive(t *testing.T) {
 	}
 }
 
+// uncomparable any 값(slice 등)은 Value.Equal 경유 비교 시 panic하므로,
+// fast-path 판정이 그 경로를 타지 않고 record를 그대로 통과시켜야 한다.
+func TestSanitizeHandler_UncomparableAnyAttrDoesNotPanic(t *testing.T) {
+	r := slog.NewRecord(testTime(), slog.LevelInfo, "Resolved target minutes", 0)
+	r.AddAttrs(
+		slog.String("source", "persisted"),
+		slog.Any("resolved_target_minutes", []int{5, 15, 30}),
+	)
+	out := handleVia(t, r)
+
+	got := map[string]string{}
+	out.Attrs(func(a slog.Attr) bool {
+		got[a.Key] = a.Value.String()
+		return true
+	})
+	if got["resolved_target_minutes"] != "[5 15 30]" {
+		t.Errorf("resolved_target_minutes = %q, want [5 15 30]", got["resolved_target_minutes"])
+	}
+	if got["source"] != "persisted" {
+		t.Errorf("source = %q, want persisted", got["source"])
+	}
+}
+
 // LogValuer는 Resolve로 값이 바뀌므로 fast-path를 타선 안 되고, 해소된 값이 마스킹 판정을 받아야 한다.
 func TestSanitizeHandler_ResolvesLogValuer(t *testing.T) {
 	r := slog.NewRecord(testTime(), slog.LevelInfo, "msg", 0)

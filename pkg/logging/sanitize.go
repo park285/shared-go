@@ -162,12 +162,13 @@ func sanitizeAttr(attr slog.Attr) slog.Attr {
 
 // sanitizeAttrChanged는 sanitizeAttr와 동일한 정규화를 수행하되, 결과가 원본 attr과
 // byte-identical하게 같은지(changed=false) 여부를 함께 반환한다. Handle의 fast-path는
-// 이 신호로 변경이 전혀 없을 때 record 재구축을 건너뛴다. Resolve로 값이 달라지거나
-// redaction이 일어나면 changed=true가 되어 재구축 경로가 그 결과를 반영한다.
+// 이 신호로 변경이 전혀 없을 때 record 재구축을 건너뛴다.
+// Resolve 변경 판정에 Value.Equal을 쓰면 안 된다: KindAny끼리의 Equal은 내부 any를
+// ==로 비교해 []int 같은 uncomparable 타입에서 panic한다. Resolve가 값을 바꾸는 건
+// LogValuer뿐이므로 Kind 검사로 보수적으로(LogValuer면 항상 changed) 판정한다.
 func sanitizeAttrChanged(attr slog.Attr) (slog.Attr, bool) {
-	resolved := attr.Value.Resolve()
-	changed := !resolved.Equal(attr.Value)
-	attr.Value = resolved
+	changed := attr.Value.Kind() == slog.KindLogValuer
+	attr.Value = attr.Value.Resolve()
 
 	if attr.Value.Kind() == slog.KindGroup {
 		groupAttrs := attr.Value.Group()
