@@ -1,0 +1,159 @@
+version: 2
+policy:
+  review_threshold: 0.55
+  block_threshold: 1.0
+  min_block_families: 1
+  segment_multipliers:
+    plain: 1.0
+    quote: 1.0
+    code: 1.0
+    config: 1.0
+  view_multipliers:
+    raw: 1.0
+    norm: 1.0
+    joined: 1.0
+rules:
+  - id: direct_prompt_exfil_ko
+    family: prompt_exfil
+    type: regex
+    action: block
+    view: joined
+    segments: [plain, quote, code, config]
+    pattern: '(?:시스템|개발자|숨겨진|비밀|내부|hidden|internal|developer|system)[\s\S]{0,24}(?:프롬프트|지시(?:사항)?|규칙|메시지|명령|정책|설정|prompt|instruction|message)[\s\S]{0,24}(?:보여|출력|알려|공개|나열|전문|원문|그대로|show|print|reveal|dump|verbatim)'
+    weight: 1.0
+
+  - id: instruction_override_ko
+    family: override
+    type: regex
+    action: block
+    view: joined
+    segments: [plain, quote, code, config]
+    pattern: '(?:이전|앞선|모든|전체|시스템|개발자|previous|prior|system|developer)[\s\S]{0,24}(?:지시(?:사항)?|명령|규칙|프롬프트|prompt|instruction|policy)[\s\S]{0,24}(?:무시|잊어|삭제|초기화|재설정|우회|따르지\s*마|ignore|bypass|override|disregard|forget|reset)'
+    weight: 1.0
+
+  - id: live_secret_exfil_ko
+    family: secret_exfil
+    type: regex
+    action: block
+    view: joined
+    segments: [plain, quote, code, config]
+    pattern: '(?:apikey|secretkey|accesstoken|refreshtoken|credential(?:s)?|password|passwd|비밀키|인증키|액세스토큰|리프레시토큰|자격증명|비밀번호|환경변수|\.env)[\s\S]{0,24}(?:보여|출력|알려|공개|덤프|복사|내놔|print|show|reveal|dump|cat|echo)'
+    weight: 1.0
+
+  - id: tool_secret_exfil_ko
+    family: tool_exfil
+    type: regex
+    action: score
+    view: norm
+    segments: [plain, quote, code, config]
+    pattern: '(?:실행|호출|run|execute|call)[\s\S]{0,12}(?:bash|shell|terminal|cmd|powershell|python|curl|wget|cat|echo|printenv|env)[\s\S]{0,24}(?:api[\s_-]*key|secret|token|credential(?:s)?|password|passwd|비밀\s*키|토큰|자격증명|비밀번호|환경\s*변수|\.env)'
+    weight: 0.65
+
+  - id: policy_bypass_ko
+    family: policy_bypass
+    type: regex
+    action: score
+    view: joined
+    segments: [plain, quote, code, config]
+    pattern: '(?:안전|보안|콘텐츠|윤리|정책|가이드|필터|규정|guardrail|policy|safety)[\s\S]{0,24}(?:무시|우회|위반|어겨|상관없이|관계없이|bypass|ignore|disregard)[\s\S]{0,24}(?:답해|진행|계속|해줘|answer|continue|comply)'
+    weight: 0.7
+
+  - id: jailbreak_terms_ko
+    family: jailbreak
+    type: phrases
+    action: score
+    view: joined
+    segments: [plain, quote, code, config]
+    phrases:
+      - developermode
+      - 탈옥모드
+      - 무제한모드
+      - 검열해제
+      - 윤리필터끄기
+      - 안전장치제거
+    weight: 0.5
+
+  - id: encoded_transform_exfil_ko
+    family: transform_exfil
+    type: regex
+    action: score
+    view: joined
+    segments: [plain, quote, code, config]
+    pattern: '(?:base64|rot13|hex|인코딩|복호화|디코드|역순|모스부호|아크로스틱|첫글자)[\s\S]{0,24}(?:프롬프트|지시(?:사항)?|secret|token|prompt|instruction|payload)'
+    weight: 0.35
+
+  - id: xml_container_escape_ko
+    family: container_escape
+    type: regex
+    action: block
+    view: raw
+    segments: [plain, quote, code, config]
+    pattern: '</\s*(?:messages|system|system_prompt|developer|assistant|user|metadata)\s*>'
+    weight: 1.0
+
+  - id: memory_poisoning_ko
+    family: memory_poisoning
+    type: regex
+    action: block
+    view: joined
+    segments: [plain, quote, code, config]
+    pattern: '(?:기억|메모리|세션|앞으로|항상|영구히)[\s\S]{0,30}(?:너는|봇은|답변은|규칙은)[\s\S]{0,30}(?:내 지시|사용자 지시|시스템보다|개발자보다|우선)'
+    weight: 1.0
+
+  - id: role_spoofing_ko_en
+    family: role_spoofing
+    type: regex
+    action: score
+    view: joined
+    segments: [plain, quote, code, config]
+    pattern: '(?:^|\n|\s)(?:system|developer|assistant|관리자|시스템|개발자|어시스턴트)\s*[:：]'
+    weight: 0.65
+
+  - id: defensive_context_ko
+    family: benign_context
+    type: phrases
+    action: dampen
+    view: joined
+    segments: [plain, quote, code, config]
+    phrases:
+      - 분석
+      - 리뷰
+      - 검토
+      - 탐지
+      - 차단
+      - 방지
+      - 정규식
+      - regex
+      - 룰팩
+      - rulepack
+      - 필터
+      - 오탐
+      - 미탐
+      - 재현
+      - 평가
+      - 테스트
+      - 문서화
+      - audit
+      - review
+      - analyze
+      - detection
+    weight: 0.35
+
+  - id: benign_roleplay_context_ko
+    family: benign_context
+    type: regex
+    action: dampen
+    view: joined
+    segments: [plain]
+    pattern: '(?:영어|면접|상담|고객응대|학습|연습|게임|시뮬레이션)[\s\S]{0,20}(?:역할극|롤플레이)'
+    weight: 0.45
+
+  - id: yaml_rulepack_context_ko
+    family: benign_context
+    type: regex
+    action: dampen
+    view: raw
+    segments: [config]
+    pattern: |-
+      (?m)^\s*(?:version|threshold|policy|rules|pattern|phrases|weight|type|id)\s*:
+    weight: 0.4
