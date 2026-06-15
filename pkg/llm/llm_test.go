@@ -53,7 +53,8 @@ func validJSONRequest() JSONRequest {
 func TestRunJSONRejectsNilContext(t *testing.T) {
 	generator := &recordingGenerator{}
 
-	_, err := RunJSON(nil, generator, validJSONRequest(), "openai", NoopUsageReporter{})
+	//lint:ignore SA1012 intentionally passing nil to assert rejection
+	_, err := RunJSON(nil, generator, validJSONRequest(), "openai", NoopUsageReporter{}) //nolint:staticcheck // intentionally passing nil to assert rejection
 	if err == nil {
 		t.Fatal("RunJSON(nil context) error = nil, want error")
 	}
