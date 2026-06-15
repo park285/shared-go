@@ -7,15 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"time"
 )
 
 const (
 	CurrentVersion = 1
-
-	EnvProfileFile = "IRIS_BOT_WEBHOOK_WORKER_PROFILE"
 )
 
 const (
@@ -160,25 +157,6 @@ func LegacyIrisBotWebhookWorkerProfile() IrisBotWebhookWorkerProfile {
 	profile := DefaultIrisBotWebhookWorkerProfile()
 	profile.ProfileID = "legacy-hardcoded"
 	return profile
-}
-
-func LoadIrisBotWebhookWorkerProfileFromEnv() (IrisBotWebhookWorkerProfile, error) {
-	path := strings.TrimSpace(os.Getenv(EnvProfileFile))
-	if path == "" {
-		return DefaultIrisBotWebhookWorkerProfile(), nil
-	}
-
-	file, err := os.Open(path) //nolint:gosec // Operator-provided runtime profile path.
-	if err != nil {
-		return IrisBotWebhookWorkerProfile{}, fmt.Errorf("open %s: %w", EnvProfileFile, err)
-	}
-	defer file.Close()
-
-	config, err := DecodeIrisBotWebhookWorkerProfile(file)
-	if err != nil {
-		return IrisBotWebhookWorkerProfile{}, fmt.Errorf("decode %s: %w", EnvProfileFile, err)
-	}
-	return config, nil
 }
 
 func DecodeIrisBotWebhookWorkerProfile(reader io.Reader) (IrisBotWebhookWorkerProfile, error) {
