@@ -86,9 +86,9 @@ func loadRulepacksFS(fsys fs.FS, root string, logger *slog.Logger) ([]compiledPa
 	return packs, nil
 }
 
-func readRulepackFile(baseDir, path string) ([]byte, error) {
+func readRulepackFile(baseDir, rulepackPath string) ([]byte, error) {
 	cleanBase := filepath.Clean(baseDir)
-	cleanPath := filepath.Clean(path)
+	cleanPath := filepath.Clean(rulepackPath)
 
 	rel, err := filepath.Rel(cleanBase, cleanPath)
 	if err != nil {
