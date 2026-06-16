@@ -1,6 +1,8 @@
 package promptguard
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -25,16 +27,18 @@ type Config struct {
 	UseEmbeddedDefaults bool
 	CacheMaxSize        int
 	CacheTTL            time.Duration
+	MaxInputBytes       int
 	OnReview            func(Evaluation)
 }
 
 type Guard struct {
-	cfg      Config
-	logger   *slog.Logger
-	packs    []compiledPack
-	cache    *TTLCache[string, Evaluation]
-	group    singleflight.Group
-	onReview func(Evaluation)
+	cfg           Config
+	logger        *slog.Logger
+	packs         []compiledPack
+	cache         *TTLCache[string, Evaluation]
+	group         singleflight.Group
+	onReview      func(Evaluation)
+	maxInputBytes int
 }
 
 func NewGuard(cfg Config, logger *slog.Logger) (*Guard, error) {
@@ -54,17 +58,22 @@ func NewGuard(cfg Config, logger *slog.Logger) (*Guard, error) {
 		cfg.CacheMaxSize = 10000
 	}
 
+	if cfg.MaxInputBytes <= 0 {
+		cfg.MaxInputBytes = 8 << 20
+	}
+
 	packs, err := loadConfiguredRulepacks(cfg, logger)
 	if err != nil {
 		return nil, fmt.Errorf("load rulepacks: %w", err)
 	}
 
 	return &Guard{
-		cfg:      cfg,
-		logger:   logger,
-		packs:    packs,
-		cache:    NewTTLCache[string, Evaluation](cfg.CacheMaxSize, cfg.CacheTTL),
-		onReview: cfg.OnReview,
+		cfg:           cfg,
+		logger:        logger,
+		packs:         packs,
+		cache:         NewTTLCache[string, Evaluation](cfg.CacheMaxSize, cfg.CacheTTL),
+		onReview:      cfg.OnReview,
+		maxInputBytes: cfg.MaxInputBytes,
 	}, nil
 }
 
@@ -131,15 +140,20 @@ func (g *Guard) evaluate(input, source string) Evaluation {
 		return Evaluation{Score: 0, Hits: nil, Threshold: math.Inf(1)}
 	}
 
-	if cached, ok := g.cache.Get(input); ok {
+	if g.maxInputBytes > 0 && len(input) > g.maxInputBytes {
+		return g.fallbackEvaluation(g.policy(), source, "input_oversize")
+	}
+
+	key := cacheKey(input)
+	if cached, ok := g.cache.Get(key); ok {
 		cached.Source = source
 
 		return cached
 	}
 
-	value, err, _ := g.group.Do(input, func() (any, error) {
+	value, err, _ := g.group.Do(key, func() (any, error) {
 		result := g.evaluateRaw(input)
-		g.cache.Set(input, result)
+		g.cache.Set(key, result)
 
 		return result, nil
 	})
@@ -155,6 +169,12 @@ func (g *Guard) evaluate(input, source string) Evaluation {
 	}
 
 	return g.fallbackEvaluation(g.policy(), source, "evaluation type assertion failed")
+}
+
+func cacheKey(input string) string {
+	sum := sha256.Sum256([]byte(input))
+
+	return hex.EncodeToString(sum[:])
 }
 
 // fallbackEvaluation은 guard 평가가 실패했을 때의 conservative fallback이다.

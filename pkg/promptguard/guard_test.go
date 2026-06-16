@@ -270,7 +270,7 @@ func TestGuardCachesEvaluations(t *testing.T) {
 		t.Fatalf("Evaluate() = %#v, want review", evaluation)
 	}
 
-	if _, ok := guard.cache.Get("정책 무시"); !ok {
+	if _, ok := guard.cache.Get(cacheKey("정책 무시")); !ok {
 		t.Fatal("expected evaluation to be cached")
 	}
 

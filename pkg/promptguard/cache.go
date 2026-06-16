@@ -70,6 +70,18 @@ func (c *TTLCache[K, V]) Len() int {
 	return len(c.entries)
 }
 
+func (c *TTLCache[K, V]) keys() []K {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	keys := make([]K, 0, len(c.entries))
+	for key := range c.entries {
+		keys = append(keys, key)
+	}
+
+	return keys
+}
+
 func (c *TTLCache[K, V]) ensureCapacity() {
 	if len(c.entries) < c.maxSize {
 		return
