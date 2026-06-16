@@ -54,7 +54,7 @@ func ExtractToMap(text string) (map[string]any, error) {
 			case map[string]any:
 				return m, nil
 			case nil:
-				// JSON null은 map[string]any로 디코드하면 nil map(에러 없음)이 된다 — 기존 동작 보존.
+				// JSON null은 map[string]any 디코드에서 nil map이 된다. 기존 동작을 보존한다.
 				return nil, nil
 			default:
 				return nil, fmt.Errorf("unmarshal json: not a JSON object")

@@ -48,7 +48,7 @@ func TestNormalizeRuntimeBuildInputs_NilLogger(t *testing.T) {
 func TestNormalizeRuntimeBuildInputs_NilCtx(t *testing.T) {
 	t.Parallel()
 
-	//lint:ignore SA1012 nil ctx는 의도적 — fallback 동작 검증
+	//lint:ignore SA1012 nil ctx fallback 검증
 	ctx, err := NormalizeRuntimeBuildInputs(nil, &struct{}{}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatalf("NormalizeRuntimeBuildInputs() error = %v", err)

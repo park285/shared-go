@@ -1,4 +1,3 @@
-// Package stringutil: 문자열 및 슬라이스 유틸리티
 package stringutil
 
 import (
@@ -26,7 +25,6 @@ func Normalize(s string) string {
 	return strings.ToLower(strings.TrimSpace(s))
 }
 
-// Unicode를 올바르게 처리하며, 다양한 특수문자(공백, 하이픈, 언더스코어 등)를 제거합니다.
 func NormalizeKey(s string) string {
 	s = Normalize(s)
 	if s == "" {
