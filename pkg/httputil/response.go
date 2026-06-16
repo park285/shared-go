@@ -103,8 +103,36 @@ func newAPIError(statusCode int, body string) *APIError {
 	return apiErr
 }
 
+const DefaultMaxBodyBytes int64 = 16 << 20
+
+var ErrResponseBodyTooLarge = errors.New("httputil: response body exceeds limit")
+
 func DecodeJSON(resp *http.Response, v any) error {
+	return DecodeJSONLimited(resp, v, DefaultMaxBodyBytes)
+}
+
+func DecodeJSONLimited(resp *http.Response, v any, maxBytes int64) error {
 	defer func() { _ = resp.Body.Close() }()
+	if maxBytes < 0 {
+		maxBytes = 0
+	}
+	// maxBytes+1까지 읽어 본문이 상한을 실제로 넘었는지 판별한다.
+	counter := &countingReader{r: io.LimitReader(resp.Body, maxBytes+1)}
+	decodeErr := sharedjson.NewDecoder(counter).Decode(v)
+	if counter.n > maxBytes {
+		return ErrResponseBodyTooLarge
+	}
 	//nolint:wrapcheck // 호출부에서 컨텍스트 추가
-	return sharedjson.NewDecoder(resp.Body).Decode(v)
+	return decodeErr
+}
+
+type countingReader struct {
+	r io.Reader
+	n int64
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += int64(n)
+	return n, err
 }

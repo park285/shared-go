@@ -232,6 +232,67 @@ func TestDecodeJSON_MalformedJSON(t *testing.T) {
 	}
 }
 
+func TestDecodeJSONLimited_OverLimitErrors(t *testing.T) {
+	t.Parallel()
+
+	payload := `{"name":"` + strings.Repeat("x", 1024) + `"}`
+	rc := &trackCloseReadCloser{Reader: strings.NewReader(payload)}
+	resp := &http.Response{Body: rc}
+
+	var out struct {
+		Name string `json:"name"`
+	}
+	err := DecodeJSONLimited(resp, &out, 64)
+	if !errors.Is(err, ErrResponseBodyTooLarge) {
+		t.Fatalf("DecodeJSONLimited() error = %v, want ErrResponseBodyTooLarge", err)
+	}
+	if !rc.closed {
+		t.Fatal("DecodeJSONLimited() expected body close on over-limit")
+	}
+}
+
+func TestDecodeJSONLimited_AtLimitDecodes(t *testing.T) {
+	t.Parallel()
+
+	payload := `{"name":"test"}`
+	rc := &trackCloseReadCloser{Reader: strings.NewReader(payload)}
+	resp := &http.Response{Body: rc}
+
+	var out struct {
+		Name string `json:"name"`
+	}
+	if err := DecodeJSONLimited(resp, &out, int64(len(payload))); err != nil {
+		t.Fatalf("DecodeJSONLimited() error = %v", err)
+	}
+	if out.Name != "test" {
+		t.Fatalf("DecodeJSONLimited() name = %q, want test", out.Name)
+	}
+	if !rc.closed {
+		t.Fatal("DecodeJSONLimited() expected body close")
+	}
+}
+
+func TestDecodeJSON_UsesDefaultLimit(t *testing.T) {
+	t.Parallel()
+
+	if DefaultMaxBodyBytes != 16<<20 {
+		t.Fatalf("DefaultMaxBodyBytes = %d, want %d", DefaultMaxBodyBytes, 16<<20)
+	}
+
+	rc := &trackCloseReadCloser{Reader: strings.NewReader(`{"name":"ok"}`)}
+	resp := &http.Response{Body: rc}
+
+	var out struct {
+		Name string `json:"name"`
+	}
+	if err := DecodeJSON(resp, &out); err != nil {
+		t.Fatalf("DecodeJSON() error = %v", err)
+	}
+	if out.Name != "ok" {
+		t.Fatalf("DecodeJSON() name = %q, want ok", out.Name)
+	}
+}
+
 type drainTrackReadCloser struct {
 	*strings.Reader
 	closed    bool
