@@ -16,7 +16,7 @@ type OperationOptions struct {
 	SuccessEvent string
 	FailureEvent string
 	SkipStartLog bool
-	// Level은 started/succeeded 로그 레벨. zero value는 slog.LevelInfo로 기존 동작 유지. failed는 항상 Error.
+	// Level은 started/succeeded 로그 레벨이다. failed는 항상 Error로 기록한다.
 	Level slog.Level
 	Attrs []slog.Attr
 }

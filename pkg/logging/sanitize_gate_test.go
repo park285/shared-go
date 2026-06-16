@@ -73,7 +73,6 @@ func TestRedactSecrets_UnicodeFoldTrap(t *testing.T) {
 	}
 }
 
-// I2: 게이트는 정규식 직접 호출의 superset이어야 한다 — 임의 입력에서 출력 byte-identical.
 func FuzzRedactSecrets_GateIsSuperset(f *testing.F) {
 	seeds := []string{
 		"", "?token=v", "?paſsword=v", "?toKen=v", "Bearer x.y",
@@ -91,7 +90,6 @@ func FuzzRedactSecrets_GateIsSuperset(f *testing.F) {
 	})
 }
 
-// I2: 게이트 통과 후 정규식 결과가 직접 호출과 동일해야 한다.
 func TestRedactSecrets_MatchesDirectRegex(t *testing.T) {
 	in := "url=https://x.test?token=secret123&Bearer foo.bar"
 	want := bearerTokenRegex.ReplaceAllString(in, "${1}***REDACTED***")
@@ -101,7 +99,6 @@ func TestRedactSecrets_MatchesDirectRegex(t *testing.T) {
 	}
 }
 
-// I3: querySecretRegex 구분자 확장 — ;password=x (DSN 케이스) 마스킹.
 func TestQuerySecret_SemicolonSeparator(t *testing.T) {
 	out := sanitizeValue(t, "dsn", "host=db;password=p4ssw0rd;db=app")
 	if strings.Contains(out, "p4ssw0rd") {
