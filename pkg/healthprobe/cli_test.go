@@ -2,6 +2,8 @@ package healthprobe
 
 import (
 	"bytes"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -25,5 +27,35 @@ func TestRunMainUsage(t *testing.T) {
 		if !strings.Contains(errOut.String(), "usage:") {
 			t.Fatalf("args %v: stderr = %q, want usage line", args, errOut.String())
 		}
+	}
+}
+
+func TestRunMainURLSuccess(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	var out, errOut bytes.Buffer
+	if code := RunMain([]string{"healthcheck", server.URL}, &out, &errOut); code != 0 {
+		t.Fatalf("code = %d, want 0 (stderr=%q)", code, errOut.String())
+	}
+	if errOut.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", errOut.String())
+	}
+}
+
+func TestRunMainURLFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	var out, errOut bytes.Buffer
+	if code := RunMain([]string{"healthcheck", server.URL}, &out, &errOut); code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(errOut.String(), "status: 500") {
+		t.Fatalf("stderr = %q, want status: 500", errOut.String())
 	}
 }
