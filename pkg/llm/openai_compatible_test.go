@@ -280,3 +280,25 @@ func assertStructuredResponsesFormat(t *testing.T, raw any, name string) {
 	}
 	assertJSONContains(t, format["schema"], `"type":"object"`)
 }
+
+func TestSanitizeResponsesSchemaName(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"점 포함 judge name", "twentyq_verify_guess.strict_identity_judge_01", "twentyq_verify_guess_strict_identity_judge_01"},
+		{"이미 유효", "twentyq_answer_question", "twentyq_answer_question"},
+		{"공백만", "   ", "schema"},
+		{"빈 문자열", "", "schema"},
+		{"여러 비허용 문자", "a.b/c d", "a_b_c_d"},
+	}
+	for _, c := range cases {
+		if got := sanitizeResponsesSchemaName(c.in); got != c.want {
+			t.Fatalf("%s: sanitizeResponsesSchemaName(%q) = %q, want %q", c.name, c.in, got, c.want)
+		}
+	}
+	if got := sanitizeResponsesSchemaName(strings.Repeat("a", 80)); len(got) != 64 {
+		t.Fatalf("64자 cap 실패: len=%d", len(got))
+	}
+}

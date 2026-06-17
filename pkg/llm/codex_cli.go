@@ -436,7 +436,7 @@ func (b *cappedBuffer) Write(p []byte) (int, error) {
 			_, err = b.buf.Write(p)
 		}
 		if err != nil {
-			return 0, err
+			return 0, fmt.Errorf("write capped buffer: %w", err)
 		}
 	}
 	return len(p), nil

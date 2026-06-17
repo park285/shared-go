@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/openai/openai-go/v3"
@@ -92,6 +93,21 @@ func (g *OpenAICompatibleJSONGenerator) GenerateJSON(ctx context.Context, req JS
 	return fallbackResp, nil
 }
 
+var responsesSchemaNameInvalidChars = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
+
+// OpenAI Responses API의 text.format.name은 [a-zA-Z0-9_-](최대 64자)만 허용한다.
+// taskName을 그대로 schema name으로 넘기면 점 등 비허용 문자가 섞여 400(invalid_value)이 난다.
+func sanitizeResponsesSchemaName(name string) string {
+	cleaned := responsesSchemaNameInvalidChars.ReplaceAllString(strings.TrimSpace(name), "_")
+	if cleaned == "" {
+		return "schema"
+	}
+	if len(cleaned) > 64 {
+		cleaned = cleaned[:64]
+	}
+	return cleaned
+}
+
 func (g *OpenAICompatibleJSONGenerator) generateResponsesJSON(ctx context.Context, req JSONRequest) (JSONResponse, error) {
 	params := responses.ResponseNewParams{
 		Model:        req.Model,
@@ -102,7 +118,7 @@ func (g *OpenAICompatibleJSONGenerator) generateResponsesJSON(ctx context.Contex
 		Text: responses.ResponseTextConfigParam{
 			Format: responses.ResponseFormatTextConfigUnionParam{
 				OfJSONSchema: &responses.ResponseFormatTextJSONSchemaConfigParam{
-					Name:   req.SchemaName,
+					Name:   sanitizeResponsesSchemaName(req.SchemaName),
 					Schema: req.Schema,
 					Strict: openai.Bool(true),
 				},
