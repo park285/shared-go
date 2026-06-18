@@ -9,133 +9,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
-	"sync"
 	"time"
-
-	"github.com/park285/shared-go/pkg/envutil"
 )
-
-const (
-	defaultCodexBin            = "codex"
-	defaultCodexModel          = "gpt-5.5"
-	defaultCodexSandbox        = "read-only"
-	defaultCodexMaxConcurrency = 1
-	defaultCodexTimeout        = 30 * time.Second
-	defaultCommandOutputLimit  = 8 * 1024
-)
-
-var ErrCodexAuthRequired = errors.New("codex oauth authentication required")
-
-type CodexConfig struct {
-	BinPath        string
-	Home           string
-	Model          string
-	Profile        string
-	WorkDir        string
-	Sandbox        string
-	AccessToken    string
-	Timeout        time.Duration
-	MaxConcurrency int
-	LoginCheck     bool
-}
-
-type CodexJSONGenerator struct {
-	binPath     string
-	home        string
-	model       string
-	profile     string
-	workDir     string
-	sandbox     string
-	accessToken string
-	timeout     time.Duration
-	loginCheck  bool
-
-	sem chan struct{}
-
-	loginMu  sync.Mutex
-	loggedIn bool
-}
-
-func NewCodexJSONGenerator(cfg CodexConfig) (*CodexJSONGenerator, error) {
-	binPath := strings.TrimSpace(cfg.BinPath)
-	if binPath == "" {
-		binPath = defaultCodexBin
-	}
-
-	model := strings.TrimSpace(cfg.Model)
-	if model == "" {
-		model = defaultCodexModel
-	}
-
-	sandbox := strings.TrimSpace(cfg.Sandbox)
-	if sandbox == "" {
-		sandbox = defaultCodexSandbox
-	}
-	switch sandbox {
-	case "read-only", "workspace-write", "danger-full-access":
-	default:
-		return nil, fmt.Errorf("invalid codex sandbox %q", sandbox)
-	}
-
-	timeout := cfg.Timeout
-	if timeout <= 0 {
-		timeout = defaultCodexTimeout
-	}
-
-	maxConcurrency := cfg.MaxConcurrency
-	if maxConcurrency <= 0 {
-		maxConcurrency = defaultCodexMaxConcurrency
-	}
-
-	workDir := strings.TrimSpace(cfg.WorkDir)
-	if workDir == "" {
-		workDir = os.TempDir()
-	}
-	if err := os.MkdirAll(workDir, 0o700); err != nil {
-		return nil, fmt.Errorf("create codex work dir: %w", err)
-	}
-
-	home := strings.TrimSpace(cfg.Home)
-	if home != "" {
-		if err := os.MkdirAll(home, 0o700); err != nil {
-			return nil, fmt.Errorf("create codex home: %w", err)
-		}
-	}
-
-	return &CodexJSONGenerator{
-		binPath:     binPath,
-		home:        home,
-		model:       model,
-		profile:     strings.TrimSpace(cfg.Profile),
-		workDir:     workDir,
-		sandbox:     sandbox,
-		accessToken: strings.TrimSpace(cfg.AccessToken),
-		timeout:     timeout,
-		loginCheck:  cfg.LoginCheck,
-		sem:         make(chan struct{}, maxConcurrency),
-	}, nil
-}
-
-func NewCodexJSONGeneratorFromEnv() (*CodexJSONGenerator, error) {
-	maxConcurrency, err := codexMaxConcurrencyFromEnv()
-	if err != nil {
-		return nil, err
-	}
-
-	return NewCodexJSONGenerator(CodexConfig{
-		BinPath:        strings.TrimSpace(os.Getenv("CODEX_BIN")),
-		Home:           strings.TrimSpace(os.Getenv("CODEX_HOME")),
-		Model:          codexModelFromEnv(),
-		Profile:        strings.TrimSpace(os.Getenv("CODEX_PROFILE")),
-		WorkDir:        strings.TrimSpace(os.Getenv("CODEX_WORK_DIR")),
-		Sandbox:        strings.TrimSpace(os.Getenv("CODEX_SANDBOX")),
-		AccessToken:    envutil.StringOrFile("CODEX_ACCESS_TOKEN", ""),
-		MaxConcurrency: maxConcurrency,
-		LoginCheck:     codexLoginCheckFromEnv(),
-	})
-}
 
 func (c *CodexJSONGenerator) GenerateJSON(ctx context.Context, req JSONRequest) (JSONResponse, error) {
 	if c == nil {
@@ -210,57 +86,6 @@ func (c *CodexJSONGenerator) Model() string {
 		return ""
 	}
 	return c.model
-}
-
-func (c *CodexJSONGenerator) EnsureLogin(ctx context.Context) error {
-	if c == nil {
-		return ErrNilJSONGenerator
-	}
-	if !c.loginCheck {
-		return nil
-	}
-
-	c.loginMu.Lock()
-	defer c.loginMu.Unlock()
-
-	if c.loggedIn {
-		return nil
-	}
-	if err := c.loginStatus(ctx); err == nil {
-		c.loggedIn = true
-		return nil
-	} else if c.accessToken == "" {
-		return fmt.Errorf("%w: run `codex login --device-auth` in CODEX_HOME=%q or mount an existing auth.json", ErrCodexAuthRequired, c.effectiveHomeForMessage())
-	}
-
-	if err := c.loginWithAccessToken(ctx); err != nil {
-		return fmt.Errorf("codex login with access token failed: %w", err)
-	}
-	if err := c.loginStatus(ctx); err != nil {
-		return fmt.Errorf("%w: codex login status failed after token login: %w", ErrCodexAuthRequired, err)
-	}
-	c.loggedIn = true
-	return nil
-}
-
-func (c *CodexJSONGenerator) loginStatus(ctx context.Context) error {
-	ctx, cancel := c.commandContext(ctx, minDuration(c.timeout, 15*time.Second))
-	defer cancel()
-
-	_, _, err := c.runRaw(ctx, []string{"login", "status"}, "")
-	return err
-}
-
-func (c *CodexJSONGenerator) loginWithAccessToken(ctx context.Context) error {
-	if c.accessToken == "" {
-		return ErrCodexAuthRequired
-	}
-
-	ctx, cancel := c.commandContext(ctx, minDuration(c.timeout, 30*time.Second))
-	defer cancel()
-
-	_, _, err := c.runRaw(ctx, []string{"login", "--with-access-token"}, c.accessToken+"\n")
-	return err
 }
 
 func (c *CodexJSONGenerator) execArgs(req JSONRequest, schemaPath, outputPath, runDir string) []string {
@@ -415,40 +240,6 @@ func (c *CodexJSONGenerator) resolvedModel(model string) string {
 	return c.model
 }
 
-type cappedBuffer struct {
-	buf   bytes.Buffer
-	limit int
-}
-
-func (b *cappedBuffer) Write(p []byte) (int, error) {
-	if b == nil {
-		return len(p), nil
-	}
-	if b.limit <= 0 {
-		return len(p), nil
-	}
-	remaining := b.limit - b.buf.Len()
-	if remaining > 0 {
-		var err error
-		if len(p) > remaining {
-			_, err = b.buf.Write(p[:remaining])
-		} else {
-			_, err = b.buf.Write(p)
-		}
-		if err != nil {
-			return 0, fmt.Errorf("write capped buffer: %w", err)
-		}
-	}
-	return len(p), nil
-}
-
-func (b *cappedBuffer) String() string {
-	if b == nil {
-		return ""
-	}
-	return b.buf.String()
-}
-
 func codexPrompt(req JSONRequest) string {
 	systemPrompt := strings.TrimSpace(req.SystemPrompt)
 	userPrompt := strings.TrimSpace(req.UserPrompt)
@@ -467,44 +258,6 @@ func taskName(req JSONRequest) string {
 		return strings.TrimSpace(req.SchemaName)
 	}
 	return task
-}
-
-func codexModelFromEnv() string {
-	model := strings.TrimSpace(os.Getenv("CODEX_MODEL"))
-	if model != "" {
-		return model
-	}
-	return strings.TrimSpace(os.Getenv("LLM_MODEL_DEFAULT"))
-}
-
-func codexMaxConcurrencyFromEnv() (int, error) {
-	raw := strings.TrimSpace(os.Getenv("CODEX_MAX_CONCURRENCY"))
-	if raw == "" {
-		return defaultCodexMaxConcurrency, nil
-	}
-	n, err := strconv.Atoi(raw)
-	if err != nil {
-		return 0, fmt.Errorf("read CODEX_MAX_CONCURRENCY failed: %w", err)
-	}
-	if n <= 0 {
-		return 0, fmt.Errorf("invalid CODEX_MAX_CONCURRENCY: %d", n)
-	}
-	return n, nil
-}
-
-func codexLoginCheckFromEnv() bool {
-	raw := strings.TrimSpace(os.Getenv("CODEX_LOGIN_CHECK"))
-	if raw == "" {
-		return true
-	}
-	switch strings.ToLower(raw) {
-	case "1", "true", "yes", "y", "on":
-		return true
-	case "0", "false", "no", "n", "off":
-		return false
-	default:
-		return true
-	}
 }
 
 func minDuration(a, b time.Duration) time.Duration {
