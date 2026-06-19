@@ -1,36 +1,39 @@
 # shared-go
 
-iris-stack Go 프로젝트(`hololive-bot`, `chat-bot-go-kakao` 등)가 공유하는 라이브러리 전용 Go 모듈입니다.
-`cmd/` 없는 library-only 모듈이며, downstream 소비자를 위한 API 안정성을 유지합니다.
+Iris Stack의 Go 프로젝트들(`hololive-bot`, `chat-bot-go-kakao`, `twentyq-bot` 등)이 공통으로 사용하는 유틸리티 라이브러리 전용 Go 모듈입니다.
 
-## 설치
+본 라이브러리는 `cmd/` 실행 진입점이 없는 순수 라이브러리(Library-only) 모듈로 설계되었으며, 이를 호출하는 서비스들을 위해 일관되고 안정적인 API 사양을 유지합니다.
+
+## 설치 (Installation)
 
 ```bash
 go get github.com/park285/shared-go@latest
 ```
 
-## 패키지
+## 제공 패키지 목록 (Package Catalog)
 
-| 패키지 | 역할 |
+| 패키지 경로 | 기능 및 역할 |
 |---|---|
-| `pkg/backoff` | attempt/상태 기반 exponential backoff 계산 helper (sleep·retry loop는 호출부 책임) |
-| `pkg/envutil` | 환경변수 로딩과 `*_FILE` 방식 secret 파일 주입 |
-| `pkg/ginjson` | Gin용 sonic 기반 JSON 렌더링/바인딩 |
-| `pkg/h3` | HTTP/3 클라이언트 transport 구성 (CA bundle, TLS) |
-| `pkg/healthprobe` | HTTP 헬스 프로브 helper |
-| `pkg/httputil` | HTTP client 풀·프로파일 구성 |
-| `pkg/json` | sonic 기반 JSON 인코딩/디코딩 façade |
-| `pkg/jsonutil` | 모델/HTTP 응답 텍스트에서의 JSON 추출 helper |
-| `pkg/logging` | slog 기반 로깅 (비동기 writer, 민감값 sanitize, archive) |
-| `pkg/runtime` | 프로세스 부트스트랩 (`automaxprocs`·`bootstrap`·`httpserver`·`lifecycle`) |
-| `pkg/stringutil` | 문자열 유틸 |
-| `pkg/telemetry` | OpenTelemetry tracing 설정·context 전파 |
-| `pkg/workerconfig` | worker profile 설정 로딩 |
-| `pkg/workerpool` | queue 기반 worker pool |
+| `pkg/backoff` | 시도 횟수 및 상태를 기반으로 한 지수 백오프(Exponential Backoff) 계산 유틸리티 (대기 및 재시도 루프 제어는 호출부에서 직접 처리) |
+| `pkg/envutil` | 환경 변수 로드 및 `*_FILE` 형태의 파일 경로를 통한 보안 토큰/시크릿 값 주입 도구 |
+| `pkg/ginjson` | Gin 웹 프레임워크를 위한 Sonic 라이브러리 기반 고성능 JSON 렌더링 및 바인딩 모듈 |
+| `pkg/h3` | HTTP/3 전송 프로토콜 설정 도구 (자체 CA 번들 등록, TLS 상세 사양 정의) |
+| `pkg/healthprobe` | 서비스 헬스체크 및 프로브(Readiness / Liveness Probe) 도구 |
+| `pkg/httputil` | HTTP 클라이언트 커넥션 풀링 및 프로파일 구성 도구 |
+| `pkg/json` | Sonic 엔진을 내장한 고성능 JSON 인코딩/디코딩 추상화 계층 |
+| `pkg/jsonutil` | 텍스트 혹은 HTTP 응답 문자열로부터 유효한 JSON을 정규화하여 추출하는 헬퍼 유틸리티 |
+| `pkg/logging` | Slog 기반의 구조화된 로깅 모듈 (비동기 처리, 민감한 키 정보 마스킹 및 실시간 로그 로테이션 지원) |
+| `pkg/runtime` | Go 런타임 최적화를 포함한 프로세스 부트스트랩 도구 (`automaxprocs`, 애플리케이션 라이프사이클 관리, HTTPServer) |
+| `pkg/stringutil` | 범용 문자열 처리 유틸리티 |
+| `pkg/telemetry` | OpenTelemetry 기반의 분산 트레이싱(Tracing) 정보 설정 및 컨텍스트 전파 유틸리티 |
+| `pkg/workerconfig` | 개별 백그라운드 워커들의 동작 프로파일 설정 로드 모듈 |
+| `pkg/workerpool` | 큐(Queue) 기반의 동시성 제어 워커 풀 구현체 |
 
-새 패키지는 `pkg/` 아래에 추가합니다.
+새로운 공통 기능이 필요할 경우, `pkg/` 하위에 신규 패키지 형식으로 추가해 주십시오.
 
-## 검증
+## 로컬 검증 (Verification)
+
+개발 시 로컬에서 아래 명령어를 수행하여 검증을 진행할 수 있습니다.
 
 ```bash
 make lint
@@ -38,4 +41,4 @@ go test ./...
 go build ./...
 ```
 
-GitHub CI는 fast gate(`ci.yml`)와 비-PR 보안 스캔(`security.yml`)만 수행하고, 전체 테스트·race·의존성 검증은 push 전에 로컬에서 실행하는 것이 이 repo의 CI 정책입니다.
+**CI 정책:** 본 리포지토리의 원격 깃허브 액션(GitHub Actions)은 빠른 구문 검사(`ci.yml`) 및 보안 검사(`security.yml`)만을 수행합니다. 실제 테스트 슈트 실행 및 경합 조건(Race Condition) 검사, 전체 의존성 분석은 로컬 push 전 단계에서 완벽하게 완료하는 것을 원칙으로 합니다.
