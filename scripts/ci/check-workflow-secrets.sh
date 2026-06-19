@@ -19,6 +19,7 @@ from pathlib import Path
 SECRET_EXPR_RE = re.compile(r"\$\{\{(?P<body>.*?)\}\}", re.DOTALL)
 DOT_SECRET_RE = re.compile(r"secrets\s*\.\s*([A-Za-z_][A-Za-z0-9_]*)")
 BRACKET_SECRET_RE = re.compile(r"secrets\s*\[\s*['\"]([A-Za-z_][A-Za-z0-9_]*)['\"]\s*\]")
+WHOLE_SECRET_RE = re.compile(r"\bsecrets\b(?!\s*[.\[])")
 SECRETS_INHERIT_RE = re.compile(r"^\s*secrets\s*:\s*inherit\s*(?:#.*)?$")
 SECURITY_WORKFLOWS = {"security.yml", "security.yaml", "security-full.yml", "security-full.yaml"}
 
@@ -80,7 +81,7 @@ def event_triggered(text: str, event_name: str) -> bool:
 
         current_indent = indent(raw)
         stripped = raw.strip()
-        match = re.match(r"^(\s*)on\s*:\s*(.*)$", raw)
+        match = re.match(r"^(\s*)['\"]?on['\"]?\s*:\s*(.*)$", raw)
         if match:
             in_on = True
             on_indent = len(match.group(1))
@@ -92,8 +93,8 @@ def event_triggered(text: str, event_name: str) -> bool:
             if current_indent <= on_indent and re.match(r"^\S", raw):
                 in_on = False
             elif (
-                re.match(rf"^\s*{event_name}\s*:", raw)
-                or re.match(rf"^\s*-\s*{event_name}\s*$", stripped)
+                re.match(rf"^\s*['\"]?{event_name}['\"]?\s*:", raw)
+                or re.match(rf"^\s*-\s*['\"]?{event_name}['\"]?\s*$", stripped)
             ):
                 return True
 
@@ -124,6 +125,17 @@ def secret_refs(text: str) -> list[tuple[int, str]]:
             for match in pattern.finditer(body):
                 refs.append((line_number_at(masked, body_offset + match.start()), match.group(1)))
     return refs
+
+
+def whole_object_secret_lines(text: str) -> list[int]:
+    lines: list[int] = []
+    masked = mask_comment_lines(text)
+    for expr in SECRET_EXPR_RE.finditer(masked):
+        body = expr.group("body")
+        body_offset = expr.start("body")
+        for match in WHOLE_SECRET_RE.finditer(body):
+            lines.append(line_number_at(masked, body_offset + match.start()))
+    return lines
 
 
 def secrets_inherit_lines(text: str) -> list[int]:
@@ -293,6 +305,8 @@ def main() -> int:
         disallowed = [(line_no, name) for line_no, name in secret_refs(text) if name != "GITHUB_TOKEN"]
         for line_no, name in disallowed:
             failures.append(f"{path}:{line_no}: pull_request workflow must not reference secrets.{name}")
+        for line_no in whole_object_secret_lines(text):
+            failures.append(f"{path}:{line_no}: pull_request workflow must not reference the whole secrets object")
         for line_no in secrets_inherit_lines(text):
             failures.append(f"{path}:{line_no}: pull_request workflow must not use secrets: inherit")
         for line_no in reusable_workflow_secret_lines(text):
