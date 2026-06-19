@@ -19,7 +19,7 @@ from pathlib import Path
 SECRET_EXPR_RE = re.compile(r"\$\{\{(?P<body>.*?)\}\}", re.DOTALL)
 DOT_SECRET_RE = re.compile(r"secrets\s*\.\s*([A-Za-z_][A-Za-z0-9_]*)")
 BRACKET_SECRET_RE = re.compile(r"secrets\s*\[\s*['\"]([A-Za-z_][A-Za-z0-9_]*)['\"]\s*\]")
-WHOLE_SECRET_RE = re.compile(r"\bsecrets\b(?!\s*[.\[])")
+WHOLE_SECRET_RE = re.compile(r"(?<![.'\"])\bsecrets\b(?!['\"])(?!\s*[.\[])")
 SECRETS_INHERIT_RE = re.compile(r"^\s*secrets\s*:\s*inherit\s*(?:#.*)?$")
 SECURITY_WORKFLOWS = {"security.yml", "security.yaml", "security-full.yml", "security-full.yaml"}
 
@@ -81,7 +81,7 @@ def event_triggered(text: str, event_name: str) -> bool:
 
         current_indent = indent(raw)
         stripped = raw.strip()
-        match = re.match(r"^(\s*)['\"]?on['\"]?\s*:\s*(.*)$", raw)
+        match = re.match(r"^(\s*)['\"]?[Oo][Nn]['\"]?\s*:\s*(.*)$", raw)
         if match:
             in_on = True
             on_indent = len(match.group(1))
