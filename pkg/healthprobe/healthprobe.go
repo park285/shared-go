@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/park285/shared-go/pkg/h3"
@@ -18,7 +20,35 @@ const (
 	CACertFileEnv = "HEALTHCHECK_CA_CERT_FILE"
 
 	requestTimeout = 5 * time.Second
+
+	DefaultMaxBodyBytes int64 = 64 << 10
+	maxRedirects              = 5
 )
+
+var (
+	ErrBodyTooLarge     = errors.New("healthprobe: response body exceeds limit")
+	ErrHostNotAllowed   = errors.New("healthprobe: host not in allowlist")
+	ErrPrivateNetwork   = errors.New("healthprobe: target resolves to a private or loopback address")
+	ErrTooManyRedirects = errors.New("healthprobe: too many redirects")
+)
+
+// FetchOptions는 probe 동작을 제어한다. 기본값(zero value)은 기존 호출자 호환을 위해
+// loopback/private를 허용하고 redirect를 따르되, body cap과 cross-host redirect 헤더
+// 제거는 항상 강제한다. 새 호출자는 AllowedHosts/AllowPrivateNetworks로 강화할 수 있다.
+type FetchOptions struct {
+	AllowedHosts             []string
+	RestrictPrivateNetworks  bool
+	MaxBodyBytes             int64
+	FollowRedirects          bool
+	ForwardHeadersOnRedirect bool
+}
+
+func defaultFetchOptions() FetchOptions {
+	return FetchOptions{
+		MaxBodyBytes:    DefaultMaxBodyBytes,
+		FollowRedirects: true,
+	}
+}
 
 // https는 H3(QUIC)로, http는 HTTP/1.1로 1회 GET 후 2xx 여부를 검사한다.
 func CheckURL(rawURL string) error {
@@ -27,14 +57,21 @@ func CheckURL(rawURL string) error {
 }
 
 func FetchURL(rawURL string) ([]byte, error) {
-	return fetchURL(rawURL, nil)
+	return fetchURL(rawURL, nil, defaultFetchOptions())
 }
 
 func FetchURLWithHeaders(rawURL string, headers map[string]string) ([]byte, error) {
-	return fetchURL(rawURL, headers)
+	return fetchURL(rawURL, headers, defaultFetchOptions())
 }
 
-func fetchURL(rawURL string, headers map[string]string) ([]byte, error) {
+func FetchURLWithOptions(rawURL string, headers map[string]string, opts FetchOptions) ([]byte, error) {
+	if opts.MaxBodyBytes <= 0 {
+		opts.MaxBodyBytes = DefaultMaxBodyBytes
+	}
+	return fetchURL(rawURL, headers, opts)
+}
+
+func fetchURL(rawURL string, headers map[string]string, opts FetchOptions) ([]byte, error) {
 	parsed, err := parseURL(rawURL)
 	if err != nil {
 		return nil, fmt.Errorf("validate url: %w", err)
@@ -43,18 +80,15 @@ func fetchURL(rawURL string, headers map[string]string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
 	defer cancel()
 
-	client := http.DefaultClient
-	if parsed.Scheme == "https" {
-		h3Client, closeFn, clientErr := h3.NewClient(0, h3.ClientOptions{
-			CACertFile: os.Getenv(CACertFileEnv),
-			ServerName: os.Getenv(ServerNameEnv),
-		})
-		if clientErr != nil {
-			return nil, clientErr
-		}
-		defer closeFn()
-		client = h3Client
+	if authErr := authorizeTarget(ctx, parsed, opts); authErr != nil {
+		return nil, authErr
 	}
+
+	client, closeFn, err := newClient(parsed, opts)
+	if err != nil {
+		return nil, err
+	}
+	defer closeFn()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, http.NoBody)
 	if err != nil {
@@ -74,7 +108,7 @@ func fetchURL(rawURL string, headers map[string]string) ([]byte, error) {
 
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readCappedBody(resp.Body, opts.MaxBodyBytes)
 	if err != nil {
 		return nil, fmt.Errorf("read body %s: %w", rawURL, err)
 	}
@@ -84,6 +118,122 @@ func fetchURL(rawURL string, headers map[string]string) ([]byte, error) {
 	}
 
 	return body, nil
+}
+
+func newClient(parsed *url.URL, opts FetchOptions) (*http.Client, func(), error) {
+	if parsed.Scheme == "https" {
+		h3Client, closeFn, clientErr := h3.NewClient(0, h3.ClientOptions{
+			CACertFile: os.Getenv(CACertFileEnv),
+			ServerName: os.Getenv(ServerNameEnv),
+		})
+		if clientErr != nil {
+			return nil, nil, clientErr
+		}
+		h3Client.CheckRedirect = redirectPolicy(opts)
+		return h3Client, closeFn, nil
+	}
+
+	client := &http.Client{
+		Timeout:       requestTimeout,
+		CheckRedirect: redirectPolicy(opts),
+	}
+	return client, func() {}, nil
+}
+
+// redirectPolicy는 redirect를 따를지/얼마나/헤더를 유지할지 강제한다. cross-host redirect에서
+// custom header(예: Authorization, X-API-Key)가 다른 host로 따라가는 누출을 막는다.
+func redirectPolicy(opts FetchOptions) func(req *http.Request, via []*http.Request) error {
+	return func(req *http.Request, via []*http.Request) error {
+		if !opts.FollowRedirects {
+			return http.ErrUseLastResponse
+		}
+		if len(via) >= maxRedirects {
+			return ErrTooManyRedirects
+		}
+		if err := authorizeTarget(req.Context(), req.URL, opts); err != nil {
+			return err
+		}
+
+		if opts.ForwardHeadersOnRedirect {
+			return nil
+		}
+
+		previous := via[len(via)-1].URL
+		if !sameHost(previous, req.URL) {
+			stripSensitiveHeaders(req)
+		}
+		return nil
+	}
+}
+
+func sameHost(a, b *url.URL) bool {
+	return strings.EqualFold(a.Hostname(), b.Hostname())
+}
+
+func stripSensitiveHeaders(req *http.Request) {
+	for name := range req.Header {
+		req.Header.Del(name)
+	}
+}
+
+func readCappedBody(body io.Reader, maxBytes int64) ([]byte, error) {
+	if maxBytes <= 0 {
+		maxBytes = DefaultMaxBodyBytes
+	}
+	data, err := io.ReadAll(io.LimitReader(body, maxBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, ErrBodyTooLarge
+	}
+	return data, nil
+}
+
+func authorizeTarget(ctx context.Context, parsed *url.URL, opts FetchOptions) error {
+	host := parsed.Hostname()
+	if len(opts.AllowedHosts) > 0 && !hostAllowed(host, opts.AllowedHosts) {
+		return fmt.Errorf("%w: %s", ErrHostNotAllowed, host)
+	}
+	if opts.RestrictPrivateNetworks {
+		if err := rejectPrivateNetwork(ctx, host); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func hostAllowed(host string, allowed []string) bool {
+	for _, candidate := range allowed {
+		if strings.EqualFold(host, strings.TrimSpace(candidate)) {
+			return true
+		}
+	}
+	return false
+}
+
+func rejectPrivateNetwork(ctx context.Context, host string) error {
+	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return fmt.Errorf("resolve host %s: %w", host, err)
+	}
+	if len(addrs) == 0 {
+		return fmt.Errorf("%w: %s resolves to no address", ErrPrivateNetwork, host)
+	}
+	for _, addr := range addrs {
+		if isPrivateIP(addr.IP) {
+			return fmt.Errorf("%w: %s -> %s", ErrPrivateNetwork, host, addr.IP)
+		}
+	}
+	return nil
+}
+
+func isPrivateIP(ip net.IP) bool {
+	return ip.IsLoopback() ||
+		ip.IsPrivate() ||
+		ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() ||
+		ip.IsUnspecified()
 }
 
 func parseURL(raw string) (*url.URL, error) {
