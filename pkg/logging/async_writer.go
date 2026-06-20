@@ -10,18 +10,21 @@ import (
 
 const (
 	asyncStdoutQueueDepth       = 256
+	asyncStdoutMaxLineBytes     = 64 << 10
 	asyncDropWriterCloseTimeout = 2 * time.Second
 )
 
 // stdout이 느린 fd에 묶여도 로깅 전체가 블로킹되지 않도록 큐가 가득 차면 해당 라인을 버린다.
 // 파일(lumberjack) lane은 동기 기록을 유지하므로 유실은 stdout 사본에 한정된다.
 type asyncDropWriter struct {
-	target  io.Writer
-	queue   chan []byte
-	done    chan struct{}
-	stopped chan struct{}
-	stop    sync.Once
-	dropped atomic.Uint64
+	target       io.Writer
+	queue        chan []byte
+	done         chan struct{}
+	stopped      chan struct{}
+	stop         sync.Once
+	maxLineBytes int
+	dropped      atomic.Uint64
+	truncated    atomic.Uint64
 }
 
 func newAsyncDropWriter(target io.Writer, depth int) *asyncDropWriter {
@@ -30,10 +33,11 @@ func newAsyncDropWriter(target io.Writer, depth int) *asyncDropWriter {
 	}
 
 	w := &asyncDropWriter{
-		target:  target,
-		queue:   make(chan []byte, depth),
-		done:    make(chan struct{}),
-		stopped: make(chan struct{}),
+		target:       target,
+		queue:        make(chan []byte, depth),
+		done:         make(chan struct{}),
+		stopped:      make(chan struct{}),
+		maxLineBytes: asyncStdoutMaxLineBytes,
 	}
 
 	go w.run()
@@ -74,8 +78,14 @@ func (w *asyncDropWriter) forward(line []byte) {
 }
 
 func (w *asyncDropWriter) Write(p []byte) (int, error) {
-	line := make([]byte, len(p))
-	copy(line, p)
+	queued := p
+	if w.maxLineBytes > 0 && len(queued) > w.maxLineBytes {
+		queued = queued[:w.maxLineBytes]
+		w.truncated.Add(1)
+	}
+
+	line := make([]byte, len(queued))
+	copy(line, queued)
 
 	select {
 	case w.queue <- line:
@@ -104,6 +114,10 @@ func (w *asyncDropWriter) Close() error {
 
 func (w *asyncDropWriter) droppedCount() uint64 {
 	return w.dropped.Load()
+}
+
+func (w *asyncDropWriter) truncatedCount() uint64 {
+	return w.truncated.Load()
 }
 
 type multiCloser []io.Closer

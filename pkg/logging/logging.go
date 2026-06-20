@@ -41,12 +41,13 @@ func ParseLevel(level string) slog.Level {
 }
 
 func NewLogger() *slog.Logger {
-	return slog.New(tint.NewHandler(os.Stdout, &tint.Options{
+	handler := tint.NewHandler(os.Stdout, &tint.Options{
 		Level:      slog.LevelInfo,
 		TimeFormat: time.RFC3339,
 		AddSource:  true,
 		NoColor:    shouldDisableColor(os.Stdout),
-	}))
+	})
+	return slog.New(NewSanitizeHandler(handler))
 }
 
 func NewTestLogger() *slog.Logger {
