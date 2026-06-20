@@ -173,19 +173,29 @@ func (c *CodexJSONGenerator) runRaw(ctx context.Context, args []string, stdin st
 	return stdout.String(), stderr.String(), nil
 }
 
+var codexEnvAllowlist = map[string]struct{}{
+	"PATH":     {},
+	"HOME":     {},
+	"LANG":     {},
+	"LC_ALL":   {},
+	"LC_CTYPE": {},
+	"TZ":       {},
+	"TMPDIR":   {},
+}
+
 func (c *CodexJSONGenerator) commandEnv() []string {
 	base := os.Environ()
-	env := make([]string, 0, len(base)+3)
+	env := make([]string, 0, len(codexEnvAllowlist)+2)
 	for _, kv := range base {
 		idx := strings.IndexByte(kv, '=')
 		if idx <= 0 {
 			continue
 		}
 		key := kv[:idx]
-		switch key {
-		case "CODEX_ACCESS_TOKEN", "OPENAI_API_KEY", "CODEX_API_KEY":
+		if key == "CODEX_HOME" {
 			continue
-		default:
+		}
+		if _, ok := codexEnvAllowlist[key]; ok {
 			env = append(env, kv)
 		}
 	}

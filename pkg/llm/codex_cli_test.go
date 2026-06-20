@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,11 +18,11 @@ func TestCodexJSONGeneratorRunsExecWithSchemaOutputAndScrubbedEnv(t *testing.T) 
 	envPath := filepath.Join(tmp, "env.txt")
 	stdinPath := filepath.Join(tmp, "stdin.txt")
 	schemaPath := filepath.Join(tmp, "schema.txt")
-	script := writeFakeCodex(t, `#!/usr/bin/env bash
+	script := writeFakeCodex(t, fmt.Sprintf(`#!/usr/bin/env bash
 set -euo pipefail
-printf '%s\n' "$@" > "$CODEX_CAPTURE_ARGS"
-env | sort > "$CODEX_CAPTURE_ENV"
-cat > "$CODEX_CAPTURE_STDIN"
+printf '%%s\n' "$@" > %q
+env | sort > %q
+cat > %q
 output=""
 schema=""
 while [ "$#" -gt 0 ]; do
@@ -31,13 +32,9 @@ while [ "$#" -gt 0 ]; do
   esac
   shift || true
 done
-cp "$schema" "$CODEX_CAPTURE_SCHEMA"
+cp "$schema" %q
 printf '{"answer":"yes"}' > "$output"
-`)
-	t.Setenv("CODEX_CAPTURE_ARGS", argsPath)
-	t.Setenv("CODEX_CAPTURE_ENV", envPath)
-	t.Setenv("CODEX_CAPTURE_STDIN", stdinPath)
-	t.Setenv("CODEX_CAPTURE_SCHEMA", schemaPath)
+`, argsPath, envPath, stdinPath, schemaPath))
 	t.Setenv("CODEX_ACCESS_TOKEN", "env-access-token")
 	t.Setenv("OPENAI_API_KEY", "env-openai-key")
 	t.Setenv("CODEX_API_KEY", "env-codex-key")
@@ -171,18 +168,18 @@ func TestCodexJSONGeneratorAccessTokenLoginUsesStdinAndScrubsEnv(t *testing.T) {
 	tokenPath := filepath.Join(tmp, "login-token.txt")
 	envPath := filepath.Join(tmp, "login-env.txt")
 	markerPath := filepath.Join(tmp, "logged-in")
-	script := writeFakeCodex(t, `#!/usr/bin/env bash
+	script := writeFakeCodex(t, fmt.Sprintf(`#!/usr/bin/env bash
 set -euo pipefail
 if [ "$1" = "login" ] && [ "$2" = "status" ]; then
-  if [ -f "$CODEX_LOGIN_MARKER" ]; then
+  if [ -f %[3]q ]; then
     exit 0
   fi
   exit 1
 fi
 if [ "$1" = "login" ] && [ "$2" = "--with-access-token" ]; then
-  env | sort > "$CODEX_LOGIN_ENV"
-  cat > "$CODEX_LOGIN_TOKEN_CAPTURE"
-  touch "$CODEX_LOGIN_MARKER"
+  env | sort > %[2]q
+  cat > %[1]q
+  touch %[3]q
   exit 0
 fi
 output=""
@@ -194,10 +191,7 @@ while [ "$#" -gt 0 ]; do
   shift || true
 done
 printf '{"answer":"yes"}' > "$output"
-`)
-	t.Setenv("CODEX_LOGIN_TOKEN_CAPTURE", tokenPath)
-	t.Setenv("CODEX_LOGIN_ENV", envPath)
-	t.Setenv("CODEX_LOGIN_MARKER", markerPath)
+`, tokenPath, envPath, markerPath))
 	t.Setenv("CODEX_ACCESS_TOKEN", "env-token-must-not-leak")
 
 	generator, err := NewCodexJSONGenerator(CodexConfig{
@@ -231,10 +225,10 @@ func TestNewCodexJSONGeneratorFromEnvReadsCodexSettings(t *testing.T) {
 	if err := os.WriteFile(tokenFile, []byte("file-token-secret\n"), 0o600); err != nil {
 		t.Fatalf("write token file: %v", err)
 	}
-	script := writeFakeCodex(t, `#!/usr/bin/env bash
+	script := writeFakeCodex(t, fmt.Sprintf(`#!/usr/bin/env bash
 set -euo pipefail
-printf '%s\n' "$@" > "$CODEX_CAPTURE_ARGS"
-env | sort > "$CODEX_CAPTURE_ENV"
+printf '%%s\n' "$@" > %q
+env | sort > %q
 output=""
 while [ "$#" -gt 0 ]; do
   if [ "$1" = "--output-last-message" ]; then
@@ -244,7 +238,7 @@ while [ "$#" -gt 0 ]; do
   shift || true
 done
 printf '{"answer":"yes"}' > "$output"
-`)
+`, argsPath, envPath))
 	t.Setenv("CODEX_BIN", script)
 	t.Setenv("CODEX_HOME", filepath.Join(tmp, "home"))
 	t.Setenv("CODEX_MODEL", "env-model")
@@ -254,8 +248,6 @@ printf '{"answer":"yes"}' > "$output"
 	t.Setenv("CODEX_ACCESS_TOKEN_FILE", tokenFile)
 	t.Setenv("CODEX_MAX_CONCURRENCY", "1")
 	t.Setenv("CODEX_LOGIN_CHECK", "false")
-	t.Setenv("CODEX_CAPTURE_ARGS", argsPath)
-	t.Setenv("CODEX_CAPTURE_ENV", envPath)
 
 	generator, err := NewCodexJSONGeneratorFromEnv()
 	if err != nil {
@@ -291,7 +283,7 @@ func TestCodexJSONGeneratorConcurrencyLimit(t *testing.T) {
 	activePath := filepath.Join(tmp, "active")
 	maxPath := filepath.Join(tmp, "max")
 	lockDir := filepath.Join(tmp, "lock")
-	script := writeFakeCodex(t, `#!/usr/bin/env bash
+	script := writeFakeCodex(t, fmt.Sprintf(`#!/usr/bin/env bash
 set -euo pipefail
 output=""
 while [ "$#" -gt 0 ]; do
@@ -301,26 +293,23 @@ while [ "$#" -gt 0 ]; do
   fi
   shift || true
 done
-while ! mkdir "$CODEX_LOCK_DIR" 2>/dev/null; do sleep 0.005; done
+while ! mkdir %[3]q 2>/dev/null; do sleep 0.005; done
 active=0
-if [ -f "$CODEX_ACTIVE_FILE" ]; then active=$(cat "$CODEX_ACTIVE_FILE"); fi
+if [ -f %[1]q ]; then active=$(cat %[1]q); fi
 active=$((active + 1))
-echo "$active" > "$CODEX_ACTIVE_FILE"
+echo "$active" > %[1]q
 max=0
-if [ -f "$CODEX_MAX_FILE" ]; then max=$(cat "$CODEX_MAX_FILE"); fi
-if [ "$active" -gt "$max" ]; then echo "$active" > "$CODEX_MAX_FILE"; fi
-rmdir "$CODEX_LOCK_DIR"
+if [ -f %[2]q ]; then max=$(cat %[2]q); fi
+if [ "$active" -gt "$max" ]; then echo "$active" > %[2]q; fi
+rmdir %[3]q
 sleep 0.08
 printf '{"answer":"yes"}' > "$output"
-while ! mkdir "$CODEX_LOCK_DIR" 2>/dev/null; do sleep 0.005; done
-active=$(cat "$CODEX_ACTIVE_FILE")
+while ! mkdir %[3]q 2>/dev/null; do sleep 0.005; done
+active=$(cat %[1]q)
 active=$((active - 1))
-echo "$active" > "$CODEX_ACTIVE_FILE"
-rmdir "$CODEX_LOCK_DIR"
-`)
-	t.Setenv("CODEX_ACTIVE_FILE", activePath)
-	t.Setenv("CODEX_MAX_FILE", maxPath)
-	t.Setenv("CODEX_LOCK_DIR", lockDir)
+echo "$active" > %[1]q
+rmdir %[3]q
+`, activePath, maxPath, lockDir))
 
 	generator, err := NewCodexJSONGenerator(CodexConfig{
 		BinPath:        script,
