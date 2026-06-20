@@ -191,6 +191,10 @@ func sanitizeAttrChanged(attr slog.Attr) (slog.Attr, bool) {
 		return slog.String(attr.Key, "***REDACTED***"), true
 	}
 
+	if isBroadValueKey(attr.Key) && isSecretLikeValue(attr.Value.String()) {
+		return slog.String(attr.Key, "***REDACTED***"), true
+	}
+
 	redacted := redactSecrets(attr.Value.String())
 	if redacted != attr.Value.String() {
 		changed = true
@@ -224,4 +228,63 @@ func normalizeSensitiveKey(key string) string {
 	key = strings.ReplaceAll(key, ".", "_")
 	key = strings.ReplaceAll(key, " ", "_")
 	return key
+}
+
+var broadValueKeys = map[string]struct{}{
+	"key": {},
+}
+
+func isBroadValueKey(key string) bool {
+	_, ok := broadValueKeys[normalizeSensitiveKey(key)]
+	return ok
+}
+
+var secretLikePrefixes = []string{
+	"sk_", "pk_live", "pk_test", "rk_live", "rk_test",
+	"ghp_", "gho_", "ghu_", "ghs_", "ghr_", "github_pat_",
+	"xoxb-", "xoxp-", "xoxa-", "xoxr-",
+	"akia", "asia",
+	"aiza",
+	"eyj",
+}
+
+const secretLikeMinLen = 24
+
+func isSecretLikeValue(v string) bool {
+	if hasSecretLikePrefix(v) {
+		return true
+	}
+	return isHighEntropyToken(v)
+}
+
+func hasSecretLikePrefix(v string) bool {
+	lower := strings.ToLower(v)
+	for _, p := range secretLikePrefixes {
+		if strings.HasPrefix(lower, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func isHighEntropyToken(v string) bool {
+	if len(v) < secretLikeMinLen {
+		return false
+	}
+	var hasLower, hasUpper, hasDigit bool
+	for i := range len(v) {
+		c := v[i]
+		switch {
+		case c >= 'a' && c <= 'z':
+			hasLower = true
+		case c >= 'A' && c <= 'Z':
+			hasUpper = true
+		case c >= '0' && c <= '9':
+			hasDigit = true
+		case c == '_' || c == '-' || c == '.' || c == '+' || c == '/' || c == '=':
+		default:
+			return false
+		}
+	}
+	return hasLower && hasUpper && hasDigit
 }

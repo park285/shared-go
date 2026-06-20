@@ -143,12 +143,14 @@ func TestIsSensitiveKey_NewKeys(t *testing.T) {
 	}
 }
 
-// I3: 과광역 키 (session/csrf/auth/key bare)는 추가하지 않았는지 확인 (false-positive 보류).
 func TestIsSensitiveKey_BroadKeysStillNotMasked(t *testing.T) {
-	notMasked := []string{"session", "csrf", "auth", "key", "jwt", "username"}
+	notMasked := []string{"session", "csrf", "auth", "jwt", "username"}
 	for _, k := range notMasked {
 		if isSensitiveKey(k) {
 			t.Errorf("isSensitiveKey(%q) = true, want false (broad key must stay unmasked)", k)
+		}
+		if isBroadValueKey(k) {
+			t.Errorf("isBroadValueKey(%q) = true, want false (only %q is value-gated)", k, "key")
 		}
 	}
 }

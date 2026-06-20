@@ -62,11 +62,15 @@ func TestSanitizeHandler_MessageMasking_TextOutput(t *testing.T) {
 	}
 }
 
-// TestIsSensitiveKey_BareKeyNotMasked — Behavior 3 (RED expected)
-// "key" 단독 키는 마스킹하지 않아야 한다.
-func TestIsSensitiveKey_BareKeyNotMasked(t *testing.T) {
+func TestBareKey_NameAloneNotMasked_ValueGatesRedaction_8e92058d(t *testing.T) {
 	if isSensitiveKey("key") {
-		t.Errorf(`isSensitiveKey("key") = true, want false: bare "key" should not be masked`)
+		t.Errorf(`isSensitiveKey("key") = true, want false: key name alone must not force redaction`)
+	}
+	if !isBroadValueKey("key") || !isSecretLikeValue("sk_live_"+"FAKEvalueNotARealStripeKey") {
+		t.Errorf("secret-like value under key= must be redacted under new contract")
+	}
+	if isSecretLikeValue("plain-identifier") {
+		t.Errorf("plain identifier under key= must stay unmasked")
 	}
 }
 
