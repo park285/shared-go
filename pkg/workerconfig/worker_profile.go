@@ -40,6 +40,15 @@ const (
 
 	defaultMinQueuePerEndpointMultiplier = 4
 	timeoutNetworkMargin                 = 5 * time.Second
+
+	maxWorkers          = 4096
+	maxQueueCapacity    = 1 << 20
+	maxInFlight         = 1 << 16
+	maxDrainPerTick     = 1 << 20
+	maxAttempts         = 100
+	maxQueueMultiplier  = 1024
+	maxReceiveBodyBytes = 1 << 30
+	maxDuration         = time.Hour
 )
 
 var ErrWorkerProfileDisabled = errors.New("iris bot webhook worker profile is disabled")
@@ -227,26 +236,28 @@ func (p IrisBotWebhookWorkerProfile) Validate() error {
 		problems = append(problems, "profile_id must not be blank")
 	}
 
-	problems = appendPositiveInt(problems, p.Delivery.LaneWorkers, "delivery.lane_workers")
-	problems = appendPositiveInt(problems, p.Delivery.LaneQueueCapacity, "delivery.lane_queue_capacity")
-	problems = appendPositiveInt(problems, p.Delivery.MaxGlobalInFlight, "delivery.max_global_in_flight")
-	problems = appendPositiveInt(problems, p.Delivery.MaxPerEndpointInFlight, "delivery.max_per_endpoint_in_flight")
-	problems = appendPositiveInt(problems, p.Delivery.MaxDrainPerTick, "delivery.max_drain_per_tick")
-	problems = appendPositiveInt(problems, p.Delivery.MaxAttempts, "delivery.max_attempts")
-	problems = appendPositiveDuration(problems, p.Delivery.RequestTimeout, "delivery.request_timeout_ms")
-	problems = appendPositiveDuration(problems, p.Delivery.LaneIdleTimeout, "delivery.lane_idle_timeout_ms")
-	problems = appendPositiveInt(problems, p.Receive.Workers, "receive.workers")
-	problems = appendPositiveInt(problems, p.Receive.QueueSize, "receive.queue_size")
-	problems = appendPositiveDuration(problems, p.Receive.EnqueueTimeout, "receive.enqueue_timeout_ms")
-	problems = appendPositiveDuration(problems, p.Receive.HandlerTimeout, "receive.handler_timeout_ms")
+	problems = appendBoundedInt(problems, p.Delivery.LaneWorkers, "delivery.lane_workers", maxWorkers)
+	problems = appendBoundedInt(problems, p.Delivery.LaneQueueCapacity, "delivery.lane_queue_capacity", maxQueueCapacity)
+	problems = appendBoundedInt(problems, p.Delivery.MaxGlobalInFlight, "delivery.max_global_in_flight", maxInFlight)
+	problems = appendBoundedInt(problems, p.Delivery.MaxPerEndpointInFlight, "delivery.max_per_endpoint_in_flight", maxInFlight)
+	problems = appendBoundedInt(problems, p.Delivery.MaxDrainPerTick, "delivery.max_drain_per_tick", maxDrainPerTick)
+	problems = appendBoundedInt(problems, p.Delivery.MaxAttempts, "delivery.max_attempts", maxAttempts)
+	problems = appendBoundedDuration(problems, p.Delivery.RequestTimeout, "delivery.request_timeout_ms", maxDuration)
+	problems = appendBoundedDuration(problems, p.Delivery.LaneIdleTimeout, "delivery.lane_idle_timeout_ms", maxDuration)
+	problems = appendBoundedInt(problems, p.Receive.Workers, "receive.workers", maxWorkers)
+	problems = appendBoundedInt(problems, p.Receive.QueueSize, "receive.queue_size", maxQueueCapacity)
+	problems = appendBoundedDuration(problems, p.Receive.EnqueueTimeout, "receive.enqueue_timeout_ms", maxDuration)
+	problems = appendBoundedDuration(problems, p.Receive.HandlerTimeout, "receive.handler_timeout_ms", maxDuration)
 	if p.Receive.MaxBodyBytes < 1 {
 		problems = append(problems, "receive.max_body_bytes must be >= 1")
+	} else if p.Receive.MaxBodyBytes > maxReceiveBodyBytes {
+		problems = append(problems, fmt.Sprintf("receive.max_body_bytes must be <= %d", maxReceiveBodyBytes))
 	}
-	problems = appendPositiveDuration(problems, p.Receive.DedupTTL, "receive.dedup_ttl_ms")
-	problems = appendPositiveDuration(problems, p.Receive.DedupTimeout, "receive.dedup_timeout_ms")
-	problems = appendPositiveInt(problems, p.BotPool.Workers, "bot_pool.workers")
-	problems = appendPositiveInt(problems, p.BotPool.QueueSize, "bot_pool.queue_size")
-	problems = appendPositiveInt(problems, p.Validation.MinQueuePerEndpointMultiplier, "validation.min_queue_per_endpoint_multiplier")
+	problems = appendBoundedDuration(problems, p.Receive.DedupTTL, "receive.dedup_ttl_ms", maxDuration)
+	problems = appendBoundedDuration(problems, p.Receive.DedupTimeout, "receive.dedup_timeout_ms", maxDuration)
+	problems = appendBoundedInt(problems, p.BotPool.Workers, "bot_pool.workers", maxWorkers)
+	problems = appendBoundedInt(problems, p.BotPool.QueueSize, "bot_pool.queue_size", maxQueueCapacity)
+	problems = appendBoundedInt(problems, p.Validation.MinQueuePerEndpointMultiplier, "validation.min_queue_per_endpoint_multiplier", maxQueueMultiplier)
 
 	if len(problems) == 0 {
 		if p.Delivery.MaxPerEndpointInFlight > p.Delivery.MaxGlobalInFlight {
@@ -348,16 +359,22 @@ func fromWire(wire wireIrisBotWebhookWorkerProfile) IrisBotWebhookWorkerProfile 
 	}
 }
 
-func appendPositiveInt(problems []string, value int, name string) []string {
+func appendBoundedInt(problems []string, value int, name string, maxValue int) []string {
 	if value < 1 {
 		return append(problems, name+" must be >= 1")
+	}
+	if value > maxValue {
+		return append(problems, fmt.Sprintf("%s must be <= %d", name, maxValue))
 	}
 	return problems
 }
 
-func appendPositiveDuration(problems []string, value time.Duration, name string) []string {
+func appendBoundedDuration(problems []string, value time.Duration, name string, maxValue time.Duration) []string {
 	if value <= 0 {
 		return append(problems, name+" must be > 0")
+	}
+	if value > maxValue {
+		return append(problems, fmt.Sprintf("%s must be <= %s", name, maxValue))
 	}
 	return problems
 }
