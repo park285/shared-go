@@ -11,6 +11,10 @@ import (
 
 var ErrNoJSONFound = errors.New("no valid JSON found in response")
 
+var ErrInputTooLarge = errors.New("jsonutil: input too large")
+
+const DefaultExtractMaxBytes = 1 << 20
+
 const (
 	jsonObjectOpen  byte = 123
 	jsonObjectClose byte = 125
@@ -26,6 +30,14 @@ var fenceRe = regexp.MustCompile("(?s)```(?:json)?\\s*([\\s\\S]*?)```")
 // 1. 코드펜스 내 JSON 우선 시도
 // 2. 브라켓 매칭으로 폴백
 func Extract(text string) ([]byte, error) {
+	return ExtractWithLimit(text, DefaultExtractMaxBytes)
+}
+
+func ExtractWithLimit(text string, maxBytes int) ([]byte, error) {
+	if maxBytes > 0 && len(text) > maxBytes {
+		return nil, ErrInputTooLarge
+	}
+
 	text = strings.TrimSpace(text)
 
 	// 1. 코드펜스 우선
@@ -41,6 +53,14 @@ func Extract(text string) ([]byte, error) {
 }
 
 func ExtractToMap(text string) (map[string]any, error) {
+	return ExtractToMapWithLimit(text, DefaultExtractMaxBytes)
+}
+
+func ExtractToMapWithLimit(text string, maxBytes int) (map[string]any, error) {
+	if maxBytes > 0 && len(text) > maxBytes {
+		return nil, ErrInputTooLarge
+	}
+
 	text = strings.TrimSpace(text)
 
 	// 코드펜스 후보는 단일 Unmarshal로 valid 판정과 디코드를 겸한다(Valid+Unmarshal 이중 파싱 제거).
