@@ -98,6 +98,11 @@ func (a *CompressedLogArchiver) wait() {
 	a.inflight.Wait()
 }
 
+func (a *CompressedLogArchiver) Close() error {
+	a.wait()
+	return nil
+}
+
 func MoveAndPrune(logPath string, maxBackups, maxAgeDays int) error {
 	logDir := filepath.Dir(logPath)
 	archiveDir := filepath.Join(logDir, DirName)

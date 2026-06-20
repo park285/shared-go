@@ -118,13 +118,16 @@ func enableFileLoggingWithStdout(stdout io.Writer, config Config, fileName strin
 	}
 
 	stdoutLane := stdout
-	closers := make(multiCloser, 0, 2)
+	closers := make(multiCloser, 0, 3)
 	if opts.AsyncStdout {
 		asyncStdout := newAsyncDropWriter(stdout, asyncStdoutQueueDepth)
 		stdoutLane = asyncStdout
 		closers = append(closers, asyncStdout)
 	}
 	closers = append(closers, logFile)
+	if logArchiver != nil {
+		closers = append(closers, logArchiver)
+	}
 
 	w := io.MultiWriter(stdoutLane, &archive.AwareWriter{Inner: logFile, Archiver: logArchiver})
 
