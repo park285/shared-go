@@ -1,14 +1,16 @@
 package promptguard
 
 import (
+	"errors"
 	"log/slog"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 )
 
-func TestEvaluateOversizeInputReviewsWithoutRuleEval(t *testing.T) {
-	t.Parallel()
+func newOversizeTestGuard(t *testing.T, handler slog.Handler) *Guard {
+	t.Helper()
 
 	pack, err := compileRulepack(&rawRulepack{
 		Version: 2,
@@ -25,14 +27,24 @@ func TestEvaluateOversizeInputReviewsWithoutRuleEval(t *testing.T) {
 		t.Fatalf("compileRulepack() error = %v", err)
 	}
 
-	handler := &captureHandler{}
 	guard := &Guard{
 		cfg:           Config{Enabled: true},
-		logger:        slog.New(handler),
 		packs:         []compiledPack{pack},
 		cache:         NewTTLCache[string, Evaluation](10, time.Minute),
 		maxInputBytes: 16,
 	}
+	if handler != nil {
+		guard.logger = slog.New(handler)
+	}
+
+	return guard
+}
+
+func TestSG01GuardOversizeInputBlocks_cb5f8136(t *testing.T) {
+	t.Parallel()
+
+	handler := &captureHandler{}
+	guard := newOversizeTestGuard(t, handler)
 
 	input := strings.Repeat("시스템", 64)
 	if len(input) <= guard.maxInputBytes {
@@ -40,27 +52,91 @@ func TestEvaluateOversizeInputReviewsWithoutRuleEval(t *testing.T) {
 	}
 
 	evaluation := guard.Evaluate(input)
-
-	if evaluation.Decision != DecisionReview {
-		t.Fatalf("Evaluate(oversize) decision = %q, want %q", evaluation.Decision, DecisionReview)
+	if evaluation.Decision != DecisionBlock {
+		t.Fatalf("Evaluate(oversize) decision = %q, want %q", evaluation.Decision, DecisionBlock)
 	}
-	if evaluation.Malicious() {
-		t.Fatal("Evaluate(oversize) must not hard-block (Malicious=true)")
+	if !evaluation.Malicious() {
+		t.Fatal("Evaluate(oversize) must hard-block (Malicious=true) — guard cannot inspect input")
+	}
+	if !evaluation.OversizeBlocked {
+		t.Fatal("Evaluate(oversize) OversizeBlocked = false, want true")
 	}
 	if len(evaluation.Hits) != 0 {
 		t.Fatalf("Evaluate(oversize) Hits = %d, want 0 (rule eval must be skipped)", len(evaluation.Hits))
 	}
 
+	blockedErr := guard.EnsureSafe(input)
+	if blockedErr == nil {
+		t.Fatal("EnsureSafe(oversize) error = nil, want *BlockedError")
+	}
+	var blocked *BlockedError
+	if !errors.As(blockedErr, &blocked) {
+		t.Fatalf("EnsureSafe(oversize) error type = %T, want *BlockedError", blockedErr)
+	}
+	if !slices.Contains(blocked.Rules, ruleInputOversize) {
+		t.Fatalf("EnsureSafe(oversize) BlockedError.Rules = %v, want to contain %q", blocked.Rules, ruleInputOversize)
+	}
+
+	if err := guard.EnsureSafeFrom(input, "user_message"); err == nil {
+		t.Fatal("EnsureSafeFrom(oversize) error = nil, want *BlockedError")
+	}
+}
+
+func TestSG01GuardOversizeDoesNotInvokeCacheOrSingleflight_cb5f8136(t *testing.T) {
+	t.Parallel()
+
+	guard := newOversizeTestGuard(t, nil)
+
+	input := strings.Repeat("시스템", 64)
+	if len(input) <= guard.maxInputBytes {
+		t.Fatalf("test setup: input len %d must exceed cap %d", len(input), guard.maxInputBytes)
+	}
+
+	guard.Evaluate(input)
+
 	if guard.cache.Len() != 0 {
 		t.Fatalf("Evaluate(oversize) cache len = %d, want 0 (cache must not be touched)", guard.cache.Len())
 	}
+	if keys := guard.cacheKeysForTest(); len(keys) != 0 {
+		t.Fatalf("Evaluate(oversize) cache keys = %v, want none (cacheKey/singleflight must be skipped)", keys)
+	}
+}
+
+func TestSG01GuardOversizeLogDoesNotIncludePayload_cb5f8136(t *testing.T) {
+	t.Parallel()
+
+	handler := &captureHandler{}
+	guard := newOversizeTestGuard(t, handler)
+
+	const secretMarker = "SUPERSECRETPAYLOADMARKER"
+	input := secretMarker + strings.Repeat("시스템", 64)
+
+	guard.Evaluate(input)
 
 	if len(handler.records) != 1 {
 		t.Fatalf("Evaluate(oversize) emitted %d log records, want 1", len(handler.records))
 	}
-	reason, ok := handler.attr(handler.records[0], "reason")
-	if !ok || !strings.Contains(reason.String(), "input_oversize") {
-		t.Fatalf("Evaluate(oversize) reason = %q (found=%v), want input_oversize", reason.String(), ok)
+
+	record := handler.records[0]
+	reason, ok := handler.attr(record, "reason")
+	if !ok || !strings.Contains(reason.String(), ruleInputOversize) {
+		t.Fatalf("Evaluate(oversize) reason = %q (found=%v), want %q", reason.String(), ok, ruleInputOversize)
+	}
+	if _, ok := handler.attr(record, "size"); !ok {
+		t.Fatal("Evaluate(oversize) log missing size attribute")
+	}
+	if _, ok := handler.attr(record, "max"); !ok {
+		t.Fatal("Evaluate(oversize) log missing max attribute")
+	}
+
+	record.Attrs(func(a slog.Attr) bool {
+		if strings.Contains(a.Value.String(), secretMarker) {
+			t.Fatalf("Evaluate(oversize) log attr %q leaked input payload", a.Key)
+		}
+		return true
+	})
+	if strings.Contains(record.Message, secretMarker) {
+		t.Fatalf("Evaluate(oversize) log message leaked input payload: %q", record.Message)
 	}
 }
 

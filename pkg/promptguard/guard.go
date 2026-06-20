@@ -18,6 +18,8 @@ const (
 	hitActionBlock  = "block"
 )
 
+const ruleInputOversize = "input_oversize"
+
 type Config struct {
 	Enabled             bool
 	Threshold           float64
@@ -126,11 +128,16 @@ func (g *Guard) blockedError(input, source string) *BlockedError {
 		return nil
 	}
 
+	rules := matchedRuleIDs(evaluation.Hits)
+	if evaluation.OversizeBlocked {
+		rules = append(rules, ruleInputOversize)
+	}
+
 	return &BlockedError{
 		Score:     evaluation.Score,
 		Threshold: evaluation.Threshold,
 		Families:  distinctPositiveFamilies(evaluation.Hits),
-		Rules:     matchedRuleIDs(evaluation.Hits),
+		Rules:     rules,
 		Source:    source,
 	}
 }
@@ -141,7 +148,7 @@ func (g *Guard) evaluate(input, source string) Evaluation {
 	}
 
 	if g.maxInputBytes > 0 && len(input) > g.maxInputBytes {
-		return g.fallbackEvaluation(g.policy(), source, "input_oversize")
+		return g.inputOversizeEvaluation(g.policy(), source, len(input))
 	}
 
 	key := cacheKey(input)
@@ -192,6 +199,31 @@ func (g *Guard) fallbackEvaluation(policy compiledPolicy, source, reason string)
 	}
 
 	return Evaluation{Decision: DecisionReview, Score: 0, Hits: nil, Threshold: policy.BlockThreshold, ReviewThreshold: policy.ReviewThreshold, Source: source}
+}
+
+func (g *Guard) inputOversizeEvaluation(policy compiledPolicy, source string, size int) Evaluation {
+	if g != nil && g.logger != nil {
+		attrs := []any{
+			slog.String("reason", ruleInputOversize),
+			slog.Int("size", size),
+			slog.Int("max", g.maxInputBytes),
+		}
+		if source != "" {
+			attrs = append(attrs, slog.String("source", source))
+		}
+
+		g.logger.Error("guard_input_oversize_blocked", attrs...)
+	}
+
+	return Evaluation{
+		Decision:        DecisionBlock,
+		Score:           policy.BlockThreshold,
+		Hits:            nil,
+		Threshold:       policy.BlockThreshold,
+		ReviewThreshold: policy.ReviewThreshold,
+		Source:          source,
+		OversizeBlocked: true,
+	}
 }
 
 func (g *Guard) policy() compiledPolicy {

@@ -30,6 +30,7 @@ type Evaluation struct {
 	ReviewThreshold  float64  `json:"review_threshold,omitempty"`
 	DistinctFamilies int      `json:"distinct_families,omitempty"`
 	Source           string   `json:"source,omitempty"`
+	OversizeBlocked  bool     `json:"oversize_blocked,omitempty"`
 }
 
 func (e *Evaluation) Malicious() bool {
