@@ -10,7 +10,7 @@ require (
 	github.com/lmittmann/tint v1.1.3
 	github.com/mattn/go-isatty v0.0.22
 	github.com/mtibben/confusables v0.0.0-20210201002637-9d1b0723b659
-	github.com/openai/openai-go/v3 v3.39.0
+	github.com/openai/openai-go/v3 v3.41.0
 	github.com/quic-go/quic-go v0.60.0
 	github.com/stretchr/testify v1.11.1
 	github.com/ymw0407/jamo v1.0.0
@@ -19,8 +19,8 @@ require (
 	go.opentelemetry.io/otel/sdk v1.44.0
 	go.opentelemetry.io/otel/trace v1.44.0
 	go.uber.org/automaxprocs v1.6.0
-	golang.org/x/sync v0.20.0
-	golang.org/x/text v0.37.0
+	golang.org/x/sync v0.21.0
+	golang.org/x/text v0.38.0
 	google.golang.org/grpc v1.81.1
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v3 v3.0.1
