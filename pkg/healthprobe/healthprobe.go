@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/park285/shared-go/pkg/h3"
@@ -121,10 +122,16 @@ func fetchURL(rawURL string, headers map[string]string, opts FetchOptions) ([]by
 }
 
 func newClient(parsed *url.URL, opts FetchOptions) (*http.Client, func(), error) {
+	var guard func(net.IP) error
+	if opts.RestrictPrivateNetworks {
+		guard = dialGuard
+	}
+
 	if parsed.Scheme == "https" {
 		h3Client, closeFn, clientErr := h3.NewClient(0, h3.ClientOptions{
 			CACertFile: os.Getenv(CACertFileEnv),
 			ServerName: os.Getenv(ServerNameEnv),
+			DialGuard:  guard,
 		})
 		if clientErr != nil {
 			return nil, nil, clientErr
@@ -137,7 +144,40 @@ func newClient(parsed *url.URL, opts FetchOptions) (*http.Client, func(), error)
 		Timeout:       requestTimeout,
 		CheckRedirect: redirectPolicy(opts),
 	}
+	if guard != nil {
+		client.Transport = guardedHTTPTransport(guard)
+	}
 	return client, func() {}, nil
+}
+
+func dialGuard(ip net.IP) error {
+	if isPrivateIP(ip) {
+		return fmt.Errorf("%w: dialed %s", ErrPrivateNetwork, ip)
+	}
+	return nil
+}
+
+func guardedHTTPTransport(guard func(net.IP) error) *http.Transport {
+	dialer := &net.Dialer{Timeout: requestTimeout}
+	dialer.Control = func(_, address string, _ syscall.RawConn) error {
+		host, _, err := net.SplitHostPort(address)
+		if err != nil {
+			return fmt.Errorf("%w: parse dial addr %q: %v", ErrPrivateNetwork, address, err)
+		}
+		ip := net.ParseIP(host)
+		if ip == nil {
+			return fmt.Errorf("%w: unresolved dial addr %q", ErrPrivateNetwork, address)
+		}
+		return guard(ip)
+	}
+	return &http.Transport{
+		DialContext:           dialer.DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          10,
+		IdleConnTimeout:       30 * time.Second,
+		TLSHandshakeTimeout:   requestTimeout,
+		ExpectContinueTimeout: time.Second,
+	}
 }
 
 // redirectPolicy는 redirect를 따를지/얼마나/헤더를 유지할지 강제한다. cross-host redirect에서
@@ -212,8 +252,10 @@ func hostAllowed(host string, allowed []string) bool {
 	return false
 }
 
+var lookupIPAddr = net.DefaultResolver.LookupIPAddr
+
 func rejectPrivateNetwork(ctx context.Context, host string) error {
-	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	addrs, err := lookupIPAddr(ctx, host)
 	if err != nil {
 		return fmt.Errorf("resolve host %s: %w", host, err)
 	}

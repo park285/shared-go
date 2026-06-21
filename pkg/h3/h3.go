@@ -1,9 +1,11 @@
 package h3
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"time"
@@ -57,6 +59,9 @@ type ClientOptions struct {
 	CACertFile string
 	// SAN에 없는 주소(127.0.0.1, docker DNS)로 접속할 때 SAN에 있는 이름으로 검증한다.
 	ServerName string
+	// DialGuard는 dial 직전 해석된 peer IP를 검사한다(nil이면 검사 없음). 해석된 IP로 고정
+	// 연결하므로 check-time과 dial-time이 갈리는 DNS rebinding을 차단한다.
+	DialGuard func(net.IP) error
 }
 
 func NewClient(timeout time.Duration, opts ClientOptions) (*http.Client, func(), error) {
@@ -76,6 +81,19 @@ func NewClient(timeout time.Duration, opts ClientOptions) (*http.Client, func(),
 	transport := &http3.Transport{
 		TLSClientConfig: tlsConfig,
 		QUICConfig:      newClientQUICConfig(),
+	}
+	if opts.DialGuard != nil {
+		guard := opts.DialGuard
+		transport.Dial = func(ctx context.Context, addr string, tlsCfg *tls.Config, cfg *quic.Config) (*quic.Conn, error) {
+			udpAddr, err := net.ResolveUDPAddr("udp", addr)
+			if err != nil {
+				return nil, fmt.Errorf("resolve h3 dial addr %s: %w", addr, err)
+			}
+			if guardErr := guard(udpAddr.IP); guardErr != nil {
+				return nil, guardErr
+			}
+			return quic.DialAddrEarly(ctx, udpAddr.String(), tlsCfg, cfg)
+		}
 	}
 
 	client := &http.Client{

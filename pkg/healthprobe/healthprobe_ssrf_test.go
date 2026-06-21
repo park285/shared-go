@@ -1,12 +1,32 @@
 package healthprobe
 
 import (
+	"context"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
+
+func TestFetchURL_DNSRebinding_6ccdf328(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("rebound"))
+	}))
+	defer server.Close()
+
+	orig := lookupIPAddr
+	lookupIPAddr = func(_ context.Context, _ string) ([]net.IPAddr, error) {
+		return []net.IPAddr{{IP: net.ParseIP("203.0.113.10")}}, nil
+	}
+	defer func() { lookupIPAddr = orig }()
+
+	opts := FetchOptions{RestrictPrivateNetworks: true}
+	if _, err := FetchURLWithOptions(server.URL, nil, opts); !errors.Is(err, ErrPrivateNetwork) {
+		t.Fatalf("rebinding fetch error = %v, want ErrPrivateNetwork (dial-time guard must reject loopback)", err)
+	}
+}
 
 func TestSG04HealthprobeRejectsLoopbackByDefault_02aae1e0(t *testing.T) {
 	t.Parallel()
