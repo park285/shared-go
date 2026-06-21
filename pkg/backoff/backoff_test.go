@@ -190,6 +190,23 @@ func TestComputeExponentialBackoff_ZeroMaxIntervalWithJitter(t *testing.T) {
 	}
 }
 
+func TestComputeExponentialBackoff_ZeroMaxIntervalSaturatedWithJitterDoesNotOverflow(t *testing.T) {
+	base := 100 * time.Millisecond
+	jitter := 50 * time.Millisecond
+
+	for _, attempt := range []int{54, 55, 56, 100, 1000} {
+		for range 100 {
+			got := ComputeExponentialBackoff(attempt, base, 0, jitter)
+			if got <= 0 {
+				t.Fatalf("ComputeExponentialBackoff(%d, %v, 0, %v) = %v, want > 0", attempt, base, jitter, got)
+			}
+			if got < base {
+				t.Fatalf("ComputeExponentialBackoff(%d, %v, 0, %v) = %v, want >= base %v", attempt, base, jitter, got, base)
+			}
+		}
+	}
+}
+
 func TestComputeExponentialBackoffHalfJitter_RangeIsHalfToFullOfCappedBase(t *testing.T) {
 	base := 2 * time.Second
 	maxInterval := 10 * time.Second

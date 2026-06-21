@@ -86,5 +86,9 @@ func addJitter(candidate, jitter time.Duration) time.Duration {
 	if jitter <= 0 {
 		return candidate
 	}
-	return candidate + time.Duration(rand.Int64N(int64(jitter)))
+	sum := candidate + time.Duration(rand.Int64N(int64(jitter)))
+	if sum < candidate {
+		return time.Duration(math.MaxInt64)
+	}
+	return sum
 }
