@@ -59,9 +59,7 @@ type ClientOptions struct {
 	CACertFile string
 	// SAN에 없는 주소(127.0.0.1, docker DNS)로 접속할 때 SAN에 있는 이름으로 검증한다.
 	ServerName string
-	// DialGuard는 dial 직전 해석된 peer IP를 검사한다(nil이면 검사 없음). 해석된 IP로 고정
-	// 연결하므로 check-time과 dial-time이 갈리는 DNS rebinding을 차단한다.
-	DialGuard func(net.IP) error
+	DialGuard  func(net.IP) error
 }
 
 func NewClient(timeout time.Duration, opts ClientOptions) (*http.Client, func(), error) {
