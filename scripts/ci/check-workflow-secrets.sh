@@ -94,7 +94,7 @@ def event_triggered(text: str, event_name: str) -> bool:
                 in_on = False
             elif (
                 re.match(rf"^\s*['\"]?{event_name}['\"]?\s*:", raw)
-                or re.match(rf"^\s*-\s*['\"]?{event_name}['\"]?\s*$", stripped)
+                or re.match(rf"^\s*-\s*['\"]?{event_name}['\"]?\s*(?:#.*)?$", stripped)
             ):
                 return True
 
