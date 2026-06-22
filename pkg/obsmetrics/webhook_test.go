@@ -59,6 +59,25 @@ func TestWebhookMetricsHistogramAndGauge(t *testing.T) {
 	}
 }
 
+func TestWebhookMetricsDecodeLatencyHistogram(t *testing.T) {
+	t.Parallel()
+
+	m := NewWebhookMetrics("chat_bot")
+	m.ObserveDecodeLatency(10 * time.Millisecond)
+	m.ObserveDecodeLatency(250 * time.Millisecond)
+
+	body := renderWebhook(t, m)
+	for _, want := range []string{
+		"chat_bot_webhook_decode_latency_seconds_count 2",
+		"chat_bot_webhook_decode_latency_seconds_sum",
+		"chat_bot_webhook_decode_latency_seconds_bucket",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body missing %q:\n%s", want, body)
+		}
+	}
+}
+
 func TestWebhookDiagnosticsExported(t *testing.T) {
 	t.Parallel()
 

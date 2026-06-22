@@ -38,6 +38,7 @@ type WebhookMetrics struct {
 
 	handlerDuration *Histogram
 	enqueueWait     *Histogram
+	decodeLatency   *Histogram
 	dedupLatency    *Histogram
 	queueDepth      atomic.Int64
 
@@ -50,6 +51,7 @@ func NewWebhookMetrics(prefix string) *WebhookMetrics {
 		prefix:          prefix,
 		handlerDuration: NewHistogram(WebhookLatencyBuckets),
 		enqueueWait:     NewHistogram(WebhookLatencyBuckets),
+		decodeLatency:   NewHistogram(WebhookLatencyBuckets),
 		dedupLatency:    NewHistogram(WebhookLatencyBuckets),
 	}
 }
@@ -90,7 +92,11 @@ func (m *WebhookMetrics) ObserveAccepted() {
 	}
 }
 
-func (m *WebhookMetrics) ObserveDecodeLatency(_ time.Duration) {}
+func (m *WebhookMetrics) ObserveDecodeLatency(d time.Duration) {
+	if m != nil && m.decodeLatency != nil {
+		m.decodeLatency.Observe(d.Seconds())
+	}
+}
 
 func (m *WebhookMetrics) ObserveDedupLatency(d time.Duration) {
 	if m != nil && m.dedupLatency != nil {
@@ -164,6 +170,7 @@ func (m *WebhookMetrics) Expose(w io.Writer) bool {
 	}{
 		{n("handler_duration_seconds"), "Webhook message handler execution duration in seconds.", m.handlerDuration},
 		{n("enqueue_wait_seconds"), "Time a webhook request waited before being enqueued, in seconds.", m.enqueueWait},
+		{n("decode_latency_seconds"), "Webhook request JSON decode latency in seconds.", m.decodeLatency},
 		{n("dedup_latency_seconds"), "Deduplication check latency in seconds.", m.dedupLatency},
 	}
 	for _, h := range histograms {
