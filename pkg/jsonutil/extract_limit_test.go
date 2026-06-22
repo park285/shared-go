@@ -73,3 +73,24 @@ func BenchmarkSG03ExtractLargeNoJSONLinear_39575489(b *testing.B) {
 		_, _ = Extract(input)
 	}
 }
+
+func TestExtractToMapWithLimitRejectsLargeFencedArrayWithoutDecoding_39575489(t *testing.T) {
+	input := "```json\n[" + strings.Repeat("0,", 64*1024) + "0]\n```"
+
+	allocs := testing.AllocsPerRun(5, func() {
+		if _, err := ExtractToMapWithLimit(input, len(input)); err == nil {
+			t.Fatal("ExtractToMapWithLimit(large fenced array) error = nil, want non-object error")
+		}
+	})
+	if allocs > 50 {
+		t.Fatalf("ExtractToMapWithLimit(large fenced array) allocations = %.0f, want <= 50", allocs)
+	}
+}
+
+func TestExtractToMapWithLimitRejectsFencedScalarAsNonObject(t *testing.T) {
+	input := "```json\n42\n```"
+
+	if _, err := ExtractToMapWithLimit(input, len(input)); err == nil {
+		t.Fatal("ExtractToMapWithLimit(fenced scalar) error = nil, want non-object error")
+	}
+}

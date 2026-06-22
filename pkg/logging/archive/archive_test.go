@@ -309,6 +309,35 @@ func TestMoveAndPrune_SetsArchivedBackupPerm(t *testing.T) {
 	assertPathPerm(t, filepath.Join(logDir, DirName, name), LogFilePerm)
 }
 
+func TestMoveAndPrune_RemovesSymlinkBackupWithoutChmodTarget(t *testing.T) {
+	t.Parallel()
+
+	logDir := t.TempDir()
+	logPath := filepath.Join(logDir, "service.log")
+	if err := os.WriteFile(logPath, []byte("active\n"), LogFilePerm); err != nil {
+		t.Fatalf("write log file failed: %v", err)
+	}
+
+	victimPath := filepath.Join(logDir, "victim")
+	if err := os.WriteFile(victimPath, []byte("secret\n"), 0o600); err != nil {
+		t.Fatalf("write victim failed: %v", err)
+	}
+
+	name := fmt.Sprintf("service-%s.log.gz", time.Now().UTC().Format(BackupTimeFmt))
+	linkPath := filepath.Join(logDir, name)
+	if err := os.Symlink(victimPath, linkPath); err != nil {
+		t.Fatalf("create symlink backup failed: %v", err)
+	}
+
+	if err := MoveAndPrune(logPath, 5, 7); err != nil {
+		t.Fatalf("MoveAndPrune() error = %v", err)
+	}
+
+	assertPathMissing(t, linkPath)
+	assertPathMissing(t, filepath.Join(logDir, DirName, name))
+	assertPathPerm(t, victimPath, 0o600)
+}
+
 type failingWriter struct{}
 
 func (failingWriter) Write([]byte) (int, error) {

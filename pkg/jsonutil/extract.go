@@ -67,16 +67,26 @@ func ExtractToMapWithLimit(text string, maxBytes int) (map[string]any, error) {
 	// 기존 Extract 의미상 코드펜스가 valid JSON이면 거기서 확정하므로, valid지만 object가
 	// 아니면 에러로 끝내고(폴백하지 않음), invalid일 때만 bracket 폴백으로 넘어간다.
 	if matches := fenceRe.FindStringSubmatch(text); len(matches) > 1 {
-		candidate := []byte(strings.TrimSpace(matches[1]))
-		var v any
-		if err := json.Unmarshal(candidate, &v); err == nil {
-			switch m := v.(type) {
-			case map[string]any:
+		candidate := strings.TrimSpace(matches[1])
+		switch firstJSONByte(candidate) {
+		case jsonObjectOpen:
+			var m map[string]any
+			if err := json.Unmarshal([]byte(candidate), &m); err == nil {
 				return m, nil
-			case nil:
-				// JSON null은 map[string]any 디코드에서 nil map이 된다. 기존 동작을 보존한다.
+			}
+		case 'n':
+			if candidate == "null" {
 				return nil, nil
-			default:
+			}
+			if json.Valid([]byte(candidate)) {
+				return nil, fmt.Errorf("unmarshal json: not a JSON object")
+			}
+		case jsonArrayOpen:
+			if json.Valid([]byte(candidate)) {
+				return nil, fmt.Errorf("unmarshal json: not a JSON object")
+			}
+		default:
+			if json.Valid([]byte(candidate)) {
 				return nil, fmt.Errorf("unmarshal json: not a JSON object")
 			}
 		}
@@ -92,6 +102,18 @@ func ExtractToMapWithLimit(text string, maxBytes int) (map[string]any, error) {
 		return nil, fmt.Errorf("unmarshal json: %w", err)
 	}
 	return result, nil
+}
+
+func firstJSONByte(s string) byte {
+	for i := range len(s) {
+		switch s[i] {
+		case ' ', '\n', '\r', '\t':
+			continue
+		default:
+			return s[i]
+		}
+	}
+	return 0
 }
 
 // extractFirstJSON: 텍스트에서 첫 번째 유효한 JSON object/array를 추출합니다.

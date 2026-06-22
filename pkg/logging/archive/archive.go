@@ -117,6 +117,12 @@ func MoveAndPrune(logPath string, maxBackups, maxAgeDays int) error {
 
 	for _, name := range names {
 		source := filepath.Join(logDir, name)
+		if ok, err := removeIfUnsafeCompressedBackup(source); err != nil {
+			return fmt.Errorf("check compressed backup %s: %w", name, err)
+		} else if !ok {
+			continue
+		}
+
 		target := filepath.Join(archiveDir, name)
 		if err := os.Rename(source, target); err != nil {
 			if os.IsNotExist(err) {
@@ -124,6 +130,12 @@ func MoveAndPrune(logPath string, maxBackups, maxAgeDays int) error {
 			}
 			return fmt.Errorf("move compressed backup %s: %w", name, err)
 		}
+		if ok, err := removeIfUnsafeCompressedBackup(target); err != nil {
+			return fmt.Errorf("check moved compressed backup %s: %w", name, err)
+		} else if !ok {
+			continue
+		}
+
 		if err := os.Chmod(target, LogFilePerm); err != nil {
 			fmt.Fprintf(os.Stderr, "log archive warning: chmod %s err=%v\n", target, err)
 		}
@@ -134,4 +146,21 @@ func MoveAndPrune(logPath string, maxBackups, maxAgeDays int) error {
 	}
 
 	return nil
+}
+
+func removeIfUnsafeCompressedBackup(path string) (bool, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	if info.Mode().IsRegular() {
+		return true, nil
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return false, err
+	}
+	return false, nil
 }

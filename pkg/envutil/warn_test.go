@@ -42,7 +42,9 @@ func TestInt_ParseFailureWarns(t *testing.T) {
 	require.Len(t, records, 1)
 	require.Equal(t, "WARN", records[0]["level"])
 	require.Equal(t, "TEST_INT_WARN", records[0]["key"])
-	require.Equal(t, "30sx", records[0]["value"])
+	require.Equal(t, true, records[0]["value_present"])
+	require.NotContains(t, records[0], "value")
+	require.NotContains(t, records[0]["error"], "30sx")
 }
 
 func TestInt_ValidDoesNotWarn(t *testing.T) {
@@ -58,7 +60,9 @@ func TestIntRaw_ParseFailureWarns(t *testing.T) {
 	require.Equal(t, 7, got)
 	require.Len(t, records, 1)
 	require.Equal(t, "TEST_INTRAW_WARN", records[0]["key"])
-	require.Equal(t, "bad", records[0]["value"])
+	require.Equal(t, true, records[0]["value_present"])
+	require.NotContains(t, records[0], "value")
+	require.NotContains(t, records[0]["error"], "bad")
 }
 
 func TestInt64_ParseFailureWarns(t *testing.T) {
@@ -68,7 +72,9 @@ func TestInt64_ParseFailureWarns(t *testing.T) {
 	require.Equal(t, int64(11), got)
 	require.Len(t, records, 1)
 	require.Equal(t, "TEST_INT64_WARN", records[0]["key"])
-	require.Equal(t, "9bad", records[0]["value"])
+	require.Equal(t, true, records[0]["value_present"])
+	require.NotContains(t, records[0], "value")
+	require.NotContains(t, records[0]["error"], "9bad")
 }
 
 func TestFloat_ParseFailureWarns(t *testing.T) {
@@ -78,7 +84,9 @@ func TestFloat_ParseFailureWarns(t *testing.T) {
 	require.Equal(t, 2.5, got)
 	require.Len(t, records, 1)
 	require.Equal(t, "TEST_FLOAT_WARN", records[0]["key"])
-	require.Equal(t, "3.1x", records[0]["value"])
+	require.Equal(t, true, records[0]["value_present"])
+	require.NotContains(t, records[0], "value")
+	require.NotContains(t, records[0]["error"], "3.1x")
 }
 
 func TestDuration_ParseFailureWarns(t *testing.T) {
@@ -88,7 +96,9 @@ func TestDuration_ParseFailureWarns(t *testing.T) {
 	require.Equal(t, 9*time.Second, got)
 	require.Len(t, records, 1)
 	require.Equal(t, "TEST_DURATION_WARN", records[0]["key"])
-	require.Equal(t, "30sx", records[0]["value"])
+	require.Equal(t, true, records[0]["value_present"])
+	require.NotContains(t, records[0], "value")
+	require.NotContains(t, records[0]["error"], "30sx")
 }
 
 func TestBool_UnrecognizedWarns(t *testing.T) {
@@ -98,7 +108,8 @@ func TestBool_UnrecognizedWarns(t *testing.T) {
 	require.True(t, got)
 	require.Len(t, records, 1)
 	require.Equal(t, "TEST_BOOL_WARN", records[0]["key"])
-	require.Equal(t, "maybe", records[0]["value"])
+	require.Equal(t, true, records[0]["value_present"])
+	require.NotContains(t, records[0], "value")
 }
 
 func TestBool_RecognizedDoesNotWarn(t *testing.T) {

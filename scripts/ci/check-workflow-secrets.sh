@@ -17,9 +17,6 @@ import sys
 from pathlib import Path
 
 SECRET_EXPR_RE = re.compile(r"\$\{\{(?P<body>.*?)\}\}", re.DOTALL)
-DOT_SECRET_RE = re.compile(r"secrets\s*\.\s*([A-Za-z_][A-Za-z0-9_]*)")
-BRACKET_SECRET_RE = re.compile(r"secrets\s*\[\s*['\"]([A-Za-z_][A-Za-z0-9_]*)['\"]\s*\]")
-WHOLE_SECRET_RE = re.compile(r"(?<![.'\"])\bsecrets\b(?!['\"])(?!\s*[.\[])")
 SECRETS_INHERIT_RE = re.compile(r"^\s*secrets\s*:\s*inherit\s*(?:#.*)?$")
 SECURITY_WORKFLOWS = {"security.yml", "security.yaml", "security-full.yml", "security-full.yaml"}
 
@@ -70,72 +67,237 @@ def indent(raw: str) -> int:
     return len(raw) - len(raw.lstrip(" "))
 
 
-def event_triggered(text: str, event_name: str) -> bool:
-    in_on = False
-    on_indent = 0
-    event_re = re.compile(rf"(^|[^A-Za-z0-9_]){event_name}([^A-Za-z0-9_]|$)")
+def strip_yaml_comment_and_quotes(raw: str) -> str:
+    out: list[str] = []
+    quote: str | None = None
+    i = 0
+    while i < len(raw):
+        ch = raw[i]
+        if quote is not None:
+            out.append(" ")
+            if quote == '"' and ch == "\\" and i + 1 < len(raw):
+                i += 1
+                out.append(" ")
+            elif ch == quote:
+                quote = None
+        elif ch in {"'", '"'}:
+            quote = ch
+            out.append(" ")
+        elif ch == "#":
+            out.extend(" " for _ in raw[i:])
+            break
+        else:
+            out.append(ch)
+        i += 1
+    return "".join(out)
 
-    for raw in text.splitlines():
+
+def strip_yaml_comment(raw: str) -> str:
+    out: list[str] = []
+    quote: str | None = None
+    i = 0
+    while i < len(raw):
+        ch = raw[i]
+        if quote is not None:
+            out.append(ch)
+            if quote == '"' and ch == "\\" and i + 1 < len(raw):
+                i += 1
+                out.append(raw[i])
+            elif ch == quote:
+                quote = None
+        elif ch in {"'", '"'}:
+            quote = ch
+            out.append(ch)
+        elif ch == "#":
+            break
+        else:
+            out.append(ch)
+        i += 1
+    return "".join(out).rstrip()
+
+
+def unquote_scalar(value: str) -> str:
+    value = strip_yaml_comment(value).strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    return value
+
+
+def structural_yaml_failures(text: str) -> list[tuple[int, str]]:
+    failures: list[tuple[int, str]] = []
+    block_scalar_indent: int | None = None
+    for line_no, raw in enumerate(text.splitlines(), start=1):
+        if block_scalar_indent is not None:
+            if meaningful(raw) and indent(raw) <= block_scalar_indent:
+                block_scalar_indent = None
+            else:
+                continue
         if not meaningful(raw):
             continue
-
-        current_indent = indent(raw)
-        stripped = raw.strip()
-        match = re.match(r"^(\s*)['\"]?[Oo][Nn]['\"]?\s*:\s*(.*)$", raw)
+        if raw[: indent(raw)].find("\t") != -1:
+            failures.append((line_no, "tabs in workflow indentation are unsupported"))
+        scrubbed = strip_yaml_comment_and_quotes(raw)
+        if re.search(r"^\s*<<\s*:", scrubbed):
+            failures.append((line_no, "YAML merge keys are unsupported in workflow policy checks"))
+        if re.search(r"(^|[\s:{,\[])[&*][A-Za-z0-9_-]+\b", scrubbed):
+            failures.append((line_no, "YAML anchors and aliases are unsupported in workflow policy checks"))
+        if re.search(r"(^|[\s:{,\[])(![A-Za-z0-9_/.-]+|!<[^>]+>)", scrubbed):
+            failures.append((line_no, "YAML tags are unsupported in workflow policy checks"))
+        stripped = scrubbed.strip()
+        if re.match(r"^(?:-\s*)?[\[{]\s*$", stripped):
+            failures.append((line_no, "multi-line YAML flow collections are unsupported in workflow policy checks"))
+        kv = parse_key_value(raw)
+        if kv is not None:
+            _, value = kv
+            normalized = unquote_scalar(value)
+            if normalized.startswith("[") and not normalized.endswith("]"):
+                failures.append((line_no, "multi-line YAML flow collections are unsupported in workflow policy checks"))
+            if normalized.startswith("{") and normalized != "{}":
+                failures.append((line_no, "YAML flow mappings are unsupported in workflow policy checks"))
+        match = re.match(r"^\s*(?:-\s*)?(?:['\"]?[A-Za-z0-9_-]+['\"]?\s*:\s*)?([|>][+-]?)\s*(?:#.*)?$", raw)
         if match:
-            in_on = True
-            on_indent = len(match.group(1))
-            if event_re.search(match.group(2).strip()):
-                return True
+            block_scalar_indent = indent(raw)
+    return failures
+
+
+def parse_key_value(raw: str) -> tuple[str, str] | None:
+    if not meaningful(raw):
+        return None
+    stripped = strip_yaml_comment(raw).strip()
+    if stripped.startswith("- "):
+        stripped = stripped[2:].strip()
+    match = re.match(r"^(['\"]?)([A-Za-z0-9_-]+)\1\s*:\s*(.*)$", stripped)
+    if not match:
+        return None
+    return match.group(2), match.group(3).strip()
+
+
+def inline_event_names(value: str) -> set[str]:
+    value = strip_yaml_comment(value).strip()
+    if not value:
+        return set()
+    if value.startswith("[") and value.endswith("]"):
+        names: set[str] = set()
+        for raw in value[1:-1].split(","):
+            item = raw.strip().strip("'\"")
+            if item:
+                names.add(item)
+        return names
+    if re.fullmatch(r"['\"]?[A-Za-z0-9_-]+['\"]?", value):
+        return {value.strip("'\"")}
+    return set()
+
+
+def event_triggered(text: str, event_name: str) -> bool:
+    lines = text.splitlines()
+    for index, raw in enumerate(lines):
+        if not meaningful(raw) or indent(raw) != 0:
             continue
-
-        if in_on:
-            if current_indent <= on_indent and re.match(r"^\S", raw):
-                in_on = False
-            elif (
-                re.match(rf"^\s*['\"]?{event_name}['\"]?\s*:", raw)
-                or re.match(rf"^\s*-\s*['\"]?{event_name}['\"]?\s*(?:#.*)?$", stripped)
-            ):
+        parsed = parse_key_value(raw)
+        if parsed is None:
+            continue
+        key, value = parsed
+        if key.lower() != "on":
+            continue
+        if event_name in inline_event_names(value):
+            return True
+        if value:
+            continue
+        on_indent = indent(raw)
+        for child in lines[index + 1 :]:
+            if not meaningful(child):
+                continue
+            child_indent = indent(child)
+            if child_indent <= on_indent:
+                break
+            child_stripped = strip_yaml_comment(child).strip()
+            if child_stripped.startswith("- "):
+                if child_stripped[2:].strip().strip("'\"") == event_name:
+                    return True
+                continue
+            child_parsed = parse_key_value(child)
+            if child_parsed is not None and child_parsed[0] == event_name:
                 return True
-
     return False
-
-
-def mask_comment_lines(text: str) -> str:
-    masked: list[str] = []
-    for raw in text.splitlines(keepends=True):
-        if raw.strip().startswith("#"):
-            masked.append(re.sub(r"[^\n]", " ", raw))
-        else:
-            masked.append(raw)
-    return "".join(masked)
 
 
 def line_number_at(text: str, offset: int) -> int:
     return text.count("\n", 0, offset) + 1
 
 
-def secret_refs(text: str) -> list[tuple[int, str]]:
-    refs: list[tuple[int, str]] = []
-    masked = mask_comment_lines(text)
-    for expr in SECRET_EXPR_RE.finditer(masked):
-        body = expr.group("body")
-        body_offset = expr.start("body")
-        for pattern in (DOT_SECRET_RE, BRACKET_SECRET_RE):
-            for match in pattern.finditer(body):
-                refs.append((line_number_at(masked, body_offset + match.start()), match.group(1)))
-    return refs
+def skip_expr_string(body: str, offset: int) -> int:
+    quote = body[offset]
+    i = offset + 1
+    while i < len(body):
+        if quote == '"' and body[i] == "\\":
+            i += 2
+            continue
+        if body[i] == quote:
+            return i + 1
+        i += 1
+    return len(body)
 
 
-def whole_object_secret_lines(text: str) -> list[int]:
-    lines: list[int] = []
-    masked = mask_comment_lines(text)
-    for expr in SECRET_EXPR_RE.finditer(masked):
+def parse_bracket_secret(body: str, offset: int) -> tuple[int, str | None]:
+    depth = 1
+    i = offset + 1
+    while i < len(body):
+        if body[i] in {"'", '"'}:
+            i = skip_expr_string(body, i)
+            continue
+        if body[i] == "[":
+            depth += 1
+        elif body[i] == "]":
+            depth -= 1
+            if depth == 0:
+                inner = body[offset + 1 : i].strip()
+                literal = re.fullmatch(r"(['\"])([A-Za-z_][A-Za-z0-9_]*)\1", inner)
+                return i + 1, literal.group(2) if literal else None
+        i += 1
+    return len(body), None
+
+
+def secret_reference_failures(text: str) -> list[tuple[int, str]]:
+    failures: list[tuple[int, str]] = []
+    for expr in SECRET_EXPR_RE.finditer(text):
         body = expr.group("body")
         body_offset = expr.start("body")
-        for match in WHOLE_SECRET_RE.finditer(body):
-            lines.append(line_number_at(masked, body_offset + match.start()))
-    return lines
+        i = 0
+        while i < len(body):
+            if body[i] in {"'", '"'}:
+                i = skip_expr_string(body, i)
+                continue
+            if not (
+                body.startswith("secrets", i)
+                and (i == 0 or not re.match(r"[A-Za-z0-9_]", body[i - 1]))
+                and (i + 7 == len(body) or not re.match(r"[A-Za-z0-9_]", body[i + 7]))
+            ):
+                i += 1
+                continue
+            line_no = line_number_at(text, body_offset + i)
+            j = i + 7
+            while j < len(body) and body[j].isspace():
+                j += 1
+            if j < len(body) and body[j] == ".":
+                j += 1
+                while j < len(body) and body[j].isspace():
+                    j += 1
+                name_match = re.match(r"[A-Za-z_][A-Za-z0-9_]*", body[j:])
+                name = name_match.group(0) if name_match else "<invalid>"
+                if name != "GITHUB_TOKEN":
+                    failures.append((line_no, f"secrets.{name}"))
+                i = j + len(name)
+                continue
+            if j < len(body) and body[j] == "[":
+                next_i, name = parse_bracket_secret(body, j)
+                if name != "GITHUB_TOKEN":
+                    ref = f"secrets.{name}" if name is not None else "secrets[dynamic]"
+                    failures.append((line_no, ref))
+                i = next_i
+                continue
+            failures.append((line_no, "the whole secrets object"))
+            i = j
+    return failures
 
 
 def secrets_inherit_lines(text: str) -> list[int]:
@@ -221,17 +383,24 @@ def permission_blocks(text: str) -> list[tuple[int, int, str, list[tuple[int, st
 
 
 def permissions_block_is_readonly(inline_value: str, entries: list[tuple[int, str]]) -> bool:
+    inline_value = unquote_scalar(inline_value)
     if inline_value:
         return inline_value in {"read-all", "{}"}
     saw_entry = False
+    seen: set[str] = set()
     for _, raw in entries:
         if not meaningful(raw):
             continue
-        match = re.match(r"^\s*[A-Za-z0-9_-]+\s*:\s*([A-Za-z0-9_-]+)\s*$", raw)
+        line = strip_yaml_comment(raw)
+        match = re.match(r"^\s*([A-Za-z0-9_-]+)\s*:\s*([A-Za-z0-9_-]+)\s*$", line)
         if not match:
             continue
+        key = match.group(1)
+        if key in seen:
+            return False
+        seen.add(key)
         saw_entry = True
-        if match.group(1) not in {"read", "none"}:
+        if match.group(2) not in {"read", "none"}:
             return False
     return saw_entry
 
@@ -248,40 +417,85 @@ def non_readonly_permission_blocks(text: str) -> list[int]:
     ]
 
 
+def is_checkout_uses(raw: str) -> bool:
+    parsed = parse_key_value(raw)
+    if parsed is None:
+        return False
+    key, value = parsed
+    return key == "uses" and unquote_scalar(value).startswith("actions/checkout@")
+
+
+def step_item_bounds(lines: list[str], index: int) -> tuple[int, int, int]:
+    current_indent = indent(lines[index])
+    start = index
+    step_indent = current_indent
+    if not lines[index].strip().startswith("- "):
+        for cursor in range(index - 1, -1, -1):
+            if not meaningful(lines[cursor]):
+                continue
+            if indent(lines[cursor]) < current_indent and lines[cursor].strip().startswith("- "):
+                start = cursor
+                step_indent = indent(lines[cursor])
+                break
+    end = len(lines)
+    for cursor in range(start + 1, len(lines)):
+        if meaningful(lines[cursor]) and indent(lines[cursor]) <= step_indent:
+            end = cursor
+            break
+    return start, end, step_indent
+
+
 def checkout_credential_failures(text: str) -> list[int]:
     failures: list[int] = []
     lines = text.splitlines()
     for index, raw in enumerate(lines):
         if raw.strip().startswith("#"):
             continue
-        if not re.search(r"uses\s*:\s*actions/checkout@", raw):
+        if not is_checkout_uses(raw):
             continue
-        uses_indent = indent(raw)
-        found = False
-        for follow in lines[index + 1 : index + 12]:
-            if meaningful(follow) and indent(follow) <= max(0, uses_indent - 2) and follow.lstrip().startswith("-"):
+        _, end, step_indent = step_item_bounds(lines, index)
+        with_indent: int | None = None
+        with_index: int | None = None
+        for cursor in range(index + 1, end):
+            if not meaningful(lines[cursor]):
+                continue
+            if indent(lines[cursor]) <= step_indent:
                 break
-            if re.match(r"^\s*persist-credentials\s*:\s*false\s*(?:#.*)?$", follow):
-                found = True
+            parsed = parse_key_value(lines[cursor])
+            if parsed is not None and parsed[0] == "with":
+                with_indent = indent(lines[cursor])
+                with_index = cursor
                 break
-        if not found:
+        if with_indent is None or with_index is None:
+            failures.append(index + 1)
+            continue
+        values: list[str] = []
+        for cursor in range(with_index + 1, end):
+            if not meaningful(lines[cursor]):
+                continue
+            if indent(lines[cursor]) <= with_indent:
+                break
+            parsed = parse_key_value(lines[cursor])
+            if parsed is not None and parsed[0] == "persist-credentials":
+                values.append(unquote_scalar(parsed[1]))
+        if values != ["false"]:
             failures.append(index + 1)
     return failures
 
 
 def pr_heavy_lines(text: str) -> list[tuple[int, str]]:
-    masked = mask_comment_lines(text)
     failures: list[tuple[int, str]] = []
-    for line_no, raw in enumerate(masked.splitlines(), start=1):
+    for line_no, raw in enumerate(text.splitlines(), start=1):
         if not meaningful(raw):
             continue
+        scrubbed = strip_yaml_comment_and_quotes(raw)
         for desc, pattern in PR_HEAVY_LINE_PATTERNS:
-            if pattern.search(raw):
+            if pattern.search(scrubbed):
                 failures.append((line_no, desc))
-        if re.search(r"\bgo\s+test\b", raw):
-            if re.search(r"\s-race\b", raw):
+        if re.search(r"\bgo\s+test\b", scrubbed):
+            if re.search(r"\s-race\b", scrubbed):
                 failures.append((line_no, "race test"))
-            if "./..." in raw and not re.search(r"-run\s+['\"]?\^\$['\"]?", raw):
+            if "./..." in scrubbed and not re.search(r"-run\s+['\"]?\^\$['\"]?", scrubbed):
                 failures.append((line_no, "full repository go test"))
     return failures
 
@@ -291,6 +505,8 @@ def main() -> int:
     failures: list[str] = []
     for path in workflow_paths(sys.argv[1:]):
         text = path.read_text(encoding="utf-8")
+        for line_no, reason in structural_yaml_failures(text):
+            failures.append(f"{path}:{line_no}: {reason}")
         has_pr = event_triggered(text, "pull_request")
 
         if event_triggered(text, "pull_request_target"):
@@ -302,11 +518,8 @@ def main() -> int:
         if not has_pr:
             continue
 
-        disallowed = [(line_no, name) for line_no, name in secret_refs(text) if name != "GITHUB_TOKEN"]
-        for line_no, name in disallowed:
-            failures.append(f"{path}:{line_no}: pull_request workflow must not reference secrets.{name}")
-        for line_no in whole_object_secret_lines(text):
-            failures.append(f"{path}:{line_no}: pull_request workflow must not reference the whole secrets object")
+        for line_no, ref in secret_reference_failures(text):
+            failures.append(f"{path}:{line_no}: pull_request workflow must not reference {ref}")
         for line_no in secrets_inherit_lines(text):
             failures.append(f"{path}:{line_no}: pull_request workflow must not use secrets: inherit")
         for line_no in reusable_workflow_secret_lines(text):

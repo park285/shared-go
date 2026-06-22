@@ -1,6 +1,7 @@
 package envutil
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -12,21 +13,32 @@ import (
 const (
 	boolTrue  = "true"
 	boolFalse = "false"
-
-	logKeyValue = "value"
 )
 
 func warnParse(key, value, kind string, err error, def any) {
 	attrs := []any{
 		"key", key,
-		logKeyValue, value,
+		"value_present", value != "",
 		"kind", kind,
 		"returning_default", def,
 	}
 	if err != nil {
-		attrs = append(attrs, "error", err.Error())
+		attrs = append(attrs, "error", parseErrorKind(err))
 	}
 	slog.Warn("invalid value for environment variable", attrs...)
+}
+
+func parseErrorKind(err error) string {
+	var numErr *strconv.NumError
+	if errors.As(err, &numErr) {
+		switch {
+		case errors.Is(numErr.Err, strconv.ErrSyntax):
+			return "invalid_syntax"
+		case errors.Is(numErr.Err, strconv.ErrRange):
+			return "out_of_range"
+		}
+	}
+	return "parse_failed"
 }
 
 func String(key, def string) string {

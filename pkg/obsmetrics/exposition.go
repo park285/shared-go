@@ -35,6 +35,10 @@ func writeScalar(w io.Writer, name, help, metricType, value string) bool {
 
 // WriteHistogram은 HistogramSnapshot을 Prometheus 텍스트 포맷(bucket/sum/count)으로 씁니다.
 func WriteHistogram(w io.Writer, name, help string, snap HistogramSnapshot) bool {
+	if len(snap.UpperBounds) != len(snap.Cumulative) {
+		return false
+	}
+
 	if _, err := fmt.Fprintf(w, "# HELP %s %s\n", name, SanitizeHelp(help)); err != nil {
 		return false
 	}
