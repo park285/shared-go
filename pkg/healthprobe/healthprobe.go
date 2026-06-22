@@ -162,7 +162,7 @@ func guardedHTTPTransport(guard func(net.IP) error) *http.Transport {
 	dialer.Control = func(_, address string, _ syscall.RawConn) error {
 		host, _, err := net.SplitHostPort(address)
 		if err != nil {
-			return fmt.Errorf("%w: parse dial addr %q: %v", ErrPrivateNetwork, address, err)
+			return fmt.Errorf("%w: parse dial addr %q: %w", ErrPrivateNetwork, address, err)
 		}
 		ip := net.ParseIP(host)
 		if ip == nil {

@@ -93,6 +93,8 @@ func (g *OpenAICompatibleJSONGenerator) GenerateJSON(ctx context.Context, req JS
 	return fallbackResp, nil
 }
 
+const defaultResponsesSchemaName = "schema"
+
 var responsesSchemaNameInvalidChars = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
 
 // OpenAI Responses API의 text.format.name은 [a-zA-Z0-9_-](최대 64자)만 허용한다.
@@ -100,7 +102,7 @@ var responsesSchemaNameInvalidChars = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
 func sanitizeResponsesSchemaName(name string) string {
 	cleaned := responsesSchemaNameInvalidChars.ReplaceAllString(strings.TrimSpace(name), "_")
 	if cleaned == "" {
-		return "schema"
+		return defaultResponsesSchemaName
 	}
 	if len(cleaned) > 64 {
 		cleaned = cleaned[:64]

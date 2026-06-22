@@ -28,7 +28,7 @@ func (r *compiledRule) matchSegment(segment textSegment, policy compiledPolicy) 
 	matches := make([]Match, 0, 1)
 
 	switch r.Type {
-	case "regex":
+	case ruleTypeRegex:
 		span := r.Pattern.FindString(text)
 		if span == "" {
 			return nil
@@ -43,7 +43,7 @@ func (r *compiledRule) matchSegment(segment textSegment, policy compiledPolicy) 
 			span:    trimSpan(span),
 			Weight:  weight,
 		})
-	case "phrases":
+	case ruleTypePhrase:
 		for _, phrase := range r.Phrases {
 			if !strings.Contains(text, phrase) {
 				continue
@@ -90,7 +90,7 @@ func distinctPositiveFamilies(hits []Match) []string {
 	set := make(map[string]struct{})
 
 	for _, hit := range hits {
-		if hit.Action == "dampen" || hit.Family == "" {
+		if hit.Action == hitActionDampen || hit.Family == "" {
 			continue
 		}
 

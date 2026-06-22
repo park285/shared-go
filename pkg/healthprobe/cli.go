@@ -15,12 +15,16 @@ func RunMain(args []string, stdout, stderr io.Writer) int {
 		return runSmoke(stdout, stderr)
 	}
 	if len(args) != 2 {
-		fmt.Fprintln(stderr, "usage: healthcheck <url>|--smoke")
+		if _, err := fmt.Fprintln(stderr, "usage: healthcheck <url>|--smoke"); err != nil {
+			return 1
+		}
 
 		return 2
 	}
 	if err := CheckURL(args[1]); err != nil {
-		fmt.Fprintln(stderr, err)
+		if _, writeErr := fmt.Fprintln(stderr, err); writeErr != nil {
+			return 1
+		}
 
 		return 1
 	}
@@ -31,12 +35,16 @@ func RunMain(args []string, stdout, stderr io.Writer) int {
 func runSmoke(stdout, stderr io.Writer) int {
 	for _, name := range smokeTimezones {
 		if _, err := time.LoadLocation(name); err != nil {
-			fmt.Fprintf(stderr, "load location %s: %v\n", name, err)
+			if _, writeErr := fmt.Fprintf(stderr, "load location %s: %v\n", name, err); writeErr != nil {
+				return 1
+			}
 
 			return 1
 		}
 	}
-	fmt.Fprintln(stdout, "smoke ok")
+	if _, err := fmt.Fprintln(stdout, "smoke ok"); err != nil {
+		return 1
+	}
 
 	return 0
 }

@@ -74,9 +74,9 @@ func resolveSegmentMultipliers(overrides map[string]float64) map[segmentKind]flo
 
 func resolveViewMultipliers(overrides map[string]float64) map[string]float64 {
 	viewMultipliers := map[string]float64{
-		"raw":    1.0,
-		"norm":   1.0,
-		"joined": 0.85,
+		"raw":      1.0,
+		"norm":     1.0,
+		viewJoined: 0.85,
 	}
 
 	for key, value := range overrides {

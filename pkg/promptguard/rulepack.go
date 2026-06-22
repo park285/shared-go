@@ -65,4 +65,6 @@ const (
 	viewNorm       = "norm"
 	viewRaw        = "raw"
 	viewJoined     = "joined"
+	ruleTypeRegex  = "regex"
+	ruleTypePhrase = "phrases"
 )

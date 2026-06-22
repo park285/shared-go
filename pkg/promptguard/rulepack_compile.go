@@ -99,13 +99,13 @@ func compileRuleSelectors(rule *rawRule) (ruleSelectors, error) {
 
 func compileRuleMatcher(compiled *compiledRule, rule *rawRule) error {
 	switch compiled.Type {
-	case "regex":
+	case ruleTypeRegex:
 		if err := assignRegexMatcher(compiled, rule); err != nil {
 			return fmt.Errorf("assign regex matcher: %w", err)
 		}
 
 		return nil
-	case "phrases":
+	case ruleTypePhrase:
 		if err := assignPhraseMatcher(compiled, rule); err != nil {
 			return fmt.Errorf("assign phrase matcher: %w", err)
 		}
@@ -187,7 +187,7 @@ func normalizeView(view string) string {
 
 func compileSegments(values []string, action string) (map[segmentKind]struct{}, error) {
 	if len(values) == 0 {
-		if action == "block" {
+		if action == hitActionBlock {
 			return map[segmentKind]struct{}{segmentPlain: {}}, nil
 		}
 
@@ -214,13 +214,13 @@ func compileSegments(values []string, action string) (map[segmentKind]struct{}, 
 
 func parseSegment(value string) (segmentKind, bool) {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "plain":
+	case string(segmentPlain):
 		return segmentPlain, true
-	case "quote":
+	case string(segmentQuote):
 		return segmentQuote, true
-	case "code":
+	case string(segmentCode):
 		return segmentCode, true
-	case "config":
+	case string(segmentConfig):
 		return segmentConfig, true
 	default:
 		return "", false
