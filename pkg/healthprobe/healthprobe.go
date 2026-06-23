@@ -33,10 +33,6 @@ var (
 	ErrTooManyRedirects = errors.New("healthprobe: too many redirects")
 )
 
-// FetchOptions는 probe 동작을 제어한다. 공개 진입점(FetchURL/CheckURL 등)의 기본값은
-// secure-by-default로 loopback/private 대상을 차단하며(RestrictPrivateNetworks=true),
-// body cap과 cross-host redirect 헤더 제거는 항상 강제한다. 신뢰된 내부망(loopback/private)
-// 호출은 *Internal helper를 쓰거나 RestrictPrivateNetworks=false인 FetchOptions를 직접 넘긴다.
 type FetchOptions struct {
 	AllowedHosts             []string
 	RestrictPrivateNetworks  bool
@@ -73,8 +69,6 @@ func FetchURLWithHeaders(rawURL string, headers map[string]string) ([]byte, erro
 	return fetchURL(rawURL, headers, defaultFetchOptions())
 }
 
-// 아래 *Internal 변형은 신뢰된 내부망(loopback/private) 대상을 의도적으로 허용한다.
-// 자기 서비스 헬스체크처럼 운영자가 통제하는 내부 endpoint probe에만 사용한다.
 func CheckURLInternal(rawURL string) error {
 	_, err := FetchURLInternal(rawURL)
 	return err
