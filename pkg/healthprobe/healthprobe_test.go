@@ -25,8 +25,8 @@ func TestCheckURLAcceptsSuccessStatus(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if err := CheckURL(server.URL); err != nil {
-		t.Fatalf("CheckURL(%q): %v", server.URL, err)
+	if err := CheckURLInternal(server.URL); err != nil {
+		t.Fatalf("CheckURLInternal(%q): %v", server.URL, err)
 	}
 }
 
@@ -36,12 +36,12 @@ func TestFetchURLReturnsBody(t *testing.T) {
 	}))
 	defer server.Close()
 
-	body, err := FetchURL(server.URL)
+	body, err := FetchURLInternal(server.URL)
 	if err != nil {
-		t.Fatalf("FetchURL(%q): %v", server.URL, err)
+		t.Fatalf("FetchURLInternal(%q): %v", server.URL, err)
 	}
 	if string(body) != `{"mode":"active-active"}` {
-		t.Fatalf("FetchURL body = %q, want active-active json", body)
+		t.Fatalf("FetchURLInternal body = %q, want active-active json", body)
 	}
 }
 
@@ -55,16 +55,16 @@ func TestFetchURLWithHeadersSendsConfiguredHeaders(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if _, err := FetchURL(server.URL); err == nil {
-		t.Fatal("FetchURL() error = nil, want unauthorized without API key header")
+	if _, err := FetchURLInternal(server.URL); err == nil {
+		t.Fatal("FetchURLInternal() error = nil, want unauthorized without API key header")
 	}
 
-	body, err := FetchURLWithHeaders(server.URL, map[string]string{"X-API-Key": "probe-secret"})
+	body, err := FetchURLWithHeadersInternal(server.URL, map[string]string{"X-API-Key": "probe-secret"})
 	if err != nil {
-		t.Fatalf("FetchURLWithHeaders(%q): %v", server.URL, err)
+		t.Fatalf("FetchURLWithHeadersInternal(%q): %v", server.URL, err)
 	}
 	if string(body) != "ok" {
-		t.Fatalf("FetchURLWithHeaders body = %q, want ok", body)
+		t.Fatalf("FetchURLWithHeadersInternal body = %q, want ok", body)
 	}
 }
 
@@ -75,8 +75,8 @@ func TestFetchURLRejectsServerErrorWithoutBody(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if body, err := FetchURL(server.URL); err == nil || body != nil {
-		t.Fatalf("FetchURL(%q) = (%q, %v), want nil body and error for 500", server.URL, body, err)
+	if body, err := FetchURLInternal(server.URL); err == nil || body != nil {
+		t.Fatalf("FetchURLInternal(%q) = (%q, %v), want nil body and error for 500", server.URL, body, err)
 	}
 }
 
@@ -86,16 +86,16 @@ func TestCheckURLRejectsServerError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if err := CheckURL(server.URL); err == nil {
-		t.Fatalf("CheckURL(%q) error = nil, want error for 500", server.URL)
+	if err := CheckURLInternal(server.URL); err == nil {
+		t.Fatalf("CheckURLInternal(%q) error = nil, want error for 500", server.URL)
 	}
 }
 
 func TestCheckURLRejectsMissingCAFile(t *testing.T) {
 	t.Setenv(CACertFileEnv, filepath.Join(t.TempDir(), "missing.pem"))
 
-	if err := CheckURL("https://127.0.0.1:1/ready"); err == nil {
-		t.Fatal("CheckURL() error = nil, want error for missing CA file")
+	if err := CheckURLInternal("https://127.0.0.1:1/ready"); err == nil {
+		t.Fatal("CheckURLInternal() error = nil, want error for missing CA file")
 	}
 }
 
@@ -150,8 +150,8 @@ func TestCheckURLAcceptsHTTP3LoopbackWithServerNameOverride(t *testing.T) {
 	t.Setenv(ServerNameEnv, "healthprobe-h3.local")
 
 	url := "https://" + listener.LocalAddr().String() + "/ready"
-	if err := CheckURL(url); err != nil {
-		t.Fatalf("CheckURL(%q): %v", url, err)
+	if err := CheckURLInternal(url); err != nil {
+		t.Fatalf("CheckURLInternal(%q): %v", url, err)
 	}
 }
 

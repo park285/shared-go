@@ -34,7 +34,10 @@ func Extract(text string) ([]byte, error) {
 }
 
 func ExtractWithLimit(text string, maxBytes int) ([]byte, error) {
-	if maxBytes > 0 && len(text) > maxBytes {
+	if maxBytes <= 0 {
+		maxBytes = DefaultExtractMaxBytes
+	}
+	if len(text) > maxBytes {
 		return nil, ErrInputTooLarge
 	}
 
@@ -57,7 +60,10 @@ func ExtractToMap(text string) (map[string]any, error) {
 }
 
 func ExtractToMapWithLimit(text string, maxBytes int) (map[string]any, error) {
-	if maxBytes > 0 && len(text) > maxBytes {
+	if maxBytes <= 0 {
+		maxBytes = DefaultExtractMaxBytes
+	}
+	if len(text) > maxBytes {
 		return nil, ErrInputTooLarge
 	}
 

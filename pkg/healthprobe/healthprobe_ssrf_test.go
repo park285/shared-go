@@ -42,6 +42,63 @@ func TestSG04HealthprobeRejectsLoopbackByDefault_02aae1e0(t *testing.T) {
 	}
 }
 
+func TestSG04DefaultAPIBlocksLoopback_02aae1e0(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	if _, err := FetchURL(server.URL); !errors.Is(err, ErrPrivateNetwork) {
+		t.Fatalf("FetchURL(loopback) error = %v, want ErrPrivateNetwork (secure-by-default)", err)
+	}
+	if err := CheckURL(server.URL); !errors.Is(err, ErrPrivateNetwork) {
+		t.Fatalf("CheckURL(loopback) error = %v, want ErrPrivateNetwork (secure-by-default)", err)
+	}
+	if _, err := FetchURLWithHeaders(server.URL, map[string]string{"X-K": "v"}); !errors.Is(err, ErrPrivateNetwork) {
+		t.Fatalf("FetchURLWithHeaders(loopback) error = %v, want ErrPrivateNetwork (secure-by-default)", err)
+	}
+}
+
+func TestSG04InternalAPIAllowsLoopback_02aae1e0(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer server.Close()
+
+	body, err := FetchURLInternal(server.URL)
+	if err != nil {
+		t.Fatalf("FetchURLInternal(loopback) error = %v, want nil", err)
+	}
+	if string(body) != "ok" {
+		t.Fatalf("FetchURLInternal body = %q, want ok", body)
+	}
+	if err := CheckURLInternal(server.URL); err != nil {
+		t.Fatalf("CheckURLInternal(loopback) error = %v, want nil", err)
+	}
+	if _, err := FetchURLWithHeadersInternal(server.URL, map[string]string{"X-K": "v"}); err != nil {
+		t.Fatalf("FetchURLWithHeadersInternal(loopback) error = %v, want nil", err)
+	}
+}
+
+func TestSG04ExternalAddressNotClassifiedPrivate_02aae1e0(t *testing.T) {
+	t.Parallel()
+
+	for _, ip := range []string{"203.0.113.10", "8.8.8.8", "2001:db8::1"} {
+		if isPrivateIP(net.ParseIP(ip)) {
+			t.Fatalf("isPrivateIP(%s) = true, want false (external target must pass default guard)", ip)
+		}
+	}
+	for _, ip := range []string{"127.0.0.1", "10.0.0.1", "192.168.1.1", "169.254.169.254", "::1"} {
+		if !isPrivateIP(net.ParseIP(ip)) {
+			t.Fatalf("isPrivateIP(%s) = false, want true (must be blocked by default)", ip)
+		}
+	}
+}
+
 func TestSG04HealthprobeRejectsLinkLocalMetadata_02aae1e0(t *testing.T) {
 	t.Parallel()
 
@@ -104,8 +161,8 @@ func TestSG04HealthprobeDoesNotForwardHeadersOnCrossHostRedirect_cfe49bff(t *tes
 		"Authorization": "Bearer super-secret-token",
 		"X-API-Key":     "probe-secret",
 	}
-	if _, err := FetchURLWithHeaders(redirector.URL, headers); err != nil {
-		t.Fatalf("FetchURLWithHeaders(redirect) error = %v, want nil", err)
+	if _, err := FetchURLWithHeadersInternal(redirector.URL, headers); err != nil {
+		t.Fatalf("FetchURLWithHeadersInternal(redirect) error = %v, want nil", err)
 	}
 
 	if gotAuth != "" {
@@ -132,8 +189,8 @@ func TestSG04HealthprobeKeepsHeadersOnSameHostRedirect_cfe49bff(t *testing.T) {
 	defer server.Close()
 
 	headers := map[string]string{"X-API-Key": "probe-secret"}
-	if _, err := FetchURLWithHeaders(server.URL+"/start", headers); err != nil {
-		t.Fatalf("FetchURLWithHeaders(same-host redirect) error = %v, want nil", err)
+	if _, err := FetchURLWithHeadersInternal(server.URL+"/start", headers); err != nil {
+		t.Fatalf("FetchURLWithHeadersInternal(same-host redirect) error = %v, want nil", err)
 	}
 	if gotAPIKey != "probe-secret" {
 		t.Fatalf("same-host redirect X-API-Key = %q, want probe-secret (must be preserved)", gotAPIKey)
