@@ -35,7 +35,7 @@ var (
 
 type FetchOptions struct {
 	AllowedHosts             []string
-	RestrictPrivateNetworks  bool
+	AllowPrivateNetworks     bool
 	MaxBodyBytes             int64
 	FollowRedirects          bool
 	ForwardHeadersOnRedirect bool
@@ -43,15 +43,14 @@ type FetchOptions struct {
 
 func defaultFetchOptions() FetchOptions {
 	return FetchOptions{
-		RestrictPrivateNetworks: true,
-		MaxBodyBytes:            DefaultMaxBodyBytes,
-		FollowRedirects:         true,
+		MaxBodyBytes:    DefaultMaxBodyBytes,
+		FollowRedirects: true,
 	}
 }
 
 func internalFetchOptions() FetchOptions {
 	opts := defaultFetchOptions()
-	opts.RestrictPrivateNetworks = false
+	opts.AllowPrivateNetworks = true
 	return opts
 }
 
@@ -140,7 +139,7 @@ func fetchURL(rawURL string, headers map[string]string, opts FetchOptions) ([]by
 
 func newClient(parsed *url.URL, opts FetchOptions) (*http.Client, func(), error) {
 	var guard func(net.IP) error
-	if opts.RestrictPrivateNetworks {
+	if !opts.AllowPrivateNetworks {
 		guard = dialGuard
 	}
 
@@ -252,7 +251,7 @@ func authorizeTarget(ctx context.Context, parsed *url.URL, opts FetchOptions) er
 	if len(opts.AllowedHosts) > 0 && !hostAllowed(host, opts.AllowedHosts) {
 		return fmt.Errorf("%w: %s", ErrHostNotAllowed, host)
 	}
-	if opts.RestrictPrivateNetworks {
+	if !opts.AllowPrivateNetworks {
 		if err := rejectPrivateNetwork(ctx, host); err != nil {
 			return err
 		}
