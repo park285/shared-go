@@ -187,6 +187,15 @@ run_collect_checker() {
   set -e
 }
 
+run_collect_checker_bounded() {
+  local repo_dir="$1"
+  shift
+  set +e
+  LAST_OUTPUT="$(cd "${repo_dir}" && timeout 5s "${CHECKER}" collect "$@" 2>&1)"
+  LAST_STATUS=$?
+  set -e
+}
+
 assert_success() {
   local name="$1"
   if [[ "${LAST_STATUS}" -ne 0 ]]; then
@@ -443,6 +452,16 @@ case_collect_rejects_unsafe_candidate_paths() {
   fi
 }
 
+case_collect_rejects_escaping_package_paths() {
+  local repo_dir="${TMP_ROOT}/escaping-package-repo"
+  write_collect_fixture_repo "${repo_dir}"
+  sed -i 's|package: ./fixture|package: ./../../|' "${repo_dir}/policy.yaml"
+
+  run_collect_checker_bounded "${repo_dir}" --policy policy.yaml --candidate artifacts/perf/pr --gate pr
+  assert_failure "collect rejects escaping package"
+  assert_contains "escaping package refusal" "benchmark package path must stay under repo root"
+}
+
 case_smoke_candidate_refused_for_baseline_without_allow_flag() {
   local dir="${TMP_ROOT}/smoke-baseline-refused"
   mkdir -p "${dir}"
@@ -557,6 +576,7 @@ CASES=(
   case_missing_baseline_race_candidate_does_not_create_baseline
   case_race_results_skip
   case_collect_rejects_unsafe_candidate_paths
+  case_collect_rejects_escaping_package_paths
   case_smoke_candidate_refused_for_baseline_without_allow_flag
   case_smoke_candidate_allow_flag_creates_baseline
   case_non_default_benchtime_candidate_refused_for_baseline
