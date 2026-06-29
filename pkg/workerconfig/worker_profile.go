@@ -1,6 +1,7 @@
 package workerconfig
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -98,13 +99,29 @@ type wireIrisBotWebhookWorkerProfile struct {
 	ProfileID  string                                `json:"profile_id"`
 	Delivery   wireWebhookDeliveryWorkerProfile      `json:"delivery"`
 	Receive    wireWebhookReceiveWorkerProfile       `json:"receive"`
-	BotPool    wireBotPoolWorkerProfile              `json:"bot_pool"`
+	BotPool    wireBotPoolWorkerProfileField         `json:"bot_pool"`
 	Validation IrisBotWebhookWorkerProfileValidation `json:"validation"`
 }
 
 type wireBotPoolWorkerProfile struct {
 	Workers   int `json:"workers"`
 	QueueSize int `json:"queue_size"`
+}
+
+type wireBotPoolWorkerProfileField struct {
+	value   wireBotPoolWorkerProfile
+	present bool
+}
+
+func (f *wireBotPoolWorkerProfileField) UnmarshalJSON(data []byte) error {
+	f.present = true
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	return decoder.Decode(&f.value)
+}
+
+func (f wireBotPoolWorkerProfileField) MarshalJSON() ([]byte, error) {
+	return json.Marshal(f.value)
 }
 
 type wireWebhookDeliveryWorkerProfile struct {
@@ -215,11 +232,11 @@ func DecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics(reader io.Reader) (
 }
 
 func (p IrisBotWebhookWorkerProfile) CanonicalJSON() []byte {
-	bytes, err := json.Marshal(p.toWire())
+	data, err := json.Marshal(p.toWire())
 	if err != nil {
 		panic(fmt.Sprintf("marshal Iris bot webhook worker profile: %v", err))
 	}
-	return bytes
+	return data
 }
 
 func (p IrisBotWebhookWorkerProfile) ProfileHash() string {
@@ -312,9 +329,12 @@ func (p IrisBotWebhookWorkerProfile) toWire() wireIrisBotWebhookWorkerProfile {
 			DedupTTLMS:       int(p.Receive.DedupTTL / time.Millisecond),
 			DedupTimeoutMS:   int(p.Receive.DedupTimeout / time.Millisecond),
 		},
-		BotPool: wireBotPoolWorkerProfile{
-			Workers:   p.BotPool.Workers,
-			QueueSize: p.BotPool.QueueSize,
+		BotPool: wireBotPoolWorkerProfileField{
+			value: wireBotPoolWorkerProfile{
+				Workers:   p.BotPool.Workers,
+				QueueSize: p.BotPool.QueueSize,
+			},
+			present: true,
 		},
 		Validation: p.Validation,
 	}
@@ -322,14 +342,14 @@ func (p IrisBotWebhookWorkerProfile) toWire() wireIrisBotWebhookWorkerProfile {
 
 func fromWire(wire wireIrisBotWebhookWorkerProfile) IrisBotWebhookWorkerProfile {
 	botPool := BotPoolWorkerProfile{
-		Workers:   wire.BotPool.Workers,
-		QueueSize: wire.BotPool.QueueSize,
+		Workers:   defaultBotPoolWorkers,
+		QueueSize: defaultBotPoolQueueSize,
 	}
-	if botPool.Workers == 0 {
-		botPool.Workers = defaultBotPoolWorkers
-	}
-	if botPool.QueueSize == 0 {
-		botPool.QueueSize = defaultBotPoolQueueSize
+	if wire.BotPool.present {
+		botPool = BotPoolWorkerProfile{
+			Workers:   wire.BotPool.value.Workers,
+			QueueSize: wire.BotPool.value.QueueSize,
+		}
 	}
 
 	return IrisBotWebhookWorkerProfile{
