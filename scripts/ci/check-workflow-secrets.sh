@@ -488,7 +488,7 @@ def pr_heavy_lines(text: str) -> list[tuple[int, str]]:
     for line_no, raw in enumerate(text.splitlines(), start=1):
         if not meaningful(raw):
             continue
-        scrubbed = strip_yaml_comment_and_quotes(raw)
+        scrubbed = strip_yaml_comment(raw)
         for desc, pattern in PR_HEAVY_LINE_PATTERNS:
             if pattern.search(scrubbed):
                 failures.append((line_no, desc))
