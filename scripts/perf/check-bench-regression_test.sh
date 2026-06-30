@@ -609,6 +609,20 @@ case_noise_floor_uses_absolute_ns() {
   assert_not_contains "noise floor no violation" "violation"
 }
 
+case_multifile_baseline_orders_like_pathlib() {
+  local dir="${TMP_ROOT}/multifile-baseline-order"
+  mkdir -p "${dir}/baseline/sub" "${dir}/candidate/go-bench"
+  write_policy "${dir}/policy.yaml" "fail" "critical" "BenchmarkTarget" 50
+  printf '# package: ./fixture\n# count: 3\n# benchtime: 100ms\npkg: fixture\nBenchmarkTarget-16 100 100 ns/op 8 B/op 1 allocs/op\n' >"${dir}/baseline/sub/deep.txt"
+  printf '# package: ./fixture\n# count: 1\n# benchtime: 100ms\npkg: fixture\nBenchmarkTarget-16 100 100 ns/op 8 B/op 1 allocs/op\n' >"${dir}/baseline/sub-extra.txt"
+  printf '# package: ./fixture\npkg: fixture\nBenchmarkTarget-16 100 100 ns/op 8 B/op 1 allocs/op\nBenchmarkTarget-16 100 100 ns/op 8 B/op 1 allocs/op\nPASS\n' >"${dir}/candidate/go-bench/result.txt"
+  run_checker "${dir}/baseline" "${dir}/candidate" "${dir}/policy.yaml"
+  assert_failure "multifile baseline pathlib order"
+  assert_exit_code "multifile baseline pathlib order exit code" 2
+  assert_contains "multifile baseline last-file count wins" "count=1 < min_count=2"
+  assert_contains "multifile baseline names pathlib-last file" "sub-extra.txt"
+}
+
 CASES=(
   case_empty_match_errors
   case_unknown_field_errors
@@ -633,6 +647,7 @@ CASES=(
   case_collect_smoke_count_prints_marker
   case_same_benchmark_name_in_two_packages_compares_selected_package
   case_noise_floor_uses_absolute_ns
+  case_multifile_baseline_orders_like_pathlib
 )
 
 if [[ -n "${TEST_CASE:-}" ]]; then
