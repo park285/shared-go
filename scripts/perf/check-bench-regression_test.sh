@@ -462,6 +462,23 @@ case_collect_rejects_escaping_package_paths() {
   assert_contains "escaping package refusal" "benchmark package path must stay under repo root"
 }
 
+case_collect_rejects_symlinked_perf_root() {
+  local repo_dir="${TMP_ROOT}/symlinked-perf-root/repo"
+  local outside="${TMP_ROOT}/symlinked-perf-root/outside"
+  write_collect_fixture_repo "${repo_dir}"
+  mkdir -p "${repo_dir}/artifacts" "${outside}/pr"
+  touch "${outside}/pr/keep"
+  ln -s "${outside}" "${repo_dir}/artifacts/perf"
+
+  run_collect_checker "${repo_dir}" --policy policy.yaml --candidate artifacts/perf/pr --gate pr
+  assert_failure "collect rejects symlinked perf root"
+  assert_contains "symlinked perf root refusal" "candidate path"
+  if [[ ! -e "${outside}/pr/keep" ]]; then
+    printf 'not ok - symlinked perf root collect deleted outside candidate\n%s\n' "${LAST_OUTPUT}" >&2
+    exit 1
+  fi
+}
+
 case_smoke_candidate_refused_for_baseline_without_allow_flag() {
   local dir="${TMP_ROOT}/smoke-baseline-refused"
   mkdir -p "${dir}"
@@ -577,6 +594,7 @@ CASES=(
   case_race_results_skip
   case_collect_rejects_unsafe_candidate_paths
   case_collect_rejects_escaping_package_paths
+  case_collect_rejects_symlinked_perf_root
   case_smoke_candidate_refused_for_baseline_without_allow_flag
   case_smoke_candidate_allow_flag_creates_baseline
   case_non_default_benchtime_candidate_refused_for_baseline
