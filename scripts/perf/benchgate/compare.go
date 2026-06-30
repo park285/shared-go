@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -185,7 +185,7 @@ func filesWithMissingMetric(samples []Sample, m metric) []string {
 	for f := range set {
 		out = append(out, f)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 

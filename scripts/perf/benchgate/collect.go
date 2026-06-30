@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -151,7 +151,7 @@ func collectResults(policy *omap, selected selection, args *cliArgs, repoRoot, r
 	for p := range byPackage {
 		sortedPkgs = append(sortedPkgs, p)
 	}
-	sort.Strings(sortedPkgs)
+	slices.Sort(sortedPkgs)
 
 	sink, err := os.Create(outputFile)
 	if err != nil {
@@ -180,7 +180,7 @@ func collectResults(policy *omap, selected selection, args *cliArgs, repoRoot, r
 			return 0, re
 		}
 		sortedNames := append([]string(nil), byPackage[pkg]...)
-		sort.Strings(sortedNames)
+		slices.Sort(sortedNames)
 		regex := benchRegex(sortedNames)
 		cmdParts := []string{"go", "test", "-run", "^$", "-bench", regex, "-benchmem", fmt.Sprintf("-count=%d", count)}
 		if benchtime != "" {
