@@ -98,7 +98,8 @@ func TestEnableFileLoggingWithOptionsKeepsFileLoggingWhenStdoutStalls(t *testing
 	dir := t.TempDir()
 	stdout := &stallingWriter{started: make(chan struct{}), release: make(chan struct{})}
 
-	t.Cleanup(func() { close(stdout.release) })
+	releaseStdout := sync.OnceFunc(func() { close(stdout.release) })
+	t.Cleanup(releaseStdout)
 
 	config := Config{Level: "info", Dir: dir, MaxSizeMB: 5, MaxBackups: 5, MaxAgeDays: 30, Compress: true}
 
@@ -132,7 +133,9 @@ func TestEnableFileLoggingWithOptionsKeepsFileLoggingWhenStdoutStalls(t *testing
 		t.Fatalf("file stall_probe lines = %d, want 64", got)
 	}
 
-	go func() { _ = closer.Close() }()
+	// stall 해제 후 동기 Close: async로 두면 closer의 마지막 파일 flush가 t.TempDir 정리와 레이스한다.
+	releaseStdout()
+	_ = closer.Close()
 }
 
 func TestEnableFileLoggingWithOptionsReturnsNilCloserForConsoleOnly(t *testing.T) {
