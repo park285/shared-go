@@ -4,7 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -64,7 +64,10 @@ func resultFiles(path string) []string {
 		}
 		return nil
 	})
-	sort.Strings(files)
+	// Python sorted(Path)와 동치인 path-parts 정렬: '/' 경계에서 byte 정렬과 갈리므로 sort.Strings로 되돌리면 안 됨.
+	slices.SortFunc(files, func(a, b string) int {
+		return slices.Compare(strings.Split(a, "/"), strings.Split(b, "/"))
+	})
 	return files
 }
 

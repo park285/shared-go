@@ -29,8 +29,12 @@ test:
 test-race:
 	$(GO) test -race -count=1 ./...
 
+.PHONY: perf-gate-test
+perf-gate-test:
+	bash scripts/perf/check-bench-regression_test.sh
+
 .PHONY: perf-gate
-perf-gate:
+perf-gate: perf-gate-test
 	./scripts/perf/check-bench-regression.sh collect $(PERF_GATE_COLLECT_ARGS)
 	./scripts/perf/check-bench-regression.sh --policy perf-budget.yaml --baseline $(PERF_GATE_BASELINE) --candidate $(PERF_GATE_CANDIDATE) --gate pr
 
