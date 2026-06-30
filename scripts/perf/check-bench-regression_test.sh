@@ -216,6 +216,17 @@ assert_failure() {
   printf 'ok - %s\n' "${name}"
 }
 
+assert_exit_code() {
+  local name="$1"
+  local expected="$2"
+  if [[ "${LAST_STATUS}" -ne "${expected}" ]]; then
+    printf 'not ok - %s expected exit %s got %s\n%s\n' "${name}" "${expected}" "${LAST_STATUS}" "${LAST_OUTPUT}" >&2
+    exit 1
+  fi
+  PASSED=$((PASSED + 1))
+  printf 'ok - %s exit=%s\n' "${name}" "${expected}"
+}
+
 assert_contains() {
   local name="$1"
   local needle="$2"
@@ -242,6 +253,7 @@ case_empty_match_errors() {
   write_bench_file "${dir}/candidate" "BenchmarkPresent" 100 8 1
   run_checker "${dir}/baseline" "${dir}/candidate" "${dir}/policy.yaml"
   assert_failure "empty-match error"
+  assert_exit_code "empty-match exit code" 2
   assert_contains "empty-match error" "missing candidate benchmark: BenchmarkMissing"
 }
 
@@ -253,6 +265,7 @@ case_unknown_field_errors() {
   write_bench_file "${dir}/candidate" "BenchmarkTarget" 100 8 1
   run_checker "${dir}/baseline" "${dir}/candidate" "${dir}/policy.yaml"
   assert_failure "unknown-field error"
+  assert_exit_code "unknown-field exit code" 2
   assert_contains "unknown-field error" "unknown field"
 }
 
@@ -295,6 +308,7 @@ EOF
   write_bench_file "${dir}/candidate" "BenchmarkTarget" 100 8 1
   run_checker "${dir}/baseline" "${dir}/candidate" "${dir}/policy.yaml"
   assert_failure "unknown defaults field error"
+  assert_exit_code "unknown defaults field exit code" 2
   assert_contains "unknown defaults field error" "unknown field: defaults.typo_field"
 }
 
@@ -337,6 +351,7 @@ EOF
   write_bench_file "${dir}/candidate" "BenchmarkTarget" 100 8 1
   run_checker "${dir}/baseline" "${dir}/candidate" "${dir}/policy.yaml"
   assert_failure "unknown settings field error"
+  assert_exit_code "unknown settings field exit code" 2
   assert_contains "unknown settings field error" "unknown field: settings.typo_field"
 }
 
@@ -353,6 +368,8 @@ case_warn_mode_prints_all_and_exits_zero() {
   assert_contains "warn mode prints ns/op violation" "metric=ns/op"
   assert_contains "warn mode prints B/op violation" "metric=B/op"
   assert_contains "warn mode prints allocs/op violation" "metric=allocs/op"
+  assert_contains "warn mode ns precision format" "baseline=100.000 candidate=140.000"
+  assert_contains "warn mode percent format" "+40.00% exceeds budget 10.00%"
 }
 
 case_fail_mode_critical_exits_one() {
@@ -363,6 +380,7 @@ case_fail_mode_critical_exits_one() {
   write_bench_file "${dir}/candidate" "BenchmarkTarget" 140 8 1
   run_checker "${dir}/baseline" "${dir}/candidate" "${dir}/policy.yaml"
   assert_failure "fail mode critical exits nonzero"
+  assert_exit_code "fail mode critical exit code" 1
   assert_contains "fail mode critical violation" "critical"
 }
 
@@ -374,6 +392,7 @@ case_fail_mode_hotpath_exits_one() {
   write_bench_file "${dir}/candidate" "BenchmarkTarget" 140 8 1
   run_checker "${dir}/baseline" "${dir}/candidate" "${dir}/policy.yaml"
   assert_failure "fail mode hotpath exits nonzero"
+  assert_exit_code "fail mode hotpath exit code" 1
   assert_contains "fail mode hotpath violation" "hotpath"
 }
 
@@ -407,6 +426,7 @@ case_missing_baseline_race_candidate_does_not_create_baseline() {
   write_bench_file "${dir}/candidate" "BenchmarkTarget" 100 8 1 $'# command: go test -race\n# count: 6\n# benchtime: 100ms'
   run_checker "${dir}/baseline" "${dir}/candidate" "${dir}/policy.yaml"
   assert_failure "race candidate baseline create refused"
+  assert_exit_code "race candidate refusal exit code" 2
   assert_contains "race candidate refusal message" "refusing to create baseline from race benchmark results"
   if [[ -e "${dir}/baseline" ]]; then
     printf 'not ok - race candidate created baseline\n%s\n' "${LAST_OUTPUT}" >&2
@@ -441,10 +461,12 @@ case_collect_rejects_unsafe_candidate_paths() {
     rm -rf /tmp/x
   fi
   assert_failure "collect rejects absolute candidate"
+  assert_exit_code "absolute candidate exit code" 2
   assert_contains "absolute candidate refusal" "candidate path must be a relative path under artifacts/perf"
 
   run_collect_checker "${repo_dir}" --policy policy.yaml --candidate ../outside --gate pr
   assert_failure "collect rejects escaping candidate"
+  assert_exit_code "escaping candidate exit code" 2
   assert_contains "escaping candidate refusal" "candidate path must be a relative path under artifacts/perf"
   if [[ -e "${dir}/outside" ]]; then
     printf 'not ok - escaping candidate created outside path\n%s\n' "${LAST_OUTPUT}" >&2
@@ -459,6 +481,7 @@ case_collect_rejects_escaping_package_paths() {
 
   run_collect_checker_bounded "${repo_dir}" --policy policy.yaml --candidate artifacts/perf/pr --gate pr
   assert_failure "collect rejects escaping package"
+  assert_exit_code "escaping package exit code" 2
   assert_contains "escaping package refusal" "benchmark package path must stay under repo root"
 }
 
@@ -472,6 +495,7 @@ case_collect_rejects_symlinked_perf_root() {
 
   run_collect_checker "${repo_dir}" --policy policy.yaml --candidate artifacts/perf/pr --gate pr
   assert_failure "collect rejects symlinked perf root"
+  assert_exit_code "symlinked perf root exit code" 2
   assert_contains "symlinked perf root refusal" "candidate path"
   if [[ ! -e "${outside}/pr/keep" ]]; then
     printf 'not ok - symlinked perf root collect deleted outside candidate\n%s\n' "${LAST_OUTPUT}" >&2
@@ -486,6 +510,7 @@ case_smoke_candidate_refused_for_baseline_without_allow_flag() {
   write_bench_file "${dir}/candidate" "BenchmarkTarget" 100 8 1 $'# count: 1\n# benchtime: 100ms'
   run_checker "${dir}/baseline" "${dir}/candidate" "${dir}/policy.yaml"
   assert_failure "smoke candidate baseline refused"
+  assert_exit_code "smoke candidate refusal exit code" 2
   assert_contains "smoke candidate refusal" "refusing to create baseline from smoke benchmark results"
   if [[ -e "${dir}/baseline" ]]; then
     printf 'not ok - smoke candidate created baseline\n%s\n' "${LAST_OUTPUT}" >&2
@@ -511,6 +536,7 @@ case_non_default_benchtime_candidate_refused_for_baseline() {
   write_bench_file "${dir}/candidate" "BenchmarkTarget" 100 8 1 $'# count: 2\n# benchtime: 10x'
   run_checker "${dir}/baseline" "${dir}/candidate" "${dir}/policy.yaml"
   assert_failure "non-default benchtime candidate baseline refused"
+  assert_exit_code "non-default benchtime refusal exit code" 2
   assert_contains "non-default benchtime refusal" "benchtime=10x differs from required 100ms"
 }
 
@@ -533,6 +559,7 @@ case_existing_smoke_baseline_errors_in_fail_mode() {
   write_bench_file "${dir}/candidate" "BenchmarkTarget" 100 8 1 $'# count: 2\n# benchtime: 100ms'
   run_checker "${dir}/baseline" "${dir}/candidate" "${dir}/policy.yaml"
   assert_failure "existing smoke baseline errors in fail mode"
+  assert_exit_code "existing smoke baseline error exit code" 2
   assert_contains "existing smoke baseline error" "error: existing baseline is smoke/junk baseline"
 }
 
@@ -544,6 +571,7 @@ case_missing_benchmem_columns_error_for_critical_bench() {
   write_bench_file_no_benchmem "${dir}/candidate" "BenchmarkTarget" 100
   run_checker "${dir}/baseline" "${dir}/candidate" "${dir}/policy.yaml"
   assert_failure "missing benchmem columns error"
+  assert_exit_code "missing benchmem exit code" 2
   assert_contains "missing benchmem names benchmark" "BenchmarkTarget"
   assert_contains "missing benchmem B/op" "missing B/op"
   assert_contains "missing benchmem file" "candidate file"
@@ -566,6 +594,7 @@ case_same_benchmark_name_in_two_packages_compares_selected_package() {
   write_two_package_bench_file "${dir}/candidate" "BenchmarkTarget" 200 10000
   run_checker "${dir}/baseline" "${dir}/candidate" "${dir}/policy.yaml"
   assert_failure "same benchmark name compares selected package"
+  assert_exit_code "same benchmark name exit code" 1
   assert_contains "same benchmark package violation" "metric=ns/op"
 }
 
