@@ -64,7 +64,7 @@ func resultFiles(path string) []string {
 		}
 		return nil
 	})
-	// Python sorted(Path)와 동치인 path-parts 정렬: '/' 경계에서 byte 정렬과 갈리므로 sort.Strings로 되돌리면 안 됨.
+	// Python sorted(Path)와 동치인 path-parts 정렬: '/' 경계에서 단순 byte 정렬과 결과가 갈리므로 단순 정렬로 단순화하면 안 됨.
 	slices.SortFunc(files, func(a, b string) int {
 		return slices.Compare(strings.Split(a, "/"), strings.Split(b, "/"))
 	})
