@@ -22,7 +22,11 @@ go get github.com/park285/shared-go@latest
 | `pkg/httputil` | HTTP 클라이언트 커넥션 풀링 및 프로파일 구성 도구 |
 | `pkg/json` | Sonic 엔진을 내장한 고성능 JSON 인코딩/디코딩 추상화 계층 |
 | `pkg/jsonutil` | 텍스트 혹은 HTTP 응답 문자열로부터 유효한 JSON을 정규화하여 추출하는 헬퍼 유틸리티 |
+| `pkg/llm` | LLM provider 클라이언트 추상화 (`JSONGenerator` 인터페이스, OpenAI Responses 호환 JSON 생성, Codex CLI 실행/로그인, 응답 redaction) |
 | `pkg/logging` | Slog 기반의 구조화된 로깅 모듈 (비동기 처리, 민감한 키 정보 마스킹 및 실시간 로그 로테이션 지원) |
+| `pkg/obsmetrics` | `client_golang` 의존성 없이 Prometheus 평문 텍스트 exposition을 생성하는 메트릭 키트 (webhook/런타임 메트릭, prefix 네임스페이스 분리) |
+| `pkg/outputguard` | LLM 생성 출력 가드 (시스템 프롬프트·시크릿 누출 패턴 차단, confusable 문자 정규화) |
+| `pkg/promptguard` | 룰팩 기반 프롬프트 인젝션 방어 가드 (가중치 임계값 매칭, dampen/block 정책, base64/confusable 디코딩, 한/영 룰팩, TTL 캐시) |
 | `pkg/runtime` | Go 런타임 최적화를 포함한 프로세스 부트스트랩 도구 (`automaxprocs`, 애플리케이션 라이프사이클 관리, HTTPServer) |
 | `pkg/stringutil` | 범용 문자열 처리 유틸리티 |
 | `pkg/telemetry` | OpenTelemetry 기반의 분산 트레이싱(Tracing) 정보 설정 및 컨텍스트 전파 유틸리티 |
