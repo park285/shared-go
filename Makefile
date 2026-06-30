@@ -15,6 +15,7 @@ endif
 .PHONY: lint
 lint:
 	$(GOLANGCI_LINT) run -c $(GOLANGCI_CONFIG) ./...
+	( cd scripts/perf/benchgate && GOWORK=off $(GOLANGCI_LINT) run )
 
 .PHONY: fmt
 fmt:
