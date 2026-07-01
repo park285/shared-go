@@ -1,7 +1,7 @@
-// Package httputil provides shared HTTP client, JSON request, and response
-// validation helpers.
+// Package httputil은 공용 HTTP client, JSON request, response 검증 helper를
+// 제공합니다.
 //
-// # What this package does
+// # 패키지 개요
 //
 // 이 패키지는 서비스 간 HTTP 호출과 외부 API 호출에서 반복되는 client timeout,
 // connection pool, HTTP/2 정책을 TransportProfile로 맞춥니다. 기본 transport의

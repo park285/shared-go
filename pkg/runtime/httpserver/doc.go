@@ -1,4 +1,4 @@
-// Package httpserver provides small lifecycle helpers for HTTP servers.
+// Package httpserver는 HTTP server를 위한 작은 lifecycle helper를 제공합니다.
 //
 // 패키지 소개
 //

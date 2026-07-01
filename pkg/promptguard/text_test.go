@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// TestNormalizeViews verifies normalization removes hidden and compatibility characters.
+// TestNormalizeViews는 정규화가 hidden 문자와 compatibility 문자를 제거하는지 검증한다.
 func TestNormalizeViews(t *testing.T) {
 	t.Parallel()
 
@@ -23,7 +23,7 @@ func TestNormalizeViews(t *testing.T) {
 	}
 }
 
-// TestNormalizeViewsBuildsJoinedObfuscationView verifies obfuscated spacing collapse.
+// TestNormalizeViewsBuildsJoinedObfuscationView는 난독화된 간격이 축소되는지 검증한다.
 func TestNormalizeViewsBuildsJoinedObfuscationView(t *testing.T) {
 	t.Parallel()
 
@@ -33,7 +33,7 @@ func TestNormalizeViewsBuildsJoinedObfuscationView(t *testing.T) {
 	}
 }
 
-// TestSplitTextSegments verifies mixed config, code, and quote detection.
+// TestSplitTextSegments는 config, code, quote 혼합 감지를 검증한다.
 func TestSplitTextSegments(t *testing.T) {
 	t.Parallel()
 
@@ -58,8 +58,8 @@ func TestSplitTextSegments(t *testing.T) {
 	}
 }
 
-// TestNormalizeViewsSingleJamoPanic verifies that a single compatibility jamo character
-// (예: "ㄱ" U+3131) does not panic inside composeJamoSequences.
+// TestNormalizeViewsSingleJamoPanic은 단일 compatibility jamo 문자
+// (예: "ㄱ" U+3131)가 composeJamoSequences 내부에서 panic을 일으키지 않는지 검증한다.
 // 수정 전에는 jamo.ComposeHangeul이 길이 1 슬라이스에서 combineHangulSyllables를 호출하여
 // jamos[i+1] index OOB panic을 일으킨다.
 func TestNormalizeViewsSingleJamoPanic(t *testing.T) {
@@ -104,7 +104,7 @@ func TestNormalizeViewsSingleJamoPanic(t *testing.T) {
 	}
 }
 
-// TestContainsSuspiciousBase64 verifies positive and negative base64 heuristics.
+// TestContainsSuspiciousBase64는 base64 heuristic의 positive/negative 케이스를 검증한다.
 func TestContainsSuspiciousBase64(t *testing.T) {
 	t.Parallel()
 
@@ -117,7 +117,7 @@ func TestContainsSuspiciousBase64(t *testing.T) {
 	}
 }
 
-// TestDecodeBase64Candidate verifies supported encodings and malformed input handling.
+// TestDecodeBase64Candidate는 지원되는 encoding과 malformed 입력 처리를 검증한다.
 func TestDecodeBase64Candidate(t *testing.T) {
 	t.Parallel()
 

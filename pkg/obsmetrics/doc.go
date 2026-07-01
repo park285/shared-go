@@ -1,7 +1,7 @@
 // Package obsmetrics는 client_golang 의존성 없이 Prometheus 평문 텍스트 exposition을
 // 직접 생성하는 메트릭 키트입니다.
 //
-// # What this package does
+// # 패키지 개요
 //
 // 이 패키지는 iris webhook 핸들러 관측 포인트(iris-client-go webhook.Metrics)를 prefix
 // 네임스페이스 단위로 구현한 WebhookMetrics를 제공합니다. prefix가 "chat_bot"이면

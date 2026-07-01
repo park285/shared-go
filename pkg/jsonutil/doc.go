@@ -1,7 +1,7 @@
-// Package jsonutil provides JSON extraction helpers for model and HTTP
-// response text.
+// Package jsonutil은 model과 HTTP response 텍스트에서 JSON을 추출하는
+// helper를 제공합니다.
 //
-// # What this package does
+// # 패키지 개요
 //
 // 이 패키지는 LLM 응답처럼 JSON 앞뒤에 자연어가 섞일 수 있는 텍스트에서 첫 번째
 // 유효한 JSON payload를 추출합니다. fenced code block 안의 JSON을 먼저 확인하고,

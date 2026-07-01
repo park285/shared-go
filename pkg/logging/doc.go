@@ -1,7 +1,6 @@
-// Package logging provides shared structured logging helpers for runtime
-// services.
+// Package logging은 runtime 서비스용 공용 구조화 로깅 helper를 제공합니다.
 //
-// # What this package does
+// # 패키지 개요
 //
 // 이 패키지는 slog 기반 구조화 로깅을 공통화합니다. 호출부는 event, message,
 // slog.Attr를 전달하고, 패키지는 context에 전파된 request_id, job_id, runtime,

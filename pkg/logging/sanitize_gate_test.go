@@ -56,13 +56,13 @@ func TestRedactSecrets_NoMatchUnchanged(t *testing.T) {
 // 호출 결과와 byte-identical이어야 한다 (superset 불변식).
 func TestRedactSecrets_UnicodeFoldTrap(t *testing.T) {
 	cases := []string{
-		"?paſsword=LEAKEDPW",        // long-s ſ ↔ s in "password"
-		"?toKen=LEAKEDTOK",          // Kelvin K ↔ k in "token"
-		"?Key=LEAKEDKEY",            // Kelvin K ↔ k in "key"
-		"?ſecret=LEAKEDSEC",         // long-s ſ ↔ s in "secret"
-		"?api_Key=LEAKEDAK",         // Kelvin K ↔ k in "api_key"
-		";paſswd=LEAKEDPW",          // long-s in "passwd", semicolon sep
-		"prefixſ ?password=PLAINPW", // non-ASCII present but ASCII token also matches
+		"?paſsword=LEAKEDPW",        // long-s ſ ↔ "password"의 s
+		"?toKen=LEAKEDTOK",          // Kelvin K ↔ "token"의 k
+		"?Key=LEAKEDKEY",            // Kelvin K ↔ "key"의 k
+		"?ſecret=LEAKEDSEC",         // long-s ſ ↔ "secret"의 s
+		"?api_Key=LEAKEDAK",         // Kelvin K ↔ "api_key"의 k
+		";paſswd=LEAKEDPW",          // "passwd" 내 long-s, semicolon 구분자
+		"prefixſ ?password=PLAINPW", // non-ASCII 있으나 ASCII token도 매칭됨
 	}
 	for _, in := range cases {
 		want := bearerTokenRegex.ReplaceAllString(in, "${1}***REDACTED***")

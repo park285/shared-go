@@ -21,7 +21,7 @@ func (s *recordSink) Handle(_ context.Context, r slog.Record) error {
 func (s *recordSink) WithAttrs(_ []slog.Attr) slog.Handler { return s }
 func (s *recordSink) WithGroup(_ string) slog.Handler      { return s }
 
-// TestSanitizeHandler_MessageMasking — Behavior 1 (RED expected)
+// TestSanitizeHandler_MessageMasking — Behavior 1 (RED 예상)
 // Message 문자열 안의 Bearer 토큰과 query secret이 마스킹돼야 한다.
 func TestSanitizeHandler_MessageMasking(t *testing.T) {
 	sink := &recordSink{}

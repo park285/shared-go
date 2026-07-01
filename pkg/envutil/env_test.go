@@ -216,7 +216,7 @@ func TestBool(t *testing.T) {
 }
 
 func TestBoolStrict(t *testing.T) {
-	// Suppress slog warnings during tests
+	// 테스트 중 slog warning 억제
 	oldLogger := slog.Default()
 	defer slog.SetDefault(oldLogger)
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{

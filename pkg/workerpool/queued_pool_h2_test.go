@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// TestQueuedPool_PanicRecover — Behavior 2 (RED expected)
+// TestQueuedPool_PanicRecover — Behavior 2 (RED 예상)
 // task가 panic을 일으켜도 worker goroutine이 살아남고, 이후 task가 실행돼야 한다.
 // recover된 내용은 slog.Error로 기록돼야 한다.
 func TestQueuedPool_PanicRecover(t *testing.T) {

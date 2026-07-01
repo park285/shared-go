@@ -1,7 +1,7 @@
-// Package telemetry provides OpenTelemetry tracing setup and context
-// propagation helpers.
+// Package telemetry는 OpenTelemetry tracing 설정과 context 전파 helper를
+// 제공합니다.
 //
-// # What this package does
+// # 패키지 개요
 //
 // 이 패키지는 OpenTelemetry 기반 분산 추적을 서비스 공통 방식으로 구성합니다.
 // Config로 service metadata, OTLP gRPC endpoint, TLS 사용 여부, sampler 비율을
