@@ -8,6 +8,9 @@ import (
 
 func checkResults(policy *omap, selected selection, args *cliArgs) (int, error) {
 	baselinePath := args.baseline
+	if hasDotDot(filepath.Clean(pyPathStr(baselinePath))) {
+		return 0, perr("baseline path must not contain '..' traversal: %s", pyPathStr(baselinePath))
+	}
 	candidatePath := args.candidate
 
 	candidate, e := parseResults(candidatePath)
