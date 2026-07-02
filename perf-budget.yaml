@@ -28,7 +28,9 @@ benchmarks:
   BenchmarkQueuedPoolSubmitParallel: { package: ./pkg/workerpool, class: hotpath, gate: pr }
   BenchmarkQueuedPoolTrySubmitFull: { package: ./pkg/workerpool, class: hotpath, gate: nightly }
   BenchmarkBackoffHalfJitter: { package: ./pkg/backoff, class: hotpath, gate: pr }
-  BenchmarkNormalizeViews: { package: ./pkg/promptguard, class: hotpath, gate: pr }
+  BenchmarkNormalizeViewsKorean: { package: ./pkg/promptguard, class: hotpath, gate: pr }
+  BenchmarkNormalizeViewsEnglish: { package: ./pkg/promptguard, class: hotpath, gate: pr }
+  BenchmarkNormalizeViewsMixed: { package: ./pkg/promptguard, class: hotpath, gate: pr }
   BenchmarkHistogramObserveConcurrent: { package: ./pkg/obsmetrics, class: hotpath, gate: pr }
   BenchmarkCounterVecConcurrentCardinality: { package: ./pkg/obsmetrics, class: non_critical, gate: nightly }
   BenchmarkHistogramVecConcurrentCardinality: { package: ./pkg/obsmetrics, class: non_critical, gate: nightly }

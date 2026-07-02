@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestCounterVecWriteToSortsLabels(t *testing.T) {
+func TestCounterVecWriteExpositionSortsLabels(t *testing.T) {
 	t.Parallel()
 
 	vec := NewCounterVec("requests_total", "line1\nline2")
@@ -17,8 +17,8 @@ func TestCounterVecWriteToSortsLabels(t *testing.T) {
 	}, 3)
 
 	var buf bytes.Buffer
-	if !vec.WriteTo(&buf) {
-		t.Fatal("WriteTo() = false")
+	if !vec.WriteExposition(&buf) {
+		t.Fatal("WriteExposition() = false")
 	}
 
 	body := buf.String()
@@ -32,15 +32,15 @@ func TestCounterVecWriteToSortsLabels(t *testing.T) {
 	}
 }
 
-func TestGaugeVecWriteTo(t *testing.T) {
+func TestGaugeVecWriteExposition(t *testing.T) {
 	t.Parallel()
 
 	vec := NewGaugeVec("temperature", "Current temperature")
 	vec.Set(Labels{"room": "bot"}, 3.5)
 
 	var buf bytes.Buffer
-	if !vec.WriteTo(&buf) {
-		t.Fatal("WriteTo() = false")
+	if !vec.WriteExposition(&buf) {
+		t.Fatal("WriteExposition() = false")
 	}
 
 	body := buf.String()
@@ -51,7 +51,7 @@ func TestGaugeVecWriteTo(t *testing.T) {
 	}
 }
 
-func TestHistogramVecWriteTo(t *testing.T) {
+func TestHistogramVecWriteExposition(t *testing.T) {
 	t.Parallel()
 
 	vec := NewHistogramVec("latency", "Latency seconds", []float64{0.1, 1})
@@ -61,8 +61,8 @@ func TestHistogramVecWriteTo(t *testing.T) {
 	vec.Observe(labels, 2)
 
 	var buf bytes.Buffer
-	if !vec.WriteTo(&buf) {
-		t.Fatal("WriteTo() = false")
+	if !vec.WriteExposition(&buf) {
+		t.Fatal("WriteExposition() = false")
 	}
 
 	body := buf.String()

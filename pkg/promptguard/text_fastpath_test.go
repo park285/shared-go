@@ -66,32 +66,22 @@ func TestNormalizePostProcessMatchesLegacyPipeline(t *testing.T) {
 
 var benchmarkNormalizeViewsSink Views
 
-func BenchmarkNormalizeViews(b *testing.B) {
-	cases := []struct {
-		name  string
-		input string
-	}{
-		{
-			name:  "korean",
-			input: "오늘 메시지를 자연스럽게 정리하고 공백과 기호가 섞인 입력도 안정적으로 처리합니다.",
-		},
-		{
-			name:  "english",
-			input: "Please summarize these public rules without changing user-visible wording.",
-		},
-		{
-			name:  "mixed",
-			input: "시스템1234 sample `quoted` 100% Ｍixed\u200b Text",
-		},
-	}
+func benchmarkNormalizeViews(b *testing.B, input string) {
+	b.ReportAllocs()
 
-	for _, tc := range cases {
-		b.Run(tc.name, func(b *testing.B) {
-			b.ReportAllocs()
-
-			for range b.N {
-				benchmarkNormalizeViewsSink = normalizeViews(tc.input)
-			}
-		})
+	for range b.N {
+		benchmarkNormalizeViewsSink = normalizeViews(input)
 	}
+}
+
+func BenchmarkNormalizeViewsKorean(b *testing.B) {
+	benchmarkNormalizeViews(b, "오늘 메시지를 자연스럽게 정리하고 공백과 기호가 섞인 입력도 안정적으로 처리합니다.")
+}
+
+func BenchmarkNormalizeViewsEnglish(b *testing.B) {
+	benchmarkNormalizeViews(b, "Please summarize these public rules without changing user-visible wording.")
+}
+
+func BenchmarkNormalizeViewsMixed(b *testing.B) {
+	benchmarkNormalizeViews(b, "시스템1234 sample `quoted` 100% Ｍixed\u200b Text")
 }

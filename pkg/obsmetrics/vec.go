@@ -53,8 +53,12 @@ func (v *CounterVec) With(labels Labels) *Counter {
 		value:  &Counter{},
 	}
 	actual, _ := v.series.LoadOrStore(key, entry)
+	stored, ok := actual.(*seriesEntry[*Counter])
+	if !ok {
+		return nil
+	}
 
-	return actual.(*seriesEntry[*Counter]).value
+	return stored.value
 }
 
 func (v *CounterVec) Inc(labels Labels) {
@@ -68,7 +72,7 @@ func (v *CounterVec) Add(labels Labels, delta uint64) {
 	}
 }
 
-func (v *CounterVec) WriteTo(w io.Writer) bool {
+func (v *CounterVec) WriteExposition(w io.Writer) bool {
 	if v == nil {
 		return true
 	}
@@ -131,8 +135,12 @@ func (v *GaugeVec) With(labels Labels) *Gauge {
 		value:  &Gauge{},
 	}
 	actual, _ := v.series.LoadOrStore(key, entry)
+	stored, ok := actual.(*seriesEntry[*Gauge])
+	if !ok {
+		return nil
+	}
 
-	return actual.(*seriesEntry[*Gauge]).value
+	return stored.value
 }
 
 func (v *GaugeVec) Set(labels Labels, value float64) {
@@ -142,7 +150,7 @@ func (v *GaugeVec) Set(labels Labels, value float64) {
 	}
 }
 
-func (v *GaugeVec) WriteTo(w io.Writer) bool {
+func (v *GaugeVec) WriteExposition(w io.Writer) bool {
 	if v == nil {
 		return true
 	}
@@ -200,8 +208,12 @@ func (v *HistogramVec) With(labels Labels) *Histogram {
 		value:  NewHistogram(v.buckets),
 	}
 	actual, _ := v.series.LoadOrStore(key, entry)
+	stored, ok := actual.(*seriesEntry[*Histogram])
+	if !ok {
+		return nil
+	}
 
-	return actual.(*seriesEntry[*Histogram]).value
+	return stored.value
 }
 
 func (v *HistogramVec) Observe(labels Labels, value float64) {
@@ -211,7 +223,7 @@ func (v *HistogramVec) Observe(labels Labels, value float64) {
 	}
 }
 
-func (v *HistogramVec) WriteTo(w io.Writer) bool {
+func (v *HistogramVec) WriteExposition(w io.Writer) bool {
 	if v == nil {
 		return true
 	}
@@ -250,7 +262,9 @@ func (v *HistogramVec) WriteTo(w io.Writer) bool {
 func collectSeries[T any](series *sync.Map) []*seriesEntry[T] {
 	entries := make([]*seriesEntry[T], 0)
 	series.Range(func(_, value any) bool {
-		entries = append(entries, value.(*seriesEntry[T]))
+		if entry, ok := value.(*seriesEntry[T]); ok {
+			entries = append(entries, entry)
+		}
 
 		return true
 	})
