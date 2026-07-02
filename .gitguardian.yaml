@@ -1,0 +1,6 @@
+# 테스트 픽스처의 합성 자격증명(더미 DSN, redaction 검증용 문자열)이 secret으로 오탐되어 제외한다.
+version: 2
+
+secret:
+  ignored_paths:
+    - "**/*_test.go"

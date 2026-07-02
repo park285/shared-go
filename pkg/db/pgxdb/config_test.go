@@ -50,12 +50,12 @@ func TestConfigDSN_RequiresSSLMode(t *testing.T) {
 
 func TestConfigDSN_TCP(t *testing.T) {
 	clearRootCertEnv(t)
-	cfg := &Config{Host: "db.example", Port: 6432, User: "svc", Password: "s3cr3t", Name: "app", SSLMode: "verify-full"}
+	cfg := &Config{Host: "db.example", Port: 6432, User: "svc", Password: "test-dsn-placeholder", Name: "app", SSLMode: "verify-full"}
 	dsn, err := cfg.DSN()
 	if err != nil {
 		t.Fatalf("DSN() error = %v", err)
 	}
-	for _, want := range []string{"host='db.example'", "port=6432", "user='svc'", "password='s3cr3t'", "dbname='app'", "sslmode='verify-full'"} {
+	for _, want := range []string{"host='db.example'", "port=6432", "user='svc'", "password='test-dsn-placeholder'", "dbname='app'", "sslmode='verify-full'"} {
 		if !strings.Contains(dsn, want) {
 			t.Errorf("DSN() = %q, missing %q", dsn, want)
 		}
@@ -109,12 +109,12 @@ func TestConfigDSN_RootCertEnvFallback(t *testing.T) {
 
 func TestSafeDSN_MasksPassword(t *testing.T) {
 	clearRootCertEnv(t)
-	cfg := &Config{Host: "h", SSLMode: "disable", User: "u", Password: "topsecret", Name: "db"}
+	cfg := &Config{Host: "h", SSLMode: "disable", User: "u", Password: "test-redaction-placeholder", Name: "db"}
 	safe, err := cfg.SafeDSN()
 	if err != nil {
 		t.Fatalf("SafeDSN() error = %v", err)
 	}
-	if strings.Contains(safe, "topsecret") {
+	if strings.Contains(safe, "test-redaction-placeholder") {
 		t.Errorf("SafeDSN() = %q, leaks password", safe)
 	}
 	if !strings.Contains(safe, "password='***'") {
@@ -125,7 +125,7 @@ func TestSafeDSN_MasksPassword(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DSN() error = %v", err)
 	}
-	if !strings.Contains(full, "password='topsecret'") {
+	if !strings.Contains(full, "password='test-redaction-placeholder'") {
 		t.Errorf("DSN() = %q, missing real password", full)
 	}
 }

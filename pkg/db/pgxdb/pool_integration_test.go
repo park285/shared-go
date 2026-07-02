@@ -57,7 +57,7 @@ func startPostgres() (string, string, error) {
 	runCtx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	out, err := exec.CommandContext(runCtx, "docker", "run", "-d", "--rm",
-		"-e", "POSTGRES_PASSWORD=sharedgo_test",
+		"-e", "POSTGRES_PASSWORD=sharedgo-local-test-placeholder",
 		"-e", "POSTGRES_DB=sharedgo_test",
 		"-P", "postgres:16-alpine",
 	).CombinedOutput()
@@ -70,7 +70,7 @@ func startPostgres() (string, string, error) {
 		removeContainer(id)
 		return "", "", err
 	}
-	dsn := fmt.Sprintf("postgres://postgres:sharedgo_test@127.0.0.1:%s/sharedgo_test?sslmode=disable", port)
+	dsn := fmt.Sprintf("postgres://postgres:sharedgo-local-test-placeholder@127.0.0.1:%s/sharedgo_test?sslmode=disable", port)
 	if err := waitReady(dsn); err != nil {
 		removeContainer(id)
 		return "", "", err
