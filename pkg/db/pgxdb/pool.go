@@ -98,6 +98,12 @@ func OpenPoolDSN(ctx context.Context, rawDSN string, opts Options) (*pgxpool.Poo
 
 func OpenPoolWithRetry(ctx context.Context, cfg Config, opts Options) (*pgxpool.Pool, error) {
 	opts = opts.withDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	if err := validateConnCounts(withPoolDefaults(opts.Pool)); err != nil {
+		return nil, err
+	}
 	r := normalizeRetry(opts.Retry)
 
 	var pool *pgxpool.Pool
@@ -105,6 +111,9 @@ func OpenPoolWithRetry(ctx context.Context, cfg Config, opts Options) (*pgxpool.
 		MaxAttempts: r.MaxAttempts,
 		BaseDelay:   r.BaseDelay,
 		MaxDelay:    r.MaxDelay,
+		ShouldRetry: func(err error) bool {
+			return isRetryableConnectError(ctx, err)
+		},
 		OnRetry: func(attempt int, err error, delay time.Duration) {
 			opts.Logger.Warn("postgres_connect_retry",
 				slog.Int("attempt", attempt),
@@ -121,7 +130,10 @@ func OpenPoolWithRetry(ctx context.Context, cfg Config, opts Options) (*pgxpool.
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("pgxdb: open pool after retries: %w", err)
+		if isRetryableConnectError(ctx, err) {
+			return nil, fmt.Errorf("pgxdb: open pool after retries: %w", err)
+		}
+		return nil, fmt.Errorf("pgxdb: open pool: %w", err)
 	}
 	return pool, nil
 }
@@ -246,20 +258,21 @@ func validateConnCounts(pool PoolConfig) error {
 }
 
 func withPoolDefaults(pool PoolConfig) PoolConfig {
+	def := DefaultPoolConfig()
 	if pool.MinConns <= 0 {
-		pool.MinConns = 2
+		pool.MinConns = def.MinConns
 	}
 	if pool.MaxConns <= 0 {
-		pool.MaxConns = 10
+		pool.MaxConns = def.MaxConns
 	}
 	if pool.ConnMaxLifetime <= 0 {
-		pool.ConnMaxLifetime = time.Hour
+		pool.ConnMaxLifetime = def.ConnMaxLifetime
 	}
 	if pool.ConnMaxLifetimeJitter <= 0 {
 		pool.ConnMaxLifetimeJitter = pool.ConnMaxLifetime / 5
 	}
 	if pool.ConnMaxIdleTime <= 0 {
-		pool.ConnMaxIdleTime = 30 * time.Minute
+		pool.ConnMaxIdleTime = def.ConnMaxIdleTime
 	}
 	return pool
 }

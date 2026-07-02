@@ -1,9 +1,12 @@
 package pgxdb
 
 import (
+	"context"
 	"errors"
 	"net"
 	"strings"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func ShouldFallbackToLocalhost(err error, host string) bool {
@@ -31,4 +34,21 @@ func isFallbackEligibleHost(host string) bool {
 		return false
 	}
 	return strings.EqualFold(host, "postgres")
+}
+
+const (
+	sqlstateInvalidAuthorization = "28000"
+	sqlstateInvalidPassword      = "28P01"
+)
+
+func isRetryableConnectError(ctx context.Context, err error) bool {
+	if ctx.Err() != nil {
+		return false
+	}
+	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok {
+		if pgErr.Code == sqlstateInvalidAuthorization || pgErr.Code == sqlstateInvalidPassword {
+			return false
+		}
+	}
+	return true
 }

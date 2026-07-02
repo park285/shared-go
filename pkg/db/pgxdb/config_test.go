@@ -157,16 +157,37 @@ func TestDefaultPoolConfig_EnvOverrideAndClamp(t *testing.T) {
 	}
 }
 
-func TestWithPoolDefaults(t *testing.T) {
+func TestWithPoolDefaults_SharesSourceWithDefaultPoolConfig(t *testing.T) {
+	t.Setenv("DB_POOL_MIN_CONNS", "7")
+	t.Setenv("DB_POOL_MAX_CONNS", "33")
+
+	def := DefaultPoolConfig()
 	got := withPoolDefaults(PoolConfig{})
-	if got.MinConns != 2 || got.MaxConns != 10 {
-		t.Errorf("conns = %d/%d, want 2/10", got.MinConns, got.MaxConns)
+
+	if got.MinConns != def.MinConns || got.MaxConns != def.MaxConns {
+		t.Errorf("conns = %d/%d, want %d/%d (single source: DefaultPoolConfig)", got.MinConns, got.MaxConns, def.MinConns, def.MaxConns)
 	}
-	if got.ConnMaxLifetime != time.Hour || got.ConnMaxIdleTime != 30*time.Minute {
-		t.Errorf("lifetimes = %v/%v", got.ConnMaxLifetime, got.ConnMaxIdleTime)
+	if got.MinConns != 7 || got.MaxConns != 33 {
+		t.Errorf("conns = %d/%d, want env-tuned 7/33", got.MinConns, got.MaxConns)
 	}
-	if got.ConnMaxLifetimeJitter != time.Hour/5 {
+	if got.ConnMaxLifetime != def.ConnMaxLifetime || got.ConnMaxIdleTime != def.ConnMaxIdleTime {
+		t.Errorf("lifetimes = %v/%v, want %v/%v", got.ConnMaxLifetime, got.ConnMaxIdleTime, def.ConnMaxLifetime, def.ConnMaxIdleTime)
+	}
+	if got.ConnMaxLifetimeJitter != got.ConnMaxLifetime/5 {
 		t.Errorf("jitter = %v, want lifetime/5", got.ConnMaxLifetimeJitter)
+	}
+}
+
+func TestWithPoolDefaults_PreservesExplicitValues(t *testing.T) {
+	t.Setenv("DB_POOL_MIN_CONNS", "7")
+	t.Setenv("DB_POOL_MAX_CONNS", "33")
+
+	got := withPoolDefaults(PoolConfig{MinConns: 3, MaxConns: 12, ConnMaxLifetime: 2 * time.Hour, ConnMaxLifetimeJitter: 90 * time.Second, ConnMaxIdleTime: 5 * time.Minute})
+	if got.MinConns != 3 || got.MaxConns != 12 {
+		t.Errorf("conns = %d/%d, want explicit 3/12 (fallback must not override)", got.MinConns, got.MaxConns)
+	}
+	if got.ConnMaxLifetime != 2*time.Hour || got.ConnMaxLifetimeJitter != 90*time.Second || got.ConnMaxIdleTime != 5*time.Minute {
+		t.Errorf("lifetimes = %v/%v/%v, want explicit values preserved", got.ConnMaxLifetime, got.ConnMaxLifetimeJitter, got.ConnMaxIdleTime)
 	}
 }
 

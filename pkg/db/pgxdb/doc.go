@@ -4,5 +4,29 @@
 // pgx가 "prefer"로 조용히 대체해 호출자의 TLS posture(verify-full·disable 등)를 바꿔버리므로,
 // 호출자가 posture를 명시하도록 강제하는 숨은 계약이다.
 //
+// # 풀 기본값(fallback) 계약
+//
+// OpenPool·OpenPoolWithRetry는 opts.Pool에서 미설정(0 이하)인 필드를 DefaultPoolConfig()와
+// 동일한 단일 소스로 채운다: MinConns/MaxConns는 env(DB_POOL_MIN_CONNS·DB_POOL_MAX_CONNS,
+// 기본 5/20, 각 [1,100]·[1,200] clamp), ConnMaxLifetime=1h, ConnMaxIdleTime=30m이고,
+// ConnMaxLifetimeJitter는 유효 ConnMaxLifetime/5로 파생한다. 따라서 OpenPool(ctx,cfg,Options{})와
+// DefaultOptions() 경유가 동일한 풀 구성을 만든다.
+//
+// OpenPoolDSN은 다르다: pgxpool.ParseConfig가 DSN의 pool_* 파라미터를 파싱하며 미지정 필드에
+// pgx 자체 기본값(MaxConns=max(4,NumCPU), MinConns=0, ConnMaxLifetime=1h, ConnMaxIdleTime=30m,
+// jitter=0)을 채우므로 "DSN 지정" 값과 "pgx 기본" 값을 구분할 수 없다. 그래서 OpenPoolDSN은
+// shared-go 기본값을 덮어쓰지 않고 opts.Pool에서 0보다 큰 필드만 파싱 결과 위에 override 한다.
+// 미지정 풀 파라미터는 pgx 기본값에 위임한다. shared-go 기본값을 원하면 opts.Pool에
+// DefaultPoolConfig()를 명시해 넘겨라.
+//
+// # OpenPoolWithRetry의 fail-fast
+//
+// OpenPoolWithRetry는 재시도 루프 진입 전 cfg.Validate()와 풀 conn 수 범위를 선검증하므로 설정
+// 오류(sslmode 오타, int32 범위 밖 MaxConns 등)는 재시도 없이 즉시 반환한다. 루프 안에서는
+// 영구 에러를 재시도하지 않는다: 인증 실패(pgconn.PgError SQLSTATE 28000·28P01)와 context
+// 취소·만료는 즉시 중단한다. DB 미존재(3D000)·연결 거부·DNS 실패처럼 compose 기동 레이스에서
+// 회복 가능한 에러는 계속 재시도한다. ping 타임아웃(자식 context 만료)은 부모 context가 살아
+// 있으면 재시도 대상으로 남는다.
+//
 // shared-go에서 pgx에 의존하는 유일한 패키지다. pgx 무의존 database/sql 풀 튜닝은 pkg/db/sqldb.
 package pgxdb

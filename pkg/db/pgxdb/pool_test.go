@@ -3,13 +3,18 @@ package pgxdb
 import (
 	"context"
 	"errors"
+	"fmt"
+	"math"
 	"net"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+const loopbackHost = "127.0.0.1"
 
 func mustParse(t *testing.T, dsn string) *pgxpool.Config {
 	t.Helper()
@@ -128,7 +133,7 @@ func TestOpenPoolWithRetry_ExhaustsAttempts(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	cfg := Config{Host: "127.0.0.1", Port: 59999, User: "u", Name: "db", SSLMode: "disable"}
+	cfg := Config{Host: loopbackHost, Port: 59999, User: "u", Name: "db", SSLMode: "disable"}
 	opts := Options{Retry: RetryConfig{MaxAttempts: 2, BaseDelay: time.Millisecond, MaxDelay: 2 * time.Millisecond, PingTimeout: 300 * time.Millisecond}}
 
 	_, err := OpenPoolWithRetry(ctx, cfg, opts)
@@ -137,5 +142,114 @@ func TestOpenPoolWithRetry_ExhaustsAttempts(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "after retries") {
 		t.Errorf("error = %v, want retry-exhaustion wrapping", err)
+	}
+}
+
+func TestIsRetryableConnectError_Classification(t *testing.T) {
+	live := context.Background()
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	tests := []struct {
+		name string
+		ctx  context.Context
+		err  error
+		want bool
+	}{
+		{name: "auth invalid_password 28P01", ctx: live, err: &pgconn.PgError{Code: sqlstateInvalidPassword}, want: false},
+		{name: "auth invalid_authorization 28000", ctx: live, err: &pgconn.PgError{Code: sqlstateInvalidAuthorization}, want: false},
+		{name: "wrapped auth 28P01", ctx: live, err: fmt.Errorf("pgxdb: ping: %w", &pgconn.PgError{Code: sqlstateInvalidPassword}), want: false},
+		{name: "db not exist 3D000 retryable", ctx: live, err: &pgconn.PgError{Code: "3D000"}, want: true},
+		{name: "connection refused retryable", ctx: live, err: &net.OpError{Op: "dial", Err: errors.New("connection refused")}, want: true},
+		{name: "generic error retryable", ctx: live, err: errors.New("temporary network glitch"), want: true},
+		{name: "cancelled context permanent", ctx: cancelled, err: &pgconn.PgError{Code: "3D000"}, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isRetryableConnectError(tt.ctx, tt.err); got != tt.want {
+				t.Errorf("isRetryableConnectError(%v) = %v, want %v", tt.err, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestOpenPoolWithRetry_ValidationFailsFast(t *testing.T) {
+	clearRootCertEnv(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	cfg := Config{Host: loopbackHost, Port: 59999, User: "u", Name: "db"}
+	opts := Options{Retry: RetryConfig{MaxAttempts: 5, BaseDelay: time.Hour, MaxDelay: time.Hour}}
+
+	start := time.Now()
+	_, err := OpenPoolWithRetry(ctx, cfg, opts)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected validation error, got nil")
+	}
+	if !strings.Contains(err.Error(), "sslmode") {
+		t.Errorf("error = %v, want sslmode validation error", err)
+	}
+	if strings.Contains(err.Error(), "after retries") || strings.Contains(err.Error(), "retry aborted") {
+		t.Errorf("error = %v, want pre-loop return without entering the retry loop", err)
+	}
+	if elapsed > time.Second {
+		t.Errorf("elapsed = %v, want fail-fast (BaseDelay=1h would dominate if the loop ran)", elapsed)
+	}
+}
+
+func TestOpenPoolWithRetry_ConnCountFailsFast(t *testing.T) {
+	clearRootCertEnv(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	cfg := Config{Host: loopbackHost, Port: 59999, User: "u", Name: "db", SSLMode: "disable"}
+	opts := Options{
+		Pool:  PoolConfig{MaxConns: math.MaxInt32 + 1},
+		Retry: RetryConfig{MaxAttempts: 5, BaseDelay: time.Hour, MaxDelay: time.Hour},
+	}
+
+	start := time.Now()
+	_, err := OpenPoolWithRetry(ctx, cfg, opts)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected int32-range validation error, got nil")
+	}
+	if !strings.Contains(err.Error(), "int32 range") {
+		t.Errorf("error = %v, want int32-range validation error", err)
+	}
+	if strings.Contains(err.Error(), "after retries") {
+		t.Errorf("error = %v, want pre-loop return", err)
+	}
+	if elapsed > time.Second {
+		t.Errorf("elapsed = %v, want fail-fast", elapsed)
+	}
+}
+
+func TestOpenPoolWithRetry_ContextCancelledFailsFast(t *testing.T) {
+	clearRootCertEnv(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	cfg := Config{Host: loopbackHost, Port: 59999, User: "u", Name: "db", SSLMode: "disable"}
+	opts := Options{Retry: RetryConfig{MaxAttempts: 5, BaseDelay: time.Hour, MaxDelay: time.Hour}}
+
+	start := time.Now()
+	_, err := OpenPoolWithRetry(ctx, cfg, opts)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected context error, got nil")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("error = %v, want errors.Is(context.Canceled)", err)
+	}
+	if strings.Contains(err.Error(), "after retries") {
+		t.Errorf("error = %v, want permanent-path wrapping without 'after retries'", err)
+	}
+	if elapsed > time.Second {
+		t.Errorf("elapsed = %v, want fail-fast on cancelled context", elapsed)
 	}
 }

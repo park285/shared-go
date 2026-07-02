@@ -1,5 +1,29 @@
 # Changelog
 
+## v1.24.1 - 2026-07-02
+
+### Fixed
+
+- `db/pgxdb`: `OpenPoolWithRetry` no longer retries permanent failures. It now
+  pre-validates `cfg.Validate()` and the pool connection-count range before entering
+  the retry loop (config errors such as an `sslmode` typo return immediately), and the
+  in-loop retry predicate treats authentication failures (`pgconn.PgError` SQLSTATE
+  `28000`/`28P01`) and parent-context cancellation/deadline as permanent (immediate
+  return). Recoverable startup-race errors — database-not-found (`3D000`), connection
+  refused, DNS failures, and ping timeouts while the parent context is still live —
+  remain retryable. Previously these permanent errors were retried for ~30s under the
+  default `RetryConfig`.
+- `db/pgxdb`: unified the pool default fallback to a single source. `withPoolDefaults`
+  now sources `MinConns`/`MaxConns`/`ConnMaxLifetime`/`ConnMaxIdleTime` from
+  `DefaultPoolConfig()` (env-tunable `DB_POOL_MIN_CONNS`/`DB_POOL_MAX_CONNS`, default
+  5/20) instead of a divergent hardcoded 2/10 that ignored the env vars;
+  `ConnMaxLifetimeJitter` is still derived as `ConnMaxLifetime/5`. `OpenPool(Options{})`
+  and `DefaultOptions()` now yield the same pool configuration. `OpenPoolDSN` keeps its
+  overlay semantics (it never overwrites DSN-specified `pool_*` parameters and delegates
+  unset parameters to pgx's own defaults); pass `opts.Pool` (e.g. `DefaultPoolConfig()`)
+  to apply shared-go defaults. The exact contract of all three entry points is now
+  documented in `db/pgxdb/doc.go`.
+
 ## v1.8.0 - 2026-06-10
 
 ### BREAKING
