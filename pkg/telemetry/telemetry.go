@@ -41,14 +41,6 @@ type Config struct {
 	SampleRate float64
 }
 
-func DefaultConfig() Config {
-	return Config{
-		Enabled:      false,
-		SampleRate:   1.0,
-		OTLPInsecure: true,
-	}
-}
-
 type Provider struct {
 	tracerProvider *sdktrace.TracerProvider
 }
@@ -147,33 +139,4 @@ func (p *Provider) Shutdown(ctx context.Context) error {
 
 func (p *Provider) IsEnabled() bool {
 	return p.tracerProvider != nil
-}
-
-// gRPC metadata나 HTTP headers로 trace context를 전파할 때 사용합니다.
-func InjectContext(ctx context.Context, carrier propagation.TextMapCarrier) {
-	otel.GetTextMapPropagator().Inject(ctx, carrier)
-}
-
-// 메시지 헤더나 HTTP headers에서 부모 trace context를 복원할 때 사용합니다.
-func ExtractContext(ctx context.Context, carrier propagation.TextMapCarrier) context.Context {
-	return otel.GetTextMapPropagator().Extract(ctx, carrier)
-}
-
-// Valkey 메시지의 Values 필드를 직접 사용할 수 있습니다.
-type MapCarrier map[string]string
-
-func (c MapCarrier) Get(key string) string {
-	return c[key]
-}
-
-func (c MapCarrier) Set(key, value string) {
-	c[key] = value
-}
-
-func (c MapCarrier) Keys() []string {
-	keys := make([]string, 0, len(c))
-	for k := range c {
-		keys = append(keys, k)
-	}
-	return keys
 }

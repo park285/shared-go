@@ -135,63 +135,6 @@ func TestExtract(t *testing.T) {
 	}
 }
 
-func TestExtractToMap(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name      string
-		input     string
-		wantKey   string
-		wantValue any
-		wantError bool
-	}{
-		{
-			name:      "정상 파싱",
-			input:     `{"status": "ok", "count": 42}`,
-			wantKey:   "status",
-			wantValue: "ok",
-		},
-		{
-			name:      "코드펜스에서 추출 후 파싱",
-			input:     "```json\n{\"result\": true}\n```",
-			wantKey:   "result",
-			wantValue: true,
-		},
-		{
-			name:      "JSON 없으면 에러",
-			input:     "No JSON",
-			wantError: true,
-		},
-		{
-			name:      "유효 JSON이지만 map 변환 실패 (array)",
-			input:     `[1, 2, 3]`,
-			wantError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			result, err := ExtractToMap(tt.input)
-
-			if tt.wantError {
-				if err == nil {
-					t.Errorf("ExtractToMap() expected error, got nil")
-				}
-				return
-			}
-
-			if err != nil {
-				t.Fatalf("ExtractToMap() unexpected error: %v", err)
-			}
-
-			if result[tt.wantKey] != tt.wantValue {
-				t.Errorf("ExtractToMap()[%q] = %v, want %v", tt.wantKey, result[tt.wantKey], tt.wantValue)
-			}
-		})
-	}
-}
-
 func TestFindMatchingEnd(t *testing.T) {
 	t.Parallel()
 
@@ -253,9 +196,6 @@ func TestSG03ExtractWithLimitNonPositiveEnforcesDefaultCap_39575489(t *testing.T
 		if _, err := ExtractWithLimit(oversize, maxBytes); !errors.Is(err, ErrInputTooLarge) {
 			t.Fatalf("ExtractWithLimit(oversize, %d) error = %v, want ErrInputTooLarge (hard cap on maxBytes<=0)", maxBytes, err)
 		}
-		if _, err := ExtractToMapWithLimit(oversize, maxBytes); !errors.Is(err, ErrInputTooLarge) {
-			t.Fatalf("ExtractToMapWithLimit(oversize, %d) error = %v, want ErrInputTooLarge (hard cap on maxBytes<=0)", maxBytes, err)
-		}
 	}
 }
 
@@ -270,13 +210,6 @@ func TestSG03ExtractWithLimitNonPositiveAcceptsWithinDefaultCap_39575489(t *test
 		}
 		if string(got) != payload {
 			t.Fatalf("ExtractWithLimit(small, %d) = %q, want %q", maxBytes, got, payload)
-		}
-		m, err := ExtractToMapWithLimit(payload, maxBytes)
-		if err != nil {
-			t.Fatalf("ExtractToMapWithLimit(small, %d) error = %v, want nil", maxBytes, err)
-		}
-		if m["k"] != "v" {
-			t.Fatalf("ExtractToMapWithLimit(small, %d) map = %v, want k=v", maxBytes, m)
 		}
 	}
 }

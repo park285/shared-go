@@ -14,7 +14,6 @@
 // # 외부 surface (public API)
 //
 //   - Extract: fenced code block 안의 유효 JSON을 우선 반환하고, fallback으로 첫 JSON object 또는 array를 []byte로 반환합니다.
-//   - ExtractToMap: Extract 결과를 map[string]any로 decode합니다.
 //   - ErrNoJSONFound: 추출 가능한 유효 JSON이 없을 때 반환되는 sentinel error입니다.
 //   - ReadAllLimit: reader를 최대 byte 수까지 읽고 초과 시 ErrBodyTooLarge를 반환합니다.
 //   - ErrBodyTooLarge: ReadAllLimit 제한 초과를 나타내는 sentinel error입니다.
@@ -26,15 +25,10 @@
 //	    return nil
 //	}
 //
-//	payload, err := jsonutil.ExtractToMap(llmText)
-//	if err != nil {
-//	    return fmt.Errorf("extract llm json: %w", err)
-//	}
-//
 // # 내부 helper 정책
 //
 // jsonBracketMatcher, newJSONBracketMatcher, extractFirstJSON, findMatchingEnd,
 // fenceRe와 bracket byte 상수는 추출 알고리즘 내부 전용입니다. 외부 호출부는
-// Extract/ExtractToMap을 사용하고, bracket matcher를 직접 조합하는 API는 공개하지
+// Extract를 사용하고, bracket matcher를 직접 조합하는 API는 공개하지
 // 않습니다.
 package jsonutil

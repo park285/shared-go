@@ -53,30 +53,6 @@ func TestInt_ValidDoesNotWarn(t *testing.T) {
 	require.Empty(t, records)
 }
 
-func TestIntRaw_ParseFailureWarns(t *testing.T) {
-	t.Setenv("TEST_INTRAW_WARN", "bad")
-	var got int
-	records := captureWarn(t, func() { got = IntRaw("TEST_INTRAW_WARN", 7) })
-	require.Equal(t, 7, got)
-	require.Len(t, records, 1)
-	require.Equal(t, "TEST_INTRAW_WARN", records[0]["key"])
-	require.Equal(t, true, records[0]["value_present"])
-	require.NotContains(t, records[0], "value")
-	require.NotContains(t, records[0]["error"], "bad")
-}
-
-func TestInt64_ParseFailureWarns(t *testing.T) {
-	t.Setenv("TEST_INT64_WARN", "9bad")
-	var got int64
-	records := captureWarn(t, func() { got = Int64("TEST_INT64_WARN", 11) })
-	require.Equal(t, int64(11), got)
-	require.Len(t, records, 1)
-	require.Equal(t, "TEST_INT64_WARN", records[0]["key"])
-	require.Equal(t, true, records[0]["value_present"])
-	require.NotContains(t, records[0], "value")
-	require.NotContains(t, records[0]["error"], "9bad")
-}
-
 func TestFloat_ParseFailureWarns(t *testing.T) {
 	t.Setenv("TEST_FLOAT_WARN", "3.1x")
 	var got float64

@@ -64,10 +64,6 @@ func FetchURL(rawURL string) ([]byte, error) {
 	return fetchURL(rawURL, nil, defaultFetchOptions())
 }
 
-func FetchURLWithHeaders(rawURL string, headers map[string]string) ([]byte, error) {
-	return fetchURL(rawURL, headers, defaultFetchOptions())
-}
-
 func CheckURLInternal(rawURL string) error {
 	_, err := FetchURLInternal(rawURL)
 	return err
@@ -79,13 +75,6 @@ func FetchURLInternal(rawURL string) ([]byte, error) {
 
 func FetchURLWithHeadersInternal(rawURL string, headers map[string]string) ([]byte, error) {
 	return fetchURL(rawURL, headers, internalFetchOptions())
-}
-
-func FetchURLWithOptions(rawURL string, headers map[string]string, opts FetchOptions) ([]byte, error) {
-	if opts.MaxBodyBytes <= 0 {
-		opts.MaxBodyBytes = DefaultMaxBodyBytes
-	}
-	return fetchURL(rawURL, headers, opts)
 }
 
 func fetchURL(rawURL string, headers map[string]string, opts FetchOptions) ([]byte, error) {

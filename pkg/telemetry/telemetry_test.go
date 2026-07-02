@@ -17,19 +17,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-func TestDefaultConfig(t *testing.T) {
-	config := DefaultConfig()
-	if config.Enabled {
-		t.Error("default config should be disabled")
-	}
-	if config.SampleRate != 1.0 {
-		t.Errorf("expected sample rate 1.0, got %f", config.SampleRate)
-	}
-	if !config.OTLPInsecure {
-		t.Error("default should be insecure")
-	}
-}
-
 func TestNewProvider_Disabled(t *testing.T) {
 	config := Config{Enabled: false}
 	provider, err := NewProvider(context.Background(), config)
@@ -241,26 +228,6 @@ func TestInstallGlobalProvider_SetsGlobals(t *testing.T) {
 	}
 }
 
-func TestMapCarrier_GetSetKeys(t *testing.T) {
-	carrier := MapCarrier{}
-
-	carrier.Set("traceparent", "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01")
-	carrier.Set("baggage", "tenant=test")
-
-	if got := carrier.Get("traceparent"); got != "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01" {
-		t.Fatalf("unexpected traceparent value: %q", got)
-	}
-
-	keys := carrier.Keys()
-	keySet := make(map[string]bool, len(keys))
-	for _, key := range keys {
-		keySet[key] = true
-	}
-	if !keySet["traceparent"] || !keySet["baggage"] {
-		t.Fatalf("expected traceparent and baggage keys, got %v", keys)
-	}
-}
-
 func TestNewProvider_Enabled(t *testing.T) {
 	prevTP := otel.GetTracerProvider()
 	prevProp := otel.GetTextMapPropagator()
@@ -343,82 +310,6 @@ func TestProvider_Shutdown_CancelledParentStillFlushes(t *testing.T) {
 
 	if err := provider.Shutdown(ctx); err != nil {
 		t.Fatalf("shutdown must detach a cancelled parent and flush, got error: %v", err)
-	}
-}
-
-func TestInjectContext(t *testing.T) {
-	prevProp := otel.GetTextMapPropagator()
-	t.Cleanup(func() { otel.SetTextMapPropagator(prevProp) })
-
-	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
-		propagation.TraceContext{},
-		propagation.Baggage{},
-	))
-
-	sc := trace.NewSpanContext(trace.SpanContextConfig{
-		TraceID:    trace.TraceID{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10},
-		SpanID:     trace.SpanID{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08},
-		TraceFlags: trace.FlagsSampled,
-	})
-	ctx := trace.ContextWithSpanContext(context.Background(), sc)
-
-	carrier := MapCarrier{}
-	InjectContext(ctx, carrier)
-
-	if carrier.Get("traceparent") == "" {
-		t.Fatal("expected traceparent header to be injected")
-	}
-	if !strings.HasPrefix(carrier.Get("traceparent"), "00-") {
-		t.Fatalf("unexpected traceparent format: %q", carrier.Get("traceparent"))
-	}
-}
-
-func TestExtractContext(t *testing.T) {
-	prevProp := otel.GetTextMapPropagator()
-	t.Cleanup(func() { otel.SetTextMapPropagator(prevProp) })
-
-	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
-		propagation.TraceContext{},
-		propagation.Baggage{},
-	))
-
-	carrier := MapCarrier{
-		"traceparent": "00-0102030405060708090a0b0c0d0e0f10-0102030405060708-01",
-	}
-
-	ctx := ExtractContext(context.Background(), carrier)
-
-	sc := trace.SpanContextFromContext(ctx)
-	if !sc.IsValid() {
-		t.Fatal("expected valid span context after extraction")
-	}
-	wantTraceID := trace.TraceID{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10}
-	if sc.TraceID() != wantTraceID {
-		t.Fatalf("expected trace ID %v, got %v", wantTraceID, sc.TraceID())
-	}
-	wantSpanID := trace.SpanID{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}
-	if sc.SpanID() != wantSpanID {
-		t.Fatalf("expected span ID %v, got %v", wantSpanID, sc.SpanID())
-	}
-	if !sc.IsSampled() {
-		t.Fatal("expected sampled flag to be set")
-	}
-}
-
-func TestMapCarrier_GetMissingKey(t *testing.T) {
-	t.Parallel()
-	carrier := MapCarrier{}
-	if got := carrier.Get("nonexistent"); got != "" {
-		t.Fatalf("expected empty string for missing key, got %q", got)
-	}
-}
-
-func TestMapCarrier_EmptyKeys(t *testing.T) {
-	t.Parallel()
-	carrier := MapCarrier{}
-	keys := carrier.Keys()
-	if len(keys) != 0 {
-		t.Fatalf("expected empty keys, got %v", keys)
 	}
 }
 

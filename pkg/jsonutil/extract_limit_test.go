@@ -14,9 +14,6 @@ func TestSG03ExtractRejectsInputLargerThanDefaultLimit_39575489(t *testing.T) {
 	if _, err := Extract(oversize); !errors.Is(err, ErrInputTooLarge) {
 		t.Fatalf("Extract(oversize) error = %v, want ErrInputTooLarge", err)
 	}
-	if _, err := ExtractToMap(oversize); !errors.Is(err, ErrInputTooLarge) {
-		t.Fatalf("ExtractToMap(oversize) error = %v, want ErrInputTooLarge", err)
-	}
 }
 
 func TestSG03ExtractAcceptsInputAtDefaultLimit_39575489(t *testing.T) {
@@ -55,14 +52,6 @@ func TestSG03ExtractWithLimitAcceptsExplicitLimit_39575489(t *testing.T) {
 	if string(got) != payload {
 		t.Fatalf("ExtractWithLimit(big, explicit) = %q, want %q", got, payload)
 	}
-
-	m, err := ExtractToMapWithLimit(big, len(big))
-	if err != nil {
-		t.Fatalf("ExtractToMapWithLimit(big, explicit) error = %v, want nil", err)
-	}
-	if m["k"] != "v" {
-		t.Fatalf("ExtractToMapWithLimit map = %v, want k=v", m)
-	}
 }
 
 func BenchmarkSG03ExtractLargeNoJSONLinear_39575489(b *testing.B) {
@@ -71,26 +60,5 @@ func BenchmarkSG03ExtractLargeNoJSONLinear_39575489(b *testing.B) {
 	b.ResetTimer()
 	for range b.N {
 		_, _ = Extract(input)
-	}
-}
-
-func TestExtractToMapWithLimitRejectsLargeFencedArrayWithoutDecoding_39575489(t *testing.T) {
-	input := "```json\n[" + strings.Repeat("0,", 64*1024) + "0]\n```"
-
-	allocs := testing.AllocsPerRun(5, func() {
-		if _, err := ExtractToMapWithLimit(input, len(input)); err == nil {
-			t.Fatal("ExtractToMapWithLimit(large fenced array) error = nil, want non-object error")
-		}
-	})
-	if allocs > 50 {
-		t.Fatalf("ExtractToMapWithLimit(large fenced array) allocations = %.0f, want <= 50", allocs)
-	}
-}
-
-func TestExtractToMapWithLimitRejectsFencedScalarAsNonObject(t *testing.T) {
-	input := "```json\n42\n```"
-
-	if _, err := ExtractToMapWithLimit(input, len(input)); err == nil {
-		t.Fatal("ExtractToMapWithLimit(fenced scalar) error = nil, want non-object error")
 	}
 }

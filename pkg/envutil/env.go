@@ -2,7 +2,6 @@ package envutil
 
 import (
 	"errors"
-	"fmt"
 	"log/slog"
 	"os"
 	"strconv"
@@ -70,40 +69,6 @@ func Int(key string, def int) int {
 	return parsed
 }
 
-func IntRaw(key string, def int) int {
-	value := os.Getenv(key)
-	if value == "" {
-		return def
-	}
-	parsed, err := strconv.Atoi(value)
-	if err != nil {
-		warnParse(key, value, "int", err, def)
-		return def
-	}
-	return parsed
-}
-
-func IntNonNegative(key string, def int) int {
-	value := Int(key, def)
-	if value < 0 {
-		return 0
-	}
-	return value
-}
-
-func Int64(key string, def int64) int64 {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return def
-	}
-	parsed, err := strconv.ParseInt(value, 10, 64)
-	if err != nil {
-		warnParse(key, value, "int64", err, def)
-		return def
-	}
-	return parsed
-}
-
 func Bool(key string, def bool) bool {
 	value := strings.TrimSpace(os.Getenv(key))
 	if value == "" {
@@ -118,22 +83,6 @@ func Bool(key string, def bool) bool {
 		warnParse(key, value, "bool", nil, def)
 		return def
 	}
-}
-
-func BoolStrict(key string, def bool) bool {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return def
-	}
-	value = strings.ToLower(value)
-	if value != boolTrue && value != boolFalse {
-		slog.Warn("invalid boolean value for environment variable",
-			"key", key,
-			"value_present", true,
-			"returning_default", def)
-		return def
-	}
-	return value == boolTrue
 }
 
 func Float(key string, def float64) float64 {
@@ -160,14 +109,6 @@ func Duration(key string, def time.Duration) time.Duration {
 		return def
 	}
 	return parsed
-}
-
-func Required(key string) string {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		panic(fmt.Sprintf("required environment variable %s is not set or empty", key))
-	}
-	return value
 }
 
 func StringAny(keys ...string) string {

@@ -1,7 +1,6 @@
 package envutil
 
 import (
-	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -99,83 +98,6 @@ func TestInt(t *testing.T) {
 	}
 }
 
-func TestIntRaw(t *testing.T) {
-	tests := []struct {
-		name     string
-		key      string
-		value    string
-		def      int
-		expected int
-	}{
-		{"valid int", "TEST_INT_RAW", "42", 0, 42},
-		{"no trim causes failure", "TEST_INT_RAW", "  42  ", 99, 99},
-		{"invalid returns default", "TEST_INT_RAW", "invalid", 99, 99},
-		{"empty returns default", "TEST_INT_RAW", "", 99, 99},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv(tt.key, tt.value)
-			result := IntRaw(tt.key, tt.def)
-			if result != tt.expected {
-				t.Errorf("IntRaw(%q, %d) = %d, want %d", tt.key, tt.def, result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestIntNonNegative(t *testing.T) {
-	tests := []struct {
-		name     string
-		key      string
-		value    string
-		def      int
-		expected int
-	}{
-		{"positive value", "TEST_INT_NONNEG", "42", 10, 42},
-		{"zero value", "TEST_INT_NONNEG", "0", 10, 0},
-		{"negative returns 0 NOT default", "TEST_INT_NONNEG", "-5", 10, 0},
-		{"invalid returns default", "TEST_INT_NONNEG", "invalid", 10, 10},
-		{"empty returns default", "TEST_INT_NONNEG", "", 10, 10},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv(tt.key, tt.value)
-			result := IntNonNegative(tt.key, tt.def)
-			if result != tt.expected {
-				t.Errorf("IntNonNegative(%q, %d) = %d, want %d", tt.key, tt.def, result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestInt64(t *testing.T) {
-	tests := []struct {
-		name     string
-		key      string
-		value    string
-		def      int64
-		expected int64
-	}{
-		{"valid int64", "TEST_INT64", "12345678901234", 0, 12345678901234},
-		{"trim applied", "TEST_INT64", "  12345678901234  ", 0, 12345678901234},
-		{"negative int64", "TEST_INT64", "-12345678901234", 0, -12345678901234},
-		{"invalid returns default", "TEST_INT64", "invalid", 99, 99},
-		{"empty returns default", "TEST_INT64", "", 99, 99},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv(tt.key, tt.value)
-			result := Int64(tt.key, tt.def)
-			if result != tt.expected {
-				t.Errorf("Int64(%q, %d) = %d, want %d", tt.key, tt.def, result, tt.expected)
-			}
-		})
-	}
-}
-
 func TestBool(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -210,43 +132,6 @@ func TestBool(t *testing.T) {
 			result := Bool(tt.key, tt.def)
 			if result != tt.expected {
 				t.Errorf("Bool(%q, %v) = %v, want %v", tt.key, tt.def, result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestBoolStrict(t *testing.T) {
-	// 테스트 중 slog warning 억제
-	oldLogger := slog.Default()
-	defer slog.SetDefault(oldLogger)
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelError,
-	})))
-
-	tests := []struct {
-		name     string
-		key      string
-		value    string
-		def      bool
-		expected bool
-	}{
-		{"true", "TEST_BOOL_STRICT", "true", false, true},
-		{"True uppercase", "TEST_BOOL_STRICT", "True", false, true},
-		{"false", "TEST_BOOL_STRICT", "false", true, false},
-		{"False uppercase", "TEST_BOOL_STRICT", "False", true, false},
-		{"trim applied", "TEST_BOOL_STRICT", "  true  ", false, true},
-		{"yes returns default with warn", "TEST_BOOL_STRICT", "yes", false, false},
-		{"1 returns default with warn", "TEST_BOOL_STRICT", "1", false, false},
-		{"unknown returns default with warn", "TEST_BOOL_STRICT", "unknown", true, true},
-		{"empty returns default", "TEST_BOOL_STRICT", "", true, true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv(tt.key, tt.value)
-			result := BoolStrict(tt.key, tt.def)
-			if result != tt.expected {
-				t.Errorf("BoolStrict(%q, %v) = %v, want %v", tt.key, tt.def, result, tt.expected)
 			}
 		})
 	}
@@ -302,42 +187,6 @@ func TestDuration(t *testing.T) {
 			result := Duration(tt.key, tt.def)
 			if result != tt.expected {
 				t.Errorf("Duration(%q, %v) = %v, want %v", tt.key, tt.def, result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestRequired(t *testing.T) {
-	tests := []struct {
-		name        string
-		key         string
-		value       string
-		shouldPanic bool
-	}{
-		{"value exists", "TEST_REQUIRED", "value", false},
-		{"trim applied", "TEST_REQUIRED", "  value  ", false},
-		{"empty panics", "TEST_REQUIRED", "", true},
-		{"unset panics", "UNSET_REQUIRED", "", true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.key == "UNSET_REQUIRED" {
-				require.NoError(t, os.Unsetenv(tt.key))
-			} else {
-				t.Setenv(tt.key, tt.value)
-			}
-
-			defer func() {
-				r := recover()
-				if (r != nil) != tt.shouldPanic {
-					t.Errorf("Required(%q) panic = %v, want panic = %v", tt.key, r != nil, tt.shouldPanic)
-				}
-			}()
-
-			result := Required(tt.key)
-			if !tt.shouldPanic && result != "value" {
-				t.Errorf("Required(%q) = %q, want %q", tt.key, result, "value")
 			}
 		})
 	}
