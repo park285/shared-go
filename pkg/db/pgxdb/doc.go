@@ -28,5 +28,14 @@
 // 회복 가능한 에러는 계속 재시도한다. ping 타임아웃(자식 context 만료)은 부모 context가 살아
 // 있으면 재시도 대상으로 남는다.
 //
+// # localhost 폴백(DNSFallback) 계약
+//
+// OpenPool은 opts.DNSFallback=true일 때만 127.0.0.1로 재연결을 시도한다. 다만 이 폴백은
+// cfg.Host가 정확히 "postgres"(대소문자 무시)이고 최초 연결 실패가 그 host에 대한 DNS
+// "no such host" 에러일 때에만 발동한다(errors.go의 ShouldFallbackToLocalhost·
+// isFallbackEligibleHost). ""·"127.0.0.1"·"localhost"나 그 외 임의 host — 오타 난 "postgress"
+// 같은 값 포함 — 는 DNSFallback=true여도 폴백 대상이 아니다. compose 서비스명 "postgres"를
+// 로컬에서 직접 실행할 때의 이름 해석 실패만 좁게 구제하려는 의도된 제약이다.
+//
 // shared-go에서 pgx에 의존하는 유일한 패키지다. pgx 무의존 database/sql 풀 튜닝은 pkg/db/sqldb.
 package pgxdb
