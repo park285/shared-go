@@ -2,7 +2,6 @@ package llm
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -14,6 +13,7 @@ import (
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/openai/openai-go/v3/shared"
 
+	sharedjson "github.com/park285/shared-go/pkg/json"
 	"github.com/park285/shared-go/pkg/jsonutil"
 )
 
@@ -196,7 +196,7 @@ func (g *OpenAICompatibleJSONGenerator) generateChatCompletionsJSON(ctx context.
 }
 
 func chatCompletionsSystemPrompt(systemPrompt string, schema map[string]any) (string, error) {
-	schemaJSON, err := json.Marshal(schema)
+	schemaJSON, err := sharedjson.Marshal(schema)
 	if err != nil {
 		return "", fmt.Errorf("marshal json schema: %w", err)
 	}
