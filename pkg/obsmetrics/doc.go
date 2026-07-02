@@ -10,10 +10,10 @@
 // 보존할 수 있습니다.
 //
 // 도메인 메트릭은 서비스마다 다르므로 이 패키지가 직접 정의하지 않고, 같은 평문 포맷으로
-// 노출할 수 있도록 Histogram 타입과 exposition 헬퍼(WriteCounter/WriteGauge/
-// WriteHistogram), 그리고 런타임 메트릭 writer(WriteRuntimeMetrics)를 제공합니다.
-// 각 서비스는 자신의 /metrics 핸들러에서 WebhookMetrics.WriteTo, 도메인 메트릭 직렬화,
-// WriteRuntimeMetrics를 순서대로 조립합니다.
+// 노출할 수 있도록 Histogram 타입, 라벨 벡터(CounterVec/GaugeVec/HistogramVec),
+// exposition 헬퍼(WriteCounter/WriteGauge/WriteHistogram), 그리고 런타임 메트릭 writer
+// (WriteRuntimeMetrics)를 제공합니다. 각 서비스는 자신의 /metrics 핸들러에서
+// WebhookMetrics.Expose, 도메인 메트릭 직렬화, WriteRuntimeMetrics를 순서대로 조립합니다.
 //
 // WebhookMetrics는 iris-client-go를 import하지 않습니다. Go의 구조적 타이핑으로 메서드
 // 시그니처만 일치시키므로, 호출측에서 iris.WithMetrics에 그대로 주입할 수 있고 이

@@ -37,6 +37,8 @@ var hangulTable = &unicode.RangeTable{
 	},
 }
 
+var normalizeFastPathASCII = buildNormalizeFastPathASCII()
+
 func normalizeViews(text string) Views {
 	raw := sanitizeUTF8(text)
 
@@ -56,11 +58,7 @@ func normalizeCore(text string) string {
 	nfkcText := norm.NFKC.String(text)
 	normalized := normalizeWithKoreanPreserved(nfkcText)
 
-	normalized = stripControlChars(normalized)
-	normalized = strings.ToLower(normalized)
-	normalized = collapseWhitespace(normalized)
-
-	return strings.TrimSpace(normalized)
+	return normalizePostProcess(normalized)
 }
 
 func normalizeWithKoreanPreserved(text string) string {
@@ -76,7 +74,15 @@ func normalizeWithKoreanPreserved(text string) string {
 			return
 		}
 
-		skeleton := confusables.Skeleton(skeletonMGuard.Replace(nonKoreanBuffer.String()))
+		run := nonKoreanBuffer.String()
+		if canSkipNonKoreanNormalize(run) {
+			result.WriteString(run)
+			nonKoreanBuffer.Reset()
+
+			return
+		}
+
+		skeleton := confusables.Skeleton(skeletonMGuard.Replace(run))
 		result.WriteString(skeletonMRestore.Replace(norm.NFKC.String(skeleton)))
 		nonKoreanBuffer.Reset()
 	}
@@ -95,6 +101,65 @@ func normalizeWithKoreanPreserved(text string) string {
 	flushNonKorean()
 
 	return result.String()
+}
+
+func buildNormalizeFastPathASCII() [utf8.RuneSelf]bool {
+	var allowed [utf8.RuneSelf]bool
+	for r := range utf8.RuneSelf {
+		allowed[r] = isNormalizeFastPathRune(rune(r))
+	}
+
+	return allowed
+}
+
+func isNormalizeFastPathRune(r rune) bool {
+	if unicode.IsMark(r) {
+		return false
+	}
+
+	s := string(r)
+
+	return confusables.Skeleton(s) == s && norm.NFKC.String(s) == s
+}
+
+func canSkipNonKoreanNormalize(text string) bool {
+	for _, r := range text {
+		if r >= utf8.RuneSelf || !normalizeFastPathASCII[r] {
+			return false
+		}
+	}
+
+	return true
+}
+
+func normalizePostProcess(text string) string {
+	var builder strings.Builder
+
+	builder.Grow(len(text))
+
+	lastSpace := false
+	for _, r := range text {
+		if unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Cc, r) {
+			continue
+		}
+
+		r = unicode.ToLower(r)
+		if unicode.IsSpace(r) || unicode.Is(unicode.Z, r) {
+			if !lastSpace {
+				builder.WriteByte(' ')
+
+				lastSpace = true
+			}
+
+			continue
+		}
+
+		builder.WriteRune(r)
+
+		lastSpace = false
+	}
+
+	return strings.TrimSpace(builder.String())
 }
 
 func stripControlChars(text string) string {

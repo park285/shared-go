@@ -3,6 +3,7 @@ package h3
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -100,6 +101,79 @@ func TestNewServerRejectsMissingCertPair(t *testing.T) {
 	_, err := NewServer(":0", nil, filepath.Join(dir, "missing.crt"), filepath.Join(dir, "missing.key"))
 	if err == nil {
 		t.Fatal("NewServer() error = nil, want error for missing cert pair")
+	}
+}
+
+func TestNewServerWithOptionsRejectsMissingCertPair(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	_, err := NewServerWithOptions(":0", nil, filepath.Join(dir, "missing.crt"), filepath.Join(dir, "missing.key"), ServerOptions{MaxIncomingStreams: 256})
+	if err == nil {
+		t.Fatal("NewServerWithOptions() error = nil, want error for missing cert pair")
+	}
+}
+
+func TestNewServerWithTLSConfigAndOptionsAppliesQUICOptions(t *testing.T) {
+	t.Parallel()
+
+	opts := ServerOptions{
+		MaxIncomingStreams:             256,
+		MaxIncomingUniStreams:          64,
+		InitialStreamReceiveWindow:     1 << 20,
+		MaxStreamReceiveWindow:         8 << 20,
+		InitialConnectionReceiveWindow: 2 << 20,
+		MaxConnectionReceiveWindow:     16 << 20,
+	}
+	server := NewServerWithTLSConfigAndOptions(":0", nil, &tls.Config{MinVersion: tls.VersionTLS13}, opts)
+	if server.QUICConfig == nil {
+		t.Fatal("QUICConfig = nil")
+	}
+
+	cfg := server.QUICConfig
+	if cfg.InitialPacketSize != initialPacketSize {
+		t.Fatalf("InitialPacketSize = %d, want %d", cfg.InitialPacketSize, initialPacketSize)
+	}
+	if cfg.KeepAlivePeriod != serverKeepAlivePeriod {
+		t.Fatalf("KeepAlivePeriod = %s, want %s", cfg.KeepAlivePeriod, serverKeepAlivePeriod)
+	}
+	if cfg.MaxIdleTimeout != serverMaxIdleTimeout {
+		t.Fatalf("MaxIdleTimeout = %s, want %s", cfg.MaxIdleTimeout, serverMaxIdleTimeout)
+	}
+	if cfg.MaxIncomingStreams != opts.MaxIncomingStreams {
+		t.Fatalf("MaxIncomingStreams = %d, want %d", cfg.MaxIncomingStreams, opts.MaxIncomingStreams)
+	}
+	if cfg.MaxIncomingUniStreams != opts.MaxIncomingUniStreams {
+		t.Fatalf("MaxIncomingUniStreams = %d, want %d", cfg.MaxIncomingUniStreams, opts.MaxIncomingUniStreams)
+	}
+	if cfg.InitialStreamReceiveWindow != opts.InitialStreamReceiveWindow {
+		t.Fatalf("InitialStreamReceiveWindow = %d, want %d", cfg.InitialStreamReceiveWindow, opts.InitialStreamReceiveWindow)
+	}
+	if cfg.MaxStreamReceiveWindow != opts.MaxStreamReceiveWindow {
+		t.Fatalf("MaxStreamReceiveWindow = %d, want %d", cfg.MaxStreamReceiveWindow, opts.MaxStreamReceiveWindow)
+	}
+	if cfg.InitialConnectionReceiveWindow != opts.InitialConnectionReceiveWindow {
+		t.Fatalf("InitialConnectionReceiveWindow = %d, want %d", cfg.InitialConnectionReceiveWindow, opts.InitialConnectionReceiveWindow)
+	}
+	if cfg.MaxConnectionReceiveWindow != opts.MaxConnectionReceiveWindow {
+		t.Fatalf("MaxConnectionReceiveWindow = %d, want %d", cfg.MaxConnectionReceiveWindow, opts.MaxConnectionReceiveWindow)
+	}
+}
+
+func TestNewServerWithTLSConfigZeroOptionsPreservesDefaultQUICLimits(t *testing.T) {
+	t.Parallel()
+
+	server := NewServerWithTLSConfig(":0", nil, &tls.Config{MinVersion: tls.VersionTLS13})
+	if server.QUICConfig == nil {
+		t.Fatal("QUICConfig = nil")
+	}
+
+	cfg := server.QUICConfig
+	if cfg.MaxIncomingStreams != 0 {
+		t.Fatalf("MaxIncomingStreams = %d, want 0 for quic-go default", cfg.MaxIncomingStreams)
+	}
+	if cfg.InitialStreamReceiveWindow != 0 {
+		t.Fatalf("InitialStreamReceiveWindow = %d, want 0 for quic-go default", cfg.InitialStreamReceiveWindow)
 	}
 }
 
