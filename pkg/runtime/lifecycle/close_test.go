@@ -65,6 +65,36 @@ func TestRunCloseSteps_ContinuesAfterErrorAndAggregates(t *testing.T) {
 	}
 }
 
+func TestRunCloseSteps_RecoversPanicAndContinues(t *testing.T) {
+	t.Parallel()
+
+	errPanic := errors.New("b exploded")
+
+	var order []string
+	steps := []CloseStep{
+		{Name: "a", Close: func(context.Context) error { order = append(order, "a"); return nil }},
+		{Name: "b", Close: func(context.Context) error { order = append(order, "b"); panic(errPanic) }},
+		{Name: "c", Close: func(context.Context) error { order = append(order, "c"); return nil }},
+	}
+
+	err := RunCloseSteps(context.Background(), nil, steps)
+	if err == nil {
+		t.Fatal("RunCloseSteps() error = nil, want aggregated panic error")
+	}
+
+	if got := strings.Join(order, ","); got != "a,b,c" {
+		t.Fatalf("close order = %q, want a,b,c (panic must not stop later steps)", got)
+	}
+
+	if !errors.Is(err, errPanic) {
+		t.Fatalf("aggregated error = %v, want to wrap panicked error", err)
+	}
+
+	if !strings.Contains(err.Error(), "close b:") || !strings.Contains(err.Error(), "panic:") {
+		t.Fatalf("aggregated error = %q, want wrapped panic for step b", err.Error())
+	}
+}
+
 func TestRunCloseSteps_PassesContextToStep(t *testing.T) {
 	t.Parallel()
 

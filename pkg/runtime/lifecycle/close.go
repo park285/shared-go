@@ -21,7 +21,7 @@ func RunCloseSteps(ctx context.Context, logger *slog.Logger, steps []CloseStep) 
 		}
 
 		name := closeStepName(i, step.Name)
-		if err := step.Close(ctx); err != nil {
+		if err := runCloseStep(ctx, step.Close); err != nil {
 			errs = append(errs, fmt.Errorf("close %s: %w", name, err))
 
 			if logger != nil {
@@ -31,6 +31,20 @@ func RunCloseSteps(ctx context.Context, logger *slog.Logger, steps []CloseStep) 
 	}
 
 	return errors.Join(errs...)
+}
+
+func runCloseStep(ctx context.Context, closeFn func(context.Context) error) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			if perr, ok := r.(error); ok {
+				err = fmt.Errorf("panic: %w", perr)
+			} else {
+				err = fmt.Errorf("panic: %v", r)
+			}
+		}
+	}()
+
+	return closeFn(ctx)
 }
 
 func closeStepName(index int, name string) string {

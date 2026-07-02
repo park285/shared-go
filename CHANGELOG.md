@@ -1,5 +1,41 @@
 # Changelog
 
+## v1.24.2 - 2026-07-02
+
+### Fixed
+
+- `runtime/lifecycle`: `RunCloseSteps` now recovers a panic from an individual
+  close step, converts it to an error (preserving `errors.Is` identity when the
+  panic value is an error) so it is aggregated via `errors.Join`, and continues
+  running the remaining steps. Previously a panicking step aborted the whole
+  shutdown and skipped every later resource-cleanup step.
+
+### Changed
+
+- `llm/openaipreset`: `WithReasoningEffort` now stores the whitespace-trimmed value
+  instead of the raw input, preserving the normalization consumers (twentyq) applied
+  before passing it in. Blank/whitespace-only input is still ignored.
+- `.gitguardian.yaml`: narrowed the blanket `**/*_test.go` secret-scan exclusion to
+  the three packages whose tests must embed synthetic secrets to verify redaction /
+  output-guard / secret-file handling (`pkg/logging`, `pkg/outputguard`,
+  `pkg/envutil`). The `pgxdb` test fixtures were renamed to placeholders in ab42ac6
+  and no longer rely on a path exclusion, so all other `*_test.go` files are scanned
+  again.
+
+### Docs
+
+- `runtime/lifecycle`: added `doc.go` documenting the non-obvious `RunCloseSteps`
+  contract (slice order, not reverse; every step runs even after a failure; steps
+  run even under an already-cancelled context; `errors.Join` aggregation;
+  panic-to-error conversion).
+- `retry`: documented the context-error precedence contract — when context
+  cancellation and a prior `fn` error coexist, `WithRetry` returns the operational
+  (last `fn`) error; the wrapped `context error: <ctx.Err()>` is returned only when
+  no prior `fn` error exists. Behavior unchanged.
+- `db/pgxdb`: documented that `DNSFallback=true` triggers the localhost fallback only
+  when the configured host is exactly `postgres` (case-insensitive) and the connect
+  error is a DNS "no such host" error for that host.
+
 ## v1.24.1 - 2026-07-02
 
 ### Fixed

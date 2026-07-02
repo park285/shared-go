@@ -50,8 +50,8 @@ func WithChatCompletions() Option {
 
 func WithReasoningEffort(effort string) Option {
 	return func(c *config) {
-		if strings.TrimSpace(effort) != "" {
-			c.reasoningEffort = effort
+		if trimmed := strings.TrimSpace(effort); trimmed != "" {
+			c.reasoningEffort = trimmed
 		}
 	}
 }
