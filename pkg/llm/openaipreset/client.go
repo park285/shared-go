@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"github.com/park285/shared-go/pkg/httputil"
+	sharedjson "github.com/park285/shared-go/pkg/json"
 	sharedllm "github.com/park285/shared-go/pkg/llm"
 	"github.com/park285/shared-go/pkg/logging"
 )
@@ -126,7 +126,7 @@ func (c *Client) RunInto(ctx context.Context, task, prompt string, schema map[st
 	if err != nil {
 		return err
 	}
-	if err := json.Unmarshal([]byte(resp.Text), out); err != nil {
+	if err := sharedjson.Unmarshal([]byte(resp.Text), out); err != nil {
 		return fmt.Errorf("decode %s json failed: %w; output=%s", strings.TrimSpace(task), err, sharedllm.RedactDiagnostic(resp.Text, 2048))
 	}
 	return nil
