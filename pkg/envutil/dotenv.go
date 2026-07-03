@@ -1,0 +1,196 @@
+package envutil
+
+import (
+	"bufio"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+// DotenvOptions는 service-prefix와 local dotenv 로딩 규칙을 지정한다.
+type DotenvOptions struct {
+	ServiceName    string
+	LocalEnableKey string
+	LocalPathKey   string
+	LocalPaths     []string
+}
+
+// ServiceDotenvPath는 OpenBao Agent dotenv 렌더링 기본 경로를 반환한다.
+func ServiceDotenvPath(serviceName string) string {
+	name := strings.Trim(strings.ToLower(strings.TrimSpace(serviceName)), "/")
+	if name == "" {
+		return ""
+	}
+	return filepath.Join("/run", name, name+".env")
+}
+
+// LoadDotenv는 service env file과 local dotenv 후보를 옵션에 맞춰 로드한다.
+func LoadDotenv(opts DotenvOptions) error {
+	serviceName := strings.TrimSpace(opts.ServiceName)
+	if serviceName != "" {
+		handled, err := loadServiceDotenv(serviceName)
+		if err != nil {
+			return err
+		}
+		if handled {
+			return nil
+		}
+	}
+
+	if opts.LocalEnableKey != "" && !dotenvBool(opts.LocalEnableKey, false) {
+		return nil
+	}
+
+	paths := opts.LocalPaths
+	if opts.LocalPathKey != "" {
+		if path := strings.TrimSpace(os.Getenv(opts.LocalPathKey)); path != "" {
+			paths = []string{path}
+		}
+	}
+	if len(paths) == 0 {
+		paths = []string{".env"}
+	}
+
+	for _, path := range paths {
+		if err := LoadDotenvFile(path, false, false); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// LoadDotenvFile는 dotenv 파일을 로드하며 strict 모드에서 symlink와 world-accessible 파일을 거부한다.
+func LoadDotenvFile(path string, required bool, strict bool) error {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		if required {
+			return fmt.Errorf("dotenv path is empty")
+		}
+		return nil
+	}
+
+	info, err := os.Lstat(path) //nolint:gosec // dotenv path is operator supplied and validated before loading.
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) && !required {
+			return nil
+		}
+		return fmt.Errorf("stat dotenv file failed path=%s: %w", path, err)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("dotenv path is directory path=%s", path)
+	}
+	if strict {
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("dotenv file must not be symlink path=%s", path)
+		}
+		if info.Mode().Perm()&0o007 != 0 {
+			return fmt.Errorf("dotenv file is world-accessible path=%s mode=%s", path, info.Mode().Perm().String())
+		}
+	}
+
+	return loadDotenvFile(path)
+}
+
+func loadServiceDotenv(serviceName string) (bool, error) {
+	prefix := serviceEnvPrefix(serviceName)
+	requireOpenBao := dotenvBool(prefix+"_REQUIRE_OPENBAO", false)
+	defaultPath := ServiceDotenvPath(serviceName)
+
+	if envFile := strings.TrimSpace(os.Getenv(prefix + "_ENV_FILE")); envFile != "" {
+		strict := requireOpenBao || strings.HasPrefix(envFile, defaultPathDir(defaultPath)+string(os.PathSeparator))
+		return true, LoadDotenvFile(envFile, true, strict)
+	}
+
+	if requireOpenBao {
+		return true, LoadDotenvFile(defaultPath, true, true)
+	}
+	return false, nil
+}
+
+func loadDotenvFile(path string) error {
+	file, err := os.Open(path) //nolint:gosec // dotenv path is operator supplied and validated by caller.
+	if err != nil {
+		return fmt.Errorf("open dotenv file %s: %w", path, err)
+	}
+
+	scanner := bufio.NewScanner(file)
+	var scanErr error
+	for scanner.Scan() {
+		if err := applyDotenvLine(strings.TrimSpace(scanner.Text()), path); err != nil {
+			scanErr = fmt.Errorf("apply dotenv line from %s: %w", path, err)
+			break
+		}
+	}
+	if scanErr == nil {
+		if err := scanner.Err(); err != nil {
+			scanErr = fmt.Errorf("scan dotenv file %s: %w", path, err)
+		}
+	}
+	if err := file.Close(); err != nil && scanErr == nil {
+		return fmt.Errorf("close dotenv file %s: %w", path, err)
+	}
+	return scanErr
+}
+
+func applyDotenvLine(line, path string) error {
+	if line == "" || strings.HasPrefix(line, "#") {
+		return nil
+	}
+	if after, ok := strings.CutPrefix(line, "export "); ok {
+		line = strings.TrimSpace(after)
+	}
+
+	key, value, ok := strings.Cut(line, "=")
+	if !ok {
+		return nil
+	}
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return nil
+	}
+	if _, exists := os.LookupEnv(key); exists {
+		return nil
+	}
+	if err := os.Setenv(key, trimDotenvValue(strings.TrimSpace(value))); err != nil {
+		return fmt.Errorf("set env %s from %s: %w", key, path, err)
+	}
+	return nil
+}
+
+func trimDotenvValue(value string) string {
+	if len(value) >= 2 {
+		if (value[0] == '"' && value[len(value)-1] == '"') || (value[0] == '\'' && value[len(value)-1] == '\'') {
+			return value[1 : len(value)-1]
+		}
+	}
+	return value
+}
+
+func serviceEnvPrefix(serviceName string) string {
+	replacer := strings.NewReplacer("-", "_", ".", "_", "/", "_")
+	return strings.ToUpper(replacer.Replace(strings.TrimSpace(serviceName)))
+}
+
+func defaultPathDir(path string) string {
+	if path == "" {
+		return ""
+	}
+	return filepath.Dir(path)
+}
+
+func dotenvBool(key string, def bool) bool {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	if value == "" {
+		return def
+	}
+	switch value {
+	case "1", boolTrue, "yes", "y", "on":
+		return true
+	case "0", boolFalse, "no", "n", "off":
+		return false
+	default:
+		return def
+	}
+}

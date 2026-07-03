@@ -240,3 +240,48 @@ func TestEnableFileLogging_UsesArchiveConstants(t *testing.T) {
 		t.Fatalf("LogDirPerm = %o, want 0750", archive.LogDirPerm)
 	}
 }
+
+func TestEnableFileLoggingDoesNotSetDefault(t *testing.T) {
+	previous := slog.Default()
+	sentinel := slog.New(slog.DiscardHandler)
+	slog.SetDefault(sentinel)
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	tests := []struct {
+		name   string
+		config Config
+	}{
+		{
+			name:   "console only",
+			config: Config{Level: "info"},
+		},
+		{
+			name: "file backed",
+			config: Config{
+				Level:      "info",
+				Dir:        t.TempDir(),
+				MaxSizeMB:  10,
+				MaxBackups: 5,
+				MaxAgeDays: 7,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logger, closer, err := EnableFileLoggingWithOptions(tt.config, "service.log", Options{})
+			if err != nil {
+				t.Fatalf("EnableFileLoggingWithOptions() error = %v", err)
+			}
+			if closer != nil {
+				t.Cleanup(func() { _ = closer.Close() })
+			}
+			if logger == nil {
+				t.Fatal("EnableFileLoggingWithOptions() logger = nil")
+			}
+			if slog.Default() != sentinel {
+				t.Fatal("EnableFileLoggingWithOptions() changed slog default")
+			}
+		})
+	}
+}

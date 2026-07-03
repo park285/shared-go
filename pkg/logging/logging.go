@@ -93,7 +93,6 @@ func enableFileLoggingWithStdout(stdout io.Writer, config Config, fileName strin
 	logDir := strings.TrimSpace(config.Dir)
 	if logDir == "" {
 		logger := slog.New(newConsoleHandler(level, stdout, opts.OTel))
-		slog.SetDefault(logger)
 		return logger, nil, nil
 	}
 	if config.MaxSizeMB <= 0 || config.MaxBackups <= 0 || config.MaxAgeDays <= 0 {
@@ -145,7 +144,6 @@ func enableFileLoggingWithStdout(stdout io.Writer, config Config, fileName strin
 	}
 
 	logger := slog.New(handler)
-	slog.SetDefault(logger)
 	logger.Info("file_logging_enabled",
 		slog.String("path", logFile.Filename),
 		slog.String("archive_dir", filepath.Join(logDir, archive.DirName)),

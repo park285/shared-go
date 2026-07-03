@@ -11,6 +11,10 @@
 // response를 APIError로 변환하는 흐름도 이 패키지에서 제공합니다. 호출부는 error
 // helper로 HTTP status와 API error code를 분기할 수 있습니다.
 //
+// 관리 HTTP surface에서 반복되는 API key 인증, fixed-window rate limiting,
+// trusted proxy client IP 식별도 프레임워크 독립 helper로 제공합니다. gin 전용
+// adapter는 pkg/httputil/ginauth에 분리되어 있습니다.
+//
 // # 주요 사용 패턴
 //
 //	client := httputil.NewExternalAPIClient(30 * time.Second)

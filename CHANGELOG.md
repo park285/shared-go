@@ -2,6 +2,25 @@
 
 ## Unreleased (v1.27.0)
 
+### Added
+
+- `httputil`: shared admin API key auth helpers (`HeaderAPIKey`, `AdminAuthConfig`,
+  `AdminAuthMiddleware`, `APIKeyFromRequest`, `ConstantTimeStringEqual`, `WriteErrorJSON`)
+  matching the bot-side `X-API-Key`/Bearer fail-closed semantics. `AdminAuthConfig` uses
+  explicit `Disabled` opt-out so its zero value enforces auth.
+- `httputil/ginauth`: gin adapter for hololive-style API key middleware and authenticated
+  `NoRoute` handling without linking gin into the base `httputil` package.
+- `httputil`: fixed-window rate limiting, login-failure lockout limiting, API-key/IP
+  rate-limit identities, and trusted-proxy client IP helpers covering the twentyq and
+  admin-dashboard forwarded-header contracts.
+- `dbmigrate`: manifest.txt runner core with `fs.FS` input, `Execer` function seam,
+  `SQLExec` adapter, and `WithOnly` filtering for bot-local migration wrappers.
+- `envutil`: dotenv loading helpers for service-prefix OpenBao paths (`/run/<svc>/<svc>.env`)
+  and opt-in local dotenv files without adding a third-party dotenv dependency.
+- `healthprobe`: `RunMain` is now the documented healthcheck command entry point; tests pin
+  exit-code behavior through an internal URL-check seam.
+- `docs/adoption/shared-go-v1.27.0-admin-surface.md`: next-wave consumer migration guide.
+
 ### Removed (Breaking)
 
 - `logging/archive`: internalized under `pkg/logging/internal/archive`; file logging behavior and
@@ -19,9 +38,15 @@
 
 ### Changed
 
+- `logging` (Breaking): `EnableFileLogging*` no longer calls `slog.SetDefault`; callers that
+  want a process default logger must call `slog.SetDefault(logger)` themselves after receiving
+  the returned logger.
 - `logging`: a literal `key` field or `?key=` query parameter no longer triggers redaction by
   name alone; `api_key`, `apikey`, token/password/secret variants, and suffix rules continue to
   redact.
+- `httputil`: zero-value `FixedWindowOptions` now applies pruning defaults
+  (`MaxIdentities=10000`, `EntryTTL=2m`), rightmost forwarded-header parsing accepts only plain
+  IP hops, and `LoginFailureRateLimiter.Stop` is safe before `Start` and on repeated calls.
 
 ### Docs
 

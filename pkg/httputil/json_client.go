@@ -12,8 +12,6 @@ import (
 	sharedjson "github.com/park285/shared-go/pkg/json"
 )
 
-const apiKeyHeader = "X-API-Key" //nolint:gosec // G101: 헤더 이름일 뿐 실제 credential이 아님
-
 // JSONClient는 내부 서비스 간 JSON API 호출용 공통 HTTP 클라이언트입니다.
 type JSONClient struct {
 	baseURL    string
@@ -95,5 +93,5 @@ func (c *JSONClient) applyAPIKey(req *http.Request) {
 	if req == nil || c.apiKey == "" {
 		return
 	}
-	req.Header.Set(apiKeyHeader, c.apiKey)
+	req.Header.Set(HeaderAPIKey, c.apiKey)
 }
