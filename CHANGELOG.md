@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.26.0 - 2026-07-03
+
+### Removed (Breaking)
+
+- `retry`: removed `DefaultRetryOptions` — declaration-only surface with no callers across the
+  stack; construct `RetryOptions` literals instead.
+- `workerconfig`: removed `DecodeIrisBotWebhookWorkerProfile` — consumers decode through
+  `DecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics`, which remains the only entry point.
+- `envutil`: unexported `SecretFile` (now `secretFile`) — external consumers read secret files
+  through `StringOrSecretFile` / `FirstStringOrSecretFile` only.
+
+## v1.25.0 - 2026-07-02
+
+(Entry backfilled on 2026-07-03; the tag shipped without a changelog entry.)
+
+### Added
+
+- `obsmetrics`: labeled metric vectors (`Labels`, `CounterVec` / `GaugeVec` / `HistogramVec`
+  with `NewCounterVec` / `NewGaugeVec` / `NewHistogramVec`) and labeled exposition writers
+  (`WriteCounterWithLabels` / `WriteGaugeWithLabels` / `WriteHistogramWithLabels`).
+- `h3`: `ServerOptions` plus `NewServerWithOptions` / `NewServerWithTLSConfigAndOptions`.
+
 ## v1.24.2 - 2026-07-02
 
 ### Fixed
