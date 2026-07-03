@@ -7,6 +7,10 @@ import (
 	"time"
 )
 
+func wrapWorkerProfileDiagnostics(workerProfileJSON string) string {
+	return `{"state":"running","workers":{"webhook":{"webhookPipeline":{"profileEnabled":true,"workerProfile":` + workerProfileJSON + `}}}}`
+}
+
 func TestDefaultIrisBotWebhookWorkerProfilePreservesCurrentCapacity(t *testing.T) {
 	profile := DefaultIrisBotWebhookWorkerProfile()
 
@@ -51,8 +55,8 @@ func TestDefaultIrisBotWebhookWorkerProfilePreservesCurrentCapacity(t *testing.T
 	}
 }
 
-func TestDecodeIrisBotWebhookWorkerProfile(t *testing.T) {
-	profile, err := DecodeIrisBotWebhookWorkerProfile(strings.NewReader(`{
+func TestRuntimeDiagnosticsDecodesFieldConversions(t *testing.T) {
+	profile, err := DecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics(strings.NewReader(wrapWorkerProfileDiagnostics(`{
 		"version": 1,
 		"profile_id": "test-profile",
 		"delivery": {
@@ -78,9 +82,9 @@ func TestDecodeIrisBotWebhookWorkerProfile(t *testing.T) {
 			"min_queue_per_endpoint_multiplier": 4,
 			"require_receive_capacity_for_endpoint_burst": true
 		}
-	}`))
+	}`)))
 	if err != nil {
-		t.Fatalf("DecodeIrisBotWebhookWorkerProfile() error = %v", err)
+		t.Fatalf("DecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics() error = %v", err)
 	}
 
 	if profile.ProfileID != "test-profile" {
@@ -188,8 +192,8 @@ func TestDecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnosticsRejectsMissingPr
 	}
 }
 
-func TestDecodeIrisBotWebhookWorkerProfileWithBotPool(t *testing.T) {
-	profile, err := DecodeIrisBotWebhookWorkerProfile(strings.NewReader(`{
+func TestRuntimeDiagnosticsDecodesExplicitBotPool(t *testing.T) {
+	profile, err := DecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics(strings.NewReader(wrapWorkerProfileDiagnostics(`{
 		"version": 1,
 		"profile_id": "botpool-test",
 		"delivery": {
@@ -219,9 +223,9 @@ func TestDecodeIrisBotWebhookWorkerProfileWithBotPool(t *testing.T) {
 			"min_queue_per_endpoint_multiplier": 4,
 			"require_receive_capacity_for_endpoint_burst": true
 		}
-	}`))
+	}`)))
 	if err != nil {
-		t.Fatalf("DecodeIrisBotWebhookWorkerProfile() error = %v", err)
+		t.Fatalf("DecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics() error = %v", err)
 	}
 	if profile.BotPool.Workers != 20 {
 		t.Fatalf("BotPool.Workers = %d, want 20", profile.BotPool.Workers)
@@ -234,8 +238,8 @@ func TestDecodeIrisBotWebhookWorkerProfileWithBotPool(t *testing.T) {
 	}
 }
 
-func TestFromWireFallsBackToDefaultBotPoolWhenMissing(t *testing.T) {
-	profile, err := DecodeIrisBotWebhookWorkerProfile(strings.NewReader(`{
+func TestRuntimeDiagnosticsFallsBackToDefaultBotPoolWhenMissing(t *testing.T) {
+	profile, err := DecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics(strings.NewReader(wrapWorkerProfileDiagnostics(`{
 		"version": 1,
 		"profile_id": "no-botpool",
 		"delivery": {
@@ -261,9 +265,9 @@ func TestFromWireFallsBackToDefaultBotPoolWhenMissing(t *testing.T) {
 			"min_queue_per_endpoint_multiplier": 4,
 			"require_receive_capacity_for_endpoint_burst": true
 		}
-	}`))
+	}`)))
 	if err != nil {
-		t.Fatalf("DecodeIrisBotWebhookWorkerProfile() error = %v", err)
+		t.Fatalf("DecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics() error = %v", err)
 	}
 	if profile.BotPool.Workers != 10 {
 		t.Fatalf("BotPool.Workers = %d, want 10 (default fallback)", profile.BotPool.Workers)
@@ -273,8 +277,8 @@ func TestFromWireFallsBackToDefaultBotPoolWhenMissing(t *testing.T) {
 	}
 }
 
-func TestDecodeIrisBotWebhookWorkerProfileRejectsExplicitZeroBotPool(t *testing.T) {
-	_, err := DecodeIrisBotWebhookWorkerProfile(strings.NewReader(`{
+func TestRuntimeDiagnosticsRejectsExplicitZeroBotPool(t *testing.T) {
+	_, err := DecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics(strings.NewReader(wrapWorkerProfileDiagnostics(`{
 		"version": 1,
 		"profile_id": "zero-botpool",
 		"delivery": {
@@ -304,20 +308,20 @@ func TestDecodeIrisBotWebhookWorkerProfileRejectsExplicitZeroBotPool(t *testing.
 			"min_queue_per_endpoint_multiplier": 4,
 			"require_receive_capacity_for_endpoint_burst": true
 		}
-	}`))
+	}`)))
 	if err == nil {
-		t.Fatal("DecodeIrisBotWebhookWorkerProfile() error = nil, want bot_pool validation error")
+		t.Fatal("DecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics() error = nil, want bot_pool validation error")
 	}
 	if !strings.Contains(err.Error(), "bot_pool.workers") {
-		t.Fatalf("DecodeIrisBotWebhookWorkerProfile() error = %v, want bot_pool.workers error", err)
+		t.Fatalf("DecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics() error = %v, want bot_pool.workers error", err)
 	}
 	if !strings.Contains(err.Error(), "bot_pool.queue_size") {
-		t.Fatalf("DecodeIrisBotWebhookWorkerProfile() error = %v, want bot_pool.queue_size error", err)
+		t.Fatalf("DecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics() error = %v, want bot_pool.queue_size error", err)
 	}
 }
 
-func TestDecodeIrisBotWebhookWorkerProfileRejectsNullBotPool(t *testing.T) {
-	_, err := DecodeIrisBotWebhookWorkerProfile(strings.NewReader(`{
+func TestRuntimeDiagnosticsRejectsNullBotPool(t *testing.T) {
+	_, err := DecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics(strings.NewReader(wrapWorkerProfileDiagnostics(`{
 		"version": 1,
 		"profile_id": "null-botpool",
 		"delivery": {
@@ -344,15 +348,15 @@ func TestDecodeIrisBotWebhookWorkerProfileRejectsNullBotPool(t *testing.T) {
 			"min_queue_per_endpoint_multiplier": 4,
 			"require_receive_capacity_for_endpoint_burst": true
 		}
-	}`))
+	}`)))
 	if err == nil {
-		t.Fatal("DecodeIrisBotWebhookWorkerProfile() error = nil, want bot_pool validation error")
+		t.Fatal("DecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics() error = nil, want bot_pool validation error")
 	}
 	if !strings.Contains(err.Error(), "bot_pool.workers") {
-		t.Fatalf("DecodeIrisBotWebhookWorkerProfile() error = %v, want bot_pool.workers error", err)
+		t.Fatalf("DecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics() error = %v, want bot_pool.workers error", err)
 	}
 	if !strings.Contains(err.Error(), "bot_pool.queue_size") {
-		t.Fatalf("DecodeIrisBotWebhookWorkerProfile() error = %v, want bot_pool.queue_size error", err)
+		t.Fatalf("DecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics() error = %v, want bot_pool.queue_size error", err)
 	}
 }
 

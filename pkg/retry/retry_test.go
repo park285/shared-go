@@ -420,17 +420,3 @@ func TestWithRetry_MaxAttemptsNormalizedToOne(t *testing.T) {
 		t.Errorf("expected 1 call, got %d", callCount)
 	}
 }
-
-func TestDefaultRetryOptions(t *testing.T) {
-	opts := DefaultRetryOptions(5, 100*time.Millisecond, 50*time.Millisecond)
-
-	if opts.MaxAttempts != 5 {
-		t.Errorf("expected MaxAttempts=5, got %d", opts.MaxAttempts)
-	}
-	if opts.BaseDelay != 100*time.Millisecond {
-		t.Errorf("expected BaseDelay=100ms, got %v", opts.BaseDelay)
-	}
-	if opts.Jitter != 50*time.Millisecond {
-		t.Errorf("expected Jitter=50ms, got %v", opts.Jitter)
-	}
-}

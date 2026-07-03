@@ -23,14 +23,6 @@ func ComputeBackoffDelay(attempt int, base, jitter time.Duration) time.Duration 
 	return backoff.ComputeExponentialBackoff(attempt, base, 0, jitter)
 }
 
-func DefaultRetryOptions(maxAttempts int, baseDelay, jitter time.Duration) RetryOptions {
-	return RetryOptions{
-		MaxAttempts: maxAttempts,
-		BaseDelay:   baseDelay,
-		Jitter:      jitter,
-	}
-}
-
 func WithRetry(ctx context.Context, opts RetryOptions, fn func(ctx context.Context) error) error {
 	opts = normalizeRetryOptions(opts)
 

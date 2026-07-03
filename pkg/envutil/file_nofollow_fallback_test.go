@@ -19,7 +19,7 @@ func TestSecretFileUnsupportedWithoutNoFollowOpen(t *testing.T) {
 
 	t.Setenv("TEST_SECRET_FILE_FILE", filePath)
 
-	got, err := SecretFile("TEST_SECRET_FILE")
+	got, err := secretFile("TEST_SECRET_FILE")
 	require.Error(t, err)
 	require.Empty(t, got)
 	require.NotContains(t, err.Error(), "topsecret")

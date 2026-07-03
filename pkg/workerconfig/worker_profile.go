@@ -185,21 +185,6 @@ func LegacyIrisBotWebhookWorkerProfile() IrisBotWebhookWorkerProfile {
 	return profile
 }
 
-func DecodeIrisBotWebhookWorkerProfile(reader io.Reader) (IrisBotWebhookWorkerProfile, error) {
-	var wire wireIrisBotWebhookWorkerProfile
-	decoder := json.NewDecoder(reader)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&wire); err != nil {
-		return IrisBotWebhookWorkerProfile{}, err
-	}
-
-	config := fromWire(wire)
-	if err := config.Validate(); err != nil {
-		return IrisBotWebhookWorkerProfile{}, err
-	}
-	return config, nil
-}
-
 func DecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics(reader io.Reader) (IrisBotWebhookWorkerProfile, error) {
 	var diagnostics struct {
 		Workers struct {

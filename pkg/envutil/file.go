@@ -37,9 +37,8 @@ func StringOrFile(key, def string) string {
 	return def
 }
 
-// SecretFile은 KEY_FILE 환경 변수의 파일에서 운영 시크릿을 읽고, 안전하지 않은 파일이면 오류를 반환합니다.
 // no-follow 파일 열기를 지원하지 않는 플랫폼에서는 오류를 반환합니다.
-func SecretFile(key string) (string, error) {
+func secretFile(key string) (string, error) {
 	filePath := strings.TrimSpace(os.Getenv(key + "_FILE"))
 	if filePath == "" {
 		return "", fmt.Errorf("%s_FILE is required", key)
@@ -97,7 +96,7 @@ func StringOrSecretFile(key, def string) (string, error) {
 		return value, nil
 	}
 	if strings.TrimSpace(os.Getenv(key+"_FILE")) != "" {
-		return SecretFile(key)
+		return secretFile(key)
 	}
 	return def, nil
 }
@@ -108,7 +107,7 @@ func FirstStringOrSecretFile(keys []string, def string) (string, error) {
 			return value, nil
 		}
 		if strings.TrimSpace(os.Getenv(key+"_FILE")) != "" {
-			return SecretFile(key)
+			return secretFile(key)
 		}
 	}
 	return def, nil

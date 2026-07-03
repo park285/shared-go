@@ -19,7 +19,7 @@ func TestSecretFile_GroupReadableFile(t *testing.T) {
 	t.Setenv("TEST_SECRET_FILE_FILE", filePath)
 	t.Setenv("TEST_SECRET_FILE", "from-env")
 
-	got, err := SecretFile("TEST_SECRET_FILE")
+	got, err := secretFile("TEST_SECRET_FILE")
 	require.NoError(t, err)
 	require.Equal(t, "from-file", got)
 }
@@ -31,7 +31,7 @@ func TestSecretFile_OwnerOnlyFile(t *testing.T) {
 
 	t.Setenv("TEST_SECRET_FILE_FILE", filePath)
 
-	got, err := SecretFile("TEST_SECRET_FILE")
+	got, err := secretFile("TEST_SECRET_FILE")
 	require.NoError(t, err)
 	require.Equal(t, "from-file", got)
 }
@@ -39,7 +39,7 @@ func TestSecretFile_OwnerOnlyFile(t *testing.T) {
 func TestSecretFile_MissingFileEnv(t *testing.T) {
 	require.NoError(t, os.Unsetenv("TEST_SECRET_FILE_FILE"))
 
-	got, err := SecretFile("TEST_SECRET_FILE")
+	got, err := secretFile("TEST_SECRET_FILE")
 	require.Error(t, err)
 	require.Empty(t, got)
 	require.Contains(t, err.Error(), "TEST_SECRET_FILE_FILE")
@@ -48,7 +48,7 @@ func TestSecretFile_MissingFileEnv(t *testing.T) {
 func TestSecretFile_EmptyFileEnv(t *testing.T) {
 	t.Setenv("TEST_SECRET_FILE_FILE", " \n\t ")
 
-	got, err := SecretFile("TEST_SECRET_FILE")
+	got, err := secretFile("TEST_SECRET_FILE")
 	require.Error(t, err)
 	require.Empty(t, got)
 	require.Contains(t, err.Error(), "TEST_SECRET_FILE_FILE")
@@ -59,7 +59,7 @@ func TestSecretFile_MissingFilePath(t *testing.T) {
 	missing := filepath.Join(dir, "does-not-exist")
 	t.Setenv("TEST_SECRET_FILE_FILE", missing)
 
-	got, err := SecretFile("TEST_SECRET_FILE")
+	got, err := secretFile("TEST_SECRET_FILE")
 	require.Error(t, err)
 	require.Empty(t, got)
 	require.Contains(t, err.Error(), "TEST_SECRET_FILE_FILE")
@@ -75,7 +75,7 @@ func TestSecretFile_RejectsSymlink(t *testing.T) {
 
 	t.Setenv("TEST_SECRET_FILE_FILE", linkPath)
 
-	got, err := SecretFile("TEST_SECRET_FILE")
+	got, err := secretFile("TEST_SECRET_FILE")
 	require.Error(t, err)
 	require.Empty(t, got)
 	require.Contains(t, err.Error(), "TEST_SECRET_FILE_FILE")
@@ -87,7 +87,7 @@ func TestSecretFile_RejectsDirectory(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TEST_SECRET_FILE_FILE", dir)
 
-	got, err := SecretFile("TEST_SECRET_FILE")
+	got, err := secretFile("TEST_SECRET_FILE")
 	require.Error(t, err)
 	require.Empty(t, got)
 	require.Contains(t, err.Error(), "regular file")
@@ -101,7 +101,7 @@ func TestSecretFile_RejectsWorldAccessibleFile(t *testing.T) {
 
 	t.Setenv("TEST_SECRET_FILE_FILE", filePath)
 
-	got, err := SecretFile("TEST_SECRET_FILE")
+	got, err := secretFile("TEST_SECRET_FILE")
 	require.Error(t, err)
 	require.Empty(t, got)
 	require.Contains(t, err.Error(), "TEST_SECRET_FILE_FILE")
@@ -120,7 +120,7 @@ func TestSecretFile_RejectsInsecureModes(t *testing.T) {
 
 			t.Setenv("TEST_SECRET_FILE_FILE", filePath)
 
-			got, err := SecretFile("TEST_SECRET_FILE")
+			got, err := secretFile("TEST_SECRET_FILE")
 			require.Error(t, err)
 			require.Empty(t, got)
 			require.NotContains(t, err.Error(), "topsecret")
@@ -135,7 +135,7 @@ func TestSecretFile_RejectsEmptyFile(t *testing.T) {
 
 	t.Setenv("TEST_SECRET_FILE_FILE", filePath)
 
-	got, err := SecretFile("TEST_SECRET_FILE")
+	got, err := secretFile("TEST_SECRET_FILE")
 	require.Error(t, err)
 	require.Empty(t, got)
 	require.Contains(t, err.Error(), "TEST_SECRET_FILE_FILE")
@@ -150,7 +150,7 @@ func TestSecretFile_ErrorsDoNotLeakSecretContents(t *testing.T) {
 
 	t.Setenv("TEST_SECRET_FILE_FILE", filePath)
 
-	got, err := SecretFile("TEST_SECRET_FILE")
+	got, err := secretFile("TEST_SECRET_FILE")
 	require.Error(t, err)
 	require.Empty(t, got)
 	require.NotContains(t, err.Error(), "do-not-leak-this-secret")
