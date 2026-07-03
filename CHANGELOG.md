@@ -19,6 +19,9 @@
   and opt-in local dotenv files without adding a third-party dotenv dependency.
 - `healthprobe`: `RunMain` is now the documented healthcheck command entry point; tests pin
   exit-code behavior through an internal URL-check seam.
+- `llm/openaipreset`: non-streaming OpenAI Responses completion core for message-list
+  requests, with shared response text/usage parsing hooks for stack-local clients that keep
+  their own streaming or image paths.
 - `docs/adoption/shared-go-v1.27.0-admin-surface.md`: next-wave consumer migration guide.
 
 ### Removed (Breaking)

@@ -11,6 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/option"
+
 	"github.com/park285/shared-go/pkg/httputil"
 	sharedjson "github.com/park285/shared-go/pkg/json"
 	sharedllm "github.com/park285/shared-go/pkg/llm"
@@ -27,6 +30,7 @@ var errClientNil = errors.New("openaipreset: client is nil")
 
 type Client struct {
 	generator       sharedllm.JSONGenerator
+	openai          openai.Client
 	model           string
 	schemaName      string
 	temperature     *float64
@@ -55,6 +59,12 @@ func New(baseURL, apiKey, model string, opts ...Option) (*Client, error) {
 		httpClient = defaultHTTPClient()
 	}
 
+	requestOpts := []option.RequestOption{option.WithAPIKey(strings.TrimSpace(apiKey))}
+	if normalizedBaseURL := strings.TrimRight(strings.TrimSpace(baseURL), "/"); normalizedBaseURL != "" {
+		requestOpts = append(requestOpts, option.WithBaseURL(normalizedBaseURL))
+	}
+	requestOpts = append(requestOpts, option.WithHTTPClient(httpClient))
+
 	generator, err := sharedllm.NewOpenAICompatibleJSONGenerator(sharedllm.OpenAICompatibleConfig{
 		BaseURL:                      baseURL,
 		APIKey:                       apiKey,
@@ -72,6 +82,7 @@ func New(baseURL, apiKey, model string, opts ...Option) (*Client, error) {
 
 	return &Client{
 		generator:       generator,
+		openai:          openai.NewClient(requestOpts...),
 		model:           strings.TrimSpace(model),
 		schemaName:      cfg.schemaName,
 		temperature:     cfg.temperature,
