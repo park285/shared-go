@@ -8,13 +8,6 @@
 // 지정하고 config.Enabled=true일 때 NewProvider가 exporter, resource, sampler,
 // global provider를 설치합니다. Enabled=false이면 no-op Provider를 반환합니다.
 //
-// # 외부 surface (public API)
-//
-//   - Config: tracing 활성화, service metadata, OTLP endpoint, sampler 설정입니다.
-//   - Provider, NewProvider: OTLP exporter와 tracer provider를 구성하는 진입점입니다.
-//   - (*Provider).Shutdown: 남은 span을 flush하고 tracer provider를 종료합니다.
-//   - (*Provider).IsEnabled: 실제 tracer provider 설치 여부를 반환합니다.
-//
 // # 주요 사용 패턴
 //
 //	config := telemetry.Config{}
@@ -28,10 +21,4 @@
 //	    return err
 //	}
 //	defer provider.Shutdown(ctx)
-//
-// # 내부 helper 정책
-//
-// buildResource, buildOTLPExporterOptions, buildSampler, installGlobalProvider는
-// NewProvider 내부 composition 전용입니다. 호출부는 이 helper를 복제하지 않고 Config와
-// NewProvider를 통해 tracing을 구성합니다.
 package telemetry

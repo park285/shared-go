@@ -19,7 +19,7 @@ func WithRequestID(ctx context.Context, requestID string) context.Context {
 	return withString(ctx, requestIDContextKey, requestID)
 }
 
-func RequestIDFromContext(ctx context.Context) string {
+func requestIDFromContext(ctx context.Context) string {
 	return stringFromContext(ctx, requestIDContextKey)
 }
 
@@ -27,7 +27,7 @@ func WithJobID(ctx context.Context, jobID string) context.Context {
 	return withString(ctx, jobIDContextKey, jobID)
 }
 
-func JobIDFromContext(ctx context.Context) string {
+func jobIDFromContext(ctx context.Context) string {
 	return stringFromContext(ctx, jobIDContextKey)
 }
 
@@ -35,7 +35,7 @@ func WithRuntime(ctx context.Context, runtime string) context.Context {
 	return withString(ctx, runtimeContextKey, runtime)
 }
 
-func RuntimeFromContext(ctx context.Context) string {
+func runtimeFromContext(ctx context.Context) string {
 	return stringFromContext(ctx, runtimeContextKey)
 }
 
@@ -43,7 +43,7 @@ func WithComponent(ctx context.Context, component string) context.Context {
 	return withString(ctx, componentContextKey, component)
 }
 
-func ComponentFromContext(ctx context.Context) string {
+func componentFromContext(ctx context.Context) string {
 	return stringFromContext(ctx, componentContextKey)
 }
 
@@ -53,17 +53,17 @@ func ContextAttrs(ctx context.Context) []slog.Attr {
 	}
 
 	attrs := make([]slog.Attr, 0, 4)
-	if value := RuntimeFromContext(ctx); value != "" {
+	if value := runtimeFromContext(ctx); value != "" {
 		attrs = append(attrs, Runtime(value))
 	}
-	if value := ComponentFromContext(ctx); value != "" {
-		attrs = append(attrs, Component(value))
+	if value := componentFromContext(ctx); value != "" {
+		attrs = append(attrs, componentAttr(value))
 	}
-	if value := RequestIDFromContext(ctx); value != "" {
+	if value := requestIDFromContext(ctx); value != "" {
 		attrs = append(attrs, RequestID(value))
 	}
-	if value := JobIDFromContext(ctx); value != "" {
-		attrs = append(attrs, JobID(value))
+	if value := jobIDFromContext(ctx); value != "" {
+		attrs = append(attrs, jobIDAttr(value))
 	}
 
 	return attrs

@@ -12,7 +12,7 @@ func wrapWorkerProfileDiagnostics(workerProfileJSON string) string {
 }
 
 func TestDefaultIrisBotWebhookWorkerProfilePreservesCurrentCapacity(t *testing.T) {
-	profile := DefaultIrisBotWebhookWorkerProfile()
+	profile := defaultIrisBotWebhookWorkerProfile()
 
 	if profile.Version != CurrentVersion {
 		t.Fatalf("Version = %d, want %d", profile.Version, CurrentVersion)
@@ -361,7 +361,7 @@ func TestRuntimeDiagnosticsRejectsNullBotPool(t *testing.T) {
 }
 
 func TestValidateRejectsBotPoolZeroWorkers(t *testing.T) {
-	profile := DefaultIrisBotWebhookWorkerProfile()
+	profile := defaultIrisBotWebhookWorkerProfile()
 	profile.BotPool.Workers = 0
 
 	err := profile.Validate()
@@ -374,7 +374,7 @@ func TestValidateRejectsBotPoolZeroWorkers(t *testing.T) {
 }
 
 func TestValidateRejectsBotPoolZeroQueueSize(t *testing.T) {
-	profile := DefaultIrisBotWebhookWorkerProfile()
+	profile := defaultIrisBotWebhookWorkerProfile()
 	profile.BotPool.QueueSize = 0
 
 	err := profile.Validate()
@@ -387,7 +387,7 @@ func TestValidateRejectsBotPoolZeroQueueSize(t *testing.T) {
 }
 
 func TestValidateRejectsReceiveCapacityBelowDeliveryBurst(t *testing.T) {
-	profile := DefaultIrisBotWebhookWorkerProfile()
+	profile := defaultIrisBotWebhookWorkerProfile()
 	profile.Delivery.MaxPerEndpointInFlight = 16
 	profile.Receive.Workers = 4
 	profile.Receive.QueueSize = 32
@@ -402,7 +402,7 @@ func TestValidateRejectsReceiveCapacityBelowDeliveryBurst(t *testing.T) {
 }
 
 func TestValidateRejectsDeliveryTimeoutBeyondReceiveHandlerBudget(t *testing.T) {
-	profile := DefaultIrisBotWebhookWorkerProfile()
+	profile := defaultIrisBotWebhookWorkerProfile()
 	profile.Delivery.RequestTimeout = 40 * time.Second
 	profile.Receive.HandlerTimeout = 30 * time.Second
 

@@ -25,7 +25,7 @@ func (s *recordSink) WithGroup(_ string) slog.Handler      { return s }
 // Message 문자열 안의 Bearer 토큰과 query secret이 마스킹돼야 한다.
 func TestSanitizeHandler_MessageMasking(t *testing.T) {
 	sink := &recordSink{}
-	h := NewSanitizeHandler(sink)
+	h := newSanitizeHandler(sink)
 	logger := slog.New(h)
 
 	logger.Info("auth: Bearer abc123def and ?token=secret123 received")
@@ -50,7 +50,7 @@ func TestSanitizeHandler_MessageMasking(t *testing.T) {
 func TestSanitizeHandler_MessageMasking_TextOutput(t *testing.T) {
 	var buf bytes.Buffer
 	base := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})
-	h := NewSanitizeHandler(base)
+	h := newSanitizeHandler(base)
 	slog.New(h).Info("auth: Bearer abc123def and ?token=secret123 received")
 
 	out := buf.String()
@@ -66,11 +66,9 @@ func TestBareKey_NameAloneNotMasked_ValueGatesRedaction_8e92058d(t *testing.T) {
 	if isSensitiveKey("key") {
 		t.Errorf(`isSensitiveKey("key") = true, want false: key name alone must not force redaction`)
 	}
-	if !isBroadValueKey("key") || !isSecretLikeValue("sk_live_"+"FAKEvalueNotARealStripeKey") {
-		t.Errorf("secret-like value under key= must be redacted under new contract")
-	}
-	if isSecretLikeValue("plain-identifier") {
-		t.Errorf("plain identifier under key= must stay unmasked")
+	out := sanitizeValue(t, "key", "sk_live_"+"FAKEvalueNotARealStripeKey")
+	if strings.Contains(out, "***REDACTED***") {
+		t.Errorf("literal key field value must stay unmasked, got: %s", out)
 	}
 }
 

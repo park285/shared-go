@@ -3,7 +3,6 @@ package json
 import (
 	"errors"
 	"io"
-	"strconv"
 
 	"github.com/bytedance/sonic"
 	"github.com/bytedance/sonic/decoder"
@@ -15,7 +14,6 @@ type (
 	UnmarshalTypeError = decoder.MismatchTypeError
 
 	Encoder = sonic.Encoder
-	Decoder = sonic.Decoder
 )
 
 // RawMessage는 지연 디코딩을 위한 raw JSON 바이트를 보관합니다.
@@ -38,24 +36,6 @@ func (m *RawMessage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// Number는 JSON 숫자 리터럴 문자열을 보관합니다.
-type Number string
-
-// String은 숫자 문자열을 반환합니다.
-func (n Number) String() string {
-	return string(n)
-}
-
-// Float64는 숫자 문자열을 float64로 변환합니다.
-func (n Number) Float64() (float64, error) {
-	return strconv.ParseFloat(string(n), 64)
-}
-
-// Int64는 숫자 문자열을 int64로 변환합니다.
-func (n Number) Int64() (int64, error) {
-	return strconv.ParseInt(string(n), 10, 64)
-}
-
 // CopyString: 디코드 string이 입력 버퍼를 alias하지 않게 복사 (버퍼 재사용 시 corruption 방지).
 // ValidateString: 표준 라이브러리처럼 unescaped 제어문자(U+0000~U+001F)를 거부.
 var api = sonic.Config{
@@ -75,7 +55,7 @@ func NewEncoder(w io.Writer) Encoder {
 	return api.NewEncoder(w)
 }
 
-func NewDecoder(r io.Reader) Decoder {
+func NewDecoder(r io.Reader) sonic.Decoder {
 	return api.NewDecoder(r)
 }
 

@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
-func TestSanitizeKey_SecretLikeValueMasked_8e92058d(t *testing.T) {
-	secretValues := []string{
+func TestSanitizeKey_LiteralKeyValuesNotMasked_8e92058d(t *testing.T) {
+	values := []string{
 		"sk_live_" + "FAKEvalueNotARealStripeKey",
 		"sk_test_" + "FAKEvalueNotARealStripeKey",
 		"ghp_" + "FAKEvalueNotARealGithubToken00",
@@ -18,20 +18,6 @@ func TestSanitizeKey_SecretLikeValueMasked_8e92058d(t *testing.T) {
 		"xoxb-" + "FAKE-value-not-a-real-slack-token",
 		"eyJ" + "FAKEjwtHeader.FAKEjwtBody.FAKEsignature",
 		"aB3dE7fG9hJ2kL5mN8pQ1rS4tU6vW0xYzAbCdEfGhIj",
-	}
-	for _, v := range secretValues {
-		out := keyFieldOutput(t, "key", v)
-		if strings.Contains(out, v) {
-			t.Errorf("secret-like value under key=%q not masked, got: %s", v, out)
-		}
-		if !strings.Contains(out, "***REDACTED***") {
-			t.Errorf("expected ***REDACTED*** for secret-like value %q, got: %s", v, out)
-		}
-	}
-}
-
-func TestSanitizeKey_IdentifierValueNotMasked_8e92058d(t *testing.T) {
-	identifierValues := []string{
 		"member:news:rooms",
 		"member:news:room_names",
 		"notification:egress:lease",
@@ -45,13 +31,13 @@ func TestSanitizeKey_IdentifierValueNotMasked_8e92058d(t *testing.T) {
 		"hololive",
 		"/api/v1/cache",
 	}
-	for _, v := range identifierValues {
+	for _, v := range values {
 		out := keyFieldOutput(t, "key", v)
 		if strings.Contains(out, "***REDACTED***") {
-			t.Errorf("plain identifier value %q under key= must NOT be masked, got: %s", v, out)
+			t.Errorf("literal key field value %q must NOT be masked, got: %s", v, out)
 		}
 		if !strings.Contains(out, v) {
-			t.Errorf("plain identifier value %q must be preserved, got: %s", v, out)
+			t.Errorf("literal key field value %q must be preserved, got: %s", v, out)
 		}
 	}
 }
@@ -59,7 +45,7 @@ func TestSanitizeKey_IdentifierValueNotMasked_8e92058d(t *testing.T) {
 func keyFieldOutput(t *testing.T, key, value string) string {
 	t.Helper()
 	var buf bytes.Buffer
-	h := NewSanitizeHandler(slog.NewTextHandler(&buf, nil))
+	h := newSanitizeHandler(slog.NewTextHandler(&buf, nil))
 	slog.New(h).Info("m", slog.String(key, value))
 	return buf.String()
 }

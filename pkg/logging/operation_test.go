@@ -45,14 +45,14 @@ func TestRunOperationLogsSuccessLifecycle(t *testing.T) {
 	if gotCtx == nil {
 		t.Fatal("operation function received nil context")
 	}
-	if got := JobIDFromContext(gotCtx); !strings.HasPrefix(got, "sync_job_") {
-		t.Fatalf("JobIDFromContext() = %q, want sync_job_ prefix", got)
+	if got := jobIDFromContext(gotCtx); !strings.HasPrefix(got, "sync_job_") {
+		t.Fatalf("jobIDFromContext() = %q, want sync_job_ prefix", got)
 	}
-	if got := RuntimeFromContext(gotCtx); got != "worker" {
-		t.Fatalf("RuntimeFromContext() = %q, want %q", got, "worker")
+	if got := runtimeFromContext(gotCtx); got != "worker" {
+		t.Fatalf("runtimeFromContext() = %q, want %q", got, "worker")
 	}
-	if got := ComponentFromContext(gotCtx); got != "logging" {
-		t.Fatalf("ComponentFromContext() = %q, want %q", got, "logging")
+	if got := componentFromContext(gotCtx); got != "logging" {
+		t.Fatalf("componentFromContext() = %q, want %q", got, "logging")
 	}
 
 	records := operationLogRecords(t, &buf)
@@ -186,14 +186,14 @@ func TestOperationContextAddsFallbackJobIDAndRuntimeFromNilContext(t *testing.T)
 	if ctx == nil {
 		t.Fatal("operationContext returned nil context")
 	}
-	if got := JobIDFromContext(ctx); !strings.HasPrefix(got, "batch_") {
-		t.Fatalf("JobIDFromContext() = %q, want batch_ prefix", got)
+	if got := jobIDFromContext(ctx); !strings.HasPrefix(got, "batch_") {
+		t.Fatalf("jobIDFromContext() = %q, want batch_ prefix", got)
 	}
-	if got := RuntimeFromContext(ctx); got != "worker" {
-		t.Fatalf("RuntimeFromContext() = %q, want %q", got, "worker")
+	if got := runtimeFromContext(ctx); got != "worker" {
+		t.Fatalf("runtimeFromContext() = %q, want %q", got, "worker")
 	}
-	if got := ComponentFromContext(ctx); got != "logging" {
-		t.Fatalf("ComponentFromContext() = %q, want %q", got, "logging")
+	if got := componentFromContext(ctx); got != "logging" {
+		t.Fatalf("componentFromContext() = %q, want %q", got, "logging")
 	}
 }
 
@@ -202,16 +202,16 @@ func TestOperationContextWithJobIDPreservesExistingAndCreatesNew(t *testing.T) {
 		ctx := WithJobID(context.Background(), "existing-job")
 		gotCtx := operationContextWithJobID(ctx, OperationOptions{IDPrefix: "new-job"})
 
-		if got := JobIDFromContext(gotCtx); got != "existing-job" {
-			t.Fatalf("JobIDFromContext() = %q, want %q", got, "existing-job")
+		if got := jobIDFromContext(gotCtx); got != "existing-job" {
+			t.Fatalf("jobIDFromContext() = %q, want %q", got, "existing-job")
 		}
 	})
 
 	t.Run("creates new JobID", func(t *testing.T) {
 		gotCtx := operationContextWithJobID(context.Background(), OperationOptions{IDPrefix: "new-job"})
 
-		if got := JobIDFromContext(gotCtx); !strings.HasPrefix(got, "new_job_") {
-			t.Fatalf("JobIDFromContext() = %q, want new_job_ prefix", got)
+		if got := jobIDFromContext(gotCtx); !strings.HasPrefix(got, "new_job_") {
+			t.Fatalf("jobIDFromContext() = %q, want new_job_ prefix", got)
 		}
 	})
 }
@@ -222,8 +222,8 @@ func TestOperationContextWithJobIDFallsBackToOperationName(t *testing.T) {
 		IDPrefix: "   ",
 	})
 
-	if got := JobIDFromContext(ctx); !strings.HasPrefix(got, "video_job_") {
-		t.Fatalf("JobIDFromContext() = %q, want video_job_ prefix", got)
+	if got := jobIDFromContext(ctx); !strings.HasPrefix(got, "video_job_") {
+		t.Fatalf("jobIDFromContext() = %q, want video_job_ prefix", got)
 	}
 }
 
@@ -236,11 +236,11 @@ func TestOperationContextWithRuntimeIgnoresEmptyRuntimeAndComponent(t *testing.T
 		Component: "",
 	})
 
-	if got := RuntimeFromContext(gotCtx); got != "runtime-1" {
-		t.Fatalf("RuntimeFromContext() = %q, want %q", got, "runtime-1")
+	if got := runtimeFromContext(gotCtx); got != "runtime-1" {
+		t.Fatalf("runtimeFromContext() = %q, want %q", got, "runtime-1")
 	}
-	if got := ComponentFromContext(gotCtx); got != "component-1" {
-		t.Fatalf("ComponentFromContext() = %q, want %q", got, "component-1")
+	if got := componentFromContext(gotCtx); got != "component-1" {
+		t.Fatalf("componentFromContext() = %q, want %q", got, "component-1")
 	}
 }
 

@@ -41,12 +41,14 @@
 - **증거**: `pkg/logging/sanitize.go:88` `"key": true`. 영향 65개 비테스트 호출처(hololive 57 + cbgk 8): Valkey/Redis key name, lock key, template key, session index key 등 **비밀 아닌 식별자**가 `***REDACTED***`로 출력 → cache miss·lock 경합·prune 디버깅 정보 유실.
 - **수정**: `"key"` 라인 삭제. `_api_key` suffix rule + `api_key`/`apikey` exact가 실제 키 커버. (이전에 가려지던 필드가 드러남 — 의도된 방향.)
 - **Risk/Effort**: 낮음/Small(1줄).
+- **상태(2026-07-03)**: 완료 — bare `key` query/field 특수 처리를 제거하고 `api_key`/`apikey` 마스킹 회귀 테스트를 유지.
 
 ### [P1] `pkg/workerconfig`는 generic lib 내 Iris 도메인
 - **증거**: `worker_profile.go:19` `EnvProfileFile="IRIS_BOT_WEBHOOK_WORKER_PROFILE"`, `IrisBotWebhookWorkerProfile` 구조체, `workers.webhook.webhookPipeline` JSON 경로.
 - **소비자**: hololive-shared `pkg/config`, cbgk `internal/config`(둘 다 `DecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics`). `LoadIrisBotWebhookWorkerProfileFromEnv`는 downstream 미사용.
 - **문제**: 도메인 schema 변경이 v1.5.0 전체 소비자에 영향. `hololive-shared`로 이동 시 cbgk→hololive 역의존 발생(불가); `iris-client-go`로 이동이 적절(둘 다 이미 import)하나 major bump.
 - **현실안**: 당장은 "Iris-specific domain" 주석 + 차기 v2에서 `iris-client-go`로 이전.
+- **상태(2026-07-03)**: 완료 — `worker_profile.go` 상단에 Iris worker-profile 도메인 계약 주석 추가.
 
 ### [P2] 기타
 - `archive.Trigger()`가 `MoveAndPrune`(ReadDir/Rename/Remove)를 로그-write 핫패스에서 동기 실행 — `archive.go:27,60`. `running` 가드 내 goroutine화. (compress=true에서만 영향)
@@ -56,8 +58,11 @@
 
 ### [P3]
 - `EnableFileLogging*`의 `slog.SetDefault` 전역 side effect — `logging.go:74,114`. AGENTS.md "no global side effects"와 상충. 호출자에게 위임.
+- **상태(2026-07-03)**: 보류 — cross-repo logging wave에서 호출자 전환과 함께 처리.
 - `stringutil.TrimSpace`/`ContainsString` = stdlib 1:1 래퍼 — `stringutil.go:17,22`. `//deprecated`.
+- **상태(2026-07-03)**: closed-won't-do — 143 live uses(테스트 제외)라 Deprecated 표시는 소비자 lint noise만 만든다.
 - `pkg/telemetry` **소비자 0**(hololive 6모듈·cbgk·iris-mcp-server 전수 grep) — otel sdk/otlptracegrpc/grpc 26개 indirect를 go.sum에 적재(binary pruning으로 컴파일은 안 됨). 활성 계획 없으면 별도 모듈 분리 또는 삭제. cbgk는 `internal/observability/tracing.go`로 동일 기능 자체 구현.
+- **상태(2026-07-03)**: resolved-as-live — `twentyq-bot/internal/common/bootstrap/entrypoint.go:71`이 `telemetry.NewProvider`와 `telemetry.Config`를 사용.
 
 ## 3. Top refactors (ranked)
 1. `SanitizeHandler.Handle` Message 마스킹(P0).

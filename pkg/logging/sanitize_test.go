@@ -37,7 +37,7 @@ func TestSanitizeHandler_SensitiveKeys(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
 			baseHandler := slog.NewTextHandler(&buf, nil)
-			sanitized := NewSanitizeHandler(baseHandler)
+			sanitized := newSanitizeHandler(baseHandler)
 			logger := slog.New(sanitized)
 
 			logger.Info("test", slog.String(tt.key, tt.value))
@@ -107,7 +107,7 @@ func TestSanitizeHandler_BearerToken(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
 			baseHandler := slog.NewTextHandler(&buf, nil)
-			sanitized := NewSanitizeHandler(baseHandler)
+			sanitized := newSanitizeHandler(baseHandler)
 			logger := slog.New(sanitized)
 
 			logger.Info("auth", slog.String("header", tt.value))
@@ -123,7 +123,7 @@ func TestSanitizeHandler_BearerToken(t *testing.T) {
 func TestSanitizeHandler_GroupHandling(t *testing.T) {
 	var buf bytes.Buffer
 	baseHandler := slog.NewTextHandler(&buf, nil)
-	sanitized := NewSanitizeHandler(baseHandler)
+	sanitized := newSanitizeHandler(baseHandler)
 	logger := slog.New(sanitized)
 
 	logger.Info("test",
@@ -148,7 +148,7 @@ func TestSanitizeHandler_GroupHandling(t *testing.T) {
 func TestSanitizeHandler_NestedGroups(t *testing.T) {
 	var buf bytes.Buffer
 	baseHandler := slog.NewTextHandler(&buf, nil)
-	sanitized := NewSanitizeHandler(baseHandler)
+	sanitized := newSanitizeHandler(baseHandler)
 	logger := slog.New(sanitized)
 
 	logger.Info("test",
@@ -175,7 +175,7 @@ func TestSanitizeHandler_NestedGroups(t *testing.T) {
 func TestSanitizeHandler_NonStringValues(t *testing.T) {
 	var buf bytes.Buffer
 	baseHandler := slog.NewTextHandler(&buf, nil)
-	sanitized := NewSanitizeHandler(baseHandler)
+	sanitized := newSanitizeHandler(baseHandler)
 	logger := slog.New(sanitized)
 
 	logger.Info("test",
@@ -202,7 +202,7 @@ func TestSanitizeHandler_NonStringValues(t *testing.T) {
 func TestSanitizeHandler_WithAttrs(t *testing.T) {
 	var buf bytes.Buffer
 	baseHandler := slog.NewTextHandler(&buf, nil)
-	sanitized := NewSanitizeHandler(baseHandler)
+	sanitized := newSanitizeHandler(baseHandler)
 	loggerWithAttrs := slog.New(sanitized).With(
 		slog.String("token", "should_be_masked"),
 		slog.String("service", "test_service"),
@@ -225,7 +225,7 @@ func TestSanitizeHandler_WithAttrs(t *testing.T) {
 func TestSanitizeHandler_WithGroup(t *testing.T) {
 	var buf bytes.Buffer
 	baseHandler := slog.NewTextHandler(&buf, nil)
-	sanitized := NewSanitizeHandler(baseHandler)
+	sanitized := newSanitizeHandler(baseHandler)
 	loggerWithGroup := slog.New(sanitized).WithGroup("request")
 
 	loggerWithGroup.Info("test",
@@ -248,7 +248,7 @@ func TestSanitizeHandler_WithGroup(t *testing.T) {
 func TestSanitizeHandler_MixedScenario(t *testing.T) {
 	var buf bytes.Buffer
 	baseHandler := slog.NewTextHandler(&buf, nil)
-	sanitized := NewSanitizeHandler(baseHandler)
+	sanitized := newSanitizeHandler(baseHandler)
 	logger := slog.New(sanitized)
 
 	logger.Info("user_login",
@@ -291,7 +291,7 @@ func TestSanitizeHandler_MixedScenario(t *testing.T) {
 func TestSanitizeHandler_QuerySecrets(t *testing.T) {
 	var buf bytes.Buffer
 	baseHandler := slog.NewTextHandler(&buf, nil)
-	sanitized := NewSanitizeHandler(baseHandler)
+	sanitized := newSanitizeHandler(baseHandler)
 	logger := slog.New(sanitized)
 
 	logger.Info("test", slog.String("url", "https://example.test?a=1&api_key=secret-value&token=token-value&b=2"))
@@ -308,7 +308,7 @@ func TestSanitizeHandler_QuerySecrets(t *testing.T) {
 func TestSanitizeHandler_KeyCasePreserved(t *testing.T) {
 	var buf bytes.Buffer
 	baseHandler := slog.NewTextHandler(&buf, nil)
-	sanitized := NewSanitizeHandler(baseHandler)
+	sanitized := newSanitizeHandler(baseHandler)
 	logger := slog.New(sanitized)
 
 	logger.Info("test", slog.String("Token", "secret123"))

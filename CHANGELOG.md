@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased (v1.27.0)
+
+### Removed (Breaking)
+
+- `logging/archive`: internalized under `pkg/logging/internal/archive`; file logging behavior and
+  log archive/prune semantics are unchanged through `pkg/logging`.
+- `workerconfig`: unexported zero-consumer Iris worker-profile detail types
+  (`BotPoolWorkerProfile`, `BotWebhookReceiveWorkerProfile`, `IrisWebhookDeliveryWorkerProfile`,
+  `IrisBotWebhookWorkerProfileValidation`) and the zero-consumer
+  `DefaultIrisBotWebhookWorkerProfile` helper.
+- `json`: removed zero-consumer stdlib compatibility re-exports `Decoder` and `Number`; use
+  `NewDecoder` or the concrete decoder returned from it.
+- `logging`: unexported zero-consumer handler/plumbing helpers (`SanitizeHandler`,
+  `OTelHandler`, `NewSanitizeHandler`, `NewOTelHandler`, `Component`, `JobID`, `NewID`,
+  `ParseLevel`, and `*FromContext`). Public logger construction, operation logging,
+  context enrichment, and file logging entry points remain.
+
+### Changed
+
+- `logging`: a literal `key` field or `?key=` query parameter no longer triggers redaction by
+  name alone; `api_key`, `apikey`, token/password/secret variants, and suffix rules continue to
+  redact.
+
+### Docs
+
+- Removed generated public-surface and internal-helper inventories from package `doc.go` files,
+  keeping package overviews and usage examples.
+- Annotated `REFACTORING_PLAN_20260602.md` with the closed P1/P3 dispositions for this wave.
+
 ## v1.26.0 - 2026-07-03
 
 ### Removed (Breaking)

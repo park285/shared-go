@@ -10,7 +10,7 @@ import (
 func sanitizeValue(t *testing.T, key, value string) string {
 	t.Helper()
 	var buf bytes.Buffer
-	h := NewSanitizeHandler(slog.NewTextHandler(&buf, nil))
+	h := newSanitizeHandler(slog.NewTextHandler(&buf, nil))
 	slog.New(h).Info("m", slog.String(key, value))
 	return buf.String()
 }
@@ -18,7 +18,7 @@ func sanitizeValue(t *testing.T, key, value string) string {
 func sanitizeMessage(t *testing.T, msg string) string {
 	t.Helper()
 	var buf bytes.Buffer
-	h := NewSanitizeHandler(slog.NewTextHandler(&buf, nil))
+	h := newSanitizeHandler(slog.NewTextHandler(&buf, nil))
 	slog.New(h).Info(msg)
 	return buf.String()
 }
@@ -58,7 +58,6 @@ func TestRedactSecrets_UnicodeFoldTrap(t *testing.T) {
 	cases := []string{
 		"?paſsword=LEAKEDPW",        // long-s ſ ↔ "password"의 s
 		"?toKen=LEAKEDTOK",          // Kelvin K ↔ "token"의 k
-		"?Key=LEAKEDKEY",            // Kelvin K ↔ "key"의 k
 		"?ſecret=LEAKEDSEC",         // long-s ſ ↔ "secret"의 s
 		"?api_Key=LEAKEDAK",         // Kelvin K ↔ "api_key"의 k
 		";paſswd=LEAKEDPW",          // "passwd" 내 long-s, semicolon 구분자
@@ -129,6 +128,16 @@ func TestQuerySecret_NewKeys(t *testing.T) {
 	}
 }
 
+func TestQuerySecret_BareKeyNotMasked(t *testing.T) {
+	out := sanitizeValue(t, "url", "https://x.test?key=visible&api_key=secret")
+	if strings.Contains(out, "api_key=secret") {
+		t.Fatalf("api_key query value not masked, got: %s", out)
+	}
+	if !strings.Contains(out, "key=visible") {
+		t.Fatalf("bare key query value must be preserved, got: %s", out)
+	}
+}
+
 // I3: 신규 민감 키 (pwd/passwd/private_key/secret_key 및 _suffix 변형) 마스킹.
 func TestIsSensitiveKey_NewKeys(t *testing.T) {
 	masked := []string{
@@ -148,9 +157,6 @@ func TestIsSensitiveKey_BroadKeysStillNotMasked(t *testing.T) {
 	for _, k := range notMasked {
 		if isSensitiveKey(k) {
 			t.Errorf("isSensitiveKey(%q) = true, want false (broad key must stay unmasked)", k)
-		}
-		if isBroadValueKey(k) {
-			t.Errorf("isBroadValueKey(%q) = true, want false (only %q is value-gated)", k, "key")
 		}
 	}
 }

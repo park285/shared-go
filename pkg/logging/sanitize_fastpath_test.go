@@ -13,7 +13,7 @@ func (f fixedValuer) LogValue() slog.Value { return slog.StringValue(f.v) }
 func handleVia(t *testing.T, r slog.Record) slog.Record {
 	t.Helper()
 	sink := &recordSink{}
-	if err := NewSanitizeHandler(sink).Handle(context.Background(), r); err != nil {
+	if err := newSanitizeHandler(sink).Handle(context.Background(), r); err != nil {
 		t.Fatalf("Handle returned error: %v", err)
 	}
 	if len(sink.records) != 1 {

@@ -193,7 +193,7 @@ linters:
       # 내부 로그 파일 경로로 os.OpenFile 호출 — 외부 입력이 아님
       - linters:
           - gosec
-        path: pkg/logging/archive/
+        path: pkg/logging/internal/archive/
         text: "G304:"
 
     paths:

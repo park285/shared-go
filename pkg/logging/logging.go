@@ -15,7 +15,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"gopkg.in/natefinch/lumberjack.v2"
 
-	"github.com/park285/shared-go/pkg/logging/archive"
+	"github.com/park285/shared-go/pkg/logging/internal/archive"
 )
 
 type Config struct {
@@ -27,7 +27,7 @@ type Config struct {
 	Compress   bool
 }
 
-func ParseLevel(level string) slog.Level {
+func parseLevel(level string) slog.Level {
 	switch strings.ToLower(strings.TrimSpace(level)) {
 	case "debug":
 		return slog.LevelDebug
@@ -47,7 +47,7 @@ func NewLogger() *slog.Logger {
 		AddSource:  true,
 		NoColor:    shouldDisableColor(os.Stdout),
 	})
-	return slog.New(NewSanitizeHandler(handler))
+	return slog.New(newSanitizeHandler(handler))
 }
 
 func NewTestLogger() *slog.Logger {
@@ -89,7 +89,7 @@ func EnableFileLoggingWithOptions(config Config, fileName string, opts Options) 
 }
 
 func enableFileLoggingWithStdout(stdout io.Writer, config Config, fileName string, opts Options) (*slog.Logger, io.Closer, error) {
-	level := ParseLevel(config.Level)
+	level := parseLevel(config.Level)
 	logDir := strings.TrimSpace(config.Dir)
 	if logDir == "" {
 		logger := slog.New(newConsoleHandler(level, stdout, opts.OTel))
@@ -139,9 +139,9 @@ func enableFileLoggingWithStdout(stdout io.Writer, config Config, fileName strin
 		AddSource:  true,
 		NoColor:    true,
 	})
-	handler = NewSanitizeHandler(handler)
+	handler = newSanitizeHandler(handler)
 	if opts.OTel {
-		handler = NewOTelHandler(handler)
+		handler = newOTelHandler(handler)
 	}
 
 	logger := slog.New(handler)
@@ -164,9 +164,9 @@ func newConsoleHandler(level slog.Level, w io.Writer, enableOTel bool) slog.Hand
 		AddSource:  true,
 		NoColor:    shouldDisableColor(w),
 	})
-	handler = NewSanitizeHandler(handler)
+	handler = newSanitizeHandler(handler)
 	if enableOTel {
-		handler = NewOTelHandler(handler)
+		handler = newOTelHandler(handler)
 	}
 	return handler
 }
@@ -185,19 +185,19 @@ func shouldDisableColor(w io.Writer) bool {
 	return !isatty.IsTerminal(fd) && !isatty.IsCygwinTerminal(fd)
 }
 
-type OTelHandler struct {
+type otelHandler struct {
 	inner slog.Handler
 }
 
-func NewOTelHandler(inner slog.Handler) *OTelHandler {
-	return &OTelHandler{inner: inner}
+func newOTelHandler(inner slog.Handler) *otelHandler {
+	return &otelHandler{inner: inner}
 }
 
-func (h *OTelHandler) Enabled(ctx context.Context, level slog.Level) bool {
+func (h *otelHandler) Enabled(ctx context.Context, level slog.Level) bool {
 	return h.inner.Enabled(ctx, level)
 }
 
-func (h *OTelHandler) Handle(ctx context.Context, record slog.Record) error {
+func (h *otelHandler) Handle(ctx context.Context, record slog.Record) error {
 	span := trace.SpanFromContext(ctx)
 	if span.SpanContext().IsValid() {
 		spanCtx := span.SpanContext()
@@ -209,10 +209,10 @@ func (h *OTelHandler) Handle(ctx context.Context, record slog.Record) error {
 	return h.inner.Handle(ctx, record)
 }
 
-func (h *OTelHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return &OTelHandler{inner: h.inner.WithAttrs(attrs)}
+func (h *otelHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &otelHandler{inner: h.inner.WithAttrs(attrs)}
 }
 
-func (h *OTelHandler) WithGroup(name string) slog.Handler {
-	return &OTelHandler{inner: h.inner.WithGroup(name)}
+func (h *otelHandler) WithGroup(name string) slog.Handler {
+	return &otelHandler{inner: h.inner.WithGroup(name)}
 }

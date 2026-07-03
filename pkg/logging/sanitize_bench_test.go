@@ -49,7 +49,7 @@ func newSensitiveRecord() slog.Record {
 }
 
 func BenchmarkSanitizeHandlerClean(b *testing.B) {
-	h := NewSanitizeHandler(discardHandler{})
+	h := newSanitizeHandler(discardHandler{})
 	ctx := context.Background()
 	b.ReportAllocs()
 	for b.Loop() {
@@ -58,7 +58,7 @@ func BenchmarkSanitizeHandlerClean(b *testing.B) {
 }
 
 func BenchmarkSanitizeHandlerSensitive(b *testing.B) {
-	h := NewSanitizeHandler(discardHandler{})
+	h := newSanitizeHandler(discardHandler{})
 	ctx := context.Background()
 	b.ReportAllocs()
 	for b.Loop() {
@@ -95,7 +95,7 @@ func newGroupWithSecretRecord() slog.Record {
 }
 
 func BenchmarkSanitizeHandlerGroupNoSecret(b *testing.B) {
-	h := NewSanitizeHandler(discardHandler{})
+	h := newSanitizeHandler(discardHandler{})
 	ctx := context.Background()
 	b.ReportAllocs()
 	for b.Loop() {
@@ -104,7 +104,7 @@ func BenchmarkSanitizeHandlerGroupNoSecret(b *testing.B) {
 }
 
 func BenchmarkSanitizeHandlerGroupWithSecret(b *testing.B) {
-	h := NewSanitizeHandler(discardHandler{})
+	h := newSanitizeHandler(discardHandler{})
 	ctx := context.Background()
 	b.ReportAllocs()
 	for b.Loop() {

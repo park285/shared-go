@@ -31,17 +31,6 @@ func TestRawMessageUnmarshalJSON_NilPointer(t *testing.T) {
 	}
 }
 
-func TestNumberParsers_InvalidInput(t *testing.T) {
-	t.Parallel()
-
-	if _, err := Number("not-a-number").Float64(); err == nil {
-		t.Fatal("Float64() expected error for invalid input")
-	}
-	if _, err := Number("3.14").Int64(); err == nil {
-		t.Fatal("Int64() expected error for non-integer input")
-	}
-}
-
 func TestNewEncoderNewDecoder_RoundTrip(t *testing.T) {
 	t.Parallel()
 

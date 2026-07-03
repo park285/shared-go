@@ -54,14 +54,14 @@ func operationContext(ctx context.Context, opts OperationOptions) context.Contex
 }
 
 func operationContextWithJobID(ctx context.Context, opts OperationOptions) context.Context {
-	if JobIDFromContext(ctx) != "" {
+	if jobIDFromContext(ctx) != "" {
 		return ctx
 	}
 	prefix := strings.TrimSpace(opts.IDPrefix)
 	if prefix == "" {
 		prefix = operationName(opts.Name)
 	}
-	return WithJobID(ctx, NewID(prefix))
+	return WithJobID(ctx, newID(prefix))
 }
 
 func operationContextWithRuntime(ctx context.Context, opts OperationOptions) context.Context {

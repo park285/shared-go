@@ -28,20 +28,3 @@ func TestRawMessageRoundTrip(t *testing.T) {
 		t.Fatalf("Marshal() = %s, want %s", got, want)
 	}
 }
-
-func TestNumberParsers(t *testing.T) {
-	t.Parallel()
-
-	n := Number("42")
-	if got := n.String(); got != "42" {
-		t.Fatalf("String() = %s, want 42", got)
-	}
-	if got, err := n.Int64(); err != nil || got != 42 {
-		t.Fatalf("Int64() = (%d, %v), want (42, nil)", got, err)
-	}
-
-	f := Number("3.14")
-	if got, err := f.Float64(); err != nil || got != 3.14 {
-		t.Fatalf("Float64() = (%f, %v), want (3.14, nil)", got, err)
-	}
-}

@@ -7,25 +7,25 @@ import (
 )
 
 func TestNewIDFormat(t *testing.T) {
-	got := NewID("job")
+	got := newID("job")
 	matched, err := regexp.MatchString(`^job_[0-9]+_[0-9a-f]{12}$`, got)
 	if err != nil {
-		t.Fatalf("compile NewID regex: %v", err)
+		t.Fatalf("compile newID regex: %v", err)
 	}
 	if !matched {
-		t.Fatalf("NewID() = %q, want <prefix>_<unixMillis>_<hex>", got)
+		t.Fatalf("newID() = %q, want <prefix>_<unixMillis>_<hex>", got)
 	}
 }
 
 func TestNewIDUsesSanitizedPrefix(t *testing.T) {
 	input := "__Video.Job-01__"
-	got := NewID(input)
+	got := newID(input)
 	matches := regexp.MustCompile(`^(.+)_([0-9]+)_([0-9a-f]{12})$`).FindStringSubmatch(got)
 	if matches == nil {
-		t.Fatalf("NewID(%q) = %q, want sanitized prefix, timestamp, and hex suffix", input, got)
+		t.Fatalf("newID(%q) = %q, want sanitized prefix, timestamp, and hex suffix", input, got)
 	}
 	if matches[1] != sanitizeIDPrefix(input) {
-		t.Fatalf("NewID prefix = %q, want %q", matches[1], sanitizeIDPrefix(input))
+		t.Fatalf("newID prefix = %q, want %q", matches[1], sanitizeIDPrefix(input))
 	}
 }
 
@@ -120,8 +120,8 @@ func TestSanitizedIDPrefixRune(t *testing.T) {
 }
 
 func TestNewIDHasThreeSuffixParts(t *testing.T) {
-	parts := strings.Split(NewID("job"), "_")
+	parts := strings.Split(newID("job"), "_")
 	if len(parts) != 3 {
-		t.Fatalf("NewID split parts = %v, want prefix, timestamp, hex", parts)
+		t.Fatalf("newID split parts = %v, want prefix, timestamp, hex", parts)
 	}
 }

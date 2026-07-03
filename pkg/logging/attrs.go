@@ -14,7 +14,7 @@ func Runtime(runtime string) slog.Attr {
 	return slog.String("runtime", runtime)
 }
 
-func Component(component string) slog.Attr {
+func componentAttr(component string) slog.Attr {
 	return slog.String("component", component)
 }
 
@@ -26,7 +26,7 @@ func RequestID(id string) slog.Attr {
 	return slog.String("request_id", id)
 }
 
-func JobID(id string) slog.Attr {
+func jobIDAttr(id string) slog.Attr {
 	return slog.String("job_id", id)
 }
 

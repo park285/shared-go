@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func NewID(prefix string) string {
+func newID(prefix string) string {
 	prefix = sanitizeIDPrefix(prefix)
 	random := make([]byte, 6)
 	if _, err := rand.Read(random); err != nil {

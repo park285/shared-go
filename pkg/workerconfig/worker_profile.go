@@ -1,5 +1,6 @@
 package workerconfig
 
+// 이 패키지는 Iris worker-profile 도메인 계약을 인코딩한다.
 import (
 	"bytes"
 	"crypto/sha256"
@@ -57,13 +58,13 @@ var ErrWorkerProfileDisabled = errors.New("iris bot webhook worker profile is di
 type IrisBotWebhookWorkerProfile struct {
 	Version    int                                   `json:"version"`
 	ProfileID  string                                `json:"profile_id"`
-	Delivery   IrisWebhookDeliveryWorkerProfile      `json:"delivery"`
-	Receive    BotWebhookReceiveWorkerProfile        `json:"receive"`
-	BotPool    BotPoolWorkerProfile                  `json:"bot_pool"`
-	Validation IrisBotWebhookWorkerProfileValidation `json:"validation"`
+	Delivery   irisWebhookDeliveryWorkerProfile      `json:"delivery"`
+	Receive    botWebhookReceiveWorkerProfile        `json:"receive"`
+	BotPool    botPoolWorkerProfile                  `json:"bot_pool"`
+	Validation irisBotWebhookWorkerProfileValidation `json:"validation"`
 }
 
-type IrisWebhookDeliveryWorkerProfile struct {
+type irisWebhookDeliveryWorkerProfile struct {
 	LaneWorkers            int           `json:"-"`
 	LaneQueueCapacity      int           `json:"-"`
 	MaxGlobalInFlight      int           `json:"-"`
@@ -74,7 +75,7 @@ type IrisWebhookDeliveryWorkerProfile struct {
 	LaneIdleTimeout        time.Duration `json:"-"`
 }
 
-type BotWebhookReceiveWorkerProfile struct {
+type botWebhookReceiveWorkerProfile struct {
 	Workers        int           `json:"-"`
 	QueueSize      int           `json:"-"`
 	EnqueueTimeout time.Duration `json:"-"`
@@ -84,12 +85,12 @@ type BotWebhookReceiveWorkerProfile struct {
 	DedupTimeout   time.Duration `json:"-"`
 }
 
-type BotPoolWorkerProfile struct {
+type botPoolWorkerProfile struct {
 	Workers   int `json:"-"`
 	QueueSize int `json:"-"`
 }
 
-type IrisBotWebhookWorkerProfileValidation struct {
+type irisBotWebhookWorkerProfileValidation struct {
 	MinQueuePerEndpointMultiplier          int  `json:"min_queue_per_endpoint_multiplier"`
 	RequireReceiveCapacityForEndpointBurst bool `json:"require_receive_capacity_for_endpoint_burst"`
 }
@@ -100,7 +101,7 @@ type wireIrisBotWebhookWorkerProfile struct {
 	Delivery   wireWebhookDeliveryWorkerProfile      `json:"delivery"`
 	Receive    wireWebhookReceiveWorkerProfile       `json:"receive"`
 	BotPool    wireBotPoolWorkerProfileField         `json:"bot_pool"`
-	Validation IrisBotWebhookWorkerProfileValidation `json:"validation"`
+	Validation irisBotWebhookWorkerProfileValidation `json:"validation"`
 }
 
 type wireBotPoolWorkerProfile struct {
@@ -145,11 +146,11 @@ type wireWebhookReceiveWorkerProfile struct {
 	DedupTimeoutMS   int   `json:"dedup_timeout_ms"`
 }
 
-func DefaultIrisBotWebhookWorkerProfile() IrisBotWebhookWorkerProfile {
+func defaultIrisBotWebhookWorkerProfile() IrisBotWebhookWorkerProfile {
 	return IrisBotWebhookWorkerProfile{
 		Version:   CurrentVersion,
 		ProfileID: defaultProfileID,
-		Delivery: IrisWebhookDeliveryWorkerProfile{
+		Delivery: irisWebhookDeliveryWorkerProfile{
 			LaneWorkers:            defaultDeliveryLaneWorkers,
 			LaneQueueCapacity:      defaultDeliveryLaneQueueCapacity,
 			MaxGlobalInFlight:      defaultDeliveryMaxGlobalInFlight,
@@ -159,7 +160,7 @@ func DefaultIrisBotWebhookWorkerProfile() IrisBotWebhookWorkerProfile {
 			RequestTimeout:         defaultDeliveryRequestTimeout,
 			LaneIdleTimeout:        defaultDeliveryLaneIdleTimeout,
 		},
-		Receive: BotWebhookReceiveWorkerProfile{
+		Receive: botWebhookReceiveWorkerProfile{
 			Workers:        defaultReceiveWorkers,
 			QueueSize:      defaultReceiveQueueSize,
 			EnqueueTimeout: defaultReceiveEnqueueTimeout,
@@ -168,11 +169,11 @@ func DefaultIrisBotWebhookWorkerProfile() IrisBotWebhookWorkerProfile {
 			DedupTTL:       defaultReceiveDedupTTL,
 			DedupTimeout:   defaultReceiveDedupTimeout,
 		},
-		BotPool: BotPoolWorkerProfile{
+		BotPool: botPoolWorkerProfile{
 			Workers:   defaultBotPoolWorkers,
 			QueueSize: defaultBotPoolQueueSize,
 		},
-		Validation: IrisBotWebhookWorkerProfileValidation{
+		Validation: irisBotWebhookWorkerProfileValidation{
 			MinQueuePerEndpointMultiplier:          defaultMinQueuePerEndpointMultiplier,
 			RequireReceiveCapacityForEndpointBurst: true,
 		},
@@ -180,7 +181,7 @@ func DefaultIrisBotWebhookWorkerProfile() IrisBotWebhookWorkerProfile {
 }
 
 func LegacyIrisBotWebhookWorkerProfile() IrisBotWebhookWorkerProfile {
-	profile := DefaultIrisBotWebhookWorkerProfile()
+	profile := defaultIrisBotWebhookWorkerProfile()
 	profile.ProfileID = "legacy-hardcoded"
 	return profile
 }
@@ -326,12 +327,12 @@ func (p IrisBotWebhookWorkerProfile) toWire() wireIrisBotWebhookWorkerProfile {
 }
 
 func fromWire(wire wireIrisBotWebhookWorkerProfile) IrisBotWebhookWorkerProfile {
-	botPool := BotPoolWorkerProfile{
+	botPool := botPoolWorkerProfile{
 		Workers:   defaultBotPoolWorkers,
 		QueueSize: defaultBotPoolQueueSize,
 	}
 	if wire.BotPool.present {
-		botPool = BotPoolWorkerProfile{
+		botPool = botPoolWorkerProfile{
 			Workers:   wire.BotPool.value.Workers,
 			QueueSize: wire.BotPool.value.QueueSize,
 		}
@@ -340,7 +341,7 @@ func fromWire(wire wireIrisBotWebhookWorkerProfile) IrisBotWebhookWorkerProfile 
 	return IrisBotWebhookWorkerProfile{
 		Version:   wire.Version,
 		ProfileID: strings.TrimSpace(wire.ProfileID),
-		Delivery: IrisWebhookDeliveryWorkerProfile{
+		Delivery: irisWebhookDeliveryWorkerProfile{
 			LaneWorkers:            wire.Delivery.LaneWorkers,
 			LaneQueueCapacity:      wire.Delivery.LaneQueueCapacity,
 			MaxGlobalInFlight:      wire.Delivery.MaxGlobalInFlight,
@@ -350,7 +351,7 @@ func fromWire(wire wireIrisBotWebhookWorkerProfile) IrisBotWebhookWorkerProfile 
 			RequestTimeout:         time.Duration(wire.Delivery.RequestTimeoutMS) * time.Millisecond,
 			LaneIdleTimeout:        time.Duration(wire.Delivery.LaneIdleTimeoutMS) * time.Millisecond,
 		},
-		Receive: BotWebhookReceiveWorkerProfile{
+		Receive: botWebhookReceiveWorkerProfile{
 			Workers:        wire.Receive.Workers,
 			QueueSize:      wire.Receive.QueueSize,
 			EnqueueTimeout: time.Duration(wire.Receive.EnqueueTimeoutMS) * time.Millisecond,

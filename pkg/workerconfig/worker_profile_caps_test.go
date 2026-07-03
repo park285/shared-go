@@ -60,7 +60,7 @@ func TestSG06WorkerProfileRejectsOversizeCapacity_c24c67e0(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			profile := DefaultIrisBotWebhookWorkerProfile()
+			profile := defaultIrisBotWebhookWorkerProfile()
 			tc.mutate(&profile)
 
 			err := profile.Validate()
@@ -77,11 +77,11 @@ func TestSG06WorkerProfileRejectsOversizeCapacity_c24c67e0(t *testing.T) {
 func TestSG06WorkerProfileAcceptsRealisticCapacity_c24c67e0(t *testing.T) {
 	t.Parallel()
 
-	if err := DefaultIrisBotWebhookWorkerProfile().Validate(); err != nil {
+	if err := defaultIrisBotWebhookWorkerProfile().Validate(); err != nil {
 		t.Fatalf("Validate(default) error = %v, want nil", err)
 	}
 
-	scaled := DefaultIrisBotWebhookWorkerProfile()
+	scaled := defaultIrisBotWebhookWorkerProfile()
 	scaled.Delivery.LaneWorkers = 256
 	scaled.Delivery.LaneQueueCapacity = 8192
 	scaled.Delivery.MaxGlobalInFlight = 1024
