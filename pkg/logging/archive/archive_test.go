@@ -287,6 +287,27 @@ func TestCompressedLogArchiverTrigger_ConcurrentRunsAtMostOnce(t *testing.T) {
 	}
 }
 
+func TestCompressedLogArchiverClose_BlocksLaterTriggerFromTouchingDir(t *testing.T) {
+	t.Parallel()
+
+	logDir := t.TempDir()
+	logPath := filepath.Join(logDir, "service.log")
+	if err := os.WriteFile(logPath, []byte("active\n"), LogFilePerm); err != nil {
+		t.Fatalf("write log file failed: %v", err)
+	}
+	writeCompressedBackup(t, logDir, "service.log", time.Now().UTC())
+
+	archiver := NewCompressedLogArchiver(logPath, 5, 7, true)
+	if err := archiver.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	archiver.Trigger()
+	archiver.wait()
+
+	assertPathMissing(t, filepath.Join(logDir, DirName))
+}
+
 func TestMoveAndPrune_SetsArchivedBackupPerm(t *testing.T) {
 	t.Parallel()
 

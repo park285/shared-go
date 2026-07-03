@@ -42,6 +42,7 @@ type CompressedLogArchiver struct {
 
 	mu      sync.Mutex
 	running bool
+	closed  bool
 	lastRun time.Time
 
 	inflight sync.WaitGroup
@@ -65,7 +66,7 @@ func (a *CompressedLogArchiver) Trigger() {
 	}
 
 	a.mu.Lock()
-	if a.running || (!a.lastRun.IsZero() && time.Since(a.lastRun) < ScanInterval) {
+	if a.closed || a.running || (!a.lastRun.IsZero() && time.Since(a.lastRun) < ScanInterval) {
 		a.mu.Unlock()
 		return
 	}
@@ -99,6 +100,14 @@ func (a *CompressedLogArchiver) wait() {
 }
 
 func (a *CompressedLogArchiver) Close() error {
+	if a == nil {
+		return nil
+	}
+	// closed를 wait 전에 세워야 진행 중 run은 join되고 이후 Trigger는 새 run을 못 띄운다 —
+	// Close 반환 후 archive 디렉터리를 다시 만드는 늦은 write가 없어야 로그 dir 정리와 경합하지 않는다.
+	a.mu.Lock()
+	a.closed = true
+	a.mu.Unlock()
 	a.wait()
 	return nil
 }
