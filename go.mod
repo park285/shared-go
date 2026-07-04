@@ -1,8 +1,6 @@
 module github.com/park285/shared-go
 
-go 1.26.2
-
-toolchain go1.26.4
+go 1.26.4
 
 require (
 	github.com/bytedance/sonic v1.15.2
@@ -22,7 +20,7 @@ require (
 	go.uber.org/automaxprocs v1.6.0
 	golang.org/x/sync v0.21.0
 	golang.org/x/text v0.38.0
-	google.golang.org/grpc v1.81.1
+	google.golang.org/grpc v1.82.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v3 v3.0.1
 )
