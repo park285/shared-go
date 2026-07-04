@@ -67,8 +67,8 @@ func TestBareKey_NameAloneNotMasked_ValueGatesRedaction_8e92058d(t *testing.T) {
 		t.Errorf(`isSensitiveKey("key") = true, want false: key name alone must not force redaction`)
 	}
 	out := sanitizeValue(t, "key", "sk_live_"+"FAKEvalueNotARealStripeKey")
-	if strings.Contains(out, "***REDACTED***") {
-		t.Errorf("literal key field value must stay unmasked, got: %s", out)
+	if strings.Contains(out, "sk_live_") || !strings.Contains(out, "***REDACTED***") {
+		t.Errorf("secret-like literal key field value must be masked, got: %s", out)
 	}
 }
 

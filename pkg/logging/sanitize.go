@@ -18,7 +18,7 @@ func newSanitizeHandler(inner slog.Handler) *sanitizeHandler {
 // 민감 키 리스트 (case-insensitive 매칭)
 var (
 	bearerTokenRegex = regexp.MustCompile(`(?i)\b(bearer\s+)[A-Za-z0-9._~+/=-]+`)
-	querySecretRegex = regexp.MustCompile(`(?i)([?&;](?:api_key|apikey|token|password|pwd|passwd|client_secret|secret|private_key|secret_key)=)[^&\s]+`)
+	querySecretRegex = regexp.MustCompile(`(?i)([?&;](?:key|api_key|apikey|token|password|pwd|passwd|client_secret|secret|private_key|secret_key)=)[^&\s]+`)
 )
 
 const (
@@ -30,7 +30,7 @@ const (
 // 정규식 실행 전 싼 substring pre-check 게이트에 쓰인다. 정규식이 매치하는
 // 입력은 반드시 이 토큰 중 하나를 case-insensitive로 포함하므로 게이트는 안전하다.
 var querySecretTokens = []string{
-	tokenAPIKey, tokenAPIKeyCompact, "token", "password", "pwd", "passwd",
+	"key", tokenAPIKey, tokenAPIKeyCompact, "token", "password", "pwd", "passwd",
 	"client_secret", "secret", "private_key", "secret_key",
 }
 
@@ -191,6 +191,10 @@ func sanitizeAttrChanged(attr slog.Attr) (slog.Attr, bool) {
 		return slog.String(attr.Key, "***REDACTED***"), true
 	}
 
+	if isBroadValueKey(attr.Key) && isSecretLikeValue(attr.Value.String()) {
+		return slog.String(attr.Key, "***REDACTED***"), true
+	}
+
 	redacted := redactSecrets(attr.Value.String())
 	if redacted != attr.Value.String() {
 		changed = true
@@ -224,4 +228,63 @@ func normalizeSensitiveKey(key string) string {
 	key = strings.ReplaceAll(key, ".", "_")
 	key = strings.ReplaceAll(key, " ", "_")
 	return key
+}
+
+var broadValueKeys = map[string]struct{}{
+	"key": {},
+}
+
+func isBroadValueKey(key string) bool {
+	_, ok := broadValueKeys[normalizeSensitiveKey(key)]
+	return ok
+}
+
+var secretLikePrefixes = []string{
+	"sk_", "pk_live", "pk_test", "rk_live", "rk_test",
+	"ghp_", "gho_", "ghu_", "ghs_", "ghr_", "github_pat_",
+	"xoxb-", "xoxp-", "xoxa-", "xoxr-",
+	"akia", "asia",
+	"aiza",
+	"eyj",
+}
+
+const secretLikeMinLen = 24
+
+func isSecretLikeValue(v string) bool {
+	if hasSecretLikePrefix(v) {
+		return true
+	}
+	return isHighEntropyToken(v)
+}
+
+func hasSecretLikePrefix(v string) bool {
+	lower := strings.ToLower(v)
+	for _, p := range secretLikePrefixes {
+		if strings.HasPrefix(lower, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func isHighEntropyToken(v string) bool {
+	if len(v) < secretLikeMinLen {
+		return false
+	}
+	var hasLower, hasUpper, hasDigit bool
+	for i := range len(v) {
+		c := v[i]
+		switch {
+		case c >= 'a' && c <= 'z':
+			hasLower = true
+		case c >= 'A' && c <= 'Z':
+			hasUpper = true
+		case c >= '0' && c <= '9':
+			hasDigit = true
+		case c == '_' || c == '-' || c == '.' || c == '+' || c == '/' || c == '=':
+		default:
+			return false
+		}
+	}
+	return hasLower && hasUpper && hasDigit
 }

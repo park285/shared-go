@@ -128,13 +128,16 @@ func TestQuerySecret_NewKeys(t *testing.T) {
 	}
 }
 
-func TestQuerySecret_BareKeyNotMasked(t *testing.T) {
+func TestQuerySecret_BareKeyMasked(t *testing.T) {
 	out := sanitizeValue(t, "url", "https://x.test?key=visible&api_key=secret")
 	if strings.Contains(out, "api_key=secret") {
 		t.Fatalf("api_key query value not masked, got: %s", out)
 	}
-	if !strings.Contains(out, "key=visible") {
-		t.Fatalf("bare key query value must be preserved, got: %s", out)
+	if strings.Contains(out, "key=visible") {
+		t.Fatalf("bare key query value not masked, got: %s", out)
+	}
+	if !strings.Contains(out, "key=***REDACTED***") {
+		t.Fatalf("expected bare key query value to be masked, got: %s", out)
 	}
 }
 
