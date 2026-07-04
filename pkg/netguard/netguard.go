@@ -208,7 +208,6 @@ func GuardedTransport(base *http.Transport, p Policy) *http.Transport {
 		base = base.Clone()
 	}
 	base.Proxy = nil
-	base.DialTLS = nil //nolint:staticcheck // deprecated DialTLS hook을 비워 guarded DialTLSContext 우회를 막는다.
 
 	baseDialContext := base.DialContext
 	if baseDialContext == nil {

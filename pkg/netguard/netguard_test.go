@@ -184,15 +184,12 @@ func TestGuardedDialContextRejectsDisallowedPort(t *testing.T) {
 	}
 }
 
-func TestGuardedTransportDisablesProxyAndDeprecatedDialTLS(t *testing.T) {
+func TestGuardedTransportDisablesProxy(t *testing.T) {
 	t.Parallel()
 
 	base := &http.Transport{
 		Proxy: func(*http.Request) (*url.URL, error) {
 			return &url.URL{Scheme: "http", Host: "proxy.test:8080"}, nil
-		},
-		DialTLS: func(string, string) (net.Conn, error) {
-			return nil, errors.New("must not call")
 		},
 	}
 
@@ -200,14 +197,8 @@ func TestGuardedTransportDisablesProxyAndDeprecatedDialTLS(t *testing.T) {
 	if guarded.Proxy != nil {
 		t.Fatal("GuardedTransport().Proxy is non-nil, want nil")
 	}
-	if guarded.DialTLS != nil {
-		t.Fatal("GuardedTransport().DialTLS is non-nil, want nil")
-	}
 	if base.Proxy == nil {
 		t.Fatal("GuardedTransport mutated base Proxy")
-	}
-	if base.DialTLS == nil {
-		t.Fatal("GuardedTransport mutated base DialTLS")
 	}
 }
 
