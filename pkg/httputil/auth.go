@@ -12,6 +12,8 @@ import (
 const (
 	// ContentTypeJSON은 JSON 응답 Content-Type 값이다.
 	ContentTypeJSON = "application/json"
+	// HeaderContentType은 HTTP Content-Type 헤더 이름이다.
+	HeaderContentType = "Content-Type"
 	// HeaderAPIKey는 관리 API key 인증 헤더 이름이다.
 	HeaderAPIKey = "X-API-Key" //nolint:gosec // 헤더 이름 상수이며 credential 값이 아니다.
 )
