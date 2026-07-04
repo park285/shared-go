@@ -26,7 +26,9 @@ type SQLExecer interface {
 type Option func(*options)
 
 type options struct {
-	only map[string]bool
+	only          map[string]bool
+	ledger        *Ledger
+	ledgerQuerier RowQuerier
 }
 
 // SQLExec는 database/sql 계열 handle을 Execer로 감싼다.
@@ -88,31 +90,77 @@ func Apply(ctx context.Context, fsys fs.FS, exec Execer, opts ...Option) error {
 		return fmt.Errorf("dbmigrate: exec is required")
 	}
 
+	cfg := applyOptions(opts)
+
+	entries, err := Manifest(fsys)
+	if err != nil {
+		return fmt.Errorf("dbmigrate: %w", err)
+	}
+	if err := cfg.prepareLedger(ctx, exec); err != nil {
+		return err
+	}
+
+	for _, name := range entries {
+		shouldApply, shouldApplyErr := cfg.shouldApply(ctx, name)
+		if shouldApplyErr != nil {
+			return shouldApplyErr
+		}
+		if !shouldApply {
+			continue
+		}
+		if err := cfg.applyEntry(ctx, fsys, exec, name); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func applyOptions(opts []Option) options {
 	var cfg options
 	for _, opt := range opts {
 		if opt != nil {
 			opt(&cfg)
 		}
 	}
+	return cfg
+}
 
-	entries, err := Manifest(fsys)
+func (o options) prepareLedger(ctx context.Context, exec Execer) error {
+	if o.ledger == nil {
+		return nil
+	}
+	if o.ledgerQuerier == nil {
+		return fmt.Errorf("dbmigrate: ledger querier is required")
+	}
+	return o.ledger.Ensure(ctx, exec)
+}
+
+func (o options) shouldApply(ctx context.Context, name string) (bool, error) {
+	if o.only != nil && !o.only[name] {
+		return false, nil
+	}
+	if o.ledger == nil {
+		return true, nil
+	}
+
+	applied, err := o.ledger.Applied(ctx, o.ledgerQuerier, name)
 	if err != nil {
-		return fmt.Errorf("dbmigrate: %w", err)
+		return false, err
 	}
+	return !applied, nil
+}
 
-	for _, name := range entries {
-		if cfg.only != nil && !cfg.only[name] {
-			continue
-		}
-
-		sqlBytes, readErr := fs.ReadFile(fsys, name)
-		if readErr != nil {
-			return fmt.Errorf("dbmigrate: read %s: %w", name, readErr)
-		}
-		if execErr := exec(ctx, string(sqlBytes)); execErr != nil {
-			return fmt.Errorf("dbmigrate: exec %s: %w", name, execErr)
-		}
+func (o options) applyEntry(ctx context.Context, fsys fs.FS, exec Execer, name string) error {
+	sqlBytes, err := fs.ReadFile(fsys, name)
+	if err != nil {
+		return fmt.Errorf("dbmigrate: read %s: %w", name, err)
 	}
-
+	if err := exec(ctx, string(sqlBytes)); err != nil {
+		return fmt.Errorf("dbmigrate: exec %s: %w", name, err)
+	}
+	if o.ledger != nil {
+		return o.ledger.Record(ctx, exec, name)
+	}
 	return nil
 }
