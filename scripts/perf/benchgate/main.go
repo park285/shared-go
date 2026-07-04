@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -41,7 +42,7 @@ func run(argv []string) int {
 		fmt.Fprintf(os.Stderr, "error: %v\n", gerr)
 		return 2
 	}
-	repoName := filepath.Base(repoRoot)
+	repoName := repoNameForRoot(repoRoot)
 
 	policy, pe := loadPolicy(args.policy)
 	if pe != nil {
@@ -66,6 +67,26 @@ func run(argv []string) int {
 		return policyFail(ce)
 	}
 	return code
+}
+
+func repoNameForRoot(repoRoot string) string {
+	cmd := exec.Command("git", "rev-parse", "--git-common-dir")
+	cmd.Dir = repoRoot
+	out, err := cmd.Output()
+	if err != nil {
+		return filepath.Base(repoRoot)
+	}
+	commonDir := strings.TrimSpace(string(out))
+	if commonDir == "" {
+		return filepath.Base(repoRoot)
+	}
+	if !filepath.IsAbs(commonDir) {
+		commonDir = filepath.Join(repoRoot, commonDir)
+	}
+	if filepath.Base(commonDir) == ".git" {
+		return filepath.Base(filepath.Dir(commonDir))
+	}
+	return filepath.Base(repoRoot)
 }
 
 func policyFail(e error) int {
