@@ -208,7 +208,8 @@ func GuardedTransport(base *http.Transport, p Policy) *http.Transport {
 		base = base.Clone()
 	}
 	base.Proxy = nil
-	base.DialTLS = nil //nolint:staticcheck // deprecated DialTLS를 비워 소비자 제공 unguarded DialTLS 우회를 막는다.
+	//lint:ignore SA1019 deprecated DialTLS를 비워 소비자 제공 unguarded DialTLS 우회를 막는다.
+	base.DialTLS = nil //nolint:staticcheck // golangci-lint staticcheck도 같은 보안 우회 차단 예외를 인식시킨다.
 
 	baseDialContext := base.DialContext
 	if baseDialContext == nil {
