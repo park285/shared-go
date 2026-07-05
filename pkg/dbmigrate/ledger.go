@@ -43,6 +43,8 @@ func SQLQueryRow(db SQLQueryRowContext) RowQuerier {
 
 // WithLedger는 적용 완료 ledger를 사용해 migration을 idempotent하게 만든다.
 // Apply와 Record는 별도 Execer 호출이라 원자적이지 않고, ledger는 at-least-once이므로 migration SQL은 idempotent해야 한다.
+// ledger 단독은 동시 실행을 막지 못한다: 여러 마이그레이터가 같은 migration을 동시에 Applied()==false로 보고 함께 실행할 수 있다.
+// 다중 레플리카에서 single-flight가 필요하면 Apply를 WithAdvisoryLock으로 감싸라.
 func WithLedger(l Ledger, q RowQuerier) Option {
 	return func(o *options) {
 		o.ledger = &l

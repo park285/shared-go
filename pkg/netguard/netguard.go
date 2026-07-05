@@ -208,6 +208,8 @@ func GuardedTransport(base *http.Transport, p Policy) *http.Transport {
 		base = base.Clone()
 	}
 	base.Proxy = nil
+	//lint:ignore SA1019 deprecated DialTLS를 비워야 소비자가 넘긴 unguarded DialTLS 훅이 guarded DialTLSContext를 우회해 IP 검증 없이 TLS dial하는 경로를 막는다.
+	base.DialTLS = nil
 
 	baseDialContext := base.DialContext
 	if baseDialContext == nil {
