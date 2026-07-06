@@ -15,6 +15,7 @@ run_stage() {
   "$@"
 }
 
+run_stage bash scripts/check-sql-ownership.sh
 run_stage make lint
 run_stage make test
 run_stage make test-race

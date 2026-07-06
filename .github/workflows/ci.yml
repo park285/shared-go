@@ -33,6 +33,9 @@ jobs:
       - name: Workflow secret boundary
         run: bash scripts/ci/check-workflow-secrets.sh
 
+      - name: SQL ownership
+        run: bash scripts/check-sql-ownership.sh
+
       - name: gofmt
         run: |
           mapfile -t files < <(find . -path './.git' -prune -o -name '*.go' -print)

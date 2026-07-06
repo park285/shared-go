@@ -76,6 +76,42 @@ func TestLedgerRecordIsIdempotentOnDuplicateInsert(t *testing.T) {
 	}
 }
 
+func TestLedgerRendersQuotedDottedIdentifier(t *testing.T) {
+	t.Parallel()
+
+	db := newFakeLedgerDB()
+	if err := (Ledger{Table: "public.schema_migrations"}).Ensure(t.Context(), db.Exec); err != nil {
+		t.Fatalf("Ensure() error = %v", err)
+	}
+
+	if len(db.execs) != 1 {
+		t.Fatalf("execs = %v, want one", db.execs)
+	}
+	if !strings.Contains(db.execs[0], `CREATE TABLE IF NOT EXISTS "public"."schema_migrations"`) {
+		t.Fatalf("Ensure() query = %s, want quoted dotted identifier", db.execs[0])
+	}
+}
+
+func TestLedgerRecordEscapesFilenameLiteral(t *testing.T) {
+	t.Parallel()
+
+	db := newFakeLedgerDB()
+	name := "owner's-change.sql"
+	if err := (Ledger{}).Record(t.Context(), db.Exec, name); err != nil {
+		t.Fatalf("Record() error = %v", err)
+	}
+
+	if len(db.execs) != 1 {
+		t.Fatalf("execs = %v, want one", db.execs)
+	}
+	if !strings.Contains(db.execs[0], "VALUES ('owner''s-change.sql')") {
+		t.Fatalf("Record() query = %s, want escaped filename literal", db.execs[0])
+	}
+	if !slices.Equal(db.records, []string{name}) {
+		t.Fatalf("records = %v, want %v", db.records, []string{name})
+	}
+}
+
 func TestBaselineRecordsManifestThroughWatermark(t *testing.T) {
 	t.Parallel()
 

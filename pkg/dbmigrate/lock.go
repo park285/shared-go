@@ -83,7 +83,7 @@ func (s sqlLockSession) TryAdvisoryLock(ctx context.Context, key int64) (bool, e
 		return false, errors.New("dbmigrate: sql lock connection is nil")
 	}
 	var acquired bool
-	if err := s.conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock($1)", key).Scan(&acquired); err != nil {
+	if err := s.conn.QueryRowContext(ctx, queryTryAdvisoryLock, key).Scan(&acquired); err != nil {
 		return false, err
 	}
 	return acquired, nil
@@ -94,7 +94,7 @@ func (s sqlLockSession) AdvisoryUnlock(ctx context.Context, key int64) (bool, er
 		return false, errors.New("dbmigrate: sql lock connection is nil")
 	}
 	var released bool
-	if err := s.conn.QueryRowContext(ctx, "SELECT pg_advisory_unlock($1)", key).Scan(&released); err != nil {
+	if err := s.conn.QueryRowContext(ctx, queryAdvisoryUnlock, key).Scan(&released); err != nil {
 		return false, err
 	}
 	return released, nil

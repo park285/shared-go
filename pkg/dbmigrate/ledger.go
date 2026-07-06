@@ -61,10 +61,7 @@ func (l Ledger) Ensure(ctx context.Context, exec Execer) error {
 	if err != nil {
 		return err
 	}
-	query := fmt.Sprintf(
-		"CREATE TABLE IF NOT EXISTS %s (filename TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())",
-		table,
-	)
+	query := queryEnsureLedger(table)
 	if err := exec(ctx, query); err != nil {
 		return fmt.Errorf("dbmigrate: ensure ledger: %w", err)
 	}
@@ -115,7 +112,7 @@ func (l Ledger) Applied(ctx context.Context, q RowQuerier, name string) (bool, e
 	}
 
 	var applied bool
-	query := fmt.Sprintf("SELECT EXISTS (SELECT 1 FROM %s WHERE filename = $1)", table)
+	query := queryLedgerApplied(table)
 	if err := q.QueryRow(ctx, query, name).Scan(&applied); err != nil {
 		return false, fmt.Errorf("dbmigrate: query ledger %s: %w", name, err)
 	}
@@ -131,11 +128,7 @@ func (l Ledger) Record(ctx context.Context, exec Execer, name string) error {
 	if err != nil {
 		return err
 	}
-	query := fmt.Sprintf(
-		"INSERT INTO %s(filename) VALUES (%s) ON CONFLICT (filename) DO NOTHING",
-		table,
-		quoteSQLString(name),
-	)
+	query := queryRecordLedger(table, quoteSQLString(name))
 	if err := exec(ctx, query); err != nil {
 		return fmt.Errorf("dbmigrate: record ledger %s: %w", name, err)
 	}
