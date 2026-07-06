@@ -247,8 +247,58 @@ def check_sql_asset_locations() -> list[Finding]:
     return findings
 
 
+def check_dbmigrate_parameterized_api() -> list[Finding]:
+    findings: list[Finding] = []
+    dbmigrate_go = ROOT / "pkg" / "dbmigrate" / "dbmigrate.go"
+    ledger_go = ROOT / "pkg" / "dbmigrate" / "ledger.go"
+    record_sql = ROOT / "pkg" / "dbmigrate" / "queries" / "record_ledger.sql.tpl"
+
+    if dbmigrate_go.is_file():
+        source = dbmigrate_go.read_text(encoding="utf-8")
+        if "type Execer func(context.Context, string, ...any) error" not in source:
+            findings.append(
+                Finding(
+                    dbmigrate_go,
+                    1,
+                    "dbmigrate Execer must accept bind parameters",
+                    "want: type Execer func(context.Context, string, ...any) error",
+                )
+            )
+        if "ExecContext(ctx, query, args...)" not in source:
+            findings.append(
+                Finding(
+                    dbmigrate_go,
+                    1,
+                    "dbmigrate SQLExec must forward bind parameters",
+                    "want: ExecContext(ctx, query, args...)",
+                )
+            )
+
+    if ledger_go.is_file():
+        source = ledger_go.read_text(encoding="utf-8")
+        forbidden = ("quoteSQLString", "filename_literal")
+        for token in forbidden:
+            if token in source:
+                findings.append(
+                    Finding(ledger_go, 1, "dbmigrate ledger must not keep literal substitution helper", token)
+                )
+
+    if record_sql.is_file():
+        text = record_sql.read_text(encoding="utf-8")
+        if "VALUES ($1)" not in text:
+            findings.append(
+                Finding(record_sql, 1, "dbmigrate ledger record must bind filename", excerpt(text))
+            )
+        if "filename_literal" in text:
+            findings.append(
+                Finding(record_sql, 1, "dbmigrate ledger record must not template filename literals", excerpt(text))
+            )
+
+    return findings
+
+
 def main() -> int:
-    findings = check_source_literals() + check_sql_asset_locations()
+    findings = check_source_literals() + check_sql_asset_locations() + check_dbmigrate_parameterized_api()
     if not findings:
         print("SQL ownership check passed")
         return 0

@@ -56,7 +56,7 @@ Consumer repositories remain unchanged in this task.
   - Keep repo-local migration name constants and `scripts/migrations.FS`.
   - Implement `Manifest()` as `return dbmigrate.Manifest(migrations.FS)`.
   - Keep pgx advisory lock acquire/release local or wrap it around:
-    `dbmigrate.Apply(ctx, migrations.FS, func(ctx context.Context, query string) error { _, err := conn.Exec(ctx, query); return err }, dbmigrate.WithOnly(...))`.
+    `dbmigrate.Apply(ctx, migrations.FS, func(ctx context.Context, query string, args ...any) error { _, err := conn.Exec(ctx, query, args...); return err }, dbmigrate.WithOnly(...))`.
 - logging call sites
   - `cmd/twentyq/main.go` calls `slog.SetDefault(logger)` before the file logger exists. After this breaking change, `internal/common/bootstrap/entrypoint.go` must call `slog.SetDefault(logger)` after `EnableFileLoggingWithOTel` succeeds and `logger` is replaced with `fileLogger`, or the process default silently stops being the file logger.
 

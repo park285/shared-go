@@ -37,7 +37,6 @@ func queryLedgerApplied(table string) string {
 	return strings.ReplaceAll(queryLedgerAppliedTemplate, "{{ledger_table}}", table)
 }
 
-func queryRecordLedger(table, filenameLiteral string) string {
-	q := strings.ReplaceAll(queryRecordLedgerTemplate, "{{ledger_table}}", table)
-	return strings.ReplaceAll(q, "{{filename_literal}}", filenameLiteral)
+func queryRecordLedger(table string) string {
+	return strings.ReplaceAll(queryRecordLedgerTemplate, "{{ledger_table}}", table)
 }

@@ -1,3 +1,3 @@
 INSERT INTO {{ledger_table}} (filename)
-VALUES ({{filename_literal}})
+VALUES ($1)
 ON CONFLICT (filename) DO NOTHING

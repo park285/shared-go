@@ -30,8 +30,8 @@ func TestSQLAssetRendering(t *testing.T) {
 		t.Fatalf("queryEnsureLedger() = %s, want ledger table replacement", ensure)
 	}
 
-	record := queryRecordLedger(`"schema_migrations"`, quoteSQLString("a'b.sql"))
-	if !strings.Contains(record, "VALUES ('a''b.sql')") {
-		t.Fatalf("queryRecordLedger() = %s, want escaped filename literal", record)
+	record := queryRecordLedger(`"schema_migrations"`)
+	if !strings.Contains(record, "VALUES ($1)") {
+		t.Fatalf("queryRecordLedger() = %s, want bind parameter", record)
 	}
 }

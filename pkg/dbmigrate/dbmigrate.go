@@ -15,7 +15,7 @@ const (
 )
 
 // Execer는 migration SQL 실행 함수다.
-type Execer func(context.Context, string) error
+type Execer func(context.Context, string, ...any) error
 
 // SQLExecer는 database/sql 계열 ExecContext 최소 인터페이스다.
 type SQLExecer interface {
@@ -33,8 +33,8 @@ type options struct {
 
 // SQLExec는 database/sql 계열 handle을 Execer로 감싼다.
 func SQLExec(db SQLExecer) Execer {
-	return func(ctx context.Context, query string) error {
-		_, err := db.ExecContext(ctx, query)
+	return func(ctx context.Context, query string, args ...any) error {
+		_, err := db.ExecContext(ctx, query, args...)
 		return err
 	}
 }

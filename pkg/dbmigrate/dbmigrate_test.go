@@ -81,7 +81,7 @@ func TestApplyOrderingAndWithOnly(t *testing.T) {
 	}
 
 	var got []string
-	err := Apply(context.Background(), fsys, func(_ context.Context, query string) error {
+	err := Apply(context.Background(), fsys, func(_ context.Context, query string, _ ...any) error {
 		got = append(got, query)
 		return nil
 	}, WithOnly("third.sql", "first.sql"))
@@ -107,7 +107,7 @@ func TestApplyIdempotentCoreHasNoHiddenState(t *testing.T) {
 	}
 
 	var got []string
-	exec := func(_ context.Context, query string) error {
+	exec := func(_ context.Context, query string, _ ...any) error {
 		got = append(got, query)
 		return nil
 	}
@@ -152,7 +152,7 @@ func TestApplyErrors(t *testing.T) {
 			fsys: fstest.MapFS{
 				ManifestName: {Data: []byte("001 missing.sql\n")},
 			},
-			exec:    func(context.Context, string) error { return nil },
+			exec:    func(context.Context, string, ...any) error { return nil },
 			wantErr: "read missing.sql",
 		},
 		{
@@ -161,7 +161,7 @@ func TestApplyErrors(t *testing.T) {
 				ManifestName: {Data: []byte("001 first.sql\n")},
 				"first.sql":  {Data: []byte("select 1")},
 			},
-			exec:    func(context.Context, string) error { return errors.New("boom") },
+			exec:    func(context.Context, string, ...any) error { return errors.New("boom") },
 			wantErr: "exec first.sql",
 		},
 	}
@@ -184,7 +184,7 @@ func TestSQLExec(t *testing.T) {
 	db := sql.OpenDB(&fakeSQLConnector{})
 	defer func() { _ = db.Close() }()
 
-	if err := SQLExec(db)(context.Background(), "select 1"); err != nil {
+	if err := SQLExec(db)(context.Background(), "select 1 where $1 = $1", 1); err != nil {
 		t.Fatalf("SQLExec() error = %v", err)
 	}
 }

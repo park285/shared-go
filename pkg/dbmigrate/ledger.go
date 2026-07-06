@@ -128,8 +128,8 @@ func (l Ledger) Record(ctx context.Context, exec Execer, name string) error {
 	if err != nil {
 		return err
 	}
-	query := queryRecordLedger(table, quoteSQLString(name))
-	if err := exec(ctx, query); err != nil {
+	query := queryRecordLedger(table)
+	if err := exec(ctx, query, name); err != nil {
 		return fmt.Errorf("dbmigrate: record ledger %s: %w", name, err)
 	}
 	return nil
@@ -167,10 +167,6 @@ func validateIdentifier(s string) error {
 		}
 	}
 	return nil
-}
-
-func quoteSQLString(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 }
 
 type sqlRowQuerier struct {

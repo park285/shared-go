@@ -9,8 +9,8 @@
 // # 주요 사용 패턴
 //
 //	err := dbmigrate.Apply(ctx, migrations.FS, dbmigrate.SQLExec(db))
-//	err = dbmigrate.Apply(ctx, migrations.FS, func(ctx context.Context, query string) error {
-//	    _, execErr := conn.Exec(ctx, query)
+//	err = dbmigrate.Apply(ctx, migrations.FS, func(ctx context.Context, query string, args ...any) error {
+//	    _, execErr := conn.Exec(ctx, query, args...)
 //	    return execErr
 //	}, dbmigrate.WithOnly("0001_repository_baseline.sql"))
 package dbmigrate

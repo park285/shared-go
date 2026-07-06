@@ -92,7 +92,7 @@ func TestLedgerRendersQuotedDottedIdentifier(t *testing.T) {
 	}
 }
 
-func TestLedgerRecordEscapesFilenameLiteral(t *testing.T) {
+func TestLedgerRecordBindsFilenameParameter(t *testing.T) {
 	t.Parallel()
 
 	db := newFakeLedgerDB()
@@ -104,8 +104,11 @@ func TestLedgerRecordEscapesFilenameLiteral(t *testing.T) {
 	if len(db.execs) != 1 {
 		t.Fatalf("execs = %v, want one", db.execs)
 	}
-	if !strings.Contains(db.execs[0], "VALUES ('owner''s-change.sql')") {
-		t.Fatalf("Record() query = %s, want escaped filename literal", db.execs[0])
+	if !strings.Contains(db.execs[0], "VALUES ($1)") {
+		t.Fatalf("Record() query = %s, want bind parameter", db.execs[0])
+	}
+	if !slices.Equal(db.args[0], []any{name}) {
+		t.Fatalf("Record() args = %v, want bound filename", db.args[0])
 	}
 	if !slices.Equal(db.records, []string{name}) {
 		t.Fatalf("records = %v, want %v", db.records, []string{name})
@@ -188,6 +191,7 @@ type fakeLedgerDB struct {
 	applied map[string]bool
 	events  []string
 	execs   []string
+	args    [][]any
 	records []string
 }
 
@@ -195,10 +199,11 @@ func newFakeLedgerDB() *fakeLedgerDB {
 	return &fakeLedgerDB{applied: make(map[string]bool)}
 }
 
-func (db *fakeLedgerDB) Exec(_ context.Context, query string) error {
+func (db *fakeLedgerDB) Exec(_ context.Context, query string, args ...any) error {
 	db.execs = append(db.execs, query)
+	db.args = append(db.args, slices.Clone(args))
 	if strings.HasPrefix(query, "INSERT INTO ") {
-		name := extractLedgerValue(query)
+		name, _ := args[0].(string)
 		if db.applied[name] {
 			return nil
 		}
@@ -227,17 +232,4 @@ func (r fakeLedgerRow) Scan(dest ...any) error {
 	target, _ := dest[0].(*bool)
 	*target = r.applied
 	return nil
-}
-
-func extractLedgerValue(query string) string {
-	start := strings.Index(query, "VALUES ('")
-	if start < 0 {
-		return ""
-	}
-	start += len("VALUES ('")
-	end := strings.Index(query[start:], "')")
-	if end < 0 {
-		return ""
-	}
-	return strings.ReplaceAll(query[start:start+end], "''", "'")
 }
