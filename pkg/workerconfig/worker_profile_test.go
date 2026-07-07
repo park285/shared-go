@@ -156,7 +156,7 @@ func TestDecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics(t *testing.T) {
 	}
 }
 
-func TestDecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnosticsFallsBackToLegacyWhenDisabled(t *testing.T) {
+func TestDecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnosticsRejectsDisabledProfile(t *testing.T) {
 	profile, err := DecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics(strings.NewReader(`{
 		"state": "running",
 		"workers": {
@@ -170,8 +170,8 @@ func TestDecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnosticsFallsBackToLegac
 	if !errors.Is(err, ErrWorkerProfileDisabled) {
 		t.Fatalf("DecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics() error = %v, want ErrWorkerProfileDisabled", err)
 	}
-	if profile.ProfileID != "legacy-hardcoded" {
-		t.Fatalf("ProfileID = %q, want legacy-hardcoded", profile.ProfileID)
+	if profile != (IrisBotWebhookWorkerProfile{}) {
+		t.Fatalf("profile = %+v, want zero value when runtime profile is disabled", profile)
 	}
 }
 

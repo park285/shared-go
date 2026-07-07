@@ -180,10 +180,8 @@ func defaultIrisBotWebhookWorkerProfile() IrisBotWebhookWorkerProfile {
 	}
 }
 
-func LegacyIrisBotWebhookWorkerProfile() IrisBotWebhookWorkerProfile {
-	profile := defaultIrisBotWebhookWorkerProfile()
-	profile.ProfileID = "legacy-hardcoded"
-	return profile
+func DefaultIrisBotWebhookWorkerProfile() IrisBotWebhookWorkerProfile {
+	return defaultIrisBotWebhookWorkerProfile()
 }
 
 func DecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics(reader io.Reader) (IrisBotWebhookWorkerProfile, error) {
@@ -205,7 +203,7 @@ func DecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics(reader io.Reader) (
 		return IrisBotWebhookWorkerProfile{}, errors.New("diagnostics workers.webhook.webhookPipeline.profileEnabled is missing")
 	}
 	if !*diagnostics.Workers.Webhook.WebhookPipeline.ProfileEnabled {
-		return LegacyIrisBotWebhookWorkerProfile(), ErrWorkerProfileDisabled
+		return IrisBotWebhookWorkerProfile{}, ErrWorkerProfileDisabled
 	}
 	if diagnostics.Workers.Webhook.WebhookPipeline.WorkerProfile == nil {
 		return IrisBotWebhookWorkerProfile{}, errors.New("diagnostics workers.webhook.webhookPipeline.workerProfile is missing")
