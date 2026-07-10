@@ -1,16 +1,33 @@
 package openaipreset_test
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/openai/openai-go/v3/responses"
 	sharedllm "github.com/park285/shared-go/pkg/llm"
 	"github.com/park285/shared-go/pkg/llm/openaipreset"
 )
+
+type contextBlockingTransport struct {
+	started chan struct{}
+	once    sync.Once
+}
+
+func (t *contextBlockingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	t.once.Do(func() { close(t.started) })
+	<-req.Context().Done()
+	return nil, req.Context().Err()
+}
 
 func TestCompleteResponsesRequest(t *testing.T) {
 	t.Parallel()
@@ -90,6 +107,8 @@ func TestCompleteResponsesRequest(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			var payload map[string]any
+			reporter := &recordingReporter{}
+			var logs bytes.Buffer
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != "/responses" {
 					t.Fatalf("path = %s, want /responses", r.URL.Path)
@@ -104,7 +123,10 @@ func TestCompleteResponsesRequest(t *testing.T) {
 			}))
 			defer server.Close()
 
-			client, err := openaipreset.New(server.URL, "test-key", "gpt-test")
+			client, err := openaipreset.New(server.URL, "test-key", "gpt-test",
+				openaipreset.WithUsageReporter(reporter),
+				openaipreset.WithLogger(slog.New(slog.NewJSONHandler(&logs, nil))),
+			)
 			if err != nil {
 				t.Fatalf("New error = %v", err)
 			}
@@ -122,7 +144,136 @@ func TestCompleteResponsesRequest(t *testing.T) {
 			if got.Usage != (sharedllm.Usage{InputTokens: 12, OutputTokens: 5, TotalTokens: 17, CachedInputTokens: 2, ReasoningOutputTokens: 1}) {
 				t.Fatalf("Usage = %+v", got.Usage)
 			}
+			if !reporter.called || reporter.provider != "openai" || reporter.model != "gpt-returned" || reporter.usage != got.Usage {
+				t.Fatalf("reporter = %+v, want successful completion usage", reporter)
+			}
+			for _, event := range []string{"llm.request.started", "llm.request.succeeded"} {
+				if !strings.Contains(logs.String(), event) {
+					t.Fatalf("logs missing %q: %s", event, logs.String())
+				}
+			}
 			tc.check(t, payload)
+		})
+	}
+}
+
+func TestCompleteRejectsRefusalAndEmptyToolEnvelope(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		body    string
+		wantErr error
+	}{
+		{
+			name:    "refusal",
+			body:    `{"id":"resp-refusal","object":"response","created_at":1,"status":"completed","model":"gpt-test","output":[{"id":"msg-1","type":"message","status":"completed","role":"assistant","content":[{"type":"refusal","refusal":"private policy refusal"}]}]}`,
+			wantErr: sharedllm.ErrOpenAIRefusalOutput,
+		},
+		{
+			name:    "tool envelope",
+			body:    `{"id":"resp-tool","object":"response","created_at":1,"status":"completed","model":"gpt-test","output":[{"id":"msg-1","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"{\"tool_calls\":[]}","annotations":[]}]}]}`,
+			wantErr: sharedllm.ErrOpenAIEmptyOutput,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			reporter := &recordingReporter{}
+			var logs bytes.Buffer
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				writeJSON(t, w, tt.body)
+			}))
+			defer server.Close()
+
+			client, err := openaipreset.New(server.URL, "test-key", "gpt-test",
+				openaipreset.WithUsageReporter(reporter),
+				openaipreset.WithLogger(slog.New(slog.NewJSONHandler(&logs, nil))),
+			)
+			if err != nil {
+				t.Fatalf("New error = %v", err)
+			}
+
+			_, err = client.Complete(t.Context(), openaipreset.CompletionRequest{
+				Messages: []openaipreset.Message{{Role: "user", Content: "hello"}},
+			})
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("Complete error = %v, want %v", err, tt.wantErr)
+			}
+			if reporter.called {
+				t.Fatalf("usage recorded after failed completion: %+v", reporter)
+			}
+			if !strings.Contains(logs.String(), "llm.request.failed") {
+				t.Fatalf("logs missing failed event: %s", logs.String())
+			}
+			if strings.Contains(err.Error(), "private policy refusal") {
+				t.Fatalf("error leaked refusal text: %v", err)
+			}
+		})
+	}
+}
+
+func TestCompletePreservesInFlightContextErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		newCtx  func() (context.Context, context.CancelFunc)
+		trigger func(context.CancelFunc, <-chan struct{})
+		wantErr error
+	}{
+		{
+			name: "canceled",
+			newCtx: func() (context.Context, context.CancelFunc) {
+				return context.WithCancel(t.Context())
+			},
+			trigger: func(cancel context.CancelFunc, started <-chan struct{}) {
+				<-started
+				cancel()
+			},
+			wantErr: context.Canceled,
+		},
+		{
+			name: "deadline exceeded",
+			newCtx: func() (context.Context, context.CancelFunc) {
+				return context.WithTimeout(t.Context(), 100*time.Millisecond)
+			},
+			trigger: func(_ context.CancelFunc, started <-chan struct{}) {
+				<-started
+			},
+			wantErr: context.DeadlineExceeded,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			transport := &contextBlockingTransport{started: make(chan struct{})}
+			client, err := openaipreset.New("https://openai.invalid", "test-key", "gpt-test",
+				openaipreset.WithHTTPClient(&http.Client{Transport: transport}),
+			)
+			if err != nil {
+				t.Fatalf("New error = %v", err)
+			}
+
+			ctx, cancel := tt.newCtx()
+			defer cancel()
+			triggered := make(chan struct{})
+			go func() {
+				tt.trigger(cancel, transport.started)
+				close(triggered)
+			}()
+
+			_, err = client.Complete(ctx, openaipreset.CompletionRequest{
+				Messages: []openaipreset.Message{{Role: "user", Content: "hello"}},
+			})
+			<-triggered
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("Complete error = %v, want errors.Is(%v)", err, tt.wantErr)
+			}
 		})
 	}
 }

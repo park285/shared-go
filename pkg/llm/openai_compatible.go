@@ -15,11 +15,12 @@ import (
 
 	sharedjson "github.com/park285/shared-go/pkg/json"
 	"github.com/park285/shared-go/pkg/jsonutil"
+	"github.com/park285/shared-go/pkg/llm/internal/openaidiag"
 )
 
 var (
-	ErrOpenAIEmptyOutput   = errors.New("llm: openai empty output")
-	ErrOpenAIRefusalOutput = errors.New("llm: openai refusal output")
+	ErrOpenAIEmptyOutput   = openaidiag.ErrEmptyOutput
+	ErrOpenAIRefusalOutput = openaidiag.ErrRefusalOutput
 )
 
 type OpenAICompatibleConfig struct {

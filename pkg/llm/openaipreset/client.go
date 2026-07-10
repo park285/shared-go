@@ -144,34 +144,39 @@ func (c *Client) RunInto(ctx context.Context, task, prompt string, schema map[st
 }
 
 func (c *Client) generate(ctx context.Context, taskName, systemPrompt, userPrompt string, schema map[string]any) (sharedllm.JSONResponse, error) {
-	attrs := promptSummaryAttrs(c.model, systemPrompt, userPrompt)
-	logging.Info(ctx, c.logger, "llm.request.started", "llm request started", attrs...)
+	attrs := promptSummaryAttrs(c.model, strings.TrimSpace(systemPrompt+"\n"+userPrompt))
+	return runRequest(ctx, c.logger, attrs, func() (sharedllm.JSONResponse, error) {
+		return sharedllm.RunJSON(ctx, c.generator, sharedllm.JSONRequest{
+			TaskName:        taskName,
+			SystemPrompt:    systemPrompt,
+			UserPrompt:      userPrompt,
+			SchemaName:      taskName,
+			Schema:          schema,
+			Model:           c.model,
+			Temperature:     c.temperature,
+			ReasoningEffort: c.reasoningEffort,
+			WebSearch:       c.webSearch,
+			ChatCompletions: c.chatCompletions,
+		}, providerLabel, c.usageReporter)
+	})
+}
+
+func runRequest[T any](ctx context.Context, logger *slog.Logger, attrs []slog.Attr, run func() (T, error)) (T, error) {
+	logging.Info(ctx, logger, "llm.request.started", "llm request started", attrs...)
 	started := time.Now()
-
-	resp, err := sharedllm.RunJSON(ctx, c.generator, sharedllm.JSONRequest{
-		TaskName:        taskName,
-		SystemPrompt:    systemPrompt,
-		UserPrompt:      userPrompt,
-		SchemaName:      taskName,
-		Schema:          schema,
-		Model:           c.model,
-		Temperature:     c.temperature,
-		ReasoningEffort: c.reasoningEffort,
-		WebSearch:       c.webSearch,
-		ChatCompletions: c.chatCompletions,
-	}, providerLabel, c.usageReporter)
-
+	resp, err := run()
 	elapsed := logging.SinceMS(started)
 	if err != nil {
-		logging.Error(ctx, c.logger, "llm.request.failed", "llm request failed", append(attrs, elapsed)...)
-		return sharedllm.JSONResponse{}, err
+		logging.Error(ctx, logger, "llm.request.failed", "llm request failed", append(attrs, elapsed)...)
+		var zero T
+		return zero, err
 	}
-	logging.Info(ctx, c.logger, "llm.request.succeeded", "llm request succeeded", append(attrs, elapsed)...)
+	logging.Info(ctx, logger, "llm.request.succeeded", "llm request succeeded", append(attrs, elapsed)...)
 	return resp, nil
 }
 
-func promptSummaryAttrs(model, systemPrompt, userPrompt string) []slog.Attr {
-	prompt := strings.TrimSpace(systemPrompt + "\n" + userPrompt)
+func promptSummaryAttrs(model, prompt string) []slog.Attr {
+	prompt = strings.TrimSpace(prompt)
 	attrs := []slog.Attr{
 		slog.String("provider", providerLabel),
 		slog.String("model", model),

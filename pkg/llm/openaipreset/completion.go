@@ -10,6 +10,7 @@ import (
 	"github.com/openai/openai-go/v3/shared"
 
 	sharedllm "github.com/park285/shared-go/pkg/llm"
+	"github.com/park285/shared-go/pkg/llm/internal/openaidiag"
 )
 
 type Message struct {
@@ -51,12 +52,36 @@ func (c *Client) Complete(ctx context.Context, req CompletionRequest) (Completio
 	}
 
 	params, requestedModel := c.completionParams(req)
-	resp, err := c.openai.Responses.New(ctx, params)
-	if err != nil {
-		return CompletionResponse{}, fmt.Errorf("openai responses API: %w", err)
-	}
+	attrs := promptSummaryAttrs(requestedModel, completionPrompt(req.Messages))
+	return runRequest(ctx, c.logger, attrs, func() (CompletionResponse, error) {
+		resp, err := c.openai.Responses.New(ctx, params)
+		if err != nil {
+			return CompletionResponse{}, fmt.Errorf("openai responses API: %w", openaidiag.SafeError(err))
+		}
 
-	return CompletionFromResponse(resp, requestedModel), nil
+		completion := CompletionFromResponse(resp, requestedModel)
+		completion.Text, err = openaidiag.PreferredText(resp, completion.Text)
+		if err != nil {
+			return CompletionResponse{}, err
+		}
+		c.usageReporter.RecordUsage(ctx, providerLabel, completion.Model, completion.Usage)
+		return completion, nil
+	})
+}
+
+func completionPrompt(messages []Message) string {
+	var prompt strings.Builder
+	for i := range messages {
+		content := strings.TrimSpace(messages[i].Content)
+		if content == "" {
+			continue
+		}
+		if prompt.Len() > 0 {
+			prompt.WriteByte('\n')
+		}
+		prompt.WriteString(content)
+	}
+	return prompt.String()
 }
 
 func (c *Client) completionParams(req CompletionRequest) (responses.ResponseNewParams, string) {
