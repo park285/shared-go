@@ -118,12 +118,29 @@ func DecodeJSONLimited(resp *http.Response, v any, maxBytes int64) error {
 	}
 	// maxBytes+1까지 읽어 본문이 상한을 실제로 넘었는지 판별한다.
 	counter := &countingReader{r: io.LimitReader(resp.Body, maxBytes+1)}
-	decodeErr := sharedjson.NewDecoder(counter).Decode(v)
+	decoder := sharedjson.NewDecoder(counter)
+	decodeErr := decoder.Decode(v)
 	if counter.n > maxBytes {
 		return ErrResponseBodyTooLarge
 	}
+	if decodeErr != nil {
+		//nolint:wrapcheck // 호출부에서 컨텍스트 추가
+		return decodeErr
+	}
+
+	var extra any
+	trailingErr := decoder.Decode(&extra)
+	if counter.n > maxBytes {
+		return ErrResponseBodyTooLarge
+	}
+	if trailingErr == nil {
+		return ErrMultipleJSONValues
+	}
+	if errors.Is(trailingErr, io.EOF) {
+		return nil
+	}
 	//nolint:wrapcheck // 호출부에서 컨텍스트 추가
-	return decodeErr
+	return trailingErr
 }
 
 type countingReader struct {

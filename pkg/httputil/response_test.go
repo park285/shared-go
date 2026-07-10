@@ -177,6 +177,26 @@ func (t *trackCloseReadCloser) Close() error {
 	return nil
 }
 
+type byteByByteReadCloser struct {
+	reader    *strings.Reader
+	readBytes int
+	closed    bool
+}
+
+func (r *byteByByteReadCloser) Read(p []byte) (int, error) {
+	if len(p) > 1 {
+		p = p[:1]
+	}
+	n, err := r.reader.Read(p)
+	r.readBytes += n
+	return n, err
+}
+
+func (r *byteByByteReadCloser) Close() error {
+	r.closed = true
+	return nil
+}
+
 func TestAPIError_UnwrapReturnsInnerError(t *testing.T) {
 	t.Parallel()
 
@@ -266,6 +286,65 @@ func TestDecodeJSONLimited_AtLimitDecodes(t *testing.T) {
 	}
 	if out.Name != "test" {
 		t.Fatalf("DecodeJSONLimited() name = %q, want test", out.Name)
+	}
+	if !rc.closed {
+		t.Fatal("DecodeJSONLimited() expected body close")
+	}
+}
+
+func TestDecodeJSONLimited_TrailingWhitespaceWithinLimitDecodes(t *testing.T) {
+	t.Parallel()
+
+	payload := "{\"name\":\"test\"}\n\t "
+	rc := &trackCloseReadCloser{Reader: strings.NewReader(payload)}
+	resp := &http.Response{Body: rc}
+
+	var out struct {
+		Name string `json:"name"`
+	}
+	if err := DecodeJSONLimited(resp, &out, int64(len(payload))); err != nil {
+		t.Fatalf("DecodeJSONLimited() error = %v", err)
+	}
+	if out.Name != "test" {
+		t.Fatalf("DecodeJSONLimited() name = %q, want test", out.Name)
+	}
+	if !rc.closed {
+		t.Fatal("DecodeJSONLimited() expected body close")
+	}
+}
+
+func TestDecodeJSONLimited_RejectsMultipleJSONValues(t *testing.T) {
+	t.Parallel()
+
+	payload := `{"name":"first"}{"name":"second"}`
+	resp := &http.Response{Body: io.NopCloser(strings.NewReader(payload))}
+
+	var out struct {
+		Name string `json:"name"`
+	}
+	err := DecodeJSONLimited(resp, &out, int64(len(payload)))
+	if !errors.Is(err, ErrMultipleJSONValues) {
+		t.Fatalf("DecodeJSONLimited() error = %v, want ErrMultipleJSONValues", err)
+	}
+}
+
+func TestDecodeJSONLimited_RejectsTrailingWhitespaceOverLimit(t *testing.T) {
+	t.Parallel()
+
+	jsonValue := `{"name":"test"}`
+	payload := jsonValue + strings.Repeat(" ", 32)
+	rc := &byteByByteReadCloser{reader: strings.NewReader(payload)}
+	resp := &http.Response{Body: rc}
+
+	var out struct {
+		Name string `json:"name"`
+	}
+	err := DecodeJSONLimited(resp, &out, int64(len(jsonValue)))
+	if !errors.Is(err, ErrResponseBodyTooLarge) {
+		t.Fatalf("DecodeJSONLimited() error = %v, want ErrResponseBodyTooLarge", err)
+	}
+	if rc.readBytes != len(jsonValue)+1 {
+		t.Fatalf("DecodeJSONLimited() read bytes = %d, want %d", rc.readBytes, len(jsonValue)+1)
 	}
 	if !rc.closed {
 		t.Fatal("DecodeJSONLimited() expected body close")

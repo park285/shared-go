@@ -21,8 +21,8 @@ var (
 	ErrUnsupportedJSONContentType = errors.New("httputil: content type must be application/json")
 	// ErrRequestBodyTooLarge는 JSON 요청 본문이 허용 크기를 넘을 때의 오류다.
 	ErrRequestBodyTooLarge = errors.New("httputil: request body exceeds limit")
-	// ErrMultipleJSONValues는 JSON 요청 본문에 값이 둘 이상 있을 때의 오류다.
-	ErrMultipleJSONValues = errors.New("httputil: request body must contain a single JSON value")
+	// ErrMultipleJSONValues는 JSON 본문에 값이 둘 이상 있을 때의 오류다.
+	ErrMultipleJSONValues = errors.New("httputil: JSON body must contain a single JSON value")
 )
 
 // DecodeJSONRequestOptions는 JSON 요청 decode 동작을 조정한다.
