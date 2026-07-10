@@ -44,6 +44,13 @@ func ensureMissingLogFile(path string, statErr error) error {
 	if err != nil {
 		return fmt.Errorf("create log file failed: %w", err)
 	}
+	if err := file.Chmod(LogFilePerm); err != nil {
+		chmodErr := fmt.Errorf("chmod log file failed: %w", err)
+		if closeErr := file.Close(); closeErr != nil {
+			return errors.Join(chmodErr, fmt.Errorf("close log file failed: %w", closeErr))
+		}
+		return chmodErr
+	}
 	if err := file.Close(); err != nil {
 		return fmt.Errorf("close log file failed: %w", err)
 	}

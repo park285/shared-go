@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -128,6 +130,28 @@ func TestEnsureLogFilePerm_CreatesMissingFile(t *testing.T) {
 	}
 
 	assertPathExists(t, logPath)
+	assertPathPerm(t, logPath, LogFilePerm)
+}
+
+func TestEnsureLogFilePerm_CorrectsRestrictedUmask(t *testing.T) {
+	if os.Getenv("ARCHIVE_RESTRICTED_UMASK_HELPER") == "1" {
+		syscall.Umask(0o077)
+		logPath := "service.log"
+		if err := EnsureLogFilePerm(logPath); err != nil {
+			t.Fatalf("EnsureLogFilePerm() error = %v", err)
+		}
+		assertPathPerm(t, logPath, LogFilePerm)
+		return
+	}
+
+	workDir := t.TempDir()
+	logPath := filepath.Join(workDir, "service.log")
+	cmd := exec.Command(os.Args[0], "-test.run=^TestEnsureLogFilePerm_CorrectsRestrictedUmask$")
+	cmd.Dir = workDir
+	cmd.Env = append(os.Environ(), "ARCHIVE_RESTRICTED_UMASK_HELPER=1")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("restricted-umask helper failed: %v\n%s", err, output)
+	}
 	assertPathPerm(t, logPath, LogFilePerm)
 }
 
@@ -272,7 +296,7 @@ func TestCompressedLogArchiverTrigger_ConcurrentRunsAtMostOnce(t *testing.T) {
 	const triggers = 16
 	var wg sync.WaitGroup
 	wg.Add(triggers)
-	for i := 0; i < triggers; i++ {
+	for range triggers {
 		go func() {
 			defer wg.Done()
 			archiver.Trigger()
