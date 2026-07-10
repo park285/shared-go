@@ -29,6 +29,7 @@ type options struct {
 	only          map[string]bool
 	ledger        *Ledger
 	ledgerQuerier RowQuerier
+	session       *SessionConfig
 }
 
 // SQLExec는 database/sql 계열 handle을 Execer로 감싼다.
@@ -96,6 +97,9 @@ func Apply(ctx context.Context, fsys fs.FS, exec Execer, opts ...Option) error {
 	if err != nil {
 		return fmt.Errorf("dbmigrate: %w", err)
 	}
+	if err := cfg.configureSession(ctx, exec); err != nil {
+		return err
+	}
 	if err := cfg.prepareLedger(ctx, exec); err != nil {
 		return err
 	}
@@ -124,6 +128,13 @@ func applyOptions(opts []Option) options {
 		}
 	}
 	return cfg
+}
+
+func (o options) configureSession(ctx context.Context, exec Execer) error {
+	if o.session == nil {
+		return nil
+	}
+	return o.session.Configure(ctx, exec)
 }
 
 func (o options) prepareLedger(ctx context.Context, exec Execer) error {

@@ -27,6 +27,8 @@ var (
 	queryRecordLedgerTemplate  = mustQuery("queries/record_ledger.sql.tpl")
 	queryTryAdvisoryLock       = mustQuery("queries/try_advisory_lock.sql")
 	queryAdvisoryUnlock        = mustQuery("queries/advisory_unlock.sql")
+	querySetLockTimeout        = mustQuery("queries/set_lock_timeout.sql")
+	querySetStatementTimeout   = mustQuery("queries/set_statement_timeout.sql")
 )
 
 func queryEnsureLedger(table string) string {

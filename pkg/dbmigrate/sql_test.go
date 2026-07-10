@@ -14,6 +14,8 @@ func TestSQLAssetsAreLoaded(t *testing.T) {
 		queryRecordLedgerTemplate,
 		queryTryAdvisoryLock,
 		queryAdvisoryUnlock,
+		querySetLockTimeout,
+		querySetStatementTimeout,
 	}
 	for _, query := range queries {
 		if strings.TrimSpace(query) == "" {
