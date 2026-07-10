@@ -9,6 +9,7 @@ import (
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/openai/openai-go/v3/shared"
 
+	json "github.com/park285/shared-go/pkg/json"
 	sharedllm "github.com/park285/shared-go/pkg/llm"
 	"github.com/park285/shared-go/pkg/llm/internal/openaidiag"
 )
@@ -229,12 +230,22 @@ func messageContentText(content []responses.ResponseOutputMessageContentUnion) s
 
 func looksLikeToolCallEnvelope(text string) bool {
 	trimmed := strings.TrimSpace(text)
-	if trimmed == "" {
+	if trimmed == "" || trimmed[0] != '{' {
 		return false
 	}
-	return strings.HasPrefix(trimmed, `{"tool_calls":`) ||
-		strings.HasPrefix(trimmed, `{"function_call":`) ||
-		strings.HasPrefix(trimmed, `{"tool_call":`)
+
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(trimmed), &envelope); err != nil {
+		return false
+	}
+
+	for _, key := range []string{"tool_calls", "function_call", "tool_call"} {
+		if _, ok := envelope[key]; ok {
+			return true
+		}
+	}
+
+	return false
 }
 
 func UsageFromResponseUsage(usage *responses.ResponseUsage) sharedllm.Usage {

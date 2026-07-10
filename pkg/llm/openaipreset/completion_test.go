@@ -296,6 +296,11 @@ func TestCompletionFromResponseTextSelection(t *testing.T) {
 			raw:  `{"id":"resp-1","object":"response","created_at":1,"status":"completed","model":"gpt-test","output":[{"id":"msg-0","type":"message","status":"completed","phase":"commentary","role":"assistant","content":[{"type":"output_text","text":"{\"function_call\":{}}","annotations":[]}]}]}`,
 			want: "",
 		},
+		{
+			name: "skips formatted tool envelope with reordered key",
+			raw:  `{"id":"resp-1","object":"response","created_at":1,"status":"completed","model":"gpt-test","output":[{"id":"msg-0","type":"message","status":"completed","phase":"commentary","role":"assistant","content":[{"type":"output_text","text":"{\n  \"metadata\": {},\n  \"tool_calls\": []\n}","annotations":[]}]}]}`,
+			want: "",
+		},
 	}
 
 	for _, tc := range cases {
