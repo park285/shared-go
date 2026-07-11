@@ -14,10 +14,7 @@ import (
 	"github.com/park285/shared-go/pkg/llm/internal/openaidiag"
 )
 
-type Message struct {
-	Role    string
-	Content string
-}
+type Message = sharedllm.Message
 
 type ResponseFormat struct {
 	Name   string
@@ -26,13 +23,14 @@ type ResponseFormat struct {
 }
 
 type CompletionRequest struct {
-	Messages        []Message
-	Model           string
-	Temperature     *float64
-	ReasoningEffort string
-	WebSearch       bool
-	CacheKey        string
-	ResponseFormat  *ResponseFormat
+	Messages           []Message
+	Model              string
+	Temperature        *float64
+	ReasoningEffort    string
+	WebSearch          bool
+	CacheKey           string
+	ResponseFormat     *ResponseFormat
+	InstructionProfile *sharedllm.InstructionProfile
 }
 
 type CompletionResponse struct {
@@ -52,7 +50,10 @@ func (c *Client) Complete(ctx context.Context, req CompletionRequest) (Completio
 		return CompletionResponse{}, err
 	}
 
-	params, requestedModel := c.completionParams(req)
+	params, requestedModel, err := c.completionParams(req)
+	if err != nil {
+		return CompletionResponse{}, err
+	}
 	attrs := promptSummaryAttrs(requestedModel, completionPrompt(req.Messages))
 	return runRequest(ctx, c.logger, attrs, func() (CompletionResponse, error) {
 		resp, err := c.openai.Responses.New(ctx, params)
@@ -85,17 +86,25 @@ func completionPrompt(messages []Message) string {
 	return prompt.String()
 }
 
-func (c *Client) completionParams(req CompletionRequest) (responses.ResponseNewParams, string) {
+func (c *Client) completionParams(req CompletionRequest) (responses.ResponseNewParams, string, error) {
 	model := c.completionModel(req.Model)
 	temperature := c.temperature
 	if req.Temperature != nil {
 		temperature = req.Temperature
 	}
+	messages := req.Messages
+	if req.InstructionProfile != nil {
+		adapted, err := sharedllm.AdaptInstructionMessages(messages, *req.InstructionProfile)
+		if err != nil {
+			return responses.ResponseNewParams{}, model, err
+		}
+		messages = adapted
+	}
 
 	params := responses.ResponseNewParams{
 		Model: model,
 		Input: responses.ResponseNewParamsInputUnion{
-			OfInputItemList: completionInput(req.Messages),
+			OfInputItemList: completionInput(messages),
 		},
 	}
 	if temperature != nil {
@@ -123,7 +132,7 @@ func (c *Client) completionParams(req CompletionRequest) (responses.ResponseNewP
 		params.PromptCacheKey = openai.String(cacheKey)
 	}
 
-	return params, model
+	return params, model, nil
 }
 
 func (c *Client) completionModel(model string) string {
@@ -154,6 +163,8 @@ func completionInput(messages []Message) responses.ResponseInputParam {
 
 func completionRole(role string) responses.EasyInputMessageRole {
 	switch strings.ToLower(strings.TrimSpace(role)) {
+	case "developer":
+		return responses.EasyInputMessageRoleDeveloper
 	case "assistant":
 		return responses.EasyInputMessageRoleAssistant
 	case "system":

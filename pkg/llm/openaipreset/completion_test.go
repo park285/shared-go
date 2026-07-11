@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -23,6 +24,16 @@ type contextBlockingTransport struct {
 	once    sync.Once
 }
 
+func TestMessageAlias(t *testing.T) {
+	t.Parallel()
+
+	shared := sharedllm.Message{Role: "user", Content: "hello"}
+	var preset openaipreset.Message = shared
+	if preset != shared {
+		t.Fatalf("openaipreset.Message = %#v, want %#v", preset, shared)
+	}
+}
+
 func (t *contextBlockingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	t.once.Do(func() { close(t.started) })
 	<-req.Context().Done()
@@ -33,6 +44,9 @@ func TestCompleteResponsesRequest(t *testing.T) {
 	t.Parallel()
 
 	temp := 1.0
+	openAIProfile := sharedllm.InstructionProfileOpenAI
+	singleDeveloperProfile := sharedllm.InstructionProfileSingleDeveloper
+	singleSystemProfile := sharedllm.InstructionProfileSingleSystem
 	cases := []struct {
 		name  string
 		req   openaipreset.CompletionRequest
@@ -98,7 +112,102 @@ func TestCompleteResponsesRequest(t *testing.T) {
 				assertJSONContains(t, payload["reasoning"], "high")
 				assertCompletionSchema(t, payload["text"])
 				input := payload["input"].([]any)
-				assertMessagePayload(t, input[0], "user", "stay terse")
+				assertMessagePayload(t, input[0], "developer", "stay terse")
+			},
+		},
+		{
+			name: "role mapping",
+			req: openaipreset.CompletionRequest{
+				Messages: []openaipreset.Message{
+					{Role: "developer", Content: "developer content"},
+					{Role: "system", Content: "system content"},
+					{Role: "user", Content: "user content"},
+					{Role: "assistant", Content: "assistant content"},
+					{Role: "unknown", Content: "unknown content"},
+					{Content: "empty role content"},
+				},
+			},
+			check: func(t *testing.T, payload map[string]any) {
+				t.Helper()
+				input := payload["input"].([]any)
+				want := []struct {
+					role    string
+					content string
+				}{
+					{role: "developer", content: "developer content"},
+					{role: "system", content: "system content"},
+					{role: "user", content: "user content"},
+					{role: "assistant", content: "assistant content"},
+					{role: "user", content: "unknown content"},
+					{role: "user", content: "empty role content"},
+				}
+				if len(input) != len(want) {
+					t.Fatalf("input len = %d, want %d", len(input), len(want))
+				}
+				for i := range want {
+					assertMessagePayload(t, input[i], want[i].role, want[i].content)
+				}
+			},
+		},
+		{
+			name: "openai instruction profile",
+			req: openaipreset.CompletionRequest{
+				Messages: []openaipreset.Message{
+					{Role: "system", Content: "invariant"},
+					{Role: "developer", Content: "developer"},
+					{Role: "user", Content: "question"},
+				},
+				InstructionProfile: &openAIProfile,
+			},
+			check: func(t *testing.T, payload map[string]any) {
+				t.Helper()
+				input := payload["input"].([]any)
+				if len(input) != 3 {
+					t.Fatalf("input len = %d, want 3", len(input))
+				}
+				assertMessagePayload(t, input[0], "developer", "[APPLICATION INVARIANTS]\ninvariant")
+				assertMessagePayload(t, input[1], "developer", "[DEVELOPER INSTRUCTIONS]\ndeveloper")
+				assertMessagePayload(t, input[2], "user", "question")
+			},
+		},
+		{
+			name: "single developer instruction profile",
+			req: openaipreset.CompletionRequest{
+				Messages: []openaipreset.Message{
+					{Role: "system", Content: "invariant"},
+					{Role: "developer", Content: "developer"},
+					{Role: "user", Content: "question"},
+				},
+				InstructionProfile: &singleDeveloperProfile,
+			},
+			check: func(t *testing.T, payload map[string]any) {
+				t.Helper()
+				input := payload["input"].([]any)
+				if len(input) != 2 {
+					t.Fatalf("input len = %d, want 2", len(input))
+				}
+				assertMessagePayload(t, input[0], "developer", "[APPLICATION INVARIANTS]\ninvariant\n\n[DEVELOPER INSTRUCTIONS]\ndeveloper")
+				assertMessagePayload(t, input[1], "user", "question")
+			},
+		},
+		{
+			name: "single system instruction profile",
+			req: openaipreset.CompletionRequest{
+				Messages: []openaipreset.Message{
+					{Role: "system", Content: "invariant"},
+					{Role: "developer", Content: "developer"},
+					{Role: "user", Content: "question"},
+				},
+				InstructionProfile: &singleSystemProfile,
+			},
+			check: func(t *testing.T, payload map[string]any) {
+				t.Helper()
+				input := payload["input"].([]any)
+				if len(input) != 2 {
+					t.Fatalf("input len = %d, want 2", len(input))
+				}
+				assertMessagePayload(t, input[0], "system", "[APPLICATION INVARIANTS]\ninvariant\n\n[DEVELOPER INSTRUCTIONS]\ndeveloper")
+				assertMessagePayload(t, input[1], "user", "question")
 			},
 		},
 	}
@@ -154,6 +263,61 @@ func TestCompleteResponsesRequest(t *testing.T) {
 			}
 			tc.check(t, payload)
 		})
+	}
+}
+
+func TestCompleteRejectsInvalidInstructionAdaptationBeforeNetwork(t *testing.T) {
+	t.Parallel()
+
+	var requestCount atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requestCount.Add(1)
+		writeJSON(t, w, responsesBody)
+	}))
+	defer server.Close()
+
+	client, err := openaipreset.New(server.URL, "test-key", "gpt-test")
+	if err != nil {
+		t.Fatalf("New error = %v", err)
+	}
+	openAIProfile := sharedllm.InstructionProfileOpenAI
+	invalidProfile := sharedllm.InstructionProfile(255)
+	tests := []struct {
+		name    string
+		req     openaipreset.CompletionRequest
+		wantErr error
+	}{
+		{
+			name: "invalid sequence",
+			req: openaipreset.CompletionRequest{
+				Messages: []openaipreset.Message{
+					{Role: "user", Content: "question"},
+					{Role: "developer", Content: "late instruction"},
+				},
+				InstructionProfile: &openAIProfile,
+			},
+			wantErr: sharedllm.ErrInvalidInstructionSequence,
+		},
+		{
+			name: "invalid profile",
+			req: openaipreset.CompletionRequest{
+				Messages:           []openaipreset.Message{{Role: "user", Content: "question"}},
+				InstructionProfile: &invalidProfile,
+			},
+			wantErr: sharedllm.ErrInvalidInstructionProfile,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := client.Complete(t.Context(), tt.req)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("Complete error = %v, want errors.Is(%v)", err, tt.wantErr)
+			}
+		})
+	}
+	if got := requestCount.Load(); got != 0 {
+		t.Fatalf("network request count = %d, want 0", got)
 	}
 }
 

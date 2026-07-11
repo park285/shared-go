@@ -113,11 +113,7 @@ func sanitizeResponsesSchemaName(name string) string {
 
 func (g *OpenAICompatibleJSONGenerator) generateResponsesJSON(ctx context.Context, req JSONRequest) (JSONResponse, error) {
 	params := responses.ResponseNewParams{
-		Model:        req.Model,
-		Instructions: openai.String(req.SystemPrompt),
-		Input: responses.ResponseNewParamsInputUnion{
-			OfString: openai.String(req.UserPrompt),
-		},
+		Model: req.Model,
 		Text: responses.ResponseTextConfigParam{
 			Format: responses.ResponseFormatTextConfigUnionParam{
 				OfJSONSchema: &responses.ResponseFormatTextJSONSchemaConfigParam{
@@ -127,6 +123,16 @@ func (g *OpenAICompatibleJSONGenerator) generateResponsesJSON(ctx context.Contex
 				},
 			},
 		},
+	}
+	if isLayeredJSONRequest(req) {
+		messages, err := AdaptInstructionMessages(layeredJSONMessages(req), InstructionProfileForModel(req.Model))
+		if err != nil {
+			return JSONResponse{}, err
+		}
+		params.Input.OfInputItemList = responsesInput(messages)
+	} else {
+		params.Instructions = openai.String(req.SystemPrompt)
+		params.Input.OfString = openai.String(req.UserPrompt)
 	}
 	if req.WebSearch {
 		params.Tools = []responses.ToolUnionParam{
@@ -157,7 +163,15 @@ func (g *OpenAICompatibleJSONGenerator) generateResponsesJSON(ctx context.Contex
 }
 
 func (g *OpenAICompatibleJSONGenerator) generateChatCompletionsJSON(ctx context.Context, req JSONRequest) (JSONResponse, error) {
-	systemPrompt, err := chatCompletionsSystemPrompt(req.SystemPrompt, req.Schema)
+	instructions := req.SystemPrompt
+	if isLayeredJSONRequest(req) {
+		messages, err := AdaptInstructionMessages(layeredJSONMessages(req), InstructionProfileSingleSystem)
+		if err != nil {
+			return JSONResponse{}, err
+		}
+		instructions = messages[0].Content
+	}
+	systemPrompt, err := chatCompletionsSystemPrompt(instructions, req.Schema)
 	if err != nil {
 		return JSONResponse{}, err
 	}
@@ -194,6 +208,42 @@ func (g *OpenAICompatibleJSONGenerator) generateChatCompletionsJSON(ctx context.
 		Model: strings.TrimSpace(completion.Model),
 		Usage: usageFromChatCompletion(completion),
 	}, nil
+}
+
+func isLayeredJSONRequest(req JSONRequest) bool {
+	return hasPromptLayer(req.InvariantPrompt) || hasPromptLayer(req.DeveloperPrompt)
+}
+
+func layeredJSONMessages(req JSONRequest) []Message {
+	messages := make([]Message, 0, 3)
+	if hasPromptLayer(req.InvariantPrompt) {
+		messages = append(messages, Message{Role: roleSystem, Content: req.InvariantPrompt})
+	}
+	if hasPromptLayer(req.DeveloperPrompt) {
+		messages = append(messages, Message{Role: roleDeveloper, Content: req.DeveloperPrompt})
+	}
+	return append(messages, Message{Role: roleUser, Content: req.UserPrompt})
+}
+
+func responsesInput(messages []Message) responses.ResponseInputParam {
+	input := make(responses.ResponseInputParam, 0, len(messages))
+	for _, message := range messages {
+		input = append(input, responses.ResponseInputItemParamOfMessage(message.Content, responsesRole(message.Role)))
+	}
+	return input
+}
+
+func responsesRole(role string) responses.EasyInputMessageRole {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case roleDeveloper:
+		return responses.EasyInputMessageRoleDeveloper
+	case roleSystem:
+		return responses.EasyInputMessageRoleSystem
+	case roleAssistant:
+		return responses.EasyInputMessageRoleAssistant
+	default:
+		return responses.EasyInputMessageRoleUser
+	}
 }
 
 func chatCompletionsSystemPrompt(systemPrompt string, schema map[string]any) (string, error) {

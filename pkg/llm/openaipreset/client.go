@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"reflect"
 	"strings"
 	"time"
 
@@ -39,6 +40,12 @@ type Client struct {
 	chatCompletions bool
 	usageReporter   sharedllm.UsageReporter
 	logger          *slog.Logger
+}
+
+type PromptLayers struct {
+	Invariant string
+	Developer string
+	User      string
 }
 
 func New(baseURL, apiKey, model string, opts ...Option) (*Client, error) {
@@ -119,11 +126,44 @@ func (c *Client) GenerateJSON(ctx context.Context, systemPrompt, userPrompt stri
 	if c == nil {
 		return "", errClientNil
 	}
-	resp, err := c.generate(ctx, c.schemaName, systemPrompt, userPrompt, schema)
+	resp, err := c.generate(ctx, c.schemaName, systemPrompt, "", "", userPrompt, schema)
 	if err != nil {
 		return "", err
 	}
 	return resp.Text, nil
+}
+
+func (c *Client) GenerateJSONInto(
+	ctx context.Context,
+	task string,
+	prompts PromptLayers,
+	schema map[string]any,
+	out any,
+) error {
+	if c == nil {
+		return errClientNil
+	}
+	if isNilOutputTarget(out) {
+		return errors.New("openaipreset: output target is nil")
+	}
+	resp, err := c.generate(ctx, task, "", prompts.Invariant, prompts.Developer, prompts.User, schema)
+	if err != nil {
+		return err
+	}
+	return decodeJSONInto(task, resp.Text, out)
+}
+
+func isNilOutputTarget(out any) bool {
+	if out == nil {
+		return true
+	}
+	value := reflect.ValueOf(out)
+	switch value.Kind() {
+	case reflect.Pointer, reflect.Map, reflect.Interface:
+		return value.IsNil()
+	default:
+		return false
+	}
 }
 
 func (c *Client) RunInto(ctx context.Context, task, prompt string, schema map[string]any, out any) error {
@@ -133,23 +173,39 @@ func (c *Client) RunInto(ctx context.Context, task, prompt string, schema map[st
 	if out == nil {
 		return errors.New("openaipreset: output target is nil")
 	}
-	resp, err := c.generate(ctx, task, "", prompt, schema)
+	resp, err := c.generate(ctx, task, "", "", "", prompt, schema)
 	if err != nil {
 		return err
 	}
-	if err := sharedjson.Unmarshal([]byte(resp.Text), out); err != nil {
-		return fmt.Errorf("decode %s json failed: %w; output=%s", strings.TrimSpace(task), err, sharedllm.RedactDiagnostic(resp.Text, 2048))
-	}
-	return nil
+	return decodeJSONInto(task, resp.Text, out)
 }
 
-func (c *Client) generate(ctx context.Context, taskName, systemPrompt, userPrompt string, schema map[string]any) (sharedllm.JSONResponse, error) {
-	attrs := promptSummaryAttrs(c.model, strings.TrimSpace(systemPrompt+"\n"+userPrompt))
+func (c *Client) generate(
+	ctx context.Context,
+	taskName, systemPrompt, invariantPrompt, developerPrompt, userPrompt string,
+	schema map[string]any,
+) (sharedllm.JSONResponse, error) {
+	prompt := systemPrompt + "\n" + userPrompt
+	hasInvariantPrompt := strings.TrimSpace(invariantPrompt) != ""
+	hasDeveloperPrompt := strings.TrimSpace(developerPrompt) != ""
+	if hasInvariantPrompt || hasDeveloperPrompt {
+		promptLayers := make([]string, 0, 3)
+		if hasInvariantPrompt {
+			promptLayers = append(promptLayers, invariantPrompt)
+		}
+		if hasDeveloperPrompt {
+			promptLayers = append(promptLayers, developerPrompt)
+		}
+		prompt = strings.Join(append(promptLayers, userPrompt), "\n")
+	}
+	attrs := promptSummaryAttrs(c.model, strings.TrimSpace(prompt))
 	return runRequest(ctx, c.logger, attrs, func() (sharedllm.JSONResponse, error) {
 		return sharedllm.RunJSON(ctx, c.generator, sharedllm.JSONRequest{
 			TaskName:        taskName,
 			SystemPrompt:    systemPrompt,
 			UserPrompt:      userPrompt,
+			InvariantPrompt: invariantPrompt,
+			DeveloperPrompt: developerPrompt,
 			SchemaName:      taskName,
 			Schema:          schema,
 			Model:           c.model,
@@ -159,6 +215,13 @@ func (c *Client) generate(ctx context.Context, taskName, systemPrompt, userPromp
 			ChatCompletions: c.chatCompletions,
 		}, providerLabel, c.usageReporter)
 	})
+}
+
+func decodeJSONInto(task, text string, out any) error {
+	if err := sharedjson.Unmarshal([]byte(text), out); err != nil {
+		return fmt.Errorf("decode %s json failed: %w; output=%s", strings.TrimSpace(task), err, sharedllm.RedactDiagnostic(text, 2048))
+	}
+	return nil
 }
 
 func runRequest[T any](ctx context.Context, logger *slog.Logger, attrs []slog.Attr, run func() (T, error)) (T, error) {
