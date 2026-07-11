@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -82,6 +83,75 @@ func TestOpenAICompatibleJSONGeneratorResponsesStructuredRequest(t *testing.T) {
 	assertJSONContains(t, payload["reasoning"], "medium")
 	assertJSONContains(t, payload["tools"], "web_search")
 	assertStructuredResponsesFormat(t, payload["text"], "summary")
+}
+
+func TestOpenAICompatibleJSONGeneratorRejectsMixedPromptStylesBeforeNetwork(t *testing.T) {
+	var requestCount atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requestCount.Add(1)
+		writeJSON(t, w, `{}`)
+	}))
+	defer server.Close()
+
+	generator, err := NewOpenAICompatibleJSONGenerator(OpenAICompatibleConfig{
+		BaseURL: server.URL,
+		APIKey:  "test-key",
+	})
+	if err != nil {
+		t.Fatalf("NewOpenAICompatibleJSONGenerator error = %v", err)
+	}
+
+	tests := []struct {
+		name            string
+		chatCompletions bool
+		setLayer        func(*JSONRequest)
+	}{
+		{
+			name: "responses invariant",
+			setLayer: func(req *JSONRequest) {
+				req.InvariantPrompt = "invariant"
+			},
+		},
+		{
+			name: "responses developer",
+			setLayer: func(req *JSONRequest) {
+				req.DeveloperPrompt = "developer"
+			},
+		},
+		{
+			name:            "chat completions invariant",
+			chatCompletions: true,
+			setLayer: func(req *JSONRequest) {
+				req.InvariantPrompt = "invariant"
+			},
+		},
+		{
+			name:            "chat completions developer",
+			chatCompletions: true,
+			setLayer: func(req *JSONRequest) {
+				req.DeveloperPrompt = "developer"
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := validJSONRequest()
+			req.ChatCompletions = tt.chatCompletions
+			tt.setLayer(&req)
+
+			_, err := generator.GenerateJSON(t.Context(), req)
+			if !errors.Is(err, ErrInvalidJSONRequest) {
+				t.Fatalf("GenerateJSON error = %v, want ErrInvalidJSONRequest", err)
+			}
+			if !strings.Contains(err.Error(), "system prompt") {
+				t.Fatalf("GenerateJSON error = %q, want mixed prompt validation detail", err)
+			}
+		})
+	}
+	if got := requestCount.Load(); got != 0 {
+		t.Fatalf("network request count = %d, want 0", got)
+	}
 }
 
 func TestOpenAICompatibleJSONGeneratorChatCompletionsStructuredOutput(t *testing.T) {

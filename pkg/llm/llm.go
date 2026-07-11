@@ -17,10 +17,17 @@ type JSONGenerator interface {
 	GenerateJSON(ctx context.Context, req JSONRequest) (JSONResponse, error)
 }
 
+type Message struct {
+	Role    string
+	Content string
+}
+
 type JSONRequest struct {
 	TaskName        string
 	SystemPrompt    string
 	UserPrompt      string
+	InvariantPrompt string
+	DeveloperPrompt string
 	SchemaName      string
 	Schema          map[string]any
 	Model           string
@@ -91,5 +98,13 @@ func ValidateJSONRequest(req JSONRequest) error {
 	if len(req.Schema) == 0 {
 		return fmt.Errorf("%w: schema is empty", ErrInvalidJSONRequest)
 	}
+	if hasPromptLayer(req.SystemPrompt) &&
+		(hasPromptLayer(req.InvariantPrompt) || hasPromptLayer(req.DeveloperPrompt)) {
+		return fmt.Errorf("%w: system prompt cannot be combined with invariant or developer prompt layers", ErrInvalidJSONRequest)
+	}
 	return nil
+}
+
+func hasPromptLayer(prompt string) bool {
+	return strings.TrimSpace(prompt) != ""
 }
