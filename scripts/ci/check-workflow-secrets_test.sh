@@ -89,10 +89,48 @@ expect_failure_app_profile() {
   pass "${label}"
 }
 
+expect_profile_failure() {
+  local label="$1"
+  local expected="$2"
+  local workdir="$3"
+  shift 3
+  local out_file="${TMP_DIR}/${label}.out"
+  local err_file="${TMP_DIR}/${label}.err"
+
+  if (cd "${workdir}" && "${CHECKER}" "$@") >"${out_file}" 2>"${err_file}"; then
+    cat "${out_file}" >&2
+    cat "${err_file}" >&2
+    record_fail "expected profile resolution failure: ${label}"
+    return
+  fi
+
+  if ! grep -Fq "${expected}" "${err_file}"; then
+    cat "${out_file}" >&2
+    cat "${err_file}" >&2
+    record_fail "expected ${expected} in profile failure output: ${label}"
+    return
+  fi
+
+  pass "${label}"
+}
+
 repo_fixture="${TMP_DIR}/repo-workflows"
 mkdir -p "${repo_fixture}/.github"
 cp -R "${ROOT_DIR}/.github/workflows" "${repo_fixture}/.github/workflows"
 expect_success "repository workflows pass policy" "${repo_fixture}/.github/workflows"/*.yml
+
+missing_profile_root="${TMP_DIR}/missing-profile-root"
+mkdir -p "${missing_profile_root}"
+expect_profile_failure "missing explicit profile fails closed" \
+  "explicit workflow gate profile is required" "${missing_profile_root}" \
+  "${repo_fixture}/.github/workflows"/*.yml
+
+invalid_profile_root="${TMP_DIR}/invalid-profile-root"
+mkdir -p "${invalid_profile_root}/scripts/ci"
+printf 'service\n' >"${invalid_profile_root}/scripts/ci/workflow-gate-profile"
+expect_profile_failure "invalid explicit profile fails closed" \
+  "expected exact app or lib declaration" "${invalid_profile_root}" \
+  "${repo_fixture}/.github/workflows"/*.yml
 
 disallowed_secret="${TMP_DIR}/disallowed-secret.yml"
 write_workflow "${disallowed_secret}" \
