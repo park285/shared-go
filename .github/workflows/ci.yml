@@ -17,7 +17,7 @@ concurrency:
 jobs:
   fast-gate:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -52,8 +52,11 @@ jobs:
       - name: go vet
         run: go vet ./...
 
-      - name: go test
-        run: go test -count=1 ./...
+      - name: golangci-lint
+        run: make lint
+
+      - name: go test race
+        run: go test -race -count=1 ./...
 
       - name: perf gate oracle
         run: bash scripts/perf/check-bench-regression_test.sh
