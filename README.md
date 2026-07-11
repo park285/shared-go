@@ -4,7 +4,7 @@ Iris Stack의 Go 프로젝트들(`hololive-bot`, `chat-bot-go-kakao`, `twentyq-b
 
 본 라이브러리는 `cmd/` 실행 진입점이 없는 순수 라이브러리(Library-only) 모듈로 설계되었으며, 이를 호출하는 서비스들을 위해 일관되고 안정적인 API 사양을 유지합니다.
 
-> **호환성 정책**: 이 모듈의 호환성 보장 대상은 iris-stack 내부 소비자(`hololive-bot`, `chat-bot-go-kakao`, `twentyq-bot`)로 한정됩니다. 외부 사용을 막지는 않지만 외부 importer에 대한 호환성은 보장하지 않으며, 스택 내 소비자가 0인 exported API는 major 승격 없이 minor 릴리스에서 제거될 수 있습니다.
+> **호환성 정책**: 이 모듈의 호환성 보장 대상은 iris-stack 내부 소비자(`hololive-bot`, `chat-bot-go-kakao`, `twentyq-bot`)로 한정됩니다. 외부 사용을 막지는 않지만 외부 importer 호환성은 보장하지 않으며, 스택 내 소비자가 0인 exported API는 major 승격 없이 minor 릴리스에서 제거될 수 있습니다.
 
 ## 설치 (Installation)
 
@@ -20,8 +20,8 @@ go get github.com/park285/shared-go@latest
 | `pkg/db/pgxdb` | `jackc/pgx/v5` pgxpool 기반 PostgreSQL 연결 풀 생성 도구 (sslmode 명시 강제, 인증 실패·context 취소 시 즉시 중단하는 `OpenPoolWithRetry`, compose 서비스명 `postgres` 한정 localhost DNS 폴백) |
 | `pkg/db/sqldb` | pgx 무의존 표준 `database/sql` `*sql.DB` 커넥션 풀 파라미터 적용 도구 |
 | `pkg/dbmigrate` | embed.FS의 `manifest.txt` 순서대로 SQL 마이그레이션 파일을 실행하는 공통 처리 모듈 (`database/sql` 또는 pgx 실행 함수 주입 방식) |
-| `pkg/envutil` | 환경 변수 로드 및 `*_FILE` 형태의 파일 경로를 통한 보안 토큰/시크릿 값 주입 도구 |
-| `pkg/ginjson` | Gin 웹 프레임워크를 위한 Sonic 라이브러리 기반 고성능 JSON 렌더링 및 바인딩 모듈 |
+| `pkg/envutil` | 환경 변수 로드 및 `*_FILE` 형태의 파일 경로로 보안 토큰/시크릿 값을 주입하는 도구 |
+| `pkg/ginjson` | Gin 웹 프레임워크용 Sonic 라이브러리 기반 고성능 JSON 렌더링 및 바인딩 모듈 |
 | `pkg/h3` | HTTP/3 전송 프로토콜 설정 도구 (자체 CA 번들 등록, TLS 상세 사양 정의) |
 | `pkg/healthprobe` | 서비스 헬스체크 및 프로브(Readiness / Liveness Probe) 도구 |
 | `pkg/httputil` | HTTP 클라이언트 커넥션 풀링 및 프로파일 구성 도구 |
@@ -44,7 +44,7 @@ go get github.com/park285/shared-go@latest
 
 ## 로컬 검증 (Verification)
 
-개발 시 로컬에서 아래 명령어를 수행하여 검증을 진행할 수 있습니다.
+개발 시 로컬에서 아래 명령어로 검증할 수 있습니다.
 
 ```bash
 make lint
@@ -53,3 +53,4 @@ go build ./...
 ```
 
 **CI 정책:** 본 리포지토리는 원격 깃허브 액션(GitHub Actions)이 실제 검증 주체입니다. `ci.yml`은 PR 및 `main` push마다 workflow secret 경계 검사, SQL ownership 검사, `gofmt`, `go vet`, `golangci-lint`, 경합 조건 검사를 포함한 테스트 슈트(`go test -race -count=1 ./...`), perf gate(벤치마크 회귀 검사)를 수행하며, `security.yml`은 `main` push·주간 스케줄·수동 dispatch 시 `govulncheck` 취약점 분석을 수행합니다.
+
