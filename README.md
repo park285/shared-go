@@ -17,6 +17,9 @@ go get github.com/park285/shared-go@latest
 | 패키지 경로 | 기능 및 역할 |
 |---|---|
 | `pkg/backoff` | 시도 횟수 및 상태를 기반으로 한 지수 백오프(Exponential Backoff) 계산 유틸리티 (대기 및 재시도 루프 제어는 호출부에서 직접 처리) |
+| `pkg/db/pgxdb` | `jackc/pgx/v5` pgxpool 기반 PostgreSQL 연결 풀 생성 도구 (sslmode 명시 강제, 인증 실패·context 취소 시 즉시 중단하는 `OpenPoolWithRetry`, compose 서비스명 `postgres` 한정 localhost DNS 폴백) |
+| `pkg/db/sqldb` | pgx 무의존 표준 `database/sql` `*sql.DB` 커넥션 풀 파라미터 적용 도구 |
+| `pkg/dbmigrate` | embed.FS의 `manifest.txt` 순서대로 SQL 마이그레이션 파일을 실행하는 공통 처리 모듈 (`database/sql` 또는 pgx 실행 함수 주입 방식) |
 | `pkg/envutil` | 환경 변수 로드 및 `*_FILE` 형태의 파일 경로를 통한 보안 토큰/시크릿 값 주입 도구 |
 | `pkg/ginjson` | Gin 웹 프레임워크를 위한 Sonic 라이브러리 기반 고성능 JSON 렌더링 및 바인딩 모듈 |
 | `pkg/h3` | HTTP/3 전송 프로토콜 설정 도구 (자체 CA 번들 등록, TLS 상세 사양 정의) |
@@ -26,9 +29,11 @@ go get github.com/park285/shared-go@latest
 | `pkg/jsonutil` | 텍스트 혹은 HTTP 응답 문자열로부터 유효한 JSON을 정규화하여 추출하는 헬퍼 유틸리티 |
 | `pkg/llm` | LLM provider 클라이언트 추상화 (`JSONGenerator` 인터페이스, OpenAI Responses 호환 JSON 생성, Codex CLI 실행/로그인, 응답 redaction) |
 | `pkg/logging` | Slog 기반의 구조화된 로깅 모듈 (비동기 처리, 민감한 키 정보 마스킹 및 실시간 로그 로테이션 지원) |
+| `pkg/netguard` | 외부 HTTP 대상 URL 및 dial 주소를 fail-closed로 검증하는 네트워크 가드 (private/loopback/link-local/ULA 대역 차단, `Policy.AllowedHosts` allowlist 지원) |
 | `pkg/obsmetrics` | `client_golang` 의존성 없이 Prometheus 평문 텍스트 exposition을 생성하는 메트릭 키트 (webhook/런타임 메트릭, prefix 네임스페이스 분리) |
 | `pkg/outputguard` | LLM 생성 출력 가드 (시스템 프롬프트·시크릿 누출 패턴 차단, confusable 문자 정규화) |
 | `pkg/promptguard` | 룰팩 기반 프롬프트 인젝션 방어 가드 (가중치 임계값 매칭, dampen/block 정책, base64/confusable 디코딩, 한/영 룰팩, TTL 캐시) |
+| `pkg/retry` | `pkg/backoff`의 지연 값 계산을 사용해 context 취소를 존중하며 sleep·재시도·중단을 수행하는 재시도 루프(`WithRetry`) 구현체 |
 | `pkg/runtime` | Go 런타임 최적화를 포함한 프로세스 부트스트랩 도구 (`automaxprocs`, 애플리케이션 라이프사이클 관리, HTTPServer) |
 | `pkg/stringutil` | 범용 문자열 처리 유틸리티 |
 | `pkg/telemetry` | OpenTelemetry 기반의 분산 트레이싱(Tracing) 정보 설정 및 컨텍스트 전파 유틸리티 |
@@ -47,4 +52,4 @@ go test ./...
 go build ./...
 ```
 
-**CI 정책:** 본 리포지토리의 원격 깃허브 액션(GitHub Actions)은 빠른 구문 검사(`ci.yml`) 및 보안 검사(`security.yml`)만을 수행합니다. 실제 테스트 슈트 실행 및 경합 조건(Race Condition) 검사, 전체 의존성 분석은 로컬 push 전 단계에서 완벽하게 완료하는 것을 원칙으로 합니다.
+**CI 정책:** 본 리포지토리는 원격 깃허브 액션(GitHub Actions)이 실제 검증 주체입니다. `ci.yml`은 PR 및 `main` push마다 workflow secret 경계 검사, SQL ownership 검사, `gofmt`, `go vet`, `golangci-lint`, 경합 조건 검사를 포함한 테스트 슈트(`go test -race -count=1 ./...`), perf gate(벤치마크 회귀 검사)를 수행하며, `security.yml`은 `main` push·주간 스케줄·수동 dispatch 시 `govulncheck` 취약점 분석을 수행합니다.
