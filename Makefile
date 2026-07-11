@@ -1,5 +1,7 @@
 GO ?= go
-GOLANGCI_LINT ?= golangci-lint
+GO_TOOLING ?= $(CURDIR)/scripts/ci/go-tooling.sh
+GOLANGCI_LINT ?= bash $(GO_TOOLING) golangci-lint
+GOVULNCHECK ?= bash $(GO_TOOLING) govulncheck
 GOLANGCI_CONFIG ?= .golangci.yml
 PERF_GATE_BASELINE ?= artifacts/perf/baseline/main
 PERF_GATE_CANDIDATE ?= artifacts/perf/pr
@@ -40,7 +42,7 @@ perf-gate: perf-gate-test
 
 .PHONY: vulncheck
 vulncheck:
-	govulncheck ./...
+	$(GOVULNCHECK) ./...
 
 .PHONY: build
 build: lint
