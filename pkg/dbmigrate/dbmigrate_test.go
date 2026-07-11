@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 )
 
 func TestManifest(t *testing.T) {
@@ -24,9 +25,9 @@ func TestManifest(t *testing.T) {
 		{
 			name: "ordered entries",
 			fsys: fstest.MapFS{
-				ManifestName: {Data: []byte("\n# comment\n001 first.sql\n002 second.sql extra\n")},
+				ManifestName: {Data: []byte("\n# comment\n001 first.sql\n002 second.sql\n")},
 			},
-			want: []string{"first.sql", "extra"},
+			want: []string{"first.sql", "second.sql"},
 		},
 		{
 			name:    "missing manifest",
@@ -34,11 +35,53 @@ func TestManifest(t *testing.T) {
 			wantErr: "open manifest",
 		},
 		{
-			name: "malformed line",
+			name: "too few fields",
 			fsys: fstest.MapFS{
 				ManifestName: {Data: []byte("001\n")},
 			},
-			wantErr: "malformed manifest line",
+			wantErr: `manifest line 1: malformed "001"`,
+		},
+		{
+			name: "trailing extra field rejected with line number",
+			fsys: fstest.MapFS{
+				ManifestName: {Data: []byte("# c\n001 first.sql\n002 second.sql extra\n")},
+			},
+			wantErr: `manifest line 3: malformed "002 second.sql extra"`,
+		},
+		{
+			name: "duplicate filename rejected counting comment and blank lines",
+			fsys: fstest.MapFS{
+				ManifestName: {Data: []byte("# h\n\n001 a.sql\n\n002 a.sql\n")},
+			},
+			wantErr: `manifest line 5: duplicate filename "a.sql" (first seen at line 3)`,
+		},
+		{
+			name: "duplicate order rejected",
+			fsys: fstest.MapFS{
+				ManifestName: {Data: []byte("001 a.sql\n001 b.sql\n")},
+			},
+			wantErr: `manifest line 2: duplicate order "001" (first seen at line 1)`,
+		},
+		{
+			name: "non decimal order rejected",
+			fsys: fstest.MapFS{
+				ManifestName: {Data: []byte("one first.sql\n")},
+			},
+			wantErr: `manifest line 1: order "one" must contain only decimal digits`,
+		},
+		{
+			name: "nested migration path rejected",
+			fsys: fstest.MapFS{
+				ManifestName: {Data: []byte("001 nested/first.sql\n")},
+			},
+			wantErr: `manifest line 1: migration "nested/first.sql" must be a single .sql filename`,
+		},
+		{
+			name: "non sql migration rejected",
+			fsys: fstest.MapFS{
+				ManifestName: {Data: []byte("001 first.txt\n")},
+			},
+			wantErr: `manifest line 1: migration "first.txt" must be a single .sql filename`,
 		},
 		{
 			name: "empty manifest",
@@ -92,6 +135,53 @@ func TestApplyOrderingAndWithOnly(t *testing.T) {
 	want := []string{"select 1", "select 3"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("executed SQL = %v, want %v", got, want)
+	}
+}
+
+func TestApplyWithOnlyRejectsUnknownName(t *testing.T) {
+	t.Parallel()
+
+	fsys := fstest.MapFS{
+		ManifestName: {Data: []byte("001 first.sql\n002 second.sql\n")},
+		"first.sql":  {Data: []byte("select 1")},
+		"second.sql": {Data: []byte("select 2")},
+	}
+
+	db := newFakeLedgerDB()
+	err := Apply(context.Background(), fsys, db.Exec,
+		WithOnly("first.sql", "nope.sql"),
+		WithSession(SessionConfig{LockTimeout: time.Second, StatementTimeout: time.Second}),
+		WithLedger(Ledger{}, db),
+	)
+	if err == nil || !strings.Contains(err.Error(), "nope.sql") {
+		t.Fatalf("Apply() error = %v, want unknown WithOnly name", err)
+	}
+	if !strings.Contains(err.Error(), "not in manifest") {
+		t.Fatalf("Apply() error = %v, want 'not in manifest'", err)
+	}
+	if len(db.execs) != 0 {
+		t.Fatalf("execs = %v, want none before WithOnly validation (session/ledger must not run)", db.execs)
+	}
+	if len(db.events) != 0 {
+		t.Fatalf("events = %v, want none before WithOnly validation", db.events)
+	}
+}
+
+func TestApplyWithOnlyUnknownNamesAreSortedDeterministically(t *testing.T) {
+	t.Parallel()
+
+	fsys := fstest.MapFS{
+		ManifestName: {Data: []byte("001 first.sql\n")},
+		"first.sql":  {Data: []byte("select 1")},
+	}
+
+	for range 10 {
+		err := Apply(context.Background(), fsys, func(context.Context, string, ...any) error {
+			return nil
+		}, WithOnly("zz.sql", "first.sql", "aa.sql", "mm.sql"))
+		if err == nil || !strings.Contains(err.Error(), "not in manifest: aa.sql, mm.sql, zz.sql") {
+			t.Fatalf("Apply() error = %v, want sorted missing names \"aa.sql, mm.sql, zz.sql\"", err)
+		}
 	}
 }
 

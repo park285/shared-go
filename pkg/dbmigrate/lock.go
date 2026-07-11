@@ -3,6 +3,7 @@ package dbmigrate
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"time"
@@ -20,6 +21,13 @@ type LockSession interface {
 	TryAdvisoryLock(ctx context.Context, key int64) (bool, error)
 	// AdvisoryUnlock은 advisory lock 해제를 시도한다.
 	AdvisoryUnlock(ctx context.Context, key int64) (bool, error)
+}
+
+// WithAdvisoryLock은 unlock이 에러이거나 released=false(lock 미보유)로 끝나면 세션 lock
+// 상태가 불확실하다고 보고 이 메서드를 호출한다. pooled conn 구현체는 여기서 conn을 hijack 후
+// close해, lock을 쥔 채 풀로 반환·재사용되는 것을 막아야 한다.
+type UnlockFailureEvicter interface {
+	EvictAfterUnlockFailure() error
 }
 
 // LockConfig는 migration advisory lock 획득과 해제 설정이다.
@@ -55,6 +63,11 @@ func WithAdvisoryLock(ctx context.Context, s LockSession, cfg LockConfig, fn fun
 		if unlockErr == nil {
 			return
 		}
+		if evicter, ok := s.(UnlockFailureEvicter); ok {
+			if evictErr := evictAfterUnlockFailure(evicter); evictErr != nil {
+				unlockErr = errors.Join(unlockErr, evictErr)
+			}
+		}
 		if cfg.OnUnlockError != nil {
 			cfg.OnUnlockError(unlockErr)
 			return
@@ -69,6 +82,17 @@ func WithAdvisoryLock(ctx context.Context, s LockSession, cfg LockConfig, fn fun
 	return fn(ctx)
 }
 
+// fn의 panic unwinding 중 defer 안에서 evict가 다시 panic하면 원 panic을 대체하고
+// OnUnlockError·errors.Join을 건너뛴다 — 오류로 변환해 unlock 오류 의미를 보존한다.
+func evictAfterUnlockFailure(e UnlockFailureEvicter) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("dbmigrate: evict conn after unlock failure panicked: %v", r)
+		}
+	}()
+	return e.EvictAfterUnlockFailure()
+}
+
 // SQLLockSession은 database/sql 연결을 LockSession으로 감싼다.
 func SQLLockSession(c *sql.Conn) LockSession {
 	return sqlLockSession{conn: c}
@@ -76,6 +100,19 @@ func SQLLockSession(c *sql.Conn) LockSession {
 
 type sqlLockSession struct {
 	conn *sql.Conn
+}
+
+func (s sqlLockSession) EvictAfterUnlockFailure() error {
+	if s.conn == nil {
+		return errors.New("dbmigrate: sql lock connection is nil")
+	}
+	err := s.conn.Raw(func(any) error {
+		return driver.ErrBadConn
+	})
+	if err != nil && !errors.Is(err, driver.ErrBadConn) {
+		return fmt.Errorf("dbmigrate: evict sql lock connection: %w", err)
+	}
+	return nil
 }
 
 func (s sqlLockSession) TryAdvisoryLock(ctx context.Context, key int64) (bool, error) {

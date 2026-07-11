@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"fmt"
 	"io/fs"
+	"sort"
 	"strings"
 )
 
@@ -41,6 +42,9 @@ func SQLExec(db SQLExecer) Execer {
 }
 
 // WithOnly는 지정한 migration 파일명만 manifest 순서대로 적용한다.
+// manifest에 없는 이름은 Apply가 세션 설정·ledger 생성 전에 거부하지만, Apply를
+// WithAdvisoryLock 안에서 호출하는 문서화된 패턴에서는 이 검출이 lock 획득 뒤에
+// 일어난다. lock 전 fail-fast가 필요하면 호출자가 Manifest()로 사전 검증하라.
 func WithOnly(names ...string) Option {
 	return func(o *options) {
 		o.only = make(map[string]bool, len(names))
@@ -63,17 +67,36 @@ func Manifest(fsys fs.FS) (names []string, err error) {
 	}()
 
 	scanner := bufio.NewScanner(file)
+	lineNo := 0
+	seenOrders := make(map[string]int)
+	seenNames := make(map[string]int)
 	for scanner.Scan() {
+		lineNo++
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
 
 		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			return nil, fmt.Errorf("malformed manifest line %q (want \"NNN filename.sql\")", line)
+		if len(fields) != 2 {
+			return nil, fmt.Errorf("manifest line %d: malformed %q (want \"NNN filename.sql\")", lineNo, line)
 		}
-		names = append(names, fields[len(fields)-1])
+		order, name := fields[0], fields[1]
+		if !isDecimalOrder(order) {
+			return nil, fmt.Errorf("manifest line %d: order %q must contain only decimal digits", lineNo, order)
+		}
+		if !fs.ValidPath(name) || strings.Contains(name, "/") || !strings.HasSuffix(name, ".sql") {
+			return nil, fmt.Errorf("manifest line %d: migration %q must be a single .sql filename", lineNo, name)
+		}
+		if prev, ok := seenOrders[order]; ok {
+			return nil, fmt.Errorf("manifest line %d: duplicate order %q (first seen at line %d)", lineNo, order, prev)
+		}
+		if prev, ok := seenNames[name]; ok {
+			return nil, fmt.Errorf("manifest line %d: duplicate filename %q (first seen at line %d)", lineNo, name, prev)
+		}
+		seenOrders[order] = lineNo
+		seenNames[name] = lineNo
+		names = append(names, name)
 	}
 
 	if scanErr := scanner.Err(); scanErr != nil {
@@ -83,6 +106,18 @@ func Manifest(fsys fs.FS) (names []string, err error) {
 		return nil, fmt.Errorf("manifest %q has no entries", ManifestName)
 	}
 	return names, nil
+}
+
+func isDecimalOrder(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // Apply는 manifest 순서대로 SQL 파일을 읽어 exec로 실행한다.
@@ -96,6 +131,9 @@ func Apply(ctx context.Context, fsys fs.FS, exec Execer, opts ...Option) error {
 	entries, err := Manifest(fsys)
 	if err != nil {
 		return fmt.Errorf("dbmigrate: %w", err)
+	}
+	if err := cfg.validateOnly(entries); err != nil {
+		return err
 	}
 	if err := cfg.configureSession(ctx, exec); err != nil {
 		return err
@@ -128,6 +166,27 @@ func applyOptions(opts []Option) options {
 		}
 	}
 	return cfg
+}
+
+func (o options) validateOnly(entries []string) error {
+	if o.only == nil {
+		return nil
+	}
+	present := make(map[string]bool, len(entries))
+	for _, name := range entries {
+		present[name] = true
+	}
+	var missing []string
+	for name := range o.only {
+		if !present[name] {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	sort.Strings(missing)
+	return fmt.Errorf("dbmigrate: WithOnly names not in manifest: %s", strings.Join(missing, ", "))
 }
 
 func (o options) configureSession(ctx context.Context, exec Execer) error {
