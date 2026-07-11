@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# 스택 공용 단일 정본 — 4개 레포(hololive-bot, chat-bot-go-kakao, iris-client-go,
-# shared-go)에 바이트 동일 사본으로 배포되고, iris-stack 메타레포의
+# 스택 공용 단일 정본 — 5개 레포(hololive-bot, chat-bot-go-kakao, twentyq-bot,
+# iris-client-go, shared-go)에 바이트 동일 사본으로 배포되고, iris-stack 메타레포의
 # tools/check-ci-consistency.sh 가 사본 동일성을 강제한다. 한 곳만 고치지 말 것.
 #
-# 프로필: scripts/ci/pre-push-gate.sh 가 있으면 app, 없으면 lib.
+# 프로필: scripts/ci/workflow-gate-profile 의 app 또는 lib 명시 선언.
 # PR heavy 검사(go test 전체/race 포함)는 app 전용 — lib 레포는 PR fast gate 가
 # 전체 go test 를 정당하게 실행하므로 lib 프로필에서는 적용하지 않는다.
 set -euo pipefail
@@ -19,6 +19,7 @@ from pathlib import Path
 SECRET_EXPR_RE = re.compile(r"\$\{\{(?P<body>.*?)\}\}", re.DOTALL)
 SECRETS_INHERIT_RE = re.compile(r"^\s*secrets\s*:\s*inherit\s*(?:#.*)?$")
 SECURITY_WORKFLOWS = {"security.yml", "security.yaml", "security-full.yml", "security-full.yaml"}
+PROFILE_PATH = Path("scripts/ci/workflow-gate-profile")
 
 PR_HEAVY_LINE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("local full CI gate", re.compile(r"\./scripts/ci/local-ci\.sh")),
@@ -41,7 +42,15 @@ def resolve_profile() -> str:
             print(f"unsupported WORKFLOW_GATE_PROFILE={override}; expected app or lib", file=sys.stderr)
             raise SystemExit(2)
         return override
-    return "app" if Path("scripts/ci/pre-push-gate.sh").is_file() else "lib"
+    try:
+        declaration = PROFILE_PATH.read_text(encoding="utf-8")
+    except OSError as exc:
+        print(f"{PROFILE_PATH}: explicit workflow gate profile is required ({exc})", file=sys.stderr)
+        raise SystemExit(2) from exc
+    if declaration not in {"app\n", "lib\n"}:
+        print(f"{PROFILE_PATH}: expected exact app or lib declaration", file=sys.stderr)
+        raise SystemExit(2)
+    return declaration.strip()
 
 
 def workflow_paths(args: list[str]) -> list[Path]:
