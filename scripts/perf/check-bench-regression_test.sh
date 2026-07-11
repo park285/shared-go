@@ -14,7 +14,23 @@ fi
 
 TMP_ROOT="$(mktemp -d)"
 trap 'rm -rf "${TMP_ROOT}"' EXIT
-REPO_NAME="$(basename "${REPO_ROOT}")"
+repo_name_for_root() {
+  local root="$1" common_dir
+  common_dir="$(git -C "${root}" rev-parse --git-common-dir 2>/dev/null || true)"
+  if [[ -z "${common_dir}" ]]; then
+    basename "${root}"
+    return
+  fi
+  if [[ "${common_dir}" != /* ]]; then
+    common_dir="${root}/${common_dir}"
+  fi
+  if [[ "$(basename "${common_dir}")" == ".git" ]]; then
+    basename "$(dirname "${common_dir}")"
+  else
+    basename "${root}"
+  fi
+}
+REPO_NAME="$(repo_name_for_root "${REPO_ROOT}")"
 LAST_STATUS=0
 LAST_OUTPUT=""
 PASSED=0
