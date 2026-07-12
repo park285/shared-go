@@ -1,6 +1,9 @@
+#!/usr/bin/env bash
+
 run_checker_require_baseline() {
   set +e
   LAST_OUTPUT="$("${CHECKER}" --baseline "$1" --candidate "$2" --policy "$3" --require-baseline 2>&1)"
+  # shellcheck disable=SC2034 # source하는 상위 fixture가 상태를 검사한다.
   LAST_STATUS=$?
   set -e
 }
