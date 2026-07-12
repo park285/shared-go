@@ -1,0 +1,133 @@
+version: 3
+kind: rules
+rules:
+  - id: direct_prompt_exfil_en
+    family: prompt_exfil
+    type: regex
+    action: block
+    view: aggregate_joined
+    segments: [plain, quote, code, config]
+    max_occurrences: 1
+    pattern: '(?:(?:show|print|reveal|dump|display|output|repeat|give|tell)[\s\S]{0,28}(?:(?:your|hidden|internal|developer)[\s\S]{0,16}(?:prompt|instructions?|rules?|message|policy)|system[\s\S]{0,8}message)|(?:reveal|print|output|repeat)[\s\S]{0,12}(?:the)?[\s\S]{0,4}instructions?|(?:hidden|internal|developer|system)[\s\S]{0,16}(?:prompt|instructions?|message|policy)[\s\S]{0,28}(?:show|print|reveal|dump|display|output|repeat|verbatim)|(?:prompt|instructions?|system[\s\S]{0,8}message)[\s\S]{0,16}(?:verbatim|word[\s_-]*for[\s_-]*word))'
+    weight: 1.0
+
+  - id: instruction_override_en
+    family: override
+    type: regex
+    action: block
+    view: aggregate_joined
+    segments: [plain, quote, code, config]
+    max_occurrences: 1
+    pattern: '(?:(?:[il]gnore|disregard|forget|override|bypass|reset)[\s\S]{0,28}(?:all[\s\S]{0,8})?(?:previous|prior|developer)[\s\S]{0,16}(?:instructions?|prompts?|policies?|rules?)|(?:previous|prior|system|developer)[\s\S]{0,16}(?:instructions?|prompts?|policies?|rules?)[\s\S]{0,28}(?:[il]gnore|disregard|forget|override|bypass|reset|do not follow))'
+    weight: 1.0
+
+  - id: live_secret_exfil_en
+    family: secret_exfil
+    type: regex
+    action: block
+    view: aggregate_joined
+    segments: [plain, quote, code, config]
+    max_occurrences: 1
+    pattern: '(?:(?:show|print|reveal|dump|copy|cat|echo)[\s\S]{0,32}(?:api[\s_-]*key|secret[\s_-]*key|access[\s_-]*token|refresh[\s_-]*token|credentials?|password|passwd|environment|\.env)|(?:api[\s_-]*key|secret[\s_-]*key|access[\s_-]*token|refresh[\s_-]*token|credentials?|password|passwd|\.env)[\s\S]{0,32}(?:show|print|reveal|dump|copy|cat|echo))'
+    weight: 1.0
+
+  - id: memory_poisoning_en
+    family: memory_poisoning
+    type: regex
+    action: block
+    view: aggregate_joined
+    segments: [plain, quote, code, config]
+    max_occurrences: 1
+    pattern: '(?:(?:always|permanently|forever|remember|store in memory)[\s\S]{0,48}(?:(?:user|my|this page|this result)[\s\S]{0,24}(?:instructions?|commands?|content)[\s\S]{0,24}(?:outrank|override|higher[\s]*priority|above)|(?:this page|this result)[\s\S]{0,28}(?:higher[\s]*priority|outrank)[\s\S]{0,24}(?:system|developer)|(?:higher[\s]*priority|outrank)[\s\S]{0,24}(?:system|developer)))'
+    weight: 1.0
+
+  - id: role_override
+    family: role_spoofing
+    type: regex
+    action: block
+    view: raw
+    segments: [plain, quote, code, config]
+    max_occurrences: 1
+    pattern: '(?:^|[\s\n])(?:system|developer|assistant)(?:[\s]+message)?[\s]*[:：][\s\S]{0,48}(?:[il]gnore|bypass|override|obey|execute|follow|우회|무시|실행)[\s\S]{0,24}(?:policy|instructions?|rules?|me|result|command|정책|지시|규칙|명령|검색[\s]*결과)'
+    weight: 1.0
+
+  - id: container_escape
+    family: container_escape
+    type: regex
+    action: block
+    view: raw
+    segments: [plain, quote, code, config]
+    max_occurrences: 1
+    pattern: '</\s*(?:messages|system|system_prompt|developer|assistant|user|metadata)\s*>'
+    weight: 1.0
+
+  - id: policy_bypass_en
+    family: policy_bypass
+    type: regex
+    action: score
+    view: aggregate_joined
+    segments: [plain, quote, code, config]
+    max_occurrences: 1
+    pattern: '(?:policy|guardrail|safety|security|contentpolicy)[\s\S]{0,24}(?:ignore|bypass|disregard|violate)[\s\S]{0,24}(?:answer|continue|comply)'
+    weight: 0.7
+
+  - id: jailbreak_terms_en
+    family: jailbreak
+    type: phrases
+    action: score
+    view: aggregate_joined
+    segments: [plain, quote, code, config]
+    match_mode: token
+    max_occurrences: 1
+    phrases: [dan, developermode, doanythingnow]
+    weight: 0.5
+
+  - id: prompt_reference_en
+    family: prompt_reference
+    type: regex
+    action: score
+    view: aggregate_joined
+    segments: [plain, quote, code, config]
+    max_occurrences: 1
+    pattern: '(?:(?:show|reveal)[\s\S]{0,28}(?:example[\s\S]{0,12})?(?:system[\s\S]{0,4}prompt|internal[\s\S]{0,4}polic(?:y|ies))|(?:attempts?|audit|auditors?)[\s\S]{0,28}(?:reveal|expose)[\s\S]{0,16}(?:internal[\s\S]{0,4}polic(?:y|ies)|prompt))'
+    weight: 0.6
+
+  - id: override_reference_en
+    family: override_reference
+    type: regex
+    action: score
+    view: aggregate_joined
+    segments: [plain, quote, code, config]
+    max_occurrences: 1
+    pattern: '(?:ignoring|disregarding)[\s\S]{0,16}(?:previous|prior)[\s\S]{0,12}(?:instructions?|rules?)'
+    weight: 0.6
+
+  - id: role_spoofing
+    family: role_spoofing
+    type: regex
+    action: score
+    view: raw
+    segments: [plain, quote, code, config]
+    max_occurrences: 1
+    pattern: '(?:^|[\s\n])(?:system|developer|assistant|시스템|개발자|어시스턴트)(?:[\s]+message|[\s]*메시지)?[\s]*[:：]'
+    weight: 0.65
+
+  - id: transform_reference
+    family: transform_reference
+    type: regex
+    action: score
+    view: aggregate_joined
+    segments: [plain, quote, code, config]
+    max_occurrences: 1
+    pattern: '(?:base64|rot13|hex|encode|decode|encoding|encoded|인코딩|디코드|복호화)[\s\S]{0,28}(?:prompt|instruction|프롬프트|지시)'
+    weight: 0.6
+
+  - id: persistence_reference
+    family: persistence_reference
+    type: regex
+    action: score
+    view: aggregate_joined
+    segments: [plain, quote, code, config]
+    max_occurrences: 1
+    pattern: '(?:memory|session[\s]*memory)[\s\S]{0,24}(?:remember|store|retain)[\s\S]{0,20}(?:user[\s]*instructions?|commands?)'
+    weight: 0.6

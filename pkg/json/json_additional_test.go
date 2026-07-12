@@ -67,6 +67,26 @@ func TestMarshalIndent(t *testing.T) {
 	}
 }
 
+func TestMarshalEscapeHTML(t *testing.T) {
+	t.Parallel()
+
+	encoded, err := MarshalEscapeHTML(map[string]string{"value": "</system>&"})
+	if err != nil {
+		t.Fatalf("MarshalEscapeHTML() error = %v", err)
+	}
+	if got, want := string(encoded), `{"value":"\u003c/system\u003e\u0026"}`; got != want {
+		t.Fatalf("MarshalEscapeHTML() = %s, want %s", got, want)
+	}
+
+	var decoded map[string]string
+	if err := Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if got, want := decoded["value"], "</system>&"; got != want {
+		t.Fatalf("decoded value = %q, want %q", got, want)
+	}
+}
+
 func TestValid(t *testing.T) {
 	t.Parallel()
 

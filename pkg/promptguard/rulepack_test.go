@@ -6,24 +6,10 @@ import (
 	"testing"
 )
 
-func writeRulepackFile(t *testing.T, content string) string {
-	t.Helper()
-
-	dir := t.TempDir()
-
-	path := filepath.Join(dir, "bad.yml")
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	return dir
-}
-
 func assertLoadRulepacksFails(t *testing.T, content string) {
 	t.Helper()
 
-	dir := writeRulepackFile(t, content)
-	if _, err := loadRulepacks(dir, nil); err == nil {
+	if _, err := decodeRulepackFile("test.yml", []byte(content)); err == nil {
 		t.Fatal("expected lint error")
 	}
 }
@@ -55,7 +41,7 @@ func TestReadRulepackFileRejectsPathOutsideBaseDir(t *testing.T) {
 	dir := t.TempDir()
 
 	outside := filepath.Join(t.TempDir(), "outside.yml")
-	if err := os.WriteFile(outside, []byte("version: 2\nrules: []\n"), 0o600); err != nil {
+	if err := os.WriteFile(outside, []byte("version: 3\nkind: rules\nrules: []\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -77,7 +63,8 @@ func TestLoadRulepacksRejectsSuspiciousEscapes(t *testing.T) {
 	t.Parallel()
 
 	assertLoadRulepacksFails(t, `
-version: 2
+version: 3
+kind: rules
 rules:
   - id: bad
     type: regex
@@ -91,7 +78,8 @@ func TestLoadRulepacksRejectsGenericBlockedPhrase(t *testing.T) {
 	t.Parallel()
 
 	assertLoadRulepacksFails(t, `
-version: 2
+version: 3
+kind: rules
 rules:
   - id: bad
     type: phrases

@@ -194,6 +194,13 @@ run_checker_allow_smoke_baseline() {
   set -e
 }
 
+run_checker_require_baseline() {
+  set +e
+  LAST_OUTPUT="$("${CHECKER}" --baseline "$1" --candidate "$2" --policy "$3" --require-baseline 2>&1)"
+  LAST_STATUS=$?
+  set -e
+}
+
 run_collect_checker() {
   local repo_dir="$1"
   shift
@@ -435,6 +442,21 @@ case_missing_baseline_creates_copy() {
   cmp -s "${dir}/candidate/go-bench/result.txt" "${dir}/baseline/go-bench/result.txt"
 }
 
+case_required_missing_baseline_fails_without_copy() {
+  local dir="${TMP_ROOT}/required-baseline-missing"
+  mkdir -p "${dir}"
+  write_policy "${dir}/policy.yaml" "fail" "critical" "BenchmarkTarget" 50
+  write_bench_file "${dir}/candidate" "BenchmarkTarget" 100 8 1 $'# count: 6\n# benchtime: 100ms'
+  run_checker_require_baseline "${dir}/baseline" "${dir}/candidate" "${dir}/policy.yaml"
+  assert_failure "required missing baseline fails"
+  assert_exit_code "required missing baseline exit code" 2
+  assert_contains "required missing baseline message" "required baseline has no result files"
+  if [[ -e "${dir}/baseline" ]]; then
+    printf 'not ok - required missing baseline was created\n%s\n' "${LAST_OUTPUT}" >&2
+    exit 1
+  fi
+}
+
 case_missing_baseline_race_candidate_does_not_create_baseline() {
   local dir="${TMP_ROOT}/race-baseline-create"
   mkdir -p "${dir}"
@@ -649,6 +671,7 @@ CASES=(
   case_fail_mode_hotpath_exits_one
   case_fail_mode_non_critical_exits_zero
   case_missing_baseline_creates_copy
+  case_required_missing_baseline_fails_without_copy
   case_missing_baseline_race_candidate_does_not_create_baseline
   case_race_results_skip
   case_collect_rejects_unsafe_candidate_paths

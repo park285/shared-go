@@ -6,6 +6,8 @@ GOLANGCI_CONFIG ?= .golangci.yml
 PERF_GATE_BASELINE ?= artifacts/perf/baseline/main
 PERF_GATE_CANDIDATE ?= artifacts/perf/pr
 PERF_GATE_BENCHTIME ?= 100ms
+GUARD_PERF_BASELINE ?= artifacts/perf/baseline/guards-main
+GUARD_PERF_CANDIDATE ?= artifacts/perf/guards-pr
 PERF_GATE_COLLECT_ARGS := --policy perf-budget.yaml --candidate $(PERF_GATE_CANDIDATE) --gate pr
 ifneq ($(strip $(PERF_GATE_COUNT)),)
 PERF_GATE_COLLECT_ARGS += --count $(PERF_GATE_COUNT)
@@ -39,6 +41,11 @@ perf-gate-test:
 perf-gate: perf-gate-test
 	./scripts/perf/check-bench-regression.sh collect $(PERF_GATE_COLLECT_ARGS)
 	./scripts/perf/check-bench-regression.sh --policy perf-budget.yaml --baseline $(PERF_GATE_BASELINE) --candidate $(PERF_GATE_CANDIDATE) --gate pr
+
+.PHONY: guard-perf-gate
+guard-perf-gate:
+	./scripts/perf/check-bench-regression.sh collect --policy perf-budget-guards.yaml --candidate $(GUARD_PERF_CANDIDATE) --gate pr --count 6 --benchtime 100ms
+	./scripts/perf/check-bench-regression.sh --policy perf-budget-guards.yaml --baseline $(GUARD_PERF_BASELINE) --candidate $(GUARD_PERF_CANDIDATE) --gate pr --require-baseline
 
 .PHONY: vulncheck
 vulncheck:

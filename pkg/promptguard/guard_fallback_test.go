@@ -48,7 +48,7 @@ func (h *captureHandler) attr(record slog.Record, key string) (slog.Value, bool)
 	return value, found
 }
 
-func TestFallbackEvaluationReviewsAndLogsError(t *testing.T) {
+func TestFallbackEvaluationBlocksAndLogsFixedReason(t *testing.T) {
 	t.Parallel()
 
 	handler := &captureHandler{}
@@ -58,18 +58,18 @@ func TestFallbackEvaluationReviewsAndLogsError(t *testing.T) {
 	}
 
 	policy := compiledPolicy{BlockThreshold: 1.0, ReviewThreshold: 0.55}
-	evaluation := guard.fallbackEvaluation(policy, "user_message", "singleflight failed")
+	evaluation := guard.fallbackEvaluation(policy, SourceUserPrompt, "SENSITIVE_INTERNAL_ERROR")
 
-	if evaluation.Decision != DecisionReview {
-		t.Fatalf("fallbackEvaluation() decision = %q, want %q", evaluation.Decision, DecisionReview)
+	if evaluation.Decision != DecisionBlock {
+		t.Fatalf("fallbackEvaluation() decision = %q, want %q", evaluation.Decision, DecisionBlock)
 	}
 
-	if evaluation.Malicious() {
-		t.Fatal("fallbackEvaluation() must not hard-block user (Malicious=true)")
+	if !evaluation.FallbackBlocked {
+		t.Fatal("fallbackEvaluation() FallbackBlocked = false, want true")
 	}
 
-	if evaluation.Source != "user_message" {
-		t.Fatalf("fallbackEvaluation() source = %q, want %q", evaluation.Source, "user_message")
+	if evaluation.Source != SourceUserPrompt {
+		t.Fatalf("fallbackEvaluation() source = %q, want %q", evaluation.Source, SourceUserPrompt)
 	}
 
 	if evaluation.Threshold != policy.BlockThreshold || evaluation.ReviewThreshold != policy.ReviewThreshold {
@@ -91,12 +91,15 @@ func TestFallbackEvaluationReviewsAndLogsError(t *testing.T) {
 		t.Fatal("fallbackEvaluation() log missing reason attribute")
 	}
 
-	if !strings.Contains(reasonValue.String(), "singleflight failed") {
-		t.Fatalf("fallbackEvaluation() reason = %q, want to contain %q", reasonValue.String(), "singleflight failed")
+	if reasonValue.String() != ruleEvaluationFallback {
+		t.Fatalf("fallbackEvaluation() reason = %q, want %q", reasonValue.String(), ruleEvaluationFallback)
 	}
 
 	sourceValue, ok := handler.attr(record, "source")
-	if !ok || sourceValue.String() != "user_message" {
-		t.Fatalf("fallbackEvaluation() log source = %q (found=%v), want %q", sourceValue.String(), ok, "user_message")
+	if !ok || sourceValue.String() != string(SourceUserPrompt) {
+		t.Fatalf("fallbackEvaluation() log source = %q (found=%v), want %q", sourceValue.String(), ok, SourceUserPrompt)
+	}
+	if strings.Contains(record.Message, "SENSITIVE_INTERNAL_ERROR") || strings.Contains(reasonValue.String(), "SENSITIVE_INTERNAL_ERROR") {
+		t.Fatal("fallbackEvaluation() leaked internal detector error")
 	}
 }

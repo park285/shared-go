@@ -25,6 +25,7 @@ type cliArgs struct {
 	count              *int
 	benchtime          string
 	allowSmokeBaseline bool
+	requireBaseline    bool
 }
 
 func main() {
@@ -179,6 +180,11 @@ func parseArgs(argv []string) (string, *cliArgs, error) {
 				return "", nil, fmt.Errorf("argument --allow-smoke-baseline: ignored explicit argument %q", val)
 			}
 			args.allowSmokeBaseline = true
+		case "--require-baseline":
+			if hasEq {
+				return "", nil, fmt.Errorf("argument --require-baseline: ignored explicit argument %q", val)
+			}
+			args.requireBaseline = true
 		default:
 			return "", nil, fmt.Errorf("unrecognized arguments: %s", name)
 		}

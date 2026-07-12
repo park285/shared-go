@@ -1,7 +1,5 @@
 package promptguard
 
-import "maps"
-
 func compilePolicy(raw *rawRulepack) compiledPolicy {
 	if raw == nil {
 		raw = &rawRulepack{}
@@ -25,10 +23,6 @@ func compilePolicy(raw *rawRulepack) compiledPolicy {
 func resolveBlockThreshold(raw *rawRulepack) float64 {
 	if raw.Policy.BlockThreshold > 0 {
 		return raw.Policy.BlockThreshold
-	}
-
-	if raw.Threshold > 0 {
-		return raw.Threshold
 	}
 
 	return 1.0
@@ -57,11 +51,10 @@ func resolveMinBlockFamilies(minFamilies int) int {
 func resolveSegmentMultipliers(overrides map[string]float64) map[segmentKind]float64 {
 	segmentMultipliers := map[segmentKind]float64{
 		segmentPlain:  1.0,
-		segmentQuote:  0.25,
-		segmentCode:   0.25,
-		segmentConfig: 0.35,
+		segmentQuote:  1.0,
+		segmentCode:   1.0,
+		segmentConfig: 1.0,
 	}
-
 	for key, value := range overrides {
 		kind, ok := parseSegment(key)
 		if ok && value > 0 {
@@ -74,9 +67,11 @@ func resolveSegmentMultipliers(overrides map[string]float64) map[segmentKind]flo
 
 func resolveViewMultipliers(overrides map[string]float64) map[string]float64 {
 	viewMultipliers := map[string]float64{
-		"raw":      1.0,
-		"norm":     1.0,
-		viewJoined: 0.85,
+		viewRaw:             1.0,
+		viewNorm:            1.0,
+		viewJoined:          1.0,
+		viewAggregateNorm:   1.0,
+		viewAggregateJoined: 1.0,
 	}
 
 	for key, value := range overrides {
@@ -103,59 +98,4 @@ func (p compiledPolicy) viewMultiplier(view string) float64 {
 	}
 
 	return 1.0
-}
-
-func mergePolicies(packs []compiledPack, overrideBlockThreshold float64) compiledPolicy {
-	if len(packs) == 0 {
-		merged := compilePolicy(&rawRulepack{})
-
-		if overrideBlockThreshold > 0 {
-			merged.BlockThreshold = overrideBlockThreshold
-		}
-
-		if merged.ReviewThreshold > merged.BlockThreshold {
-			merged.ReviewThreshold = merged.BlockThreshold
-		}
-
-		return merged
-	}
-
-	merged := compiledPolicy{
-		ReviewThreshold:    packs[0].Policy.ReviewThreshold,
-		BlockThreshold:     packs[0].Policy.BlockThreshold,
-		MinBlockFamilies:   packs[0].Policy.MinBlockFamilies,
-		SegmentMultipliers: make(map[segmentKind]float64, len(packs[0].Policy.SegmentMultipliers)),
-		ViewMultipliers:    make(map[string]float64, len(packs[0].Policy.ViewMultipliers)),
-	}
-	maps.Copy(merged.SegmentMultipliers, packs[0].Policy.SegmentMultipliers)
-
-	maps.Copy(merged.ViewMultipliers, packs[0].Policy.ViewMultipliers)
-
-	for _, pack := range packs {
-		if pack.Policy.ReviewThreshold > merged.ReviewThreshold {
-			merged.ReviewThreshold = pack.Policy.ReviewThreshold
-		}
-
-		if pack.Policy.BlockThreshold > merged.BlockThreshold {
-			merged.BlockThreshold = pack.Policy.BlockThreshold
-		}
-
-		if pack.Policy.MinBlockFamilies > merged.MinBlockFamilies {
-			merged.MinBlockFamilies = pack.Policy.MinBlockFamilies
-		}
-
-		maps.Copy(merged.SegmentMultipliers, pack.Policy.SegmentMultipliers)
-
-		maps.Copy(merged.ViewMultipliers, pack.Policy.ViewMultipliers)
-	}
-
-	if overrideBlockThreshold > 0 {
-		merged.BlockThreshold = overrideBlockThreshold
-	}
-
-	if merged.ReviewThreshold > merged.BlockThreshold {
-		merged.ReviewThreshold = merged.BlockThreshold
-	}
-
-	return merged
 }

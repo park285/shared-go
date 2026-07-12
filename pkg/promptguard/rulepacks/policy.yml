@@ -1,0 +1,17 @@
+version: 3
+kind: policy
+policy:
+  review_threshold: 0.55
+  block_threshold: 1.0
+  min_block_families: 1
+  segment_multipliers:
+    plain: 1.0
+    quote: 1.0
+    code: 1.0
+    config: 1.0
+  view_multipliers:
+    raw: 1.0
+    norm: 1.0
+    joined: 1.0
+    aggregate_norm: 1.0
+    aggregate_joined: 1.0

@@ -15,21 +15,37 @@ type TTLCache[K comparable, V any] struct {
 	entries map[K]ttlEntry[V]
 	maxSize int
 	ttl     time.Duration
+	now     func() time.Time
 }
 
 func NewTTLCache[K comparable, V any](maxSize int, ttl time.Duration) *TTLCache[K, V] {
+	return newTTLCache[K, V](maxSize, ttl, time.Now)
+}
+
+func newTTLCache[K comparable, V any](maxSize int, ttl time.Duration, now func() time.Time) *TTLCache[K, V] {
 	if maxSize <= 0 {
 		maxSize = 1024
+	}
+	if now == nil {
+		now = time.Now
 	}
 
 	return &TTLCache[K, V]{
 		entries: make(map[K]ttlEntry[V]),
 		maxSize: maxSize,
 		ttl:     ttl,
+		now:     now,
 	}
 }
 
 func (c *TTLCache[K, V]) Get(key K) (V, bool) {
+	if c == nil {
+		var zero V
+
+		return zero, false
+	}
+
+	now := c.now()
 	c.mu.RLock()
 
 	entry, ok := c.entries[key]
@@ -41,22 +57,26 @@ func (c *TTLCache[K, V]) Get(key K) (V, bool) {
 		return zero, false
 	}
 
-	if !entry.expiresAt.IsZero() && time.Now().After(entry.expiresAt) {
-		c.mu.Lock()
-		delete(c.entries, key)
-		c.mu.Unlock()
-
-		var zero V
-
-		return zero, false
+	if entry.expired(now) {
+		return c.resolveExpired(key)
 	}
 
 	return entry.value, true
 }
 
 func (c *TTLCache[K, V]) Set(key K, value V) {
+	if c == nil {
+		return
+	}
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	if _, ok := c.entries[key]; ok {
+		c.entries[key] = c.newEntry(value)
+
+		return
+	}
 
 	c.ensureCapacity()
 
@@ -64,6 +84,10 @@ func (c *TTLCache[K, V]) Set(key K, value V) {
 }
 
 func (c *TTLCache[K, V]) Len() int {
+	if c == nil {
+		return 0
+	}
+
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -71,6 +95,10 @@ func (c *TTLCache[K, V]) Len() int {
 }
 
 func (c *TTLCache[K, V]) keys() []K {
+	if c == nil {
+		return nil
+	}
+
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -87,7 +115,7 @@ func (c *TTLCache[K, V]) ensureCapacity() {
 		return
 	}
 
-	c.deleteExpiredEntries(time.Now())
+	c.deleteExpiredEntries(c.now())
 
 	if len(c.entries) < c.maxSize {
 		return
@@ -120,8 +148,33 @@ func (c *TTLCache[K, V]) newEntry(value V) ttlEntry[V] {
 	entry := ttlEntry[V]{value: value}
 
 	if c.ttl > 0 {
-		entry.expiresAt = time.Now().Add(c.ttl)
+		entry.expiresAt = c.now().Add(c.ttl)
 	}
 
 	return entry
+}
+
+func (c *TTLCache[K, V]) resolveExpired(key K) (V, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	entry, ok := c.entries[key]
+	if !ok {
+		var zero V
+
+		return zero, false
+	}
+	if !entry.expired(c.now()) {
+		return entry.value, true
+	}
+
+	delete(c.entries, key)
+
+	var zero V
+
+	return zero, false
+}
+
+func (e ttlEntry[V]) expired(now time.Time) bool {
+	return !e.expiresAt.IsZero() && now.After(e.expiresAt)
 }

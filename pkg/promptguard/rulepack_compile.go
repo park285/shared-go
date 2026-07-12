@@ -4,14 +4,21 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"regexp/syntax"
+	"slices"
 	"strings"
 )
 
 var errMissingRuleID = errors.New("invalid rule: missing id")
 
+const maxRuleOccurrences = 64
+
 func compileRulepack(raw *rawRulepack) (compiledPack, error) {
 	if raw == nil {
 		return compiledPack{}, errors.New("rulepack is nil")
+	}
+	if raw.Version != 3 {
+		return compiledPack{}, fmt.Errorf("rulepack version must be 3")
 	}
 
 	policy := compilePolicy(raw)
@@ -27,8 +34,10 @@ func compileRulepack(raw *rawRulepack) (compiledPack, error) {
 	}
 
 	return compiledPack{
-		Policy: policy,
-		Rules:  rules,
+		Version: raw.Version,
+		Kind:    strings.ToLower(strings.TrimSpace(raw.Kind)),
+		Policy:  policy,
+		Rules:   rules,
 	}, nil
 }
 
@@ -43,20 +52,25 @@ func compileRule(rule *rawRule) (compiledRule, error) {
 	}
 
 	compiled := compiledRule{
-		ID:       rule.ID,
-		Family:   strings.TrimSpace(rule.Family),
-		Type:     strings.ToLower(strings.TrimSpace(rule.Type)),
-		Action:   selectors.action,
-		View:     selectors.view,
-		Segments: selectors.segments,
-		Weight:   rule.Weight,
+		ID:             rule.ID,
+		Family:         strings.TrimSpace(rule.Family),
+		Type:           strings.ToLower(strings.TrimSpace(rule.Type)),
+		Action:         selectors.action,
+		View:           selectors.view,
+		Segments:       selectors.segments,
+		Weight:         rule.Weight,
+		MatchMode:      strings.ToLower(strings.TrimSpace(rule.MatchMode)),
+		MaxOccurrences: rule.MaxOccurrences,
 	}
 	if compiled.Family == "" {
 		compiled.Family = compiled.ID
 	}
 
-	if compiled.Action == hitActionBlock && compiled.Weight <= 0 {
+	if compiled.Action == hitActionBlock && compiled.Weight == 0 {
 		compiled.Weight = 1.0
+	}
+	if compiled.MaxOccurrences == 0 {
+		compiled.MaxOccurrences = 1
 	}
 
 	if err := compileRuleMatcher(&compiled, rule); err != nil {
@@ -127,6 +141,7 @@ func assignRegexMatcher(compiled *compiledRule, rule *rawRule) error {
 	}
 
 	compiled.Pattern = pattern
+	compiled.RequiredAny = requiredRegexLiterals(pattern)
 
 	return nil
 }
@@ -139,7 +154,15 @@ func assignPhraseMatcher(compiled *compiledRule, rule *rawRule) error {
 			continue
 		}
 
-		phrases = append(phrases, strings.ToLower(value))
+		views := normalizeViews(value)
+		switch compiled.View {
+		case viewRaw:
+			phrases = append(phrases, strings.ToLower(views.Raw))
+		case viewJoined, viewAggregateJoined:
+			phrases = append(phrases, views.Joined)
+		default:
+			phrases = append(phrases, views.Norm)
+		}
 	}
 
 	if len(phrases) == 0 {
@@ -147,13 +170,128 @@ func assignPhraseMatcher(compiled *compiledRule, rule *rawRule) error {
 	}
 
 	compiled.Phrases = phrases
+	compiled.RequiredAny = slices.Clone(phrases)
 
 	return nil
 }
 
+func requiredRegexLiterals(pattern *regexp.Regexp) []string {
+	parsed, err := syntax.Parse(pattern.String(), syntax.Perl)
+	if err != nil {
+		return nil
+	}
+	literals := requiredLiterals(parsed)
+	for i := range literals {
+		literals[i] = strings.ToLower(literals[i])
+	}
+	slices.Sort(literals)
+	literals = slices.Compact(literals)
+
+	return literals
+}
+
+func requiredLiterals(expression *syntax.Regexp) []string {
+	if expression == nil {
+		return nil
+	}
+	switch expression.Op {
+	case syntax.OpLiteral:
+		return literalExpression(expression)
+	case syntax.OpCapture:
+		return requiredSingleSubexpression(expression)
+	case syntax.OpConcat:
+		return requiredConcatLiterals(expression.Sub)
+	case syntax.OpAlternate:
+		return requiredAlternateLiterals(expression.Sub)
+	case syntax.OpPlus:
+		return requiredSingleSubexpression(expression)
+	case syntax.OpRepeat:
+		if expression.Min > 0 && len(expression.Sub) == 1 {
+			return requiredLiterals(expression.Sub[0])
+		}
+	}
+
+	return nil
+}
+
+func literalExpression(expression *syntax.Regexp) []string {
+	if len(expression.Rune) == 0 {
+		return nil
+	}
+
+	return []string{string(expression.Rune)}
+}
+
+func requiredSingleSubexpression(expression *syntax.Regexp) []string {
+	if len(expression.Sub) != 1 {
+		return nil
+	}
+
+	return requiredLiterals(expression.Sub[0])
+}
+
+func requiredConcatLiterals(expressions []*syntax.Regexp) []string {
+	var best []string
+	bestLength := 0
+	for _, expression := range expressions {
+		candidate := requiredLiterals(expression)
+		minimum := minimumLiteralRunes(candidate)
+		if minimum > bestLength {
+			best = candidate
+			bestLength = minimum
+		}
+	}
+
+	return best
+}
+
+func requiredAlternateLiterals(expressions []*syntax.Regexp) []string {
+	var combined []string
+	for _, expression := range expressions {
+		candidate := requiredLiterals(expression)
+		if len(candidate) == 0 {
+			return nil
+		}
+		combined = append(combined, candidate...)
+	}
+
+	return combined
+}
+
+func minimumLiteralRunes(values []string) int {
+	minimum := 0
+	for i, value := range values {
+		length := len([]rune(value))
+		if i == 0 || length < minimum {
+			minimum = length
+		}
+	}
+
+	return minimum
+}
+
 func validateCompiledRule(compiled *compiledRule) error {
+	if !finiteFloat(compiled.Weight) {
+		return fmt.Errorf("%s: weight must be finite", compiled.ID)
+	}
+	if compiled.Weight < 0 {
+		return fmt.Errorf("%s: negative weight is unsupported", compiled.ID)
+	}
 	if compiled.Action != hitActionBlock && compiled.Weight <= 0 {
 		return fmt.Errorf("%s: non-block rule requires positive weight", compiled.ID)
+	}
+	if compiled.MaxOccurrences <= 0 {
+		return fmt.Errorf("%s: max_occurrences must be positive", compiled.ID)
+	}
+	if compiled.MaxOccurrences > maxRuleOccurrences {
+		return fmt.Errorf("%s: max_occurrences exceeds %d", compiled.ID, maxRuleOccurrences)
+	}
+	if compiled.Type == ruleTypePhrase {
+		if compiled.MatchMode != phraseMatchToken && compiled.MatchMode != phraseMatchSubstring {
+			return fmt.Errorf("%s: phrases require match_mode token or substring", compiled.ID)
+		}
+	} else if compiled.MatchMode != "" {
+		return fmt.Errorf("%s: match_mode is only valid for phrases", compiled.ID)
 	}
 
 	return nil
@@ -165,8 +303,6 @@ func normalizeAction(action string) string {
 		return hitActionScore
 	case hitActionBlock:
 		return hitActionBlock
-	case "dampen", "negative":
-		return hitActionDampen
 	default:
 		return ""
 	}
@@ -180,6 +316,10 @@ func normalizeView(view string) string {
 		return viewRaw
 	case viewJoined:
 		return viewJoined
+	case viewAggregateNorm:
+		return viewAggregateNorm
+	case viewAggregateJoined:
+		return viewAggregateJoined
 	default:
 		return ""
 	}

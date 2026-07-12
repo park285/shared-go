@@ -7,22 +7,25 @@ import (
 	"io/fs"
 	"log/slog"
 	"math"
-	"strings"
+	"slices"
 	"time"
 
 	"golang.org/x/sync/singleflight"
 )
 
 const (
-	hitActionDampen = "dampen"
-	hitActionBlock  = "block"
+	hitActionBlock = "block"
 )
 
-const ruleInputOversize = "input_oversize"
+const (
+	ruleInputOversize         = "input_oversize"
+	ruleEvaluationFallback    = "evaluation_fallback"
+	ruleSegmentBudgetExceeded = "segment_budget_exceeded"
+	maxLoggedMatchValues      = 16
+)
 
 type Config struct {
 	Enabled             bool
-	Threshold           float64
 	RulepacksDir        string
 	RulepackFS          fs.FS
 	RulepackRoot        string
@@ -30,17 +33,21 @@ type Config struct {
 	CacheMaxSize        int
 	CacheTTL            time.Duration
 	MaxInputBytes       int
-	OnReview            func(Evaluation)
+	OnEvaluation        func(EvaluationEvent)
 }
 
 type Guard struct {
-	cfg           Config
-	logger        *slog.Logger
-	packs         []compiledPack
-	cache         *TTLCache[string, Evaluation]
-	group         singleflight.Group
-	onReview      func(Evaluation)
-	maxInputBytes int
+	cfg             Config
+	logger          *slog.Logger
+	packs           []compiledPack
+	cache           *TTLCache[string, Evaluation]
+	group           singleflight.Group
+	onEvaluation    func(EvaluationEvent)
+	maxInputBytes   int
+	policyDigest    string
+	effectivePolicy compiledPolicy
+	rulepackVersion int
+	evaluateInputFn func(string) (Evaluation, error)
 }
 
 func NewGuard(cfg Config, logger *slog.Logger) (*Guard, error) {
@@ -64,73 +71,50 @@ func NewGuard(cfg Config, logger *slog.Logger) (*Guard, error) {
 		cfg.MaxInputBytes = 8 << 20
 	}
 
-	packs, err := loadConfiguredRulepacks(cfg, logger)
+	set, err := loadConfiguredRulepacks(cfg, logger)
 	if err != nil {
 		return nil, fmt.Errorf("load rulepacks: %w", err)
 	}
 
 	return &Guard{
-		cfg:           cfg,
-		logger:        logger,
-		packs:         packs,
-		cache:         NewTTLCache[string, Evaluation](cfg.CacheMaxSize, cfg.CacheTTL),
-		onReview:      cfg.OnReview,
-		maxInputBytes: cfg.MaxInputBytes,
+		cfg:             cfg,
+		logger:          logger,
+		packs:           set.Packs,
+		cache:           NewTTLCache[string, Evaluation](cfg.CacheMaxSize, cfg.CacheTTL),
+		onEvaluation:    cfg.OnEvaluation,
+		maxInputBytes:   cfg.MaxInputBytes,
+		policyDigest:    set.Digest,
+		effectivePolicy: set.Policy,
+		rulepackVersion: set.Version,
 	}, nil
 }
 
-func loadConfiguredRulepacks(cfg Config, logger *slog.Logger) ([]compiledPack, error) {
-	if cfg.RulepackFS != nil {
-		root := strings.TrimSpace(cfg.RulepackRoot)
-		if root == "" {
-			root = "."
-		}
-
-		return loadRulepacksFS(cfg.RulepackFS, root, logger)
+func (g *Guard) Check(req CheckRequest) (Evaluation, error) {
+	if !validCheckRequest(req) {
+		return Evaluation{}, ErrInvalidCheckRequest
+	}
+	if g == nil || !g.cfg.Enabled {
+		return Evaluation{}, ErrGuardUnavailable
 	}
 
-	if strings.TrimSpace(cfg.RulepacksDir) != "" {
-		return loadRulepacks(cfg.RulepacksDir, logger)
+	evaluation := g.evaluate(req.Text, req.Source)
+	if !enforcementRejects(req.Enforcement, evaluation.Decision) {
+		return evaluation, nil
 	}
 
-	if cfg.UseEmbeddedDefaults {
-		return loadRulepacksFS(defaultRulepackFS, defaultRulepacksRoot, logger)
-	}
-
-	return nil, fmt.Errorf("enabled guard requires RulepacksDir, RulepackFS, or UseEmbeddedDefaults")
+	return evaluation, blockedErrorFromEvaluation(evaluation)
 }
 
-func (g *Guard) Evaluate(input string) Evaluation {
-	return g.evaluate(input, "")
-}
-
-// EnsureSafe는 입력이 악의적이면 에러를 반환한다.
-func (g *Guard) EnsureSafe(input string) error {
-	if blocked := g.blockedError(input, ""); blocked != nil {
-		return blocked
-	}
-
-	return nil
-}
-
-// EnsureSafeFrom은 입력을 검사하고 리뷰 로깅용 source 태그를 부여한다.
-func (g *Guard) EnsureSafeFrom(input, source string) error {
-	if blocked := g.blockedError(input, source); blocked != nil {
-		return blocked
-	}
-
-	return nil
-}
-
-func (g *Guard) blockedError(input, source string) *BlockedError {
-	evaluation := g.evaluate(input, source)
-	if !evaluation.Malicious() {
-		return nil
-	}
-
+func blockedErrorFromEvaluation(evaluation Evaluation) *BlockedError {
 	rules := matchedRuleIDs(evaluation.Hits)
 	if evaluation.OversizeBlocked {
 		rules = append(rules, ruleInputOversize)
+	}
+	if evaluation.FallbackBlocked {
+		rules = append(rules, ruleEvaluationFallback)
+	}
+	if evaluation.SegmentBudgetExceeded {
+		rules = append(rules, ruleSegmentBudgetExceeded)
 	}
 
 	return &BlockedError{
@@ -138,44 +122,67 @@ func (g *Guard) blockedError(input, source string) *BlockedError {
 		Threshold: evaluation.Threshold,
 		Families:  distinctPositiveFamilies(evaluation.Hits),
 		Rules:     rules,
-		Source:    source,
+		Source:    string(evaluation.Source),
+		Decision:  evaluation.Decision,
 	}
 }
 
-func (g *Guard) evaluate(input, source string) Evaluation {
+func (g *Guard) evaluate(input string, source Source) Evaluation {
 	if g == nil || !g.cfg.Enabled {
 		return Evaluation{Score: 0, Hits: nil, Threshold: math.Inf(1)}
 	}
 
 	if g.maxInputBytes > 0 && len(input) > g.maxInputBytes {
-		return g.inputOversizeEvaluation(g.policy(), source, len(input))
+		evaluation := g.inputOversizeEvaluation(g.policy(), source, len(input))
+		g.observeEvaluation(evaluation, false, len(input))
+
+		return cloneEvaluation(evaluation)
 	}
 
 	key := cacheKey(input)
-	if cached, ok := g.cache.Get(key); ok {
-		cached.Source = source
+	if g.cache == nil {
+		evaluation := g.fallbackEvaluation(g.policy(), source, ruleEvaluationFallback)
+		g.observeEvaluation(evaluation, false, len(input))
 
-		return cached
+		return cloneEvaluation(evaluation)
+	}
+	if cached, ok := g.cache.Get(key); ok {
+		cached = cloneEvaluation(cached)
+		cached.Source = source
+		g.observeEvaluation(cached, true, len(input))
+
+		return cloneEvaluation(cached)
 	}
 
 	value, err, _ := g.group.Do(key, func() (any, error) {
-		result := g.evaluateRaw(input)
-		g.cache.Set(key, result)
+		result, detectErr := g.detectEvaluation(input)
+		if detectErr != nil {
+			return nil, detectErr
+		}
+		result.Source = ""
+		g.cache.Set(key, cloneEvaluation(result))
 
-		return result, nil
+		return cloneEvaluation(result), nil
 	})
 	if err != nil {
-		return g.fallbackEvaluation(g.policy(), source, err.Error())
+		evaluation := g.fallbackEvaluation(g.policy(), source, err.Error())
+		g.observeEvaluation(evaluation, false, len(input))
+
+		return cloneEvaluation(evaluation)
 	}
 
 	if evaluation, ok := value.(Evaluation); ok {
+		evaluation = cloneEvaluation(evaluation)
 		evaluation.Source = source
-		g.logReviewEvaluation(&evaluation)
+		g.observeEvaluation(evaluation, false, len(input))
 
-		return evaluation
+		return cloneEvaluation(evaluation)
 	}
 
-	return g.fallbackEvaluation(g.policy(), source, "evaluation type assertion failed")
+	evaluation := g.fallbackEvaluation(g.policy(), source, "evaluation type assertion failed")
+	g.observeEvaluation(evaluation, false, len(input))
+
+	return cloneEvaluation(evaluation)
 }
 
 func cacheKey(input string) string {
@@ -185,23 +192,31 @@ func cacheKey(input string) string {
 }
 
 // fallbackEvaluation은 guard 평가가 실패했을 때의 conservative fallback이다.
-// Review는 EnsureSafe/EnsureSafeFrom에서 차단되지 않으므로(Malicious는 Block만 true)
-// 사용자를 hard-block하지 않으면서 운영이 인지할 수 있도록 Error 로깅 후 Review를 반환한다.
-func (g *Guard) fallbackEvaluation(policy compiledPolicy, source, reason string) Evaluation {
+func (g *Guard) fallbackEvaluation(policy compiledPolicy, source Source, _ string) Evaluation {
 	if g != nil && g.logger != nil {
-		attrs := []any{slog.String("reason", reason)}
+		attrs := []any{slog.String("reason", ruleEvaluationFallback)}
 
 		if source != "" {
-			attrs = append(attrs, slog.String("source", source))
+			attrs = append(attrs, slog.String("source", string(source)))
 		}
 
 		g.logger.Error("guard_evaluation_fallback", attrs...)
 	}
 
-	return Evaluation{Decision: DecisionReview, Score: 0, Hits: nil, Threshold: policy.BlockThreshold, ReviewThreshold: policy.ReviewThreshold, Source: source}
+	return Evaluation{
+		Decision:         DecisionBlock,
+		Score:            policy.BlockThreshold,
+		Hits:             nil,
+		Threshold:        policy.BlockThreshold,
+		ReviewThreshold:  policy.ReviewThreshold,
+		Source:           source,
+		FallbackBlocked:  true,
+		OversizeBlocked:  false,
+		DistinctFamilies: 0,
+	}
 }
 
-func (g *Guard) inputOversizeEvaluation(policy compiledPolicy, source string, size int) Evaluation {
+func (g *Guard) inputOversizeEvaluation(policy compiledPolicy, source Source, size int) Evaluation {
 	if g != nil && g.logger != nil {
 		attrs := []any{
 			slog.String("reason", ruleInputOversize),
@@ -209,7 +224,7 @@ func (g *Guard) inputOversizeEvaluation(policy compiledPolicy, source string, si
 			slog.Int("max", g.maxInputBytes),
 		}
 		if source != "" {
-			attrs = append(attrs, slog.String("source", source))
+			attrs = append(attrs, slog.String("source", string(source)))
 		}
 
 		g.logger.Error("guard_input_oversize_blocked", attrs...)
@@ -227,22 +242,57 @@ func (g *Guard) inputOversizeEvaluation(policy compiledPolicy, source string, si
 }
 
 func (g *Guard) policy() compiledPolicy {
-	if len(g.packs) == 0 {
-		return mergePolicies(nil, g.cfg.Threshold)
+	if g.effectivePolicy.BlockThreshold > 0 {
+		return g.effectivePolicy
+	}
+	if len(g.packs) > 0 {
+		return g.packs[0].Policy
 	}
 
-	return mergePolicies(g.packs, g.cfg.Threshold)
+	return compilePolicy(&rawRulepack{Version: 3})
 }
 
-func (g *Guard) threshold() float64 {
-	return g.policy().BlockThreshold
+func (g *Guard) PolicyDigest() string {
+	if g == nil {
+		return ""
+	}
+
+	return g.policyDigest
+}
+
+func (g *Guard) detectEvaluation(input string) (Evaluation, error) {
+	var (
+		evaluation Evaluation
+		err        error
+	)
+	if g.evaluateInputFn != nil {
+		evaluation, err = g.evaluateInputFn(input)
+	} else {
+		evaluation = g.evaluateRaw(input)
+	}
+	if err != nil {
+		return Evaluation{}, err
+	}
+	if !validDecision(evaluation.Decision) {
+		return Evaluation{}, fmt.Errorf("invalid detector decision")
+	}
+
+	return evaluation, nil
 }
 
 func (g *Guard) evaluateRaw(input string) Evaluation {
 	policy := g.policy()
-	segments := splitTextSegments(input)
-
-	segments = append(segments, decodedBase64Segments(input)...)
+	segments, budgetExceeded := buildEvaluationSegments(input)
+	if budgetExceeded {
+		return Evaluation{
+			Decision:              DecisionBlock,
+			Score:                 policy.BlockThreshold,
+			Threshold:             policy.BlockThreshold,
+			ReviewThreshold:       policy.ReviewThreshold,
+			SegmentBudgetExceeded: true,
+		}
+	}
+	segments = append(segments, decodedTextSegments(input)...)
 
 	return g.evaluateSegments(policy, segments)
 }
@@ -255,15 +305,12 @@ func (g *Guard) evaluateSegments(policy compiledPolicy, segments []textSegment) 
 	}
 
 	families := distinctPositiveFamilies(state.hits)
-	effectiveDampen := calculateEffectiveDampen(policy, state.positiveTotal, state.dampenTotal, len(families))
-	score := math.Max(0, state.positiveTotal-effectiveDampen)
-	decision := decideEvaluation(policy, score, len(families), state.hardPlainHit)
+	score := math.Max(0, state.positiveTotal)
+	decision := decideEvaluation(policy, score, len(families), state.hardBlockHit)
 
 	return Evaluation{
 		Decision:         decision,
 		Score:            score,
-		PositiveScore:    state.positiveTotal,
-		DampenScore:      effectiveDampen,
 		Hits:             state.hits,
 		Threshold:        policy.BlockThreshold,
 		ReviewThreshold:  policy.ReviewThreshold,
@@ -271,30 +318,122 @@ func (g *Guard) evaluateSegments(policy compiledPolicy, segments []textSegment) 
 	}
 }
 
-func (g *Guard) logReviewEvaluation(evaluation *Evaluation) {
-	if g == nil || evaluation == nil || evaluation.Decision != DecisionReview {
+func (g *Guard) observeEvaluation(evaluation Evaluation, cacheHit bool, inputBytes int) {
+	if g == nil {
 		return
 	}
 
-	if g.logger != nil {
+	if evaluation.Decision == DecisionReview && g.logger != nil {
+		families, truncatedFamilies := boundedLogValues(distinctPositiveFamilies(evaluation.Hits))
+		rules, truncatedRules := boundedLogValues(matchedRuleIDs(evaluation.Hits))
 		attrs := []any{
 			slog.Float64("score", evaluation.Score),
 			slog.Float64("review_threshold", evaluation.ReviewThreshold),
 			slog.Float64("block_threshold", evaluation.Threshold),
 			slog.Int("distinct_families", evaluation.DistinctFamilies),
-			slog.Any("families", distinctPositiveFamilies(evaluation.Hits)),
-			slog.Any("rules", matchedRuleIDs(evaluation.Hits)),
+			slog.Any("families", families),
+			slog.Any("rules", rules),
+			slog.Bool("cache_hit", cacheHit),
+		}
+		if truncatedFamilies > 0 {
+			attrs = append(attrs, slog.Int("families_truncated", truncatedFamilies))
+		}
+		if truncatedRules > 0 {
+			attrs = append(attrs, slog.Int("rules_truncated", truncatedRules))
 		}
 		if evaluation.Source != "" {
-			attrs = append(attrs, slog.String("source", evaluation.Source))
+			attrs = append(attrs, slog.String("source", string(evaluation.Source)))
 		}
 
 		g.logger.Warn("guard_review_detected", attrs...)
 	}
 
-	if g.onReview != nil {
-		g.onReview(*evaluation)
+	if g.onEvaluation != nil {
+		families := distinctPositiveFamilies(evaluation.Hits)
+		rules := matchedRuleIDs(evaluation.Hits)
+		slices.Sort(rules)
+		g.onEvaluation(EvaluationEvent{
+			Source:       evaluation.Source,
+			Decision:     evaluation.Decision,
+			CacheHit:     cacheHit,
+			PolicyDigest: g.policyDigest,
+			Score:        evaluation.Score,
+			Families:     slices.Clone(families),
+			RuleIDs:      slices.Clone(rules),
+			InputBytes:   inputBytes,
+		})
 	}
+}
+
+func validCheckRequest(req CheckRequest) bool {
+	if !validSource(req.Source) {
+		return false
+	}
+
+	switch req.Enforcement {
+	case EnforcementObserve, EnforcementInteractive, EnforcementPersistent:
+		return true
+	default:
+		return false
+	}
+}
+
+func validSource(source Source) bool {
+	switch source {
+	case SourceUserPrompt,
+		SourcePromptBundle,
+		SourceRetrievedMemory,
+		SourceMemoryCandidate,
+		SourceSessionPatch,
+		SourceSimulationState,
+		SourceLawContext,
+		SourceSessionContext,
+		SourceChatLog,
+		SourceWebSearchResult,
+		SourceImagePrompt:
+		return true
+	default:
+		return false
+	}
+}
+
+func enforcementRejects(enforcement Enforcement, decision Decision) bool {
+	switch enforcement {
+	case EnforcementObserve:
+		return false
+	case EnforcementInteractive:
+		return decision == DecisionBlock
+	case EnforcementPersistent:
+		return decision == DecisionReview || decision == DecisionBlock
+	default:
+		return true
+	}
+}
+
+func validDecision(decision Decision) bool {
+	switch decision {
+	case DecisionAllow, DecisionReview, DecisionBlock:
+		return true
+	default:
+		return false
+	}
+}
+
+func cloneEvaluation(evaluation Evaluation) Evaluation {
+	evaluation.Hits = slices.Clone(evaluation.Hits)
+
+	return evaluation
+}
+
+func boundedLogValues(values []string) ([]string, int) {
+	values = slices.Clone(values)
+	slices.Sort(values)
+	values = slices.Compact(values)
+	if len(values) <= maxLoggedMatchValues {
+		return values, 0
+	}
+
+	return slices.Clone(values[:maxLoggedMatchValues]), len(values) - maxLoggedMatchValues
 }
 
 func matchedRuleIDs(hits []Match) []string {
@@ -306,7 +445,7 @@ func matchedRuleIDs(hits []Match) []string {
 
 	ids := make([]string, 0, len(hits))
 	for _, hit := range hits {
-		if hit.Action == hitActionDampen || hit.ID == "" {
+		if hit.ID == "" {
 			continue
 		}
 
@@ -323,9 +462,8 @@ func matchedRuleIDs(hits []Match) []string {
 
 type evaluationState struct {
 	positiveTotal float64
-	dampenTotal   float64
 	hits          []Match
-	hardPlainHit  bool
+	hardBlockHit  bool
 }
 
 func (s *evaluationState) collectPackHits(pack compiledPack, segments []textSegment, policy compiledPolicy) {
@@ -335,39 +473,36 @@ func (s *evaluationState) collectPackHits(pack compiledPack, segments []textSegm
 }
 
 func (s *evaluationState) collectRuleHits(rule *compiledRule, segments []textSegment, policy compiledPolicy) {
+	remaining := rule.MaxOccurrences
 	for _, segment := range segments {
-		s.applyHits(rule.matchSegment(segment, policy))
+		segmentLimit := remaining
+		if segmentLimit <= 0 {
+			segmentLimit = 1
+		}
+		matched := rule.matchSegment(segment, policy, segmentLimit)
+		s.applyHits(rule, matched)
+		if remaining > 0 {
+			remaining -= len(matched)
+			if remaining == 0 {
+				return
+			}
+		}
 	}
 }
 
-func (s *evaluationState) applyHits(matched []Match) {
+func (s *evaluationState) applyHits(rule *compiledRule, matched []Match) {
 	for _, hit := range matched {
 		s.hits = append(s.hits, hit)
-		if hit.Action == hitActionDampen {
-			s.dampenTotal += hit.Weight
-			continue
-		}
-
 		s.positiveTotal += hit.Weight
-		if hit.Action == hitActionBlock && hit.Segment == string(segmentPlain) {
-			s.hardPlainHit = true
+		if hit.Action == hitActionBlock {
+			s.hardBlockHit = true
 		}
 	}
 }
 
-func calculateEffectiveDampen(policy compiledPolicy, positiveTotal, dampenTotal float64, familyCount int) float64 {
-	limit := positiveTotal
-
-	if familyCount >= policy.MinBlockFamilies {
-		limit = positiveTotal * 0.5
-	}
-
-	return math.Min(dampenTotal, limit)
-}
-
-func decideEvaluation(policy compiledPolicy, score float64, familyCount int, hardPlainHit bool) Decision {
+func decideEvaluation(policy compiledPolicy, score float64, familyCount int, hardBlockHit bool) Decision {
 	switch {
-	case hardPlainHit:
+	case hardBlockHit:
 		return DecisionBlock
 	case score >= policy.BlockThreshold && familyCount >= policy.MinBlockFamilies:
 		return DecisionBlock

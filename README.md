@@ -31,8 +31,8 @@ go get github.com/park285/shared-go@latest
 | `pkg/logging` | Slog 기반의 구조화된 로깅 모듈 (비동기 처리, 민감한 키 정보 마스킹 및 실시간 로그 로테이션 지원) |
 | `pkg/netguard` | 외부 HTTP 대상 URL 및 dial 주소를 fail-closed로 검증하는 네트워크 가드 (private/loopback/link-local/ULA 대역 차단, `Policy.AllowedHosts` allowlist 지원) |
 | `pkg/obsmetrics` | `client_golang` 의존성 없이 Prometheus 평문 텍스트 exposition을 생성하는 메트릭 키트 (webhook/런타임 메트릭, prefix 네임스페이스 분리) |
-| `pkg/outputguard` | LLM 생성 출력 가드 (시스템 프롬프트·시크릿 누출 패턴 차단, confusable 문자 정규화) |
-| `pkg/promptguard` | 룰팩 기반 프롬프트 인젝션 방어 가드 (가중치 임계값 매칭, dampen/block 정책, base64/confusable 디코딩, 한/영 룰팩, TTL 캐시) |
+| `pkg/outputguard` | LLM 생성 출력 가드 (구조화된 차단 사유, 출력·보호 텍스트 크기 제한, 역할/시크릿/보호 지침 중첩 탐지, bounded TTL index cache) |
+| `pkg/promptguard` | source-aware 프롬프트 인젝션 가드 (embedded v3 한/영 baseline, optional rules-only overlay, bounded decoding, policy digest, TTL cache) |
 | `pkg/retry` | `pkg/backoff`의 지연 값 계산을 사용해 context 취소를 존중하며 sleep·재시도·중단을 수행하는 재시도 루프(`WithRetry`) 구현체 |
 | `pkg/runtime` | Go 런타임 최적화를 포함한 프로세스 부트스트랩 도구 (`automaxprocs`, 애플리케이션 라이프사이클 관리, HTTPServer) |
 | `pkg/stringutil` | 범용 문자열 처리 유틸리티 |
@@ -41,6 +41,24 @@ go get github.com/park285/shared-go@latest
 | `pkg/workerpool` | 큐(Queue) 기반의 동시성 제어 워커 풀 구현체 |
 
 새로운 공통 기능이 필요할 경우, `pkg/` 하위에 신규 패키지 형식으로 추가해 주십시오.
+
+## Prompt guard 계약
+
+`Check` 호출은 `Source`와 `Enforcement`를 모두 명시해야 합니다. `EnforcementUnspecified`와 알 수 없는 값은 탐지나 cache 조회 전에 `ErrInvalidCheckRequest`로 거부됩니다.
+
+| `Enforcement` | `Allow` | `Review` | `Block` |
+|---|---|---|---|
+| `EnforcementObserve` | 허용 | 허용 | 허용 |
+| `EnforcementInteractive` | 허용 | 허용 | 거부 |
+| `EnforcementPersistent` | 허용 | 거부 | 거부 |
+
+지원 source는 `user_prompt`, `prompt_bundle`, `retrieved_memory`, `memory_candidate`, `session_patch`, `simulation_state`, `law_context`, `session_context`, `chat_log`, `web_search_result`, `image_prompt`로 고정됩니다. 저장·요약·재사용되는 데이터에는 `EnforcementPersistent`를 사용해야 합니다.
+
+`UseEmbeddedDefaults=true`는 `pkg/promptguard/rulepacks`의 v3 baseline을 먼저 로드합니다. `RulepacksDir` 또는 `RulepackFS`를 함께 지정하면 v3 `kind: rules` overlay 하나만 추가할 수 있으며, policy 변경과 baseline rule ID 중복은 시작 단계에서 거부됩니다. `PolicyDigest()`는 engine version과 최종 유효 policy/rules의 결정론적 digest이며 사용자 입력을 포함하지 않습니다. Runtime override 없이 v3 policy 문서만 threshold를 소유합니다.
+
+`make guard-perf-gate`는 검토된 `GUARD_PERF_BASELINE`이 없으면 실패하며 자동으로 baseline을 만들지 않습니다. 신규 baseline 생성은 `--require-baseline` 없이 `scripts/perf/check-bench-regression.sh`를 명시적으로 실행하는 별도 개발 작업입니다.
+
+Prompt guard는 v3 rulepack과 source/enforcement를 명시하는 `Check`만 지원합니다.
 
 ## 로컬 검증 (Verification)
 

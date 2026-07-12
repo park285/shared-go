@@ -38,13 +38,24 @@ func (m *RawMessage) UnmarshalJSON(data []byte) error {
 
 // CopyString: 디코드 string이 입력 버퍼를 alias하지 않게 복사 (버퍼 재사용 시 corruption 방지).
 // ValidateString: 표준 라이브러리처럼 unescaped 제어문자(U+0000~U+001F)를 거부.
-var api = sonic.Config{
-	CopyString:     true,
-	ValidateString: true,
-}.Froze()
+var (
+	api = sonic.Config{
+		CopyString:     true,
+		ValidateString: true,
+	}.Froze()
+	htmlEscapingAPI = sonic.Config{
+		CopyString:     true,
+		ValidateString: true,
+		EscapeHTML:     true,
+	}.Froze()
+)
 
 func Marshal(v any) ([]byte, error) {
 	return api.Marshal(v)
+}
+
+func MarshalEscapeHTML(v any) ([]byte, error) {
+	return htmlEscapingAPI.Marshal(v)
 }
 
 func Unmarshal(data []byte, v any) error {

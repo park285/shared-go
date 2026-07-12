@@ -1,60 +1,53 @@
-version: 2
-policy:
-  review_threshold: 0.55
-  block_threshold: 1.0
-  min_block_families: 1
-  segment_multipliers:
-    plain: 1.0
-    quote: 1.0
-    code: 1.0
-    config: 1.0
-  view_multipliers:
-    raw: 1.0
-    norm: 1.0
-    joined: 1.0
+version: 3
+kind: rules
 rules:
   - id: direct_prompt_exfil_ko
     family: prompt_exfil
     type: regex
     action: block
-    view: joined
+    view: aggregate_joined
     segments: [plain, quote, code, config]
-    pattern: '(?:시스템|개발자|숨겨진|비밀|내부|hidden|internal|developer|system)[\s\S]{0,24}(?:프롬프트|지시(?:사항)?|규칙|메시지|명령|정책|설정|prompt|instruction|message)[\s\S]{0,24}(?:보여|출력|알려|공개|나열|전문|원문|그대로|show|print|reveal|dump|verbatim)'
+    max_occurrences: 1
+    pattern: '(?:(?:네|너의|숨겨진|비밀|내부|개발자)[\s\S]{0,20}(?:프롬프트|지시(?:사항)?|규칙|메시지|명령)[\s\S]{0,24}(?:원문|전문|그대로|보여|출력|알려|공개|나열|반복)|(?:시스템)[\s\S]{0,16}(?:프롬프트|지시(?:사항)?|규칙|메시지|명령)[\s\S]{0,16}(?:원문|전문|그대로)[\s\S]{0,16}(?:보여|출력|알려|공개|나열|반복)|(?:지시사항|개발자[\s]*메시지)[\s\S]{0,18}(?:보여|출력|알려|공개|나열|반복)|(?:보여|출력|알려|공개|나열|반복)[\s\S]{0,24}(?:네|너의|숨겨진|비밀|내부|개발자)[\s\S]{0,14}(?:프롬프트|지시(?:사항)?|규칙|메시지|명령))'
     weight: 1.0
 
   - id: instruction_override_ko
     family: override
     type: regex
     action: block
-    view: joined
+    view: aggregate_joined
     segments: [plain, quote, code, config]
-    pattern: '(?:이전|앞선|모든|전체|시스템|개발자|previous|prior|system|developer)[\s\S]{0,24}(?:지시(?:사항)?|명령|규칙|프롬프트|prompt|instruction|policy)[\s\S]{0,24}(?:무시|잊어|삭제|초기화|재설정|우회|따르지\s*마|ignore|bypass|override|disregard|forget|reset)'
+    max_occurrences: 1
+    pattern: '(?:(?:이전|앞선|모든|전체|시스템|개발자)[\s\S]{0,24}(?:지시(?:사항)?|명령|규칙|프롬프트|정책)[\s\S]{0,24}(?:무시하고|무시해|무시하라|잊어|삭제해|초기화해|재설정해|우회해|따르지[\s]*마)|(?:무시하고|무시해|무시하라|잊어|삭제해|우회해)[\s\S]{0,24}(?:이전|앞선|모든|전체|시스템|개발자)[\s\S]{0,18}(?:지시(?:사항)?|명령|규칙|프롬프트|정책))'
     weight: 1.0
 
   - id: live_secret_exfil_ko
     family: secret_exfil
     type: regex
     action: block
-    view: joined
+    view: aggregate_joined
     segments: [plain, quote, code, config]
-    pattern: '(?:apikey|secretkey|accesstoken|refreshtoken|credential(?:s)?|password|passwd|비밀키|인증키|액세스토큰|리프레시토큰|자격증명|비밀번호|환경변수|\.env)[\s\S]{0,24}(?:보여|출력|알려|공개|덤프|복사|내놔|print|show|reveal|dump|cat|echo)'
+    max_occurrences: 1
+    pattern: '(?:(?:보여|출력|알려|공개|덤프|복사|내놔)[\s\S]{0,30}(?:비밀[\s]*키|인증[\s]*키|액세스[\s]*토큰|리프레시[\s]*토큰|자격[\s]*증명|비밀번호|환경[\s]*변수|api[\s_-]*key|\.env)|(?:비밀[\s]*키|인증[\s]*키|액세스[\s]*토큰|리프레시[\s]*토큰|자격[\s]*증명|비밀번호|환경[\s]*변수|api[\s_-]*key|\.env)[\s\S]{0,30}(?:보여|출력|알려|공개|덤프|복사|내놔))'
     weight: 1.0
 
-  - id: tool_secret_exfil_ko
-    family: tool_exfil
+  - id: memory_poisoning_ko
+    family: memory_poisoning
     type: regex
-    action: score
-    view: norm
+    action: block
+    view: aggregate_joined
     segments: [plain, quote, code, config]
-    pattern: '(?:실행|호출|run|execute|call)[\s\S]{0,12}(?:bash|shell|terminal|cmd|powershell|python|curl|wget|cat|echo|printenv|env)[\s\S]{0,24}(?:api[\s_-]*key|secret|token|credential(?:s)?|password|passwd|비밀\s*키|토큰|자격증명|비밀번호|환경\s*변수|\.env)'
-    weight: 0.65
+    max_occurrences: 1
+    pattern: '(?:(?:기억|메모리|세션|앞으로|항상|영구히|저장)[\s\S]{0,48}(?:(?:내|사용자|검색[\s]*결과|이[\s]*페이지)[\s\S]{0,20}(?:지시|명령|내용)[\s\S]{0,24}(?:시스템보다|개발자보다|우선)|(?:시스템보다|개발자보다)[\s\S]{0,20}(?:우선|높은[\s]*우선순위))|(?:검색[\s]*결과|이[\s]*페이지)[\s\S]{0,24}(?:영구히|항상|기억|저장)[\s\S]{0,28}(?:시스템|개발자)[\s\S]{0,16}(?:규칙|지시)?[\s\S]{0,16}(?:우선|높은[\s]*우선순위))'
+    weight: 1.0
 
   - id: policy_bypass_ko
     family: policy_bypass
     type: regex
     action: score
-    view: joined
+    view: aggregate_joined
     segments: [plain, quote, code, config]
+    max_occurrences: 1
     pattern: '(?:안전|보안|콘텐츠|윤리|정책|가이드|필터|규정|guardrail|policy|safety)[\s\S]{0,24}(?:무시|우회|위반|어겨|상관없이|관계없이|bypass|ignore|disregard)[\s\S]{0,24}(?:답해|진행|계속|해줘|answer|continue|comply)'
     weight: 0.7
 
@@ -62,98 +55,39 @@ rules:
     family: jailbreak
     type: phrases
     action: score
-    view: joined
+    view: aggregate_joined
     segments: [plain, quote, code, config]
-    phrases:
-      - developermode
-      - 탈옥모드
-      - 무제한모드
-      - 검열해제
-      - 윤리필터끄기
-      - 안전장치제거
+    match_mode: substring
+    max_occurrences: 1
+    phrases: [탈옥모드, 무제한모드, 검열해제, 윤리필터끄기, 안전장치제거]
     weight: 0.5
 
-  - id: encoded_transform_exfil_ko
-    family: transform_exfil
+  - id: prompt_reference_ko
+    family: prompt_reference
     type: regex
     action: score
-    view: joined
+    view: aggregate_joined
     segments: [plain, quote, code, config]
-    pattern: '(?:base64|rot13|hex|인코딩|복호화|디코드|역순|모스부호|아크로스틱|첫글자)[\s\S]{0,24}(?:프롬프트|지시(?:사항)?|secret|token|prompt|instruction|payload)'
-    weight: 0.35
+    max_occurrences: 1
+    pattern: '(?:(?:시스템[\s]*프롬프트|내부[\s]*정책)[\s\S]{0,24}(?:예시|시도|탐지|감사)[\s\S]{0,18}(?:보여|공개|설명|어떻게)|(?:내부[\s]*정책)[\s\S]{0,20}(?:공개하려는|노출하려는)[\s\S]{0,18}(?:시도|탐지))'
+    weight: 0.6
 
-  - id: xml_container_escape_ko
-    family: container_escape
-    type: regex
-    action: block
-    view: raw
-    segments: [plain, quote, code, config]
-    pattern: '</\s*(?:messages|system|system_prompt|developer|assistant|user|metadata)\s*>'
-    weight: 1.0
-
-  - id: memory_poisoning_ko
-    family: memory_poisoning
-    type: regex
-    action: block
-    view: joined
-    segments: [plain, quote, code, config]
-    pattern: '(?:기억|메모리|세션|앞으로|항상|영구히)[\s\S]{0,30}(?:너는|봇은|답변은|규칙은)[\s\S]{0,30}(?:내 지시|사용자 지시|시스템보다|개발자보다|우선)'
-    weight: 1.0
-
-  - id: role_spoofing_ko_en
-    family: role_spoofing
+  - id: override_reference_ko
+    family: override_reference
     type: regex
     action: score
-    view: joined
+    view: aggregate_joined
     segments: [plain, quote, code, config]
-    pattern: '(?:^|\n|\s)(?:system|developer|assistant|관리자|시스템|개발자|어시스턴트)\s*[:：]'
-    weight: 0.65
+    max_occurrences: 1
+    pattern: '(?:이전|앞선)[\s\S]{0,12}(?:지시|규칙)[\s\S]{0,12}(?:무시하는|무시할|무시했을)[\s\S]{0,12}(?:상황|경우|테스트)'
+    weight: 0.6
 
-  - id: defensive_context_ko
-    family: benign_context
-    type: phrases
-    action: dampen
-    view: joined
+  - id: persistence_reference_ko
+    family: persistence_reference
+    type: regex
+    action: score
+    view: aggregate_joined
     segments: [plain, quote, code, config]
-    phrases:
-      - 분석
-      - 리뷰
-      - 검토
-      - 탐지
-      - 차단
-      - 방지
-      - 정규식
-      - regex
-      - 룰팩
-      - rulepack
-      - 필터
-      - 오탐
-      - 미탐
-      - 재현
-      - 평가
-      - 테스트
-      - 문서화
-      - audit
-      - review
-      - analyze
-      - detection
-    weight: 0.35
-
-  - id: benign_roleplay_context_ko
-    family: benign_context
-    type: regex
-    action: dampen
-    view: joined
-    segments: [plain]
-    pattern: '(?:영어|면접|상담|고객응대|학습|연습|게임|시뮬레이션)[\s\S]{0,20}(?:역할극|롤플레이)'
-    weight: 0.45
-
-  - id: yaml_rulepack_context_ko
-    family: benign_context
-    type: regex
-    action: dampen
-    view: raw
-    segments: [config]
-    pattern: |-
-      (?m)^\s*(?:version|threshold|policy|rules|pattern|phrases|weight|type|id)\s*:
-    weight: 0.4
+    max_occurrences: 1
+    pattern: '(?:세션[\s]*메모리|메모리)[\s\S]{0,24}(?:사용자[\s]*지시|명령)[\s\S]{0,18}(?:기억|저장|유지)'
+    weight: 0.6

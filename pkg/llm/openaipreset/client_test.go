@@ -3,9 +3,6 @@ package openaipreset_test
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	sharedjson "github.com/park285/shared-go/pkg/json"
 	sharedllm "github.com/park285/shared-go/pkg/llm"
 	"github.com/park285/shared-go/pkg/llm/openaipreset"
 )
@@ -37,6 +35,10 @@ type flagTransport struct {
 }
 
 type nilJSONOutput struct{}
+
+type jsonUnmarshaler interface {
+	UnmarshalJSON([]byte) error
+}
 
 func (*nilJSONOutput) UnmarshalJSON([]byte) error {
 	return nil
@@ -63,7 +65,7 @@ func TestGenerateJSONResponses(t *testing.T) {
 		if r.URL.Path != "/responses" {
 			t.Errorf("path = %s, want /responses", r.URL.Path)
 		}
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		if err := sharedjson.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
 		writeJSON(t, w, responsesBody)
@@ -115,7 +117,7 @@ func TestGenerateJSONIntoResponses(t *testing.T) {
 		if r.URL.Path != "/responses" {
 			t.Errorf("path = %s, want /responses", r.URL.Path)
 		}
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		if err := sharedjson.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
 		writeJSON(t, w, responsesBody)
@@ -215,7 +217,7 @@ func TestGenerateJSONIntoResponsesOmitsEmptyLayers(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var payload map[string]any
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				if err := sharedjson.NewDecoder(r.Body).Decode(&payload); err != nil {
 					t.Fatalf("decode request: %v", err)
 				}
 				writeJSON(t, w, responsesBody)
@@ -316,16 +318,14 @@ func TestGenerateJSONIntoPromptSummaryOmitsWhitespaceOnlyLayers(t *testing.T) {
 			}
 
 			var event map[string]any
-			if err := json.NewDecoder(&logs).Decode(&event); err != nil {
+			if err := sharedjson.NewDecoder(&logs).Decode(&event); err != nil {
 				t.Fatalf("decode request log: %v", err)
 			}
 			if got := event["prompt_len"]; got != float64(len(tt.wantPrompt)) {
 				t.Fatalf("prompt_len = %#v, want %d", got, len(tt.wantPrompt))
 			}
-			sum := sha256.Sum256([]byte(tt.wantPrompt))
-			wantHash := hex.EncodeToString(sum[:8])
-			if got := event["prompt_sha256_8"]; got != wantHash {
-				t.Fatalf("prompt_sha256_8 = %#v, want %q", got, wantHash)
+			if got, exists := event["prompt_sha256_8"]; exists {
+				t.Fatalf("prompt_sha256_8 = %#v, want content-derived attribute omitted", got)
 			}
 		})
 	}
@@ -334,7 +334,7 @@ func TestGenerateJSONIntoPromptSummaryOmitsWhitespaceOnlyLayers(t *testing.T) {
 func TestGenerateJSONIntoResponsesWhitespaceOnlyLayersUseLegacyProfile(t *testing.T) {
 	var payload map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		if err := sharedjson.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
 		writeJSON(t, w, responsesBody)
@@ -375,7 +375,7 @@ func TestGenerateJSONIntoChatCompletions(t *testing.T) {
 		if r.URL.Path != "/chat/completions" {
 			t.Errorf("path = %s, want /chat/completions", r.URL.Path)
 		}
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		if err := sharedjson.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
 		writeJSON(t, w, chatBody)
@@ -408,12 +408,12 @@ func TestGenerateJSONIntoFallback(t *testing.T) {
 		paths = append(paths, r.URL.Path)
 		switch r.URL.Path {
 		case "/responses":
-			if err := json.NewDecoder(r.Body).Decode(&responsesPayload); err != nil {
+			if err := sharedjson.NewDecoder(r.Body).Decode(&responsesPayload); err != nil {
 				t.Fatalf("decode responses request: %v", err)
 			}
 			http.Error(w, `{"error":{"message":"unsupported endpoint","type":"invalid_request_error","code":"unsupported_endpoint"}}`, http.StatusNotFound)
 		case "/chat/completions":
-			if err := json.NewDecoder(r.Body).Decode(&chatPayload); err != nil {
+			if err := sharedjson.NewDecoder(r.Body).Decode(&chatPayload); err != nil {
 				t.Fatalf("decode chat request: %v", err)
 			}
 			writeJSON(t, w, chatBody)
@@ -454,7 +454,7 @@ func TestGenerateJSONIntoFallback(t *testing.T) {
 func TestGenerateJSONIntoGrokResponses(t *testing.T) {
 	var payload map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		if err := sharedjson.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
 		writeJSON(t, w, responsesBody)
@@ -506,7 +506,7 @@ func TestGenerateJSONIntoNilOutput(t *testing.T) {
 		Answer string `json:"answer"`
 	}
 	var typedNilMap map[string]any
-	var typedNilInterface json.Unmarshaler = (*nilJSONOutput)(nil)
+	var typedNilInterface jsonUnmarshaler = (*nilJSONOutput)(nil)
 	tests := []struct {
 		name string
 		out  any
@@ -530,13 +530,38 @@ func TestGenerateJSONIntoNilOutput(t *testing.T) {
 	}
 }
 
+func TestGenerateJSONIntoDecodeErrorOmitsProviderOutput(t *testing.T) {
+	t.Parallel()
+
+	const providerOutput = "PRIVATE_PROVIDER_OUTPUT_SENTINEL"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(t, w, `{"id":"resp-1","object":"response","created_at":1,"status":"completed","model":"gpt-test","output":[{"id":"msg-1","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"`+providerOutput+`","annotations":[]}]}]}`)
+	}))
+	defer server.Close()
+
+	client, err := openaipreset.New(server.URL, "test-key", "gpt-test")
+	if err != nil {
+		t.Fatalf("New error = %v", err)
+	}
+	var out struct {
+		Answer string `json:"answer"`
+	}
+	err = client.GenerateJSONInto(t.Context(), "decode-test", testPromptLayers(), map[string]any{"type": "object"}, &out)
+	if err == nil {
+		t.Fatal("GenerateJSONInto error = nil, want decode failure")
+	}
+	if strings.Contains(err.Error(), providerOutput) || strings.Contains(err.Error(), "output=") {
+		t.Fatalf("GenerateJSONInto error leaked provider output: %v", err)
+	}
+}
+
 func TestGenerateJSONChatCompletions(t *testing.T) {
 	var payload map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/chat/completions" {
 			t.Errorf("path = %s, want /chat/completions", r.URL.Path)
 		}
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		if err := sharedjson.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
 		writeJSON(t, w, chatBody)
@@ -620,7 +645,7 @@ func TestGenerateJSONFallbackDisabled(t *testing.T) {
 func TestRunInto(t *testing.T) {
 	var payload map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		if err := sharedjson.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
 		writeJSON(t, w, responsesBody)
@@ -655,8 +680,16 @@ func TestRunIntoNilOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New error = %v", err)
 	}
-	if err := client.RunInto(t.Context(), "task", "prompt", map[string]any{"type": "object"}, nil); err == nil {
-		t.Fatal("RunInto nil output error = nil, want error")
+
+	var typedNilPointer *struct{}
+	var typedNilMap map[string]any
+	var typedNilInterface jsonUnmarshaler = (*nilJSONOutput)(nil)
+
+	for _, out := range []any{nil, typedNilPointer, typedNilMap, typedNilInterface} {
+		err := client.RunInto(t.Context(), "task", "prompt", map[string]any{"type": "object"}, out)
+		if err == nil || err.Error() != "openaipreset: output target is nil" {
+			t.Fatalf("RunInto nil output error = %v, want openaipreset: output target is nil", err)
+		}
 	}
 }
 
@@ -703,7 +736,7 @@ func assertJSONContains(t *testing.T, value any, want string) {
 
 func containsJSON(t *testing.T, value any, want string) bool {
 	t.Helper()
-	raw, err := json.Marshal(value)
+	raw, err := sharedjson.Marshal(value)
 	if err != nil {
 		t.Fatalf("marshal value: %v", err)
 	}

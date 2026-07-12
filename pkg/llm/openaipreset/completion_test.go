@@ -379,6 +379,16 @@ func TestCompleteRejectsRefusalAndEmptyToolEnvelope(t *testing.T) {
 	}
 }
 
+func TestCompleteNilClientReturnsStableError(t *testing.T) {
+	t.Parallel()
+
+	var client *openaipreset.Client
+	_, err := client.Complete(t.Context(), openaipreset.CompletionRequest{})
+	if err == nil || err.Error() != "openaipreset: client is nil" {
+		t.Fatalf("Complete error = %v, want stable nil-client error", err)
+	}
+}
+
 func TestCompletePreservesInFlightContextErrors(t *testing.T) {
 	t.Parallel()
 

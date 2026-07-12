@@ -31,6 +31,10 @@ func checkResults(policy *omap, selected selection, args *cliArgs) (int, error) 
 	}
 
 	if len(resultFiles(baselinePath)) == 0 {
+		if args.requireBaseline {
+			fmt.Fprintf(os.Stderr, "error: required baseline has no result files: %s\n", baselinePath)
+			return 2, nil
+		}
 		if candidate.Race {
 			fmt.Fprintln(os.Stderr, "error: refusing to create baseline from race benchmark results")
 			return 2, nil

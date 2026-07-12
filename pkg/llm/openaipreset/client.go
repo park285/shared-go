@@ -2,8 +2,6 @@ package openaipreset
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -170,7 +168,7 @@ func (c *Client) RunInto(ctx context.Context, task, prompt string, schema map[st
 	if c == nil {
 		return errClientNil
 	}
-	if out == nil {
+	if isNilOutputTarget(out) {
 		return errors.New("openaipreset: output target is nil")
 	}
 	resp, err := c.generate(ctx, task, "", "", "", prompt, schema)
@@ -219,7 +217,7 @@ func (c *Client) generate(
 
 func decodeJSONInto(task, text string, out any) error {
 	if err := sharedjson.Unmarshal([]byte(text), out); err != nil {
-		return fmt.Errorf("decode %s json failed: %w; output=%s", strings.TrimSpace(task), err, sharedllm.RedactDiagnostic(text, 2048))
+		return fmt.Errorf("decode %s json failed", strings.TrimSpace(task))
 	}
 	return nil
 }
@@ -244,10 +242,6 @@ func promptSummaryAttrs(model, prompt string) []slog.Attr {
 		slog.String("provider", providerLabel),
 		slog.String("model", model),
 		slog.Int("prompt_len", len(prompt)),
-	}
-	if prompt != "" {
-		sum := sha256.Sum256([]byte(prompt))
-		attrs = append(attrs, slog.String("prompt_sha256_8", hex.EncodeToString(sum[:8])))
 	}
 	return attrs
 }

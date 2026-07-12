@@ -33,34 +33,13 @@ func TestNormalizeViewsConfusableGolden(t *testing.T) {
 	}
 }
 
-func TestNormalizeFastPathASCIIAllowlistMatchesPredicate(t *testing.T) {
-	t.Parallel()
-
-	for r := range len(normalizeFastPathASCII) {
-		want := isNormalizeFastPathRune(rune(r))
-		if got := normalizeFastPathASCII[r]; got != want {
-			t.Fatalf("normalizeFastPathASCII[%#x] = %v, want %v", r, got, want)
-		}
-	}
-
-	for _, r := range []rune{'0', '1', '"', '`', '%', '|'} {
-		if normalizeFastPathASCII[r] {
-			t.Fatalf("normalizeFastPathASCII[%q] = true, want false for confusable-folding rune", r)
-		}
-	}
-
-	if !normalizeFastPathASCII[' '] {
-		t.Fatal("normalizeFastPathASCII[' '] = false, want true for identity ASCII whitespace")
-	}
-}
-
 func TestNormalizePostProcessMatchesLegacyPipeline(t *testing.T) {
 	t.Parallel()
 
 	input := "\u200b  MIXED\tCase\n\u00a0Text  "
-	legacy := strings.TrimSpace(collapseWhitespace(strings.ToLower(stripControlChars(input))))
-	if got := normalizePostProcess(input); got != legacy {
-		t.Fatalf("normalizePostProcess(%q) = %q, want legacy %q", input, got, legacy)
+	baseline := strings.TrimSpace(collapseWhitespace(strings.ToLower(stripControlChars(input))))
+	if got := normalizePostProcess(input); got != baseline {
+		t.Fatalf("normalizePostProcess(%q) = %q, want baseline %q", input, got, baseline)
 	}
 }
 

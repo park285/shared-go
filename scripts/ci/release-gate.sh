@@ -20,6 +20,7 @@ run_stage make lint
 run_stage make test
 run_stage make test-race
 run_stage make perf-gate
+run_stage make guard-perf-gate
 run_stage make vulncheck
 run_stage go mod tidy -diff
 
