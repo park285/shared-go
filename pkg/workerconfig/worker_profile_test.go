@@ -2,6 +2,7 @@ package workerconfig
 
 import (
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -104,6 +105,80 @@ func TestRuntimeDiagnosticsDecodesFieldConversions(t *testing.T) {
 	}
 	if len(profile.ProfileHash()) != 64 {
 		t.Fatalf("ProfileHash() length = %d, want 64", len(profile.ProfileHash()))
+	}
+}
+
+func TestRuntimeDiagnosticsDefaultsBreakerFieldsIntoCanonicalProfile(t *testing.T) {
+	profile, err := DecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics(strings.NewReader(wrapWorkerProfileDiagnostics(`{
+		"version": 1,
+		"profile_id": "legacy-v1-profile",
+		"delivery": {
+			"lane_workers": 32,
+			"lane_queue_capacity": 128,
+			"max_global_in_flight": 32,
+			"max_per_endpoint_in_flight": 8,
+			"max_drain_per_tick": 128,
+			"max_attempts": 6,
+			"request_timeout_ms": 125000,
+			"lane_idle_timeout_ms": 750
+		},
+		"receive": {
+			"workers": 16,
+			"queue_size": 1000,
+			"enqueue_timeout_ms": 50,
+			"handler_timeout_ms": 120000,
+			"max_body_bytes": 65536,
+			"dedup_ttl_ms": 60000,
+			"dedup_timeout_ms": 200
+		},
+		"bot_pool": {
+			"workers": 10,
+			"queue_size": 100
+		},
+		"validation": {
+			"min_queue_per_endpoint_multiplier": 4,
+			"require_receive_capacity_for_endpoint_burst": true
+		}
+	}`)))
+	if err != nil {
+		t.Fatalf("DecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics() error = %v", err)
+	}
+
+	want := `"breaker_failure_threshold":5,"breaker_cooldown_ms":30000`
+	if got := string(profile.CanonicalJSON()); !strings.Contains(got, want) {
+		t.Fatalf("CanonicalJSON() = %s, want %s", got, want)
+	}
+}
+
+func TestRuntimeDiagnosticsRejectsNullBreakerFields(t *testing.T) {
+	diagnostics := wrapWorkerProfileDiagnostics(`{
+		"version":1,"profile_id":"null-breaker",
+		"delivery":{"lane_workers":32,"lane_queue_capacity":128,"max_global_in_flight":32,"max_per_endpoint_in_flight":8,"max_drain_per_tick":128,"max_attempts":6,"request_timeout_ms":30000,"lane_idle_timeout_ms":750,"breaker_failure_threshold":null,"breaker_cooldown_ms":30000},
+		"receive":{"workers":16,"queue_size":1000,"enqueue_timeout_ms":50,"handler_timeout_ms":30000,"max_body_bytes":65536,"dedup_ttl_ms":60000,"dedup_timeout_ms":200},
+		"bot_pool":{"workers":10,"queue_size":100},
+		"validation":{"min_queue_per_endpoint_multiplier":4,"require_receive_capacity_for_endpoint_burst":true}
+	}`)
+	_, err := DecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics(strings.NewReader(diagnostics))
+	if err == nil || !strings.Contains(err.Error(), "must not be null") {
+		t.Fatalf("DecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics() error = %v, want null rejection", err)
+	}
+}
+
+func TestCanonicalWorkerProfileV1Golden(t *testing.T) {
+	raw, err := os.ReadFile("testdata/worker-profile-v1-legacy.json")
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	profile, err := DecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics(
+		strings.NewReader(wrapWorkerProfileDiagnostics(string(raw))),
+	)
+	if err != nil {
+		t.Fatalf("DecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics() error = %v", err)
+	}
+
+	const wantHash = "48e6b84fe794daa2a349ebb77b6f9e8f1054e5bcfe336b7ab5fe2dbe1dcb8b1f"
+	if got := profile.ProfileHash(); got != wantHash {
+		t.Fatalf("ProfileHash() = %s, want %s; canonical=%s", got, wantHash, profile.CanonicalJSON())
 	}
 }
 
@@ -401,16 +476,26 @@ func TestValidateRejectsReceiveCapacityBelowDeliveryBurst(t *testing.T) {
 	}
 }
 
-func TestValidateRejectsDeliveryTimeoutBeyondReceiveHandlerBudget(t *testing.T) {
+func TestValidateAllowsDeliveryTimeoutIndependentOfReceiveHandlerBudget(t *testing.T) {
 	profile := defaultIrisBotWebhookWorkerProfile()
 	profile.Delivery.RequestTimeout = 40 * time.Second
 	profile.Receive.HandlerTimeout = 30 * time.Second
 
+	if err := profile.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v, want independent delivery and receive timeouts", err)
+	}
+}
+
+func TestValidateRejectsEnabledBreakerWithoutCooldown(t *testing.T) {
+	profile := defaultIrisBotWebhookWorkerProfile()
+	profile.Delivery.BreakerFailureThreshold = 5
+	profile.Delivery.BreakerCooldown = 0
+
 	err := profile.Validate()
 	if err == nil {
-		t.Fatal("Validate() error = nil, want timeout budget error")
+		t.Fatal("Validate() error = nil, want breaker cooldown error")
 	}
-	if !strings.Contains(err.Error(), "delivery.request_timeout_ms must fit receive.handler_timeout_ms") {
+	if !strings.Contains(err.Error(), "delivery.breaker_cooldown_ms must be > 0 when breaker_failure_threshold > 0") {
 		t.Fatalf("Validate() error = %v", err)
 	}
 }

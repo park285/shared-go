@@ -20,14 +20,16 @@ const (
 const (
 	defaultProfileID = "default"
 
-	defaultDeliveryLaneWorkers            = 32
-	defaultDeliveryLaneQueueCapacity      = defaultDeliveryLaneWorkers * 4
-	defaultDeliveryMaxGlobalInFlight      = 32
-	defaultDeliveryMaxPerEndpointInFlight = 8
-	defaultDeliveryMaxDrainPerTick        = 128
-	defaultDeliveryMaxAttempts            = 6
-	defaultDeliveryRequestTimeout         = 125 * time.Second
-	defaultDeliveryLaneIdleTimeout        = 750 * time.Millisecond
+	defaultDeliveryLaneWorkers             = 32
+	defaultDeliveryLaneQueueCapacity       = defaultDeliveryLaneWorkers * 4
+	defaultDeliveryMaxGlobalInFlight       = 32
+	defaultDeliveryMaxPerEndpointInFlight  = 8
+	defaultDeliveryMaxDrainPerTick         = 128
+	defaultDeliveryMaxAttempts             = 6
+	defaultDeliveryRequestTimeout          = 125 * time.Second
+	defaultDeliveryLaneIdleTimeout         = 750 * time.Millisecond
+	defaultDeliveryBreakerFailureThreshold = uint32(5)
+	defaultDeliveryBreakerCooldown         = 30 * time.Second
 
 	defaultReceiveWorkers        = 16
 	defaultReceiveQueueSize      = 1000
@@ -41,7 +43,6 @@ const (
 	defaultBotPoolQueueSize = 100
 
 	defaultMinQueuePerEndpointMultiplier = 4
-	timeoutNetworkMargin                 = 5 * time.Second
 
 	maxWorkers          = 4096
 	maxQueueCapacity    = 1 << 20
@@ -65,14 +66,16 @@ type IrisBotWebhookWorkerProfile struct {
 }
 
 type irisWebhookDeliveryWorkerProfile struct {
-	LaneWorkers            int           `json:"-"`
-	LaneQueueCapacity      int           `json:"-"`
-	MaxGlobalInFlight      int           `json:"-"`
-	MaxPerEndpointInFlight int           `json:"-"`
-	MaxDrainPerTick        int           `json:"-"`
-	MaxAttempts            int           `json:"-"`
-	RequestTimeout         time.Duration `json:"-"`
-	LaneIdleTimeout        time.Duration `json:"-"`
+	LaneWorkers             int           `json:"-"`
+	LaneQueueCapacity       int           `json:"-"`
+	MaxGlobalInFlight       int           `json:"-"`
+	MaxPerEndpointInFlight  int           `json:"-"`
+	MaxDrainPerTick         int           `json:"-"`
+	MaxAttempts             int           `json:"-"`
+	RequestTimeout          time.Duration `json:"-"`
+	LaneIdleTimeout         time.Duration `json:"-"`
+	BreakerFailureThreshold uint32        `json:"-"`
+	BreakerCooldown         time.Duration `json:"-"`
 }
 
 type botWebhookReceiveWorkerProfile struct {
@@ -126,14 +129,52 @@ func (f wireBotPoolWorkerProfileField) MarshalJSON() ([]byte, error) {
 }
 
 type wireWebhookDeliveryWorkerProfile struct {
-	LaneWorkers            int `json:"lane_workers"`
-	LaneQueueCapacity      int `json:"lane_queue_capacity"`
-	MaxGlobalInFlight      int `json:"max_global_in_flight"`
-	MaxPerEndpointInFlight int `json:"max_per_endpoint_in_flight"`
-	MaxDrainPerTick        int `json:"max_drain_per_tick"`
-	MaxAttempts            int `json:"max_attempts"`
-	RequestTimeoutMS       int `json:"request_timeout_ms"`
-	LaneIdleTimeoutMS      int `json:"lane_idle_timeout_ms"`
+	LaneWorkers             int                 `json:"lane_workers"`
+	LaneQueueCapacity       int                 `json:"lane_queue_capacity"`
+	MaxGlobalInFlight       int                 `json:"max_global_in_flight"`
+	MaxPerEndpointInFlight  int                 `json:"max_per_endpoint_in_flight"`
+	MaxDrainPerTick         int                 `json:"max_drain_per_tick"`
+	MaxAttempts             int                 `json:"max_attempts"`
+	RequestTimeoutMS        int                 `json:"request_timeout_ms"`
+	LaneIdleTimeoutMS       int                 `json:"lane_idle_timeout_ms"`
+	BreakerFailureThreshold optionalUint32Field `json:"breaker_failure_threshold"`
+	BreakerCooldownMS       optionalIntField    `json:"breaker_cooldown_ms"`
+}
+
+type optionalUint32Field struct {
+	value   uint32
+	present bool
+}
+
+func (f *optionalUint32Field) UnmarshalJSON(data []byte) error {
+	f.present = true
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		return errors.New("must not be null")
+	}
+
+	return json.Unmarshal(data, &f.value)
+}
+
+func (f optionalUint32Field) MarshalJSON() ([]byte, error) {
+	return json.Marshal(f.value)
+}
+
+type optionalIntField struct {
+	value   int
+	present bool
+}
+
+func (f *optionalIntField) UnmarshalJSON(data []byte) error {
+	f.present = true
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		return errors.New("must not be null")
+	}
+
+	return json.Unmarshal(data, &f.value)
+}
+
+func (f optionalIntField) MarshalJSON() ([]byte, error) {
+	return json.Marshal(f.value)
 }
 
 type wireWebhookReceiveWorkerProfile struct {
@@ -151,14 +192,16 @@ func defaultIrisBotWebhookWorkerProfile() IrisBotWebhookWorkerProfile {
 		Version:   CurrentVersion,
 		ProfileID: defaultProfileID,
 		Delivery: irisWebhookDeliveryWorkerProfile{
-			LaneWorkers:            defaultDeliveryLaneWorkers,
-			LaneQueueCapacity:      defaultDeliveryLaneQueueCapacity,
-			MaxGlobalInFlight:      defaultDeliveryMaxGlobalInFlight,
-			MaxPerEndpointInFlight: defaultDeliveryMaxPerEndpointInFlight,
-			MaxDrainPerTick:        defaultDeliveryMaxDrainPerTick,
-			MaxAttempts:            defaultDeliveryMaxAttempts,
-			RequestTimeout:         defaultDeliveryRequestTimeout,
-			LaneIdleTimeout:        defaultDeliveryLaneIdleTimeout,
+			LaneWorkers:             defaultDeliveryLaneWorkers,
+			LaneQueueCapacity:       defaultDeliveryLaneQueueCapacity,
+			MaxGlobalInFlight:       defaultDeliveryMaxGlobalInFlight,
+			MaxPerEndpointInFlight:  defaultDeliveryMaxPerEndpointInFlight,
+			MaxDrainPerTick:         defaultDeliveryMaxDrainPerTick,
+			MaxAttempts:             defaultDeliveryMaxAttempts,
+			RequestTimeout:          defaultDeliveryRequestTimeout,
+			LaneIdleTimeout:         defaultDeliveryLaneIdleTimeout,
+			BreakerFailureThreshold: defaultDeliveryBreakerFailureThreshold,
+			BreakerCooldown:         defaultDeliveryBreakerCooldown,
 		},
 		Receive: botWebhookReceiveWorkerProfile{
 			Workers:        defaultReceiveWorkers,
@@ -279,8 +322,10 @@ func (p IrisBotWebhookWorkerProfile) Validate() error {
 		if p.Delivery.MaxGlobalInFlight > p.Receive.Workers+p.Receive.QueueSize {
 			problems = append(problems, "delivery.max_global_in_flight must be <= receive.workers + receive.queue_size")
 		}
-		if p.Delivery.RequestTimeout > p.Receive.HandlerTimeout+timeoutNetworkMargin {
-			problems = append(problems, "delivery.request_timeout_ms must fit receive.handler_timeout_ms plus network margin")
+		if p.Delivery.BreakerCooldown < 0 {
+			problems = append(problems, "delivery.breaker_cooldown_ms must be >= 0")
+		} else if p.Delivery.BreakerFailureThreshold > 0 && p.Delivery.BreakerCooldown == 0 {
+			problems = append(problems, "delivery.breaker_cooldown_ms must be > 0 when breaker_failure_threshold > 0")
 		}
 	}
 
@@ -295,14 +340,16 @@ func (p IrisBotWebhookWorkerProfile) toWire() wireIrisBotWebhookWorkerProfile {
 		Version:   p.Version,
 		ProfileID: strings.TrimSpace(p.ProfileID),
 		Delivery: wireWebhookDeliveryWorkerProfile{
-			LaneWorkers:            p.Delivery.LaneWorkers,
-			LaneQueueCapacity:      p.Delivery.LaneQueueCapacity,
-			MaxGlobalInFlight:      p.Delivery.MaxGlobalInFlight,
-			MaxPerEndpointInFlight: p.Delivery.MaxPerEndpointInFlight,
-			MaxDrainPerTick:        p.Delivery.MaxDrainPerTick,
-			MaxAttempts:            p.Delivery.MaxAttempts,
-			RequestTimeoutMS:       int(p.Delivery.RequestTimeout / time.Millisecond),
-			LaneIdleTimeoutMS:      int(p.Delivery.LaneIdleTimeout / time.Millisecond),
+			LaneWorkers:             p.Delivery.LaneWorkers,
+			LaneQueueCapacity:       p.Delivery.LaneQueueCapacity,
+			MaxGlobalInFlight:       p.Delivery.MaxGlobalInFlight,
+			MaxPerEndpointInFlight:  p.Delivery.MaxPerEndpointInFlight,
+			MaxDrainPerTick:         p.Delivery.MaxDrainPerTick,
+			MaxAttempts:             p.Delivery.MaxAttempts,
+			RequestTimeoutMS:        int(p.Delivery.RequestTimeout / time.Millisecond),
+			LaneIdleTimeoutMS:       int(p.Delivery.LaneIdleTimeout / time.Millisecond),
+			BreakerFailureThreshold: optionalUint32Field{value: p.Delivery.BreakerFailureThreshold, present: true},
+			BreakerCooldownMS:       optionalIntField{value: int(p.Delivery.BreakerCooldown / time.Millisecond), present: true},
 		},
 		Receive: wireWebhookReceiveWorkerProfile{
 			Workers:          p.Receive.Workers,
@@ -325,6 +372,14 @@ func (p IrisBotWebhookWorkerProfile) toWire() wireIrisBotWebhookWorkerProfile {
 }
 
 func fromWire(wire wireIrisBotWebhookWorkerProfile) IrisBotWebhookWorkerProfile {
+	breakerFailureThreshold := defaultDeliveryBreakerFailureThreshold
+	if wire.Delivery.BreakerFailureThreshold.present {
+		breakerFailureThreshold = wire.Delivery.BreakerFailureThreshold.value
+	}
+	breakerCooldown := defaultDeliveryBreakerCooldown
+	if wire.Delivery.BreakerCooldownMS.present {
+		breakerCooldown = time.Duration(wire.Delivery.BreakerCooldownMS.value) * time.Millisecond
+	}
 	botPool := botPoolWorkerProfile{
 		Workers:   defaultBotPoolWorkers,
 		QueueSize: defaultBotPoolQueueSize,
@@ -340,14 +395,16 @@ func fromWire(wire wireIrisBotWebhookWorkerProfile) IrisBotWebhookWorkerProfile 
 		Version:   wire.Version,
 		ProfileID: strings.TrimSpace(wire.ProfileID),
 		Delivery: irisWebhookDeliveryWorkerProfile{
-			LaneWorkers:            wire.Delivery.LaneWorkers,
-			LaneQueueCapacity:      wire.Delivery.LaneQueueCapacity,
-			MaxGlobalInFlight:      wire.Delivery.MaxGlobalInFlight,
-			MaxPerEndpointInFlight: wire.Delivery.MaxPerEndpointInFlight,
-			MaxDrainPerTick:        wire.Delivery.MaxDrainPerTick,
-			MaxAttempts:            wire.Delivery.MaxAttempts,
-			RequestTimeout:         time.Duration(wire.Delivery.RequestTimeoutMS) * time.Millisecond,
-			LaneIdleTimeout:        time.Duration(wire.Delivery.LaneIdleTimeoutMS) * time.Millisecond,
+			LaneWorkers:             wire.Delivery.LaneWorkers,
+			LaneQueueCapacity:       wire.Delivery.LaneQueueCapacity,
+			MaxGlobalInFlight:       wire.Delivery.MaxGlobalInFlight,
+			MaxPerEndpointInFlight:  wire.Delivery.MaxPerEndpointInFlight,
+			MaxDrainPerTick:         wire.Delivery.MaxDrainPerTick,
+			MaxAttempts:             wire.Delivery.MaxAttempts,
+			RequestTimeout:          time.Duration(wire.Delivery.RequestTimeoutMS) * time.Millisecond,
+			LaneIdleTimeout:         time.Duration(wire.Delivery.LaneIdleTimeoutMS) * time.Millisecond,
+			BreakerFailureThreshold: breakerFailureThreshold,
+			BreakerCooldown:         breakerCooldown,
 		},
 		Receive: botWebhookReceiveWorkerProfile{
 			Workers:        wire.Receive.Workers,
