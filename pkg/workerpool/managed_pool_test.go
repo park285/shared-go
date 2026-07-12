@@ -343,6 +343,47 @@ func TestManagedPoolStartsConfiguredWorkersForPreloadedQueue(t *testing.T) {
 	releaseWorkers()
 }
 
+func TestManagedPoolWakesConfiguredWorkersAlreadyWaiting(t *testing.T) {
+	previousProcs := runtime.GOMAXPROCS(1)
+	defer runtime.GOMAXPROCS(previousProcs)
+	pool := workerpool.NewManaged(workerpool.ManagedConfig{Workers: 4, QueueSize: 4})
+	started := make(chan struct{}, 4)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseWorkers := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(func() {
+		releaseWorkers()
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := pool.CloseContext(ctx); err != nil {
+			t.Errorf("CloseContext() error = %v", err)
+		}
+	})
+
+	// 모든 worker가 빈 queue에서 대기하도록 한 뒤 한 scheduler turn에 작업을 넣는다.
+	time.Sleep(20 * time.Millisecond)
+	for index := range 4 {
+		if !pool.TrySubmit(workerpool.JobSpec{
+			Kind: fmt.Sprintf("waiting-%d", index),
+			Run: func(context.Context) {
+				started <- struct{}{}
+				<-release
+			},
+		}) {
+			t.Fatalf("TrySubmit(%d) = false", index)
+		}
+	}
+
+	for index := range 4 {
+		select {
+		case <-started:
+		case <-time.After(200 * time.Millisecond):
+			t.Fatalf("started workers = %d, want 4", index)
+		}
+	}
+	releaseWorkers()
+}
+
 func TestManagedPoolCloseContextReturnsWhenQueuedFinalizerDoesNotReturn(t *testing.T) {
 	started := make(chan struct{})
 	releaseRun := make(chan struct{})
@@ -377,65 +418,6 @@ func TestManagedPoolCloseContextReturnsWhenQueuedFinalizerDoesNotReturn(t *testi
 	close(releaseRun)
 	if err := pool.CloseContext(context.Background()); err != nil {
 		t.Fatalf("CloseContext(cleanup) error = %v", err)
-	}
-}
-
-func TestManagedPoolAdmissionCallbackCompletesBeforeRun(t *testing.T) {
-	t.Parallel()
-
-	pool := workerpool.NewManaged(workerpool.ManagedConfig{Workers: 1, QueueSize: 1})
-	t.Cleanup(func() {
-		if err := pool.CloseContext(context.Background()); err != nil {
-			t.Errorf("CloseContext() error = %v", err)
-		}
-	})
-
-	admissionStarted := make(chan struct{})
-	releaseAdmission := make(chan struct{})
-	runStarted := make(chan struct{})
-	submitted := make(chan bool, 1)
-	go func() {
-		submitted <- pool.TrySubmit(workerpool.JobSpec{
-			OnAdmitted: func() {
-				close(admissionStarted)
-				<-releaseAdmission
-			},
-			Run: func(context.Context) { close(runStarted) },
-		})
-	}()
-
-	awaitClosed(t, admissionStarted, "admission callback start")
-	select {
-	case <-runStarted:
-		t.Fatal("job ran before admission callback completed")
-	default:
-	}
-
-	close(releaseAdmission)
-	if accepted := awaitValue(t, submitted, "TrySubmit result"); !accepted {
-		t.Fatal("TrySubmit() = false, want true")
-	}
-	awaitClosed(t, runStarted, "job start after admission callback")
-}
-
-func TestManagedPoolRejectedJobDoesNotCallAdmissionCallback(t *testing.T) {
-	t.Parallel()
-
-	pool := workerpool.NewManaged(workerpool.ManagedConfig{Workers: 1, QueueSize: 1})
-	if err := pool.CloseContext(context.Background()); err != nil {
-		t.Fatalf("CloseContext() error = %v", err)
-	}
-
-	called := false
-	accepted := pool.TrySubmit(workerpool.JobSpec{
-		OnAdmitted: func() { called = true },
-		Run:        func(context.Context) {},
-	})
-	if accepted {
-		t.Fatal("TrySubmit() = true after close, want false")
-	}
-	if called {
-		t.Fatal("rejected job called admission callback")
 	}
 }
 

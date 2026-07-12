@@ -38,10 +38,8 @@ type JobSpec struct {
 	Kind        string
 	Timeout     time.Duration
 	MaxQueueAge time.Duration
-	// OnAdmitted는 queue가 job 소유권을 얻은 뒤, worker가 job을 보기 전에 호출된다.
-	OnAdmitted func()
-	Run        func(context.Context)
-	Finalize   func(context.Context, JobOutcome)
+	Run         func(context.Context)
+	Finalize    func(context.Context, JobOutcome)
 }
 
 // ManagedConfig는 ManagedPool의 고정 worker, queue, cleanup budget을 설정한다.
@@ -64,7 +62,6 @@ type managedJob struct {
 	spec         JobSpec
 	enqueuedAt   time.Time
 	expiresAt    time.Time
-	ready        bool
 	finalizeOnce sync.Once
 }
 
@@ -74,12 +71,11 @@ type ManagedPool struct {
 	queue           []*managedJob
 	queueSize       int
 	closed          bool
-	workNotify      chan struct{}
+	workAvailable   *sync.Cond
 	reaperNotify    chan struct{}
 	stopCh          chan struct{}
 	shutdownDone    chan struct{}
 	shutdownOnce    sync.Once
-	admissionWG     sync.WaitGroup
 	workerWG        sync.WaitGroup
 	reaperWG        sync.WaitGroup
 	inFlight        map[*managedJob]context.CancelCauseFunc
@@ -106,7 +102,6 @@ func NewManaged(config ManagedConfig) *ManagedPool {
 	pool := &ManagedPool{
 		queue:           make([]*managedJob, 0, config.QueueSize),
 		queueSize:       config.QueueSize,
-		workNotify:      make(chan struct{}, 1),
 		reaperNotify:    make(chan struct{}, 1),
 		stopCh:          make(chan struct{}),
 		shutdownDone:    make(chan struct{}),
@@ -115,6 +110,7 @@ func NewManaged(config ManagedConfig) *ManagedPool {
 		finalizeTimeout: config.FinalizeTimeout,
 		logger:          config.Logger,
 	}
+	pool.workAvailable = sync.NewCond(&pool.mu)
 	for range config.Workers {
 		pool.workerWG.Add(1)
 		go pool.worker()
@@ -164,14 +160,8 @@ func (p *ManagedPool) TrySubmit(spec JobSpec) bool {
 		return false
 	}
 	p.queue = append(p.queue, job)
-	p.admissionWG.Add(1)
+	p.workAvailable.Signal()
 	p.mu.Unlock()
-	p.notifyAdmitted(job)
-	p.mu.Lock()
-	job.ready = true
-	p.mu.Unlock()
-	p.admissionWG.Done()
-	signalManagedPool(p.workNotify)
 	if !job.expiresAt.IsZero() {
 		signalManagedPool(p.reaperNotify)
 	}
@@ -205,12 +195,12 @@ func (p *ManagedPool) shutdown() {
 		cancels = append(cancels, cancel)
 	}
 	close(p.stopCh)
+	p.workAvailable.Broadcast()
 	p.mu.Unlock()
 
 	for _, cancel := range cancels {
 		cancel(ErrPoolShutdown)
 	}
-	p.admissionWG.Wait()
 	for _, job := range queued {
 		p.finalizeJob(job, JobOutcomeShutdown)
 	}
@@ -226,14 +216,6 @@ func (p *ManagedPool) worker() {
 		if !ok {
 			return
 		}
-		if job == nil {
-			select {
-			case <-p.workNotify:
-			case <-p.stopCh:
-				return
-			}
-			continue
-		}
 		p.run(job)
 	}
 }
@@ -241,19 +223,14 @@ func (p *ManagedPool) worker() {
 func (p *ManagedPool) take() (*managedJob, bool) {
 	for {
 		p.mu.Lock()
+		for !p.closed && len(p.queue) == 0 {
+			p.workAvailable.Wait()
+		}
 		if p.closed {
 			p.mu.Unlock()
 			return nil, false
 		}
-		if len(p.queue) == 0 {
-			p.mu.Unlock()
-			return nil, true
-		}
 		job := p.queue[0]
-		if !job.ready {
-			p.mu.Unlock()
-			return nil, true
-		}
 		p.queue[0] = nil
 		p.queue = p.queue[1:]
 		p.mu.Unlock()
@@ -364,7 +341,7 @@ func (p *ManagedPool) nextExpiry() (time.Time, bool) {
 	defer p.mu.Unlock()
 	var earliest time.Time
 	for _, job := range p.queue {
-		if !job.ready || job.expiresAt.IsZero() || (!earliest.IsZero() && !job.expiresAt.Before(earliest)) {
+		if job.expiresAt.IsZero() || (!earliest.IsZero() && !job.expiresAt.Before(earliest)) {
 			continue
 		}
 		earliest = job.expiresAt
@@ -377,7 +354,7 @@ func (p *ManagedPool) expireStale(now time.Time) {
 	stale := make([]*managedJob, 0)
 	kept := p.queue[:0]
 	for _, job := range p.queue {
-		if job.ready && !job.expiresAt.IsZero() && !now.Before(job.expiresAt) {
+		if !job.expiresAt.IsZero() && !now.Before(job.expiresAt) {
 			stale = append(stale, job)
 			continue
 		}
@@ -391,23 +368,6 @@ func (p *ManagedPool) expireStale(now time.Time) {
 	for _, job := range stale {
 		p.finalizeJob(job, JobOutcomeStale)
 	}
-}
-
-func (p *ManagedPool) notifyAdmitted(job *managedJob) {
-	if job == nil || job.spec.OnAdmitted == nil {
-		return
-	}
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			p.logger.Error(
-				"managed_worker_admission_callback_panicked",
-				slog.String("kind", job.spec.Kind),
-				slog.Any("panic", fmt.Sprintf("%v", recovered)),
-				slog.String("stack", string(debug.Stack())),
-			)
-		}
-	}()
-	job.spec.OnAdmitted()
 }
 
 func (p *ManagedPool) finalizeJob(job *managedJob, outcome JobOutcome) {

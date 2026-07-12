@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.30.0 - 2026-07-12
+
+### Fixed
+
+- `workerpool.ManagedPool` now uses a condition variable for queue availability, so a burst
+  wakes the configured workers without the capacity-one notification interleaving collapsing
+  execution to a single worker.
+- Queue expiry and shutdown now operate on every admitted job immediately; there is no
+  admission-callback state that can hide a job from the stale reaper or delay pool shutdown.
+
+### Removed (Breaking)
+
+- `workerpool.JobSpec.OnAdmitted` was removed. Admission must remain an in-memory ownership
+  decision; progress replies and other external I/O belong at the start of `Run`, where the
+  dequeue-time job context, timeout cause, expiry, finalizer, and shutdown contract apply.
+
 ## v1.27.0 - 2026-07-04
 
 ### Added
