@@ -77,13 +77,8 @@ func protectedOverlap(surfaces []string, index *protectedIndex) bool {
 	if index == nil || len(surfaces) == 0 {
 		return false
 	}
-	for _, surface := range surfaces {
-		if index.overlapsText(surface) {
-			return true
-		}
-	}
 
-	return false
+	return slices.ContainsFunc(surfaces, index.overlapsText)
 }
 
 func outputSurfaces(text string) ([]string, bool) {
