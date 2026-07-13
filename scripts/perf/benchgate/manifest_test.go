@@ -168,6 +168,18 @@ func TestCompatibleV2RejectsRaceAndMismatches(t *testing.T) {
 	}
 }
 
+func TestParseArgsRejectsRetiredReaderModes(t *testing.T) {
+	for _, argv := range [][]string{
+		{"check-v2"},
+		{"--require-baseline"},
+		{"--allow-smoke-baseline"},
+	} {
+		if _, _, err := parseArgs(argv); err == nil {
+			t.Fatalf("parseArgs(%q) accepted a retired reader mode", argv)
+		}
+	}
+}
+
 func TestValidateFilesRejectsNonCanonicalAliases(t *testing.T) {
 	root := t.TempDir()
 	files := writeManifestResult(t, root, "candidate")
@@ -348,8 +360,8 @@ func TestBootstrapBaselineWritesAbsentTargetOnly(t *testing.T) {
 	if _, err := validateBaselineManifest(args.baseline); err != nil {
 		t.Fatal(err)
 	}
-	if code, err := checkV2Results(policy, selected, args, root, "fixture"); err != nil || code != 0 {
-		t.Fatalf("check-v2: code=%d err=%v", code, err)
+	if code, err := checkResults(policy, selected, args, root, "fixture"); err != nil || code != 0 {
+		t.Fatalf("check: code=%d err=%v", code, err)
 	}
 	if _, err := bootstrapBaseline(policy, selected, args, root, "fixture"); err == nil {
 		t.Fatal("bootstrap replaced existing baseline")
@@ -357,10 +369,10 @@ func TestBootstrapBaselineWritesAbsentTargetOnly(t *testing.T) {
 	if err := os.RemoveAll(args.baseline); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := checkV2Results(policy, selected, args, root, "fixture"); err == nil {
-		t.Fatal("check-v2 accepted a missing baseline")
+	if _, err := checkResults(policy, selected, args, root, "fixture"); err == nil {
+		t.Fatal("check accepted a missing baseline")
 	}
 	if _, err := os.Stat(args.baseline); !os.IsNotExist(err) {
-		t.Fatal("check-v2 wrote a missing baseline")
+		t.Fatal("check wrote a missing baseline")
 	}
 }

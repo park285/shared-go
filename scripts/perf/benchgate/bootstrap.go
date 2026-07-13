@@ -38,7 +38,7 @@ func compatibleV2(candidate *CandidateManifest, baseline *BaselineManifest) erro
 	return nil
 }
 
-func checkV2Results(policy *omap, selected selection, args *cliArgs, repoRoot, repoName string) (int, error) {
+func checkResults(policy *omap, selected selection, args *cliArgs, repoRoot, repoName string) (int, error) {
 	candidate, err := validateCandidateManifest(args.candidate)
 	if err != nil {
 		return 0, err

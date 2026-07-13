@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
 
 run_checker_missing_baseline() {
+  local baseline="$1"
+  local candidate="$2"
+  local policy="$3"
+  local fixture_root
+  fixture_root="$(dirname "${policy}")"
+
+  prepare_strict_evidence "${fixture_root}" "${policy}" "${baseline}" "${candidate}"
   set +e
-  LAST_OUTPUT="$("${CHECKER}" --baseline "$1" --candidate "$2" --policy "$3" --gate pr --gate-id fixture-gate 2>&1)"
+  LAST_OUTPUT="$(cd "${fixture_root}" && "${CHECKER}" --baseline "${baseline}" --candidate "${candidate}" --policy "${policy}" --gate pr --gate-id fixture-gate 2>&1)"
   # shellcheck disable=SC2034 # source하는 상위 fixture가 상태를 검사한다.
   LAST_STATUS=$?
   set -e
@@ -16,7 +23,7 @@ case_missing_baseline_fails_without_copy() {
   run_checker_missing_baseline "${dir}/baseline" "${dir}/candidate" "${dir}/policy.yaml"
   assert_failure "missing baseline fails"
   assert_exit_code "missing baseline exit code" 2
-  assert_contains "missing baseline message" "required baseline has no result files"
+  assert_contains "missing baseline message" "cannot read baseline manifest"
   if [[ -e "${dir}/baseline" ]]; then
     printf 'not ok - missing baseline was created\n%s\n' "${LAST_OUTPUT}" >&2
     exit 1

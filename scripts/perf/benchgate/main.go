@@ -70,14 +70,7 @@ func run(argv []string) int {
 		}
 		return code
 	}
-	if action == "check-v2" {
-		code, ce := checkV2Results(policy, selected, args, repoRoot, repoName)
-		if ce != nil {
-			return policyFail(ce)
-		}
-		return code
-	}
-	code, ce := checkResults(policy, selected, args)
+	code, ce := checkResults(policy, selected, args, repoRoot, repoName)
 	if ce != nil {
 		return policyFail(ce)
 	}
@@ -111,7 +104,7 @@ func policyFail(e error) int {
 
 func parseArgs(argv []string) (string, *cliArgs, error) {
 	action := "check"
-	if len(argv) > 0 && (argv[0] == "check" || argv[0] == "collect" || argv[0] == "check-v2" || argv[0] == "bootstrap-baseline") {
+	if len(argv) > 0 && (argv[0] == "check" || argv[0] == "collect" || argv[0] == "bootstrap-baseline") {
 		action = argv[0]
 		argv = argv[1:]
 	}

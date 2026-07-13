@@ -187,12 +187,7 @@ EOF
   git -C "${dir}" commit -qm fixture
 }
 
-run_checker() {
-  set +e
-  LAST_OUTPUT="$("${CHECKER}" --baseline "$1" --candidate "$2" --policy "$3" --gate pr --gate-id fixture-gate 2>&1)"
-  LAST_STATUS=$?
-  set -e
-}
+source "${SCRIPT_DIR}/check-bench-regression-fixture-support.sh"
 
 run_collect_checker() {
   local repo_dir="$1"
