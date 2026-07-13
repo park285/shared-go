@@ -12,10 +12,12 @@ import (
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/responses"
 
 	"github.com/park285/shared-go/pkg/httputil"
 	sharedjson "github.com/park285/shared-go/pkg/json"
 	sharedllm "github.com/park285/shared-go/pkg/llm"
+	"github.com/park285/shared-go/pkg/llm/internal/openaidiag"
 	"github.com/park285/shared-go/pkg/logging"
 )
 
@@ -27,17 +29,21 @@ const (
 
 var errClientNil = errors.New("openaipreset: client is nil")
 
+// ErrResponsesJSONRequired는 strict Responses JSON contract를 fallback 없이 충족할 수 없을 때 반환된다.
+var ErrResponsesJSONRequired = errors.New("openaipreset: responses JSON transport required")
+
 type Client struct {
-	generator       sharedllm.JSONGenerator
-	openai          openai.Client
-	model           string
-	schemaName      string
-	temperature     *float64
-	reasoningEffort string
-	webSearch       bool
-	chatCompletions bool
-	usageReporter   sharedllm.UsageReporter
-	logger          *slog.Logger
+	generator                    sharedllm.JSONGenerator
+	openai                       openai.Client
+	model                        string
+	schemaName                   string
+	temperature                  *float64
+	reasoningEffort              string
+	webSearch                    bool
+	chatCompletions              bool
+	allowChatCompletionsFallback bool
+	usageReporter                sharedllm.UsageReporter
+	logger                       *slog.Logger
 }
 
 type PromptLayers struct {
@@ -51,10 +57,7 @@ func New(baseURL, apiKey, model string, opts ...Option) (*Client, error) {
 		return nil, errors.New("openaipreset: model is empty")
 	}
 
-	cfg := &config{
-		schemaName:                   defaultSchemaName,
-		allowChatCompletionsFallback: true,
-	}
+	cfg := &config{schemaName: defaultSchemaName}
 	for _, opt := range opts {
 		opt(cfg)
 	}
@@ -86,16 +89,17 @@ func New(baseURL, apiKey, model string, opts ...Option) (*Client, error) {
 	}
 
 	return &Client{
-		generator:       generator,
-		openai:          openai.NewClient(requestOpts...),
-		model:           strings.TrimSpace(model),
-		schemaName:      cfg.schemaName,
-		temperature:     cfg.temperature,
-		reasoningEffort: cfg.reasoningEffort,
-		webSearch:       cfg.webSearch,
-		chatCompletions: cfg.chatCompletions,
-		usageReporter:   reporter,
-		logger:          cfg.logger,
+		generator:                    generator,
+		openai:                       openai.NewClient(requestOpts...),
+		model:                        strings.TrimSpace(model),
+		schemaName:                   cfg.schemaName,
+		temperature:                  cfg.temperature,
+		reasoningEffort:              cfg.reasoningEffort,
+		webSearch:                    cfg.webSearch,
+		chatCompletions:              cfg.chatCompletions,
+		allowChatCompletionsFallback: cfg.allowChatCompletionsFallback,
+		usageReporter:                reporter,
+		logger:                       cfg.logger,
 	}, nil
 }
 
@@ -149,6 +153,69 @@ func (c *Client) GenerateJSONInto(
 		return err
 	}
 	return decodeJSONInto(task, resp.Text, out)
+}
+
+// GenerateLayeredResponsesJSON returns every Responses output_text fragment
+// before object extraction or destination decoding. It is intentionally strict:
+// callers using this boundary can validate the complete provider surface first.
+func (c *Client) GenerateLayeredResponsesJSON(ctx context.Context, task string, prompts PromptLayers, schema map[string]any) (string, error) {
+	if c == nil {
+		return "", errClientNil
+	}
+	if c.chatCompletions || c.allowChatCompletionsFallback {
+		return "", ErrResponsesJSONRequired
+	}
+	profile := sharedllm.InstructionProfileOpenAI
+	params, model, err := c.completionParams(CompletionRequest{
+		Messages: []Message{{Role: "system", Content: prompts.Invariant}, {Role: "developer", Content: prompts.Developer}, {Role: "user", Content: prompts.User}},
+		Model:    c.model, ResponseFormat: &ResponseFormat{Name: sharedllm.ResponsesSchemaName(task), Schema: schema, Strict: true}, InstructionProfile: &profile,
+	})
+	if err != nil {
+		return "", err
+	}
+	attrs := promptSummaryAttrs(model, prompts.Invariant+"\n"+prompts.Developer+"\n"+prompts.User)
+	return runRequest(ctx, c.logger, attrs, func() (string, error) {
+		resp, err := c.openai.Responses.New(ctx, params)
+		if err != nil {
+			return "", fmt.Errorf("openai responses API: %w", openaidiag.SafeError(err))
+		}
+		responseModel := strings.TrimSpace(resp.Model)
+		if responseModel == "" {
+			responseModel = model
+		}
+		c.usageReporter.RecordUsage(ctx, providerLabel, responseModel, sharedllm.Usage{
+			InputTokens:           int(resp.Usage.InputTokens),
+			OutputTokens:          int(resp.Usage.OutputTokens),
+			TotalTokens:           int(resp.Usage.TotalTokens),
+			CachedInputTokens:     int(resp.Usage.InputTokensDetails.CachedTokens),
+			ReasoningOutputTokens: int(resp.Usage.OutputTokensDetails.ReasoningTokens),
+		})
+		text := completeResponsesOutputText(resp)
+		if strings.TrimSpace(text) == "" {
+			return "", sharedllm.ErrOpenAIEmptyOutput
+		}
+		return text, nil
+	})
+}
+
+func completeResponsesOutputText(resp *responses.Response) string {
+	if resp == nil {
+		return ""
+	}
+	var out strings.Builder
+	for itemIndex := range resp.Output {
+		item := &resp.Output[itemIndex]
+		if item.Type != "message" {
+			continue
+		}
+		for contentIndex := range item.Content {
+			content := &item.Content[contentIndex]
+			if content.Type == "output_text" {
+				out.WriteString(content.Text)
+			}
+		}
+	}
+	return out.String()
 }
 
 func isNilOutputTarget(out any) bool {

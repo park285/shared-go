@@ -364,11 +364,11 @@ func TestSanitizeResponsesSchemaName(t *testing.T) {
 		{"여러 비허용 문자", "a.b/c d", "a_b_c_d"},
 	}
 	for _, c := range cases {
-		if got := sanitizeResponsesSchemaName(c.in); got != c.want {
-			t.Fatalf("%s: sanitizeResponsesSchemaName(%q) = %q, want %q", c.name, c.in, got, c.want)
+		if got := ResponsesSchemaName(c.in); got != c.want {
+			t.Fatalf("%s: ResponsesSchemaName(%q) = %q, want %q", c.name, c.in, got, c.want)
 		}
 	}
-	if got := sanitizeResponsesSchemaName(strings.Repeat("a", 80)); len(got) != 64 {
+	if got := ResponsesSchemaName(strings.Repeat("a", 80)); len(got) != 64 {
 		t.Fatalf("64자 cap 실패: len=%d", len(got))
 	}
 }

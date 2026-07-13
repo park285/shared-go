@@ -100,7 +100,8 @@ var responsesSchemaNameInvalidChars = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
 
 // OpenAI Responses API의 text.format.name은 [a-zA-Z0-9_-](최대 64자)만 허용한다.
 // taskName을 그대로 schema name으로 넘기면 점 등 비허용 문자가 섞여 400(invalid_value)이 난다.
-func sanitizeResponsesSchemaName(name string) string {
+// ResponsesSchemaName은 Responses API의 schema name 제약에 맞게 task name을 정규화한다.
+func ResponsesSchemaName(name string) string {
 	cleaned := responsesSchemaNameInvalidChars.ReplaceAllString(strings.TrimSpace(name), "_")
 	if cleaned == "" {
 		return defaultResponsesSchemaName
@@ -117,7 +118,7 @@ func (g *OpenAICompatibleJSONGenerator) generateResponsesJSON(ctx context.Contex
 		Text: responses.ResponseTextConfigParam{
 			Format: responses.ResponseFormatTextConfigUnionParam{
 				OfJSONSchema: &responses.ResponseFormatTextJSONSchemaConfigParam{
-					Name:   sanitizeResponsesSchemaName(req.SchemaName),
+					Name:   ResponsesSchemaName(req.SchemaName),
 					Schema: req.Schema,
 					Strict: openai.Bool(true),
 				},
