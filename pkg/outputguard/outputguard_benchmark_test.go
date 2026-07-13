@@ -52,7 +52,6 @@ func BenchmarkOutputGuardExactNoMatch(b *testing.B) {
 	}
 
 	b.ReportAllocs()
-	b.SetBytes(int64(len(text)))
 	b.ResetTimer()
 	for range b.N {
 		_ = index.overlapsText(text)
@@ -72,7 +71,6 @@ func BenchmarkOutputGuardExactCommonPrefix(b *testing.B) {
 	}
 
 	b.ReportAllocs()
-	b.SetBytes(int64(len(text)))
 	b.ResetTimer()
 	for range b.N {
 		_ = index.overlapsText(text)
@@ -87,7 +85,6 @@ func BenchmarkOutputGuardExactRepeatedPrefix(b *testing.B) {
 	}
 
 	b.ReportAllocs()
-	b.SetBytes(int64(len(text)))
 	b.ResetTimer()
 	for range b.N {
 		_ = index.overlapsText(text)
