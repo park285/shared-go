@@ -476,13 +476,18 @@ func TestValidateRejectsReceiveCapacityBelowDeliveryBurst(t *testing.T) {
 	}
 }
 
-func TestValidateAllowsDeliveryTimeoutIndependentOfReceiveHandlerBudget(t *testing.T) {
+func TestValidateRejectsDeliveryTimeoutBeyondReceiveHandlerOverhang(t *testing.T) {
 	profile := defaultIrisBotWebhookWorkerProfile()
 	profile.Delivery.RequestTimeout = 40 * time.Second
 	profile.Receive.HandlerTimeout = 30 * time.Second
 
-	if err := profile.Validate(); err != nil {
-		t.Fatalf("Validate() error = %v, want independent delivery and receive timeouts", err)
+	err := profile.Validate()
+	if err == nil {
+		t.Fatal("Validate() error = nil, want timeout overhang rejection")
+	}
+	const want = "delivery.request_timeout_ms must be <= receive.handler_timeout_ms + 5000"
+	if !strings.Contains(err.Error(), want) {
+		t.Fatalf("Validate() error = %q, want to contain %q", err, want)
 	}
 }
 

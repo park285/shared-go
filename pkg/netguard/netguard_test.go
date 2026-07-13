@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"slices"
 	"strings"
@@ -25,10 +26,24 @@ func TestIsBlockedIP(t *testing.T) {
 		{name: "unspecified", ip: net.ParseIP("0.0.0.0"), want: true},
 		{name: "loopback", ip: net.ParseIP("127.0.0.1"), want: true},
 		{name: "private", ip: net.ParseIP("10.0.0.1"), want: true},
+		{name: "carrier grade NAT", ip: net.ParseIP("100.64.0.1"), want: true},
 		{name: "link local metadata", ip: net.ParseIP("169.254.169.254"), want: true},
 		{name: "mapped link local metadata", ip: net.ParseIP("::ffff:169.254.169.254"), want: true},
+		{name: "documentation v4", ip: net.ParseIP("192.0.2.1"), want: true},
+		{name: "mapped documentation v4", ip: net.ParseIP("::ffff:192.0.2.1"), want: true},
+		{name: "benchmark v4", ip: net.ParseIP("198.18.0.1"), want: true},
+		{name: "reserved v4", ip: net.ParseIP("240.0.0.1"), want: true},
+		{name: "limited broadcast", ip: net.ParseIP("255.255.255.255"), want: true},
 		{name: "multicast", ip: net.ParseIP("224.0.0.1"), want: true},
 		{name: "ipv6 loopback", ip: net.ParseIP("::1"), want: true},
+		{name: "NAT64 well known metadata", ip: net.ParseIP("64:ff9b::a9fe:a9fe"), want: true},
+		{name: "NAT64 local use", ip: net.ParseIP("64:ff9b:1::1"), want: true},
+		{name: "ipv6 discard only", ip: net.ParseIP("100::1"), want: true},
+		{name: "ipv6 dummy", ip: net.ParseIP("100:0:0:1::1"), want: true},
+		{name: "ipv6 benchmark", ip: net.ParseIP("2001:2::1"), want: true},
+		{name: "ipv6 documentation", ip: net.ParseIP("2001:db8::1"), want: true},
+		{name: "ipv6 documentation second block", ip: net.ParseIP("3fff::1"), want: true},
+		{name: "ipv6 segment routing SID", ip: net.ParseIP("5f00::1"), want: true},
 		{name: "ipv6 link local", ip: net.ParseIP("fe80::1"), want: true},
 		{name: "ipv6 multicast", ip: net.ParseIP("ff02::1"), want: true},
 		{name: "public dns", ip: net.ParseIP("8.8.8.8"), want: false},
@@ -92,6 +107,33 @@ func TestPolicyValidateTargetRejectsResolvedPrivateIP(t *testing.T) {
 	_, err := policy.ValidateURL(t.Context(), "https://internal.test/secret")
 	if !errors.Is(err, ErrBlockedIP) {
 		t.Fatalf("ValidateURL() error = %v, want ErrBlockedIP", err)
+	}
+}
+
+func TestPolicyValidateTargetRejectsAnyBlockedDNSAnswer(t *testing.T) {
+	t.Parallel()
+
+	policy := Policy{
+		Resolver: staticResolver{"mixed.test": {
+			net.ParseIP("8.8.8.8"),
+			net.ParseIP("100.64.0.1"),
+		}},
+	}
+	_, err := policy.ValidateURL(t.Context(), "https://mixed.test/resource")
+	if !errors.Is(err, ErrBlockedIP) {
+		t.Fatalf("ValidateURL() error = %v, want ErrBlockedIP", err)
+	}
+}
+
+func TestPolicyValidateTargetAllowsExplicitPrivatePrefix(t *testing.T) {
+	t.Parallel()
+
+	policy := Policy{
+		Resolver:          staticResolver{"overlay.test": {net.ParseIP("100.64.0.1")}},
+		AllowedIPPrefixes: []netip.Prefix{netip.MustParsePrefix("100.64.0.0/10")},
+	}
+	if _, err := policy.ValidateURL(t.Context(), "https://overlay.test/resource"); err != nil {
+		t.Fatalf("ValidateURL() error = %v, want explicit prefix allowed", err)
 	}
 }
 
@@ -250,6 +292,11 @@ func TestRedirectPolicyValidatesTargetAndStripsCrossHostHeaders(t *testing.T) {
 	blockedReq := &http.Request{URL: mustURL(t, "https://127.0.0.1/private")}
 	if err := RedirectPolicy(RedirectConfig{Policy: policy})(blockedReq, via); !errors.Is(err, ErrBlockedIP) {
 		t.Fatalf("RedirectPolicy() private error = %v, want ErrBlockedIP", err)
+	}
+
+	cgnatReq := &http.Request{URL: mustURL(t, "https://100.64.0.1/private")}
+	if err := RedirectPolicy(RedirectConfig{Policy: policy})(cgnatReq, via); !errors.Is(err, ErrBlockedIP) {
+		t.Fatalf("RedirectPolicy() CGNAT error = %v, want ErrBlockedIP", err)
 	}
 }
 

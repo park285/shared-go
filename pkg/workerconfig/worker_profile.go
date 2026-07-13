@@ -43,6 +43,7 @@ const (
 	defaultBotPoolQueueSize = 100
 
 	defaultMinQueuePerEndpointMultiplier = 4
+	deliveryRequestTimeoutOverhang       = 5 * time.Second
 
 	maxWorkers          = 4096
 	maxQueueCapacity    = 1 << 20
@@ -304,6 +305,9 @@ func (p IrisBotWebhookWorkerProfile) Validate() error {
 	problems = appendBoundedInt(problems, p.Validation.MinQueuePerEndpointMultiplier, "validation.min_queue_per_endpoint_multiplier", maxQueueMultiplier)
 
 	if len(problems) == 0 {
+		if p.Delivery.RequestTimeout > p.Receive.HandlerTimeout+deliveryRequestTimeoutOverhang {
+			problems = append(problems, "delivery.request_timeout_ms must be <= receive.handler_timeout_ms + 5000")
+		}
 		if p.Delivery.MaxPerEndpointInFlight > p.Delivery.MaxGlobalInFlight {
 			problems = append(problems, "delivery.max_per_endpoint_in_flight must be <= delivery.max_global_in_flight")
 		}

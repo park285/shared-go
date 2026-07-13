@@ -128,6 +128,24 @@ func TestOpenPoolDSN_RejectsEmpty(t *testing.T) {
 	}
 }
 
+func TestOpenPoolDSNNormalizesLeadingWhitespaceBeforeValidationAndParse(t *testing.T) {
+	t.Parallel()
+	_, err := OpenPoolDSN(context.Background(), "  postgres://user:password@127.0.0.1:1/app?sslmode=disable", Options{})
+	if err == nil || strings.Contains(err.Error(), "sslmode is required") || strings.Contains(err.Error(), "parse dsn") {
+		t.Fatalf("OpenPoolDSN leading space error = %v, want post-parse connection failure", err)
+	}
+}
+
+func TestOpenPoolDSN_RejectsMissingSSLModeBeforeConnect(t *testing.T) {
+	_, err := OpenPoolDSN(context.Background(), "postgres://user@127.0.0.1:1/app", Options{})
+	if err == nil || !strings.Contains(err.Error(), "sslmode") {
+		t.Fatalf("OpenPoolDSN missing sslmode error = %v, want explicit sslmode error", err)
+	}
+	if strings.Contains(err.Error(), "connect") || strings.Contains(err.Error(), "ping") {
+		t.Fatalf("OpenPoolDSN missing sslmode error = %v, want validation before connect", err)
+	}
+}
+
 func TestOpenPoolWithRetry_ExhaustsAttempts(t *testing.T) {
 	clearRootCertEnv(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

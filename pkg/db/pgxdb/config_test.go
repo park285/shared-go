@@ -48,6 +48,39 @@ func TestConfigDSN_RequiresSSLMode(t *testing.T) {
 	}
 }
 
+func TestValidateExplicitSSLMode(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		dsn     string
+		wantErr bool
+	}{
+		{name: "URL omitted", dsn: "postgres://user@db.example/app", wantErr: true},
+		{name: "URL empty", dsn: "postgres://user@db.example/app?sslmode=", wantErr: true},
+		{name: "URL encoded blank", dsn: "postgres://user@db.example/app?sslmode=%20", wantErr: true},
+		{name: "URL encoded verify full", dsn: "postgres://user@db.example/app?sslmode=verify%2Dfull"},
+		{name: "URL complete verify full", dsn: "postgres://user@db.example/app?sslmode=verify-full&sslrootcert=%2Frun%2Fca.pem"},
+		{name: "URL duplicate same", dsn: "postgres://user@db.example/app?sslmode=disable&sslmode=disable", wantErr: true},
+		{name: "URL duplicate conflicting", dsn: "postgres://user@db.example/app?sslmode=disable&sslmode=verify-full", wantErr: true},
+		{name: "keyword omitted", dsn: "host=db.example user=app", wantErr: true},
+		{name: "keyword empty", dsn: "host=db.example sslmode=''", wantErr: true},
+		{name: "keyword spaced quoted", dsn: "host = 'db.example' sslmode = 'verify-full'"},
+		{name: "keyword explicit disable", dsn: "host=db.example sslmode=disable"},
+		{name: "keyword duplicate same", dsn: "sslmode=disable host=db.example sslmode='disable'", wantErr: true},
+		{name: "keyword duplicate conflicting", dsn: "sslmode=disable host=db.example sslmode=verify-full", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateExplicitSSLMode(tt.dsn)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("validateExplicitSSLMode(%q) error = %v, wantErr %v", tt.dsn, err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestConfigDSN_TCP(t *testing.T) {
 	clearRootCertEnv(t)
 	cfg := &Config{Host: "db.example", Port: 6432, User: "svc", Password: "test-dsn-placeholder", Name: "app", SSLMode: "verify-full"}

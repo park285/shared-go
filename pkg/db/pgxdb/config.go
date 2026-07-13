@@ -2,6 +2,7 @@ package pgxdb
 
 import (
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -16,6 +17,8 @@ var queryExecModeNames = map[string]string{
 	"exec":            "exec",
 	"simple_protocol": "simple_protocol",
 }
+
+const dsnASCIISpaces = " \t\n\r\v\f"
 
 type Config struct {
 	Host          string
@@ -114,6 +117,106 @@ func libpqQuote(value string) string {
 
 func normalizeQueryExecMode(mode string) string {
 	return queryExecModeNames[strings.ToLower(strings.TrimSpace(mode))]
+}
+
+func validateExplicitSSLMode(rawDSN string) error {
+	values, err := explicitSSLModeValues(rawDSN)
+	if err != nil {
+		return err
+	}
+	if len(values) == 0 {
+		return fmt.Errorf("pgxdb: sslmode is required in dsn (no implicit default)")
+	}
+	if len(values) != 1 {
+		return fmt.Errorf("pgxdb: sslmode must be specified exactly once in dsn")
+	}
+	if strings.TrimSpace(values[0]) == "" {
+		return fmt.Errorf("pgxdb: sslmode must not be empty in dsn")
+	}
+
+	return nil
+}
+
+func explicitSSLModeValues(rawDSN string) ([]string, error) {
+	if strings.HasPrefix(rawDSN, "postgres://") || strings.HasPrefix(rawDSN, "postgresql://") {
+		parsed, err := url.Parse(rawDSN)
+		if err != nil {
+			return nil, fmt.Errorf("pgxdb: parse dsn URL: %w", err)
+		}
+		query, err := url.ParseQuery(parsed.RawQuery)
+		if err != nil {
+			return nil, fmt.Errorf("pgxdb: parse dsn query: %w", err)
+		}
+
+		return query["sslmode"], nil
+	}
+
+	return keywordSSLModeValues(rawDSN)
+}
+
+func keywordSSLModeValues(rawDSN string) ([]string, error) {
+	remaining := strings.TrimLeft(rawDSN, dsnASCIISpaces)
+	var values []string
+	for remaining != "" {
+		equals := strings.IndexByte(remaining, '=')
+		if equals < 0 {
+			return nil, fmt.Errorf("pgxdb: invalid keyword/value dsn")
+		}
+		key := strings.Trim(remaining[:equals], dsnASCIISpaces)
+		if key == "" {
+			return nil, fmt.Errorf("pgxdb: invalid keyword/value dsn")
+		}
+
+		value, rest, err := consumeKeywordDSNValue(strings.TrimLeft(remaining[equals+1:], dsnASCIISpaces))
+		if err != nil {
+			return nil, err
+		}
+		if key == "sslmode" {
+			values = append(values, value)
+		}
+		remaining = rest
+	}
+
+	return values, nil
+}
+
+func consumeKeywordDSNValue(input string) (string, string, error) {
+	if input == "" {
+		return "", "", nil
+	}
+
+	quoted := input[0] == '\''
+	start := 0
+	if quoted {
+		start = 1
+	}
+	var value strings.Builder
+	for i := start; i < len(input); i++ {
+		if input[i] == '\\' {
+			i++
+			if i == len(input) {
+				return "", "", fmt.Errorf("pgxdb: invalid backslash in keyword/value dsn")
+			}
+			value.WriteByte(input[i])
+			continue
+		}
+		if quoted {
+			if input[i] == '\'' {
+				return value.String(), strings.TrimLeft(input[i+1:], dsnASCIISpaces), nil
+			}
+			value.WriteByte(input[i])
+			continue
+		}
+		if strings.ContainsRune(dsnASCIISpaces, rune(input[i])) {
+			return value.String(), strings.TrimLeft(input[i:], dsnASCIISpaces), nil
+		}
+		value.WriteByte(input[i])
+	}
+	if quoted {
+		return "", "", fmt.Errorf("pgxdb: unterminated quoted value in dsn")
+	}
+
+	return value.String(), "", nil
 }
 
 type PoolConfig struct {

@@ -26,7 +26,8 @@ func TestAPIKeyAuthMiddleware(t *testing.T) {
 		wantError  string
 		wantMsg    string
 	}{
-		{name: "empty api key allows", wantStatus: http.StatusOK},
+		{name: "empty api key fails closed", wantStatus: http.StatusServiceUnavailable, wantError: "auth_not_configured", wantMsg: "API key not configured"},
+		{name: "blank api key fails closed", apiKey: " \t", wantStatus: http.StatusServiceUnavailable, wantError: "auth_not_configured", wantMsg: "API key not configured"},
 		{name: "missing key", apiKey: "test-key", wantStatus: http.StatusUnauthorized, wantError: "unauthorized", wantMsg: "API key required"},
 		{name: "wrong key", apiKey: "test-key", headerVal: "wrong-key", wantStatus: http.StatusForbidden, wantError: "forbidden", wantMsg: "invalid API key"},
 		{name: "valid key", apiKey: "test-key", headerVal: "test-key", wantStatus: http.StatusOK},
@@ -65,7 +66,8 @@ func TestNoRouteAuthHandler(t *testing.T) {
 		wantError  string
 		wantMsg    string
 	}{
-		{name: "empty api key no route", wantStatus: http.StatusNotFound, wantError: "not_found", wantMsg: "endpoint not found"},
+		{name: "empty api key fails closed", wantStatus: http.StatusServiceUnavailable, wantError: "auth_not_configured", wantMsg: "API key not configured"},
+		{name: "blank api key fails closed", apiKey: " \t", wantStatus: http.StatusServiceUnavailable, wantError: "auth_not_configured", wantMsg: "API key not configured"},
 		{name: "missing key", apiKey: "test-key", wantStatus: http.StatusUnauthorized, wantError: "unauthorized", wantMsg: "API key required"},
 		{name: "wrong key", apiKey: "test-key", headerVal: "wrong-key", wantStatus: http.StatusForbidden, wantError: "forbidden", wantMsg: "invalid API key"},
 		{name: "valid key still no route", apiKey: "test-key", headerVal: "test-key", wantStatus: http.StatusNotFound, wantError: "not_found", wantMsg: "endpoint not found"},
@@ -87,6 +89,27 @@ func TestNoRouteAuthHandler(t *testing.T) {
 			assertGinAuthResponse(t, rec, tt.wantStatus, tt.wantError, tt.wantMsg)
 		})
 	}
+}
+
+func TestAuthConfigRequiresExplicitDisabledMode(t *testing.T) {
+	t.Parallel()
+
+	router := gin.New()
+	router.Use(AuthMiddleware(AuthConfig{Disabled: true}))
+	router.GET("/test", func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+	router.NoRoute(NoRouteHandler(AuthConfig{Disabled: true}))
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/test", http.NoBody)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	assertGinAuthResponse(t, rec, http.StatusOK, "", "")
+
+	req = httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/missing", http.NoBody)
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	assertGinAuthResponse(t, rec, http.StatusNotFound, "not_found", "endpoint not found")
 }
 
 func assertGinAuthResponse(t *testing.T, rec *httptest.ResponseRecorder, wantStatus int, wantError, wantMsg string) {

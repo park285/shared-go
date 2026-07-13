@@ -80,12 +80,16 @@ func OpenPool(ctx context.Context, cfg Config, opts Options) (*pgxpool.Pool, err
 }
 
 func OpenPoolDSN(ctx context.Context, rawDSN string, opts Options) (*pgxpool.Pool, error) {
-	if strings.TrimSpace(rawDSN) == "" {
+	normalizedDSN := strings.TrimSpace(rawDSN)
+	if normalizedDSN == "" {
 		return nil, fmt.Errorf("pgxdb: dsn is required")
+	}
+	if err := validateExplicitSSLMode(normalizedDSN); err != nil {
+		return nil, err
 	}
 	opts = opts.withDefaults()
 
-	poolCfg, err := pgxpool.ParseConfig(rawDSN)
+	poolCfg, err := pgxpool.ParseConfig(normalizedDSN)
 	if err != nil {
 		return nil, fmt.Errorf("pgxdb: parse dsn: %w", err)
 	}

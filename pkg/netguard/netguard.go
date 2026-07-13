@@ -23,6 +23,43 @@ var (
 	ErrUnsupportedScheme = errors.New("netguard: unsupported URL scheme")
 )
 
+var blockedAddressPrefixes = [...]netip.Prefix{
+	netip.MustParsePrefix("0.0.0.0/8"),
+	netip.MustParsePrefix("10.0.0.0/8"),
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("127.0.0.0/8"),
+	netip.MustParsePrefix("169.254.0.0/16"),
+	netip.MustParsePrefix("172.16.0.0/12"),
+	netip.MustParsePrefix("192.0.0.0/24"),
+	netip.MustParsePrefix("192.0.2.0/24"),
+	netip.MustParsePrefix("192.31.196.0/24"),
+	netip.MustParsePrefix("192.52.193.0/24"),
+	netip.MustParsePrefix("192.88.99.0/24"),
+	netip.MustParsePrefix("192.168.0.0/16"),
+	netip.MustParsePrefix("192.175.48.0/24"),
+	netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("198.51.100.0/24"),
+	netip.MustParsePrefix("203.0.113.0/24"),
+	netip.MustParsePrefix("224.0.0.0/4"),
+	netip.MustParsePrefix("240.0.0.0/4"),
+	netip.MustParsePrefix("::/96"),
+	netip.MustParsePrefix("::ffff:0:0/96"),
+	netip.MustParsePrefix("64:ff9b::/96"),
+	netip.MustParsePrefix("64:ff9b:1::/48"),
+	netip.MustParsePrefix("100::/64"),
+	netip.MustParsePrefix("100:0:0:1::/64"),
+	netip.MustParsePrefix("2001::/23"),
+	netip.MustParsePrefix("2001:db8::/32"),
+	netip.MustParsePrefix("2002::/16"),
+	netip.MustParsePrefix("2620:4f:8000::/48"),
+	netip.MustParsePrefix("3fff::/20"),
+	netip.MustParsePrefix("5f00::/16"),
+	netip.MustParsePrefix("fc00::/7"),
+	netip.MustParsePrefix("fe80::/10"),
+	netip.MustParsePrefix("fec0::/10"),
+	netip.MustParsePrefix("ff00::/8"),
+}
+
 // Resolver는 host를 IP 주소 목록으로 확인한다.
 type Resolver interface {
 	// LookupIP는 host의 IP 주소 목록을 반환한다.
@@ -35,8 +72,12 @@ type Policy struct {
 	Resolver Resolver
 	// Timeout은 lookup과 기본 dial timeout이다.
 	Timeout time.Duration
-	// AllowPrivateNetworks는 private 및 특수 목적 IP 대역을 허용한다.
+	// AllowPrivateNetworks는 private 및 특수 목적 IP 대역을 모두 허용하는 하위 호환 옵션이다.
+	//
+	// Deprecated: 필요한 대역만 AllowedIPPrefixes로 명시하십시오.
 	AllowPrivateNetworks bool
+	// AllowedIPPrefixes는 기본 차단 대역 중 의도적으로 허용할 IP prefix 목록이다.
+	AllowedIPPrefixes []netip.Prefix
 	// AllowedHosts는 허용할 host allowlist다.
 	AllowedHosts []string
 	// AllowHost는 host별 추가 허용 여부를 판단한다.
@@ -76,12 +117,13 @@ func IsBlockedAddr(addr netip.Addr) bool {
 		return true
 	}
 	addr = addr.Unmap()
-	return addr.IsUnspecified() ||
-		addr.IsLoopback() ||
-		addr.IsPrivate() ||
-		addr.IsLinkLocalUnicast() ||
-		addr.IsLinkLocalMulticast() ||
-		addr.IsMulticast()
+	for index := range blockedAddressPrefixes {
+		if blockedAddressPrefixes[index].Contains(addr) {
+			return true
+		}
+	}
+
+	return !addr.IsGlobalUnicast()
 }
 
 // NormalizeHost는 비교용 host 문자열을 정규화한다.
@@ -131,7 +173,7 @@ func (p Policy) ValidateTarget(ctx context.Context, target *url.URL) error {
 		return err
 	}
 	for _, ip := range ips {
-		if !p.AllowPrivateNetworks && IsBlockedIP(ip) {
+		if !p.allowsIP(ip) {
 			return fmt.Errorf("%w: %s -> %s", ErrBlockedIP, host, ip)
 		}
 	}
@@ -343,7 +385,7 @@ func (p Policy) resolveDialAddresses(ctx context.Context, address string) ([]str
 		return nil, err
 	}
 	for _, ip := range ips {
-		if !p.AllowPrivateNetworks && IsBlockedIP(ip) {
+		if !p.allowsIP(ip) {
 			return nil, fmt.Errorf("%w: %s -> %s", ErrBlockedIP, host, ip)
 		}
 	}
@@ -353,6 +395,24 @@ func (p Policy) resolveDialAddresses(ctx context.Context, address string) ([]str
 		resolved = append(resolved, net.JoinHostPort(ip.String(), port))
 	}
 	return resolved, nil
+}
+
+func (p Policy) allowsIP(ip net.IP) bool {
+	addr, ok := netip.AddrFromSlice(ip)
+	if !ok {
+		return false
+	}
+	addr = addr.Unmap()
+	if !IsBlockedAddr(addr) || p.AllowPrivateNetworks {
+		return true
+	}
+	for _, prefix := range p.AllowedIPPrefixes {
+		if prefix.IsValid() && prefix.Contains(addr) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func hostInList(host string, allowed []string) bool {
