@@ -9,7 +9,10 @@ run_checker() {
 
   prepare_strict_evidence "${fixture_root}" "${policy}" "${baseline}" "${candidate}"
   set +e
+  # 호출한 fixture가 source한 뒤 결과를 읽으므로 전역 할당이 의도적이다.
+  # shellcheck disable=SC2034
   LAST_OUTPUT="$(cd "${fixture_root}" && "${CHECKER}" --baseline "${baseline}" --candidate "${candidate}" --policy "${policy}" --gate pr --gate-id fixture-gate 2>&1)"
+  # shellcheck disable=SC2034
   LAST_STATUS=$?
   set -e
 }
@@ -110,7 +113,7 @@ prepare_strict_evidence() {
 
   setup_strict_fixture_repo "${root}" "${policy}"
   approved_sha="$(git -C "${root}" rev-parse HEAD)"
-  rm -rf "${root}/${template_candidate}" "${root}/${template_baseline}"
+  rm -rf "${root:?}/${template_candidate}" "${root:?}/${template_baseline}"
 
   set +e
   (cd "${root}" && "${CHECKER}" collect \
