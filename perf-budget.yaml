@@ -18,22 +18,22 @@ defaults:
     max_bytes_regression_percent: 25
     allow_alloc_increase: warn
 benchmarks:
-  BenchmarkNewProfiledClient: { package: ./pkg/httputil, class: build_path, gate: pr }
-  BenchmarkIsSensitiveKey: { package: ./pkg/logging, class: hotpath, gate: pr }
-  BenchmarkSanitizeHandlerClean: { package: ./pkg/logging, class: hotpath, gate: pr }
-  BenchmarkSanitizeHandlerSensitive: { package: ./pkg/logging, class: hotpath, gate: pr }
-  BenchmarkSanitizeHandlerGroupNoSecret: { package: ./pkg/logging, class: hotpath, gate: nightly }
-  BenchmarkSanitizeHandlerGroupWithSecret: { package: ./pkg/logging, class: hotpath, gate: nightly }
-  BenchmarkQueuedPoolSubmitSingle: { package: ./pkg/workerpool, class: hotpath, gate: pr }
-  BenchmarkQueuedPoolSubmitParallel: { package: ./pkg/workerpool, class: hotpath, gate: pr }
-  BenchmarkQueuedPoolTrySubmitFull: { package: ./pkg/workerpool, class: hotpath, gate: nightly }
-  BenchmarkBackoffHalfJitter: { package: ./pkg/backoff, class: hotpath, gate: pr }
-  BenchmarkNormalizeViewsKorean: { package: ./pkg/promptguard, class: hotpath, gate: pr }
-  BenchmarkNormalizeViewsEnglish: { package: ./pkg/promptguard, class: hotpath, gate: pr }
-  BenchmarkNormalizeViewsMixed: { package: ./pkg/promptguard, class: hotpath, gate: pr }
-  BenchmarkHistogramObserveConcurrent: { package: ./pkg/obsmetrics, class: hotpath, gate: pr }
-  BenchmarkCounterVecConcurrentCardinality: { package: ./pkg/obsmetrics, class: non_critical, gate: nightly }
-  BenchmarkHistogramVecConcurrentCardinality: { package: ./pkg/obsmetrics, class: non_critical, gate: nightly }
+  BenchmarkNewProfiledClient: { package: ./pkg/httputil, class: build_path, gate: pr, harness_files: [pkg/httputil/client_bench_test.go] }
+  BenchmarkIsSensitiveKey: { package: ./pkg/logging, class: hotpath, gate: pr, harness_files: [pkg/logging/sanitize_bench_test.go] }
+  BenchmarkSanitizeHandlerClean: { package: ./pkg/logging, class: hotpath, gate: pr, harness_files: [pkg/logging/sanitize_bench_test.go] }
+  BenchmarkSanitizeHandlerSensitive: { package: ./pkg/logging, class: hotpath, gate: pr, harness_files: [pkg/logging/sanitize_bench_test.go] }
+  BenchmarkSanitizeHandlerGroupNoSecret: { package: ./pkg/logging, class: hotpath, gate: nightly, harness_files: [pkg/logging/sanitize_bench_test.go] }
+  BenchmarkSanitizeHandlerGroupWithSecret: { package: ./pkg/logging, class: hotpath, gate: nightly, harness_files: [pkg/logging/sanitize_bench_test.go] }
+  BenchmarkQueuedPoolSubmitSingle: { package: ./pkg/workerpool, class: hotpath, gate: pr, harness_files: [pkg/workerpool/queued_pool_bench_test.go] }
+  BenchmarkQueuedPoolSubmitParallel: { package: ./pkg/workerpool, class: hotpath, gate: pr, harness_files: [pkg/workerpool/queued_pool_bench_test.go] }
+  BenchmarkQueuedPoolTrySubmitFull: { package: ./pkg/workerpool, class: hotpath, gate: nightly, harness_files: [pkg/workerpool/queued_pool_bench_test.go] }
+  BenchmarkBackoffHalfJitter: { package: ./pkg/backoff, class: hotpath, gate: pr, harness_files: [pkg/backoff/backoff_bench_test.go] }
+  BenchmarkNormalizeViewsKorean: { package: ./pkg/promptguard, class: hotpath, gate: pr, harness_files: [pkg/promptguard/text_fastpath_test.go] }
+  BenchmarkNormalizeViewsEnglish: { package: ./pkg/promptguard, class: hotpath, gate: pr, harness_files: [pkg/promptguard/text_fastpath_test.go] }
+  BenchmarkNormalizeViewsMixed: { package: ./pkg/promptguard, class: hotpath, gate: pr, harness_files: [pkg/promptguard/text_fastpath_test.go] }
+  BenchmarkHistogramObserveConcurrent: { package: ./pkg/obsmetrics, class: hotpath, gate: pr, harness_files: [pkg/obsmetrics/histogram_test.go] }
+  BenchmarkCounterVecConcurrentCardinality: { package: ./pkg/obsmetrics, class: non_critical, gate: nightly, harness_files: [pkg/obsmetrics/vec_test.go] }
+  BenchmarkHistogramVecConcurrentCardinality: { package: ./pkg/obsmetrics, class: non_critical, gate: nightly, harness_files: [pkg/obsmetrics/vec_test.go] }
 settings:
   mode: warn
   benchstat_alpha: 0.05

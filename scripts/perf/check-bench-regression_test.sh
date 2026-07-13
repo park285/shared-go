@@ -80,6 +80,8 @@ benchmarks:
     package: ./fixture
     class: ${class}
     gate: pr
+    harness_files:
+      - fixture/bench_test.go
 ${extra}
 settings:
   mode: ${mode}
@@ -178,18 +180,16 @@ func BenchmarkTarget(b *testing.B) {
 }
 EOF
   write_policy_for_repo "${dir}/policy.yaml" "${repo_name}" "warn" "critical" "BenchmarkTarget" 50
+  git -C "${dir}" init -q
+  git -C "${dir}" config user.email benchgate@example.invalid
+  git -C "${dir}" config user.name benchgate
+  git -C "${dir}" add go.mod fixture/bench_test.go policy.yaml
+  git -C "${dir}" commit -qm fixture
 }
 
 run_checker() {
   set +e
-  LAST_OUTPUT="$("${CHECKER}" --baseline "$1" --candidate "$2" --policy "$3" 2>&1)"
-  LAST_STATUS=$?
-  set -e
-}
-
-run_checker_allow_smoke_baseline() {
-  set +e
-  LAST_OUTPUT="$("${CHECKER}" --baseline "$1" --candidate "$2" --policy "$3" --allow-smoke-baseline 2>&1)"
+  LAST_OUTPUT="$("${CHECKER}" --baseline "$1" --candidate "$2" --policy "$3" --gate pr --gate-id fixture-gate 2>&1)"
   LAST_STATUS=$?
   set -e
 }
@@ -198,7 +198,7 @@ run_collect_checker() {
   local repo_dir="$1"
   shift
   set +e
-  LAST_OUTPUT="$(cd "${repo_dir}" && "${CHECKER}" collect "$@" 2>&1)"
+  LAST_OUTPUT="$(cd "${repo_dir}" && "${CHECKER}" collect "$@" --gate-id fixture-gate 2>&1)"
   LAST_STATUS=$?
   set -e
 }
@@ -207,7 +207,7 @@ run_collect_checker_bounded() {
   local repo_dir="$1"
   shift
   set +e
-  LAST_OUTPUT="$(cd "${repo_dir}" && timeout 5s "${CHECKER}" collect "$@" 2>&1)"
+  LAST_OUTPUT="$(cd "${repo_dir}" && timeout 5s "${CHECKER}" collect "$@" --gate-id fixture-gate 2>&1)"
   LAST_STATUS=$?
   set -e
 }
@@ -314,6 +314,8 @@ benchmarks:
     package: ./fixture
     class: critical
     gate: pr
+    harness_files:
+      - fixture/bench_test.go
 settings:
   mode: warn
   benchstat_alpha: 0.05
@@ -356,6 +358,8 @@ benchmarks:
     package: ./fixture
     class: critical
     gate: pr
+    harness_files:
+      - fixture/bench_test.go
 settings:
   mode: warn
   benchstat_alpha: 0.05
@@ -423,16 +427,16 @@ case_fail_mode_non_critical_exits_zero() {
   assert_contains "fail mode non_critical prints violation" "violation"
 }
 
-case_race_results_skip() {
+case_stdout_race_marker_does_not_skip_comparison() {
   local dir="${TMP_ROOT}/race-skip"
   mkdir -p "${dir}"
   write_policy "${dir}/policy.yaml" "fail" "critical" "BenchmarkTarget" 50
   write_bench_file "${dir}/baseline" "BenchmarkTarget" 100 8 1 "# command: go test -race"
   write_bench_file "${dir}/candidate" "BenchmarkTarget" 200 32 4 "# command: go test -race"
   run_checker "${dir}/baseline" "${dir}/candidate" "${dir}/policy.yaml"
-  assert_success "race result skips comparison"
-  assert_contains "race skip message" "skip"
-  assert_contains "race skip mentions race" "race"
+  assert_failure "stdout race marker does not skip comparison"
+  assert_exit_code "stdout race marker comparison exit code" 1
+  assert_not_contains "stdout race marker does not set provenance" "skip"
 }
 
 case_collect_rejects_unsafe_candidate_paths() {
@@ -490,66 +494,6 @@ case_collect_rejects_symlinked_perf_root() {
     printf 'not ok - symlinked perf root collect deleted outside candidate\n%s\n' "${LAST_OUTPUT}" >&2
     exit 1
   fi
-}
-
-case_smoke_candidate_refused_for_baseline_without_allow_flag() {
-  local dir="${TMP_ROOT}/smoke-baseline-refused"
-  mkdir -p "${dir}"
-  write_policy "${dir}/policy.yaml" "fail" "critical" "BenchmarkTarget" 50
-  write_bench_file "${dir}/candidate" "BenchmarkTarget" 100 8 1 $'# count: 1\n# benchtime: 100ms'
-  run_checker "${dir}/baseline" "${dir}/candidate" "${dir}/policy.yaml"
-  assert_failure "smoke candidate baseline refused"
-  assert_exit_code "smoke candidate refusal exit code" 2
-  assert_contains "smoke candidate refusal" "refusing to create baseline from smoke benchmark results"
-  if [[ -e "${dir}/baseline" ]]; then
-    printf 'not ok - smoke candidate created baseline\n%s\n' "${LAST_OUTPUT}" >&2
-    exit 1
-  fi
-}
-
-case_smoke_candidate_allow_flag_creates_baseline() {
-  local dir="${TMP_ROOT}/smoke-baseline-allowed"
-  mkdir -p "${dir}"
-  write_policy "${dir}/policy.yaml" "fail" "critical" "BenchmarkTarget" 50
-  write_bench_file "${dir}/candidate" "BenchmarkTarget" 100 8 1 $'# count: 1\n# benchtime: 100ms'
-  run_checker_allow_smoke_baseline "${dir}/baseline" "${dir}/candidate" "${dir}/policy.yaml"
-  assert_success "smoke candidate allow flag creates baseline"
-  assert_contains "smoke candidate allow flag message" "baseline created"
-  cmp -s "${dir}/candidate/go-bench/result.txt" "${dir}/baseline/go-bench/result.txt"
-}
-
-case_non_default_benchtime_candidate_refused_for_baseline() {
-  local dir="${TMP_ROOT}/benchtime-baseline-refused"
-  mkdir -p "${dir}"
-  write_policy "${dir}/policy.yaml" "fail" "critical" "BenchmarkTarget" 50
-  write_bench_file "${dir}/candidate" "BenchmarkTarget" 100 8 1 $'# count: 2\n# benchtime: 10x'
-  run_checker "${dir}/baseline" "${dir}/candidate" "${dir}/policy.yaml"
-  assert_failure "non-default benchtime candidate baseline refused"
-  assert_exit_code "non-default benchtime refusal exit code" 2
-  assert_contains "non-default benchtime refusal" "benchtime=10x differs from required 100ms"
-}
-
-case_existing_smoke_baseline_warns_in_warn_mode() {
-  local dir="${TMP_ROOT}/existing-smoke-baseline-warn"
-  mkdir -p "${dir}"
-  write_policy "${dir}/policy.yaml" "warn" "critical" "BenchmarkTarget" 50
-  write_bench_file "${dir}/baseline" "BenchmarkTarget" 100 8 1 $'# count: 1\n# benchtime: 100ms'
-  write_bench_file "${dir}/candidate" "BenchmarkTarget" 100 8 1 $'# count: 2\n# benchtime: 100ms'
-  run_checker "${dir}/baseline" "${dir}/candidate" "${dir}/policy.yaml"
-  assert_success "existing smoke baseline warns in warn mode"
-  assert_contains "existing smoke baseline warning" "warning: existing baseline is smoke/junk baseline"
-}
-
-case_existing_smoke_baseline_errors_in_fail_mode() {
-  local dir="${TMP_ROOT}/existing-smoke-baseline-fail"
-  mkdir -p "${dir}"
-  write_policy "${dir}/policy.yaml" "fail" "critical" "BenchmarkTarget" 50
-  write_bench_file "${dir}/baseline" "BenchmarkTarget" 100 8 1 $'# count: 1\n# benchtime: 100ms'
-  write_bench_file "${dir}/candidate" "BenchmarkTarget" 100 8 1 $'# count: 2\n# benchtime: 100ms'
-  run_checker "${dir}/baseline" "${dir}/candidate" "${dir}/policy.yaml"
-  assert_failure "existing smoke baseline errors in fail mode"
-  assert_exit_code "existing smoke baseline error exit code" 2
-  assert_contains "existing smoke baseline error" "error: existing baseline is smoke/junk baseline"
 }
 
 case_missing_benchmem_columns_error_for_critical_bench() {
@@ -623,23 +567,15 @@ CASES=(
   case_fail_mode_critical_exits_one
   case_fail_mode_hotpath_exits_one
   case_fail_mode_non_critical_exits_zero
-  case_missing_baseline_creates_copy
-  case_required_missing_baseline_fails_without_copy
-  case_missing_baseline_race_candidate_does_not_create_baseline
-  case_race_results_skip
+  case_missing_baseline_fails_without_copy
+  case_stdout_race_marker_does_not_skip_comparison
   case_collect_rejects_unsafe_candidate_paths
   case_collect_rejects_escaping_package_paths
   case_collect_rejects_symlinked_perf_root
-  case_smoke_candidate_refused_for_baseline_without_allow_flag
-  case_smoke_candidate_allow_flag_creates_baseline
-  case_non_default_benchtime_candidate_refused_for_baseline
-  case_existing_smoke_baseline_warns_in_warn_mode
-  case_existing_smoke_baseline_errors_in_fail_mode
   case_missing_benchmem_columns_error_for_critical_bench
   case_collect_smoke_count_prints_marker
   case_same_benchmark_name_in_two_packages_compares_selected_package
   case_noise_floor_uses_absolute_ns
-  case_multifile_baseline_orders_like_pathlib
 )
 
 if [[ -n "${TEST_CASE:-}" ]]; then

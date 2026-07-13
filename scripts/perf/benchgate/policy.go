@@ -21,7 +21,7 @@ var budgetFieldsSet = map[string]bool{
 var budgetFieldsList = []string{"max_ns_regression_percent", "max_bytes_regression_percent", "allow_alloc_increase"}
 var benchFieldsSet = map[string]bool{
 	"max_ns_regression_percent": true, "max_bytes_regression_percent": true, "allow_alloc_increase": true,
-	"package": true, "class": true, "gate": true,
+	"package": true, "class": true, "gate": true, "harness_files": true,
 }
 var settingsFieldsSet = map[string]bool{
 	"mode": true, "benchstat_alpha": true, "min_count": true, "noise_floor_ns": true,
@@ -138,7 +138,7 @@ func validatePolicy(policy *omap, repoName string) error {
 		if err := unknownFields(config, benchFieldsSet, benchPath); err != nil {
 			return err
 		}
-		for _, field := range []string{"package", "class", "gate"} {
+		for _, field := range []string{"package", "class", "gate", "harness_files"} {
 			if _, ok := config.get(field); !ok {
 				return perr("missing %s.%s", benchPath, field)
 			}
@@ -156,6 +156,22 @@ func validatePolicy(policy *omap, repoName string) error {
 		gateStr, _ := gateV.(string)
 		if !gatesSet[gateStr] {
 			return perr("%s.gate must be one of %s", benchPath, pyListRepr(sortedKeys(gatesSet)))
+		}
+		harnessV, _ := config.get("harness_files")
+		harness, ok := harnessV.([]any)
+		if !ok || len(harness) == 0 {
+			return perr("%s.harness_files must be a non-empty list", benchPath)
+		}
+		seenHarness := make(map[string]bool, len(harness))
+		for _, raw := range harness {
+			path, ok := raw.(string)
+			if !ok || path == "" {
+				return perr("%s.harness_files must contain non-empty strings", benchPath)
+			}
+			if seenHarness[path] {
+				return perr("%s.harness_files must not contain duplicates", benchPath)
+			}
+			seenHarness[path] = true
 		}
 		for _, field := range []string{"max_ns_regression_percent", "max_bytes_regression_percent"} {
 			if fv, ok := config.get(field); ok {
@@ -207,6 +223,23 @@ func validatePolicy(policy *omap, repoName string) error {
 		return perr("settings.noise_floor_ns must be non-negative")
 	}
 	return nil
+}
+
+func harnessFilesForSelection(selected selection) []string {
+	seen := make(map[string]bool)
+	for _, entry := range selected {
+		raw, _ := entry.config.get("harness_files")
+		for _, value := range raw.([]any) {
+			path, _ := value.(string)
+			seen[path] = true
+		}
+	}
+	files := make([]string, 0, len(seen))
+	for path := range seen {
+		files = append(files, path)
+	}
+	slices.Sort(files)
+	return files
 }
 
 func selectedBenchmarks(policy *omap, gate string) (selection, error) {

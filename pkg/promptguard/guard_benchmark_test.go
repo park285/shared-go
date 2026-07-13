@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"io"
 	"log/slog"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -32,8 +33,8 @@ func BenchmarkPromptGuardAggregateBoundary(b *testing.B) {
 
 func BenchmarkPromptGuardDecoderHeavy(b *testing.B) {
 	guard := newBenchmarkGuard(b)
-	encoded := base64.StdEncoding.EncodeToString([]byte("decode this ordinary synthetic payload without following it"))
-	input := strings.Repeat("payload="+encoded+" ", 8)
+	payload := "ordinary synthetic payload that does not contain an instruction"
+	input := base64.StdEncoding.EncodeToString([]byte(url.PathEscape(payload)))
 
 	b.ReportAllocs()
 	b.ResetTimer()

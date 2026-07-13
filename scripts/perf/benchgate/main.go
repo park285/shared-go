@@ -18,14 +18,14 @@ func perr(format string, a ...any) *policyError {
 }
 
 type cliArgs struct {
-	baseline           string
-	candidate          string
-	policy             string
-	gate               string
-	count              *int
-	benchtime          string
-	allowSmokeBaseline bool
-	requireBaseline    bool
+	baseline    string
+	candidate   string
+	policy      string
+	gate        string
+	gateID      string
+	approvedSHA string
+	count       *int
+	benchtime   string
 }
 
 func main() {
@@ -58,6 +58,20 @@ func run(argv []string) int {
 	}
 	if action == "collect" {
 		code, ce := collectResults(policy, selected, args, repoRoot, repoName)
+		if ce != nil {
+			return policyFail(ce)
+		}
+		return code
+	}
+	if action == "bootstrap-baseline" {
+		code, ce := bootstrapBaseline(policy, selected, args, repoRoot, repoName)
+		if ce != nil {
+			return policyFail(ce)
+		}
+		return code
+	}
+	if action == "check-v2" {
+		code, ce := checkV2Results(policy, selected, args, repoRoot, repoName)
 		if ce != nil {
 			return policyFail(ce)
 		}
@@ -97,7 +111,7 @@ func policyFail(e error) int {
 
 func parseArgs(argv []string) (string, *cliArgs, error) {
 	action := "check"
-	if len(argv) > 0 && (argv[0] == "check" || argv[0] == "collect") {
+	if len(argv) > 0 && (argv[0] == "check" || argv[0] == "collect" || argv[0] == "check-v2" || argv[0] == "bootstrap-baseline") {
 		action = argv[0]
 		argv = argv[1:]
 	}
@@ -159,6 +173,24 @@ func parseArgs(argv []string) (string, *cliArgs, error) {
 				return "", nil, fmt.Errorf("argument --gate: invalid choice: %q (choose from %s)", v, pyListRepr(sortedKeys(gatesSet)))
 			}
 			args.gate = v
+		case "--gate-id":
+			v, e := needVal()
+			if e != nil {
+				return "", nil, e
+			}
+			if v == "" {
+				return "", nil, fmt.Errorf("argument --gate-id: must not be empty")
+			}
+			args.gateID = v
+		case "--approved-sha":
+			v, e := needVal()
+			if e != nil {
+				return "", nil, e
+			}
+			if !validHex(v, 40) {
+				return "", nil, fmt.Errorf("argument --approved-sha: must be a 40-hex SHA")
+			}
+			args.approvedSHA = v
 		case "--count":
 			v, e := needVal()
 			if e != nil {
@@ -175,16 +207,6 @@ func parseArgs(argv []string) (string, *cliArgs, error) {
 				return "", nil, e
 			}
 			args.benchtime = v
-		case "--allow-smoke-baseline":
-			if hasEq {
-				return "", nil, fmt.Errorf("argument --allow-smoke-baseline: ignored explicit argument %q", val)
-			}
-			args.allowSmokeBaseline = true
-		case "--require-baseline":
-			if hasEq {
-				return "", nil, fmt.Errorf("argument --require-baseline: ignored explicit argument %q", val)
-			}
-			args.requireBaseline = true
 		default:
 			return "", nil, fmt.Errorf("unrecognized arguments: %s", name)
 		}
@@ -192,6 +214,12 @@ func parseArgs(argv []string) (string, *cliArgs, error) {
 	}
 	if args.count != nil && *args.count < 1 {
 		return "", nil, fmt.Errorf("--count must be at least 1")
+	}
+	if args.gate == "" || args.gateID == "" {
+		return "", nil, fmt.Errorf("action %s requires --gate and --gate-id", action)
+	}
+	if action == "bootstrap-baseline" && args.approvedSHA == "" {
+		return "", nil, fmt.Errorf("action bootstrap-baseline requires --approved-sha")
 	}
 	return action, args, nil
 }

@@ -118,6 +118,10 @@ func (index *protectedIndex) addRuneAnchors(entryIndex int) {
 	}
 }
 
+func (index *protectedIndex) overlapsText(text string) bool {
+	return index.overlaps([]rune(guardtext.Normalize(text)))
+}
+
 func (index *protectedIndex) overlaps(output []rune) bool {
 	if index == nil || len(output) == 0 {
 		return false

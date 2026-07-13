@@ -22,29 +22,14 @@ type Sample struct {
 }
 
 type Results struct {
-	Samples       map[benchKey][]Sample
-	Race          bool
-	Files         []string
-	Count         *int
-	Benchtime     *string
-	CountFile     string
-	BenchtimeFile string
+	Samples map[benchKey][]Sample
+	Files   []string
 }
 
 var (
 	benchLineRe  = regexp.MustCompile(`^(Benchmark\S*)\s+\d+\s+([0-9.]+)\s+ns/op(?:\s+([0-9.]+)\s+B/op)?(?:\s+([0-9.]+)\s+allocs/op)?`)
-	countRe      = regexp.MustCompile(`(?:^|\s)-count=(\d+)(?:\s|$)`)
-	benchtimeRe  = regexp.MustCompile(`(?:^|\s)-benchtime=([^\s)]+)`)
 	nameSuffixRe = regexp.MustCompile(`-\d+$`)
-	raceMarkerRe = regexp.MustCompile(`(^|[\s=])-race($|\s)`)
 )
-
-func hasRaceMarker(line string) bool {
-	if raceMarkerRe.MatchString(line) {
-		return true
-	}
-	return strings.Contains(strings.ToLower(line), "race detector")
-}
 
 func resultFiles(path string) []string {
 	fi, err := os.Stat(path)
@@ -79,22 +64,23 @@ func splitColon1(s string) string {
 	return after
 }
 
-func isAllDigits(s string) bool {
-	if s == "" {
-		return false
-	}
-	for _, c := range s {
-		if c < '0' || c > '9' {
-			return false
-		}
-	}
-	return true
-}
-
 func parseResults(path string) (*Results, error) {
 	res := &Results{Samples: map[benchKey][]Sample{}}
 	res.Files = resultFiles(path)
-	for _, fp := range res.Files {
+	return parseResultsFiles(res, res.Files)
+}
+
+func parseResultsFromManifest(root string, files map[string]string) (*Results, error) {
+	paths := make([]string, 0, len(files))
+	for path := range files {
+		paths = append(paths, filepath.Join(root, path))
+	}
+	slices.Sort(paths)
+	return parseResultsFiles(&Results{Samples: map[benchKey][]Sample{}, Files: paths}, paths)
+}
+
+func parseResultsFiles(res *Results, files []string) (*Results, error) {
+	for _, fp := range files {
 		currentPackage := ""
 		currentPackageFromComment := false
 		data, err := os.ReadFile(fp)
@@ -103,9 +89,6 @@ func parseResults(path string) (*Results, error) {
 		}
 		for line := range strings.SplitSeq(string(data), "\n") {
 			stripped := strings.TrimSpace(line)
-			if hasRaceMarker(line) {
-				res.Race = true
-			}
 			if strings.HasPrefix(stripped, "# package:") {
 				currentPackage = strings.TrimSpace(splitColon1(stripped))
 				currentPackageFromComment = true
@@ -114,34 +97,6 @@ func parseResults(path string) (*Results, error) {
 			if strings.HasPrefix(stripped, "pkg:") && !currentPackageFromComment {
 				currentPackage = strings.TrimSpace(splitColon1(stripped))
 				continue
-			}
-			if strings.HasPrefix(stripped, "# count:") {
-				rawCount := strings.TrimSpace(splitColon1(stripped))
-				if isAllDigits(rawCount) {
-					c, _ := strconv.Atoi(rawCount)
-					res.Count = &c
-					res.CountFile = fp
-				}
-				continue
-			}
-			if strings.HasPrefix(stripped, "# benchtime:") {
-				bt := strings.TrimSpace(splitColon1(stripped))
-				res.Benchtime = &bt
-				res.BenchtimeFile = fp
-				continue
-			}
-			if strings.HasPrefix(stripped, "# command:") {
-				command := splitColon1(stripped)
-				if m := countRe.FindStringSubmatch(command); m != nil {
-					c, _ := strconv.Atoi(m[1])
-					res.Count = &c
-					res.CountFile = fp
-				}
-				if m := benchtimeRe.FindStringSubmatch(command); m != nil {
-					bt := m[1]
-					res.Benchtime = &bt
-					res.BenchtimeFile = fp
-				}
 			}
 			m := benchLineRe.FindStringSubmatch(stripped)
 			if m == nil {
