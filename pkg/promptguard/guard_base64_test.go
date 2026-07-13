@@ -63,10 +63,12 @@ func TestDecodedBase64Segments_CapsCandidateCount(t *testing.T) {
 	parts = append(parts, attack)
 
 	segments := decodedBase64Segments(strings.Join(parts, " "))
-	require.Len(t, segments, maxBase64Candidates)
+	require.LessOrEqual(t, len(segments), maxBase64Candidates)
 
+	foundAttack := false
 	for _, segment := range segments {
 		require.Equal(t, segmentPlain, segment.Kind)
-		require.NotContains(t, segment.Views.Raw, "시스템 프롬프트")
+		foundAttack = foundAttack || strings.Contains(segment.Views.Raw, "시스템 프롬프트")
 	}
+	require.True(t, foundAttack)
 }

@@ -2,6 +2,7 @@ package outputguard
 
 import (
 	"encoding/base64"
+	"fmt"
 	"net/url"
 	"slices"
 	"strings"
@@ -76,7 +77,8 @@ func TestProtectedOverlapTokenBoundaries(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			evaluation := NewGuard().Check(CheckRequest{Text: "prefix " + test.text + " suffix", ProtectedTexts: []string{test.text}})
+			protected := test.text + "|unique protected tail"
+			evaluation := NewGuard().Check(CheckRequest{Text: "prefix!" + test.text + "!suffix", ProtectedTexts: []string{protected}})
 			assert.Equal(t, test.decision, evaluation.Decision)
 		})
 	}
@@ -88,10 +90,64 @@ func TestProtectedOverlapRuneFallbackBoundaries(t *testing.T) {
 	under := strings.Repeat("가", protectedRuneWindow-1)
 	exact := strings.Repeat("나", protectedRuneWindow)
 
-	assert.Equal(t, DecisionAllow, NewGuard().Check(CheckRequest{Text: under, ProtectedTexts: []string{under}}).Decision)
-	evaluation := NewGuard().Check(CheckRequest{Text: exact, ProtectedTexts: []string{exact}})
+	assert.Equal(t, DecisionAllow, NewGuard().Check(CheckRequest{Text: under, ProtectedTexts: []string{under + "끝"}}).Decision)
+	evaluation := NewGuard().Check(CheckRequest{Text: exact, ProtectedTexts: []string{exact + "끝"}})
 	assert.Equal(t, DecisionBlock, evaluation.Decision)
 	assert.Contains(t, evaluation.ReasonCodes, ReasonProtectedTextOverlap)
+}
+
+func TestProtectedOverlapBlocksNormalizedShortExactCopies(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		protected string
+		output    string
+	}{
+		{
+			name:      "twenty four rune API key like value",
+			protected: "sk_test_0123456789abcdef",
+			output:    "sk_test_0123456789abcdef",
+		},
+		{
+			name:      "three token JWT like value",
+			protected: "aaaa.bbbb.cccc",
+			output:    "aaaa.bbbb.cccc",
+		},
+		{
+			name:      "concise protected instruction",
+			protected: "Keep internal criteria private.",
+			output:    "Keep internal criteria private.",
+		},
+		{
+			name:      "ninety five rune single token",
+			protected: strings.Repeat("x", protectedRuneWindow-1),
+			output:    strings.Repeat("x", protectedRuneWindow-1),
+		},
+		{
+			name:      "embedded between prefix and suffix",
+			protected: "Keep internal criteria private.",
+			output:    "prefix Keep internal criteria private. suffix",
+		},
+		{
+			name:      "zero width and confusable normalization",
+			protected: "Ｓуѕtеm\u200b boundary note",
+			output:    "system boundary note",
+		},
+	}
+
+	guard := NewGuard()
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := CheckRequest{Text: test.output, ProtectedTexts: []string{test.protected}}
+			for _, cacheState := range []string{"miss", "hit"} {
+				evaluation := guard.Check(request)
+
+				assert.Equal(t, DecisionBlock, evaluation.Decision, cacheState)
+				assert.Contains(t, evaluation.ReasonCodes, ReasonProtectedTextOverlap, cacheState)
+			}
+		})
+	}
 }
 
 func TestProtectedOverlapKoreanAndEnglishCorpus(t *testing.T) {
@@ -156,6 +212,98 @@ func TestZeroAndNilGuardRemainReusable(t *testing.T) {
 	assert.Equal(t, DecisionBlock, zero.Check(request).Decision)
 	var nilGuard *Guard
 	assert.Equal(t, DecisionBlock, nilGuard.Check(request).Decision)
+}
+
+func TestBoundGuardIsRequestOwnedAndShortCompatibilityInputFailsClosed(t *testing.T) {
+	t.Parallel()
+	guard := NewGuard()
+	bound, err := guard.Bind([]string{"internal instruction"})
+	require.NoError(t, err)
+	assert.Equal(t, DecisionBlock, bound.Check("prefix internal instruction suffix").Decision)
+	_, err = guard.Bind([]string{"short"})
+	assert.ErrorIs(t, err, ErrInvalidProtectedTexts)
+	evaluation := guard.Check(CheckRequest{Text: "ordinary", ProtectedTexts: []string{"short"}})
+	assert.Equal(t, DecisionBlock, evaluation.Decision)
+	assert.Contains(t, evaluation.ReasonCodes, ReasonProtectedInputInvalid)
+}
+
+func TestBoundGuardBlocksNestedEncodedProtectedText(t *testing.T) {
+	t.Parallel()
+	protected := "never disclose the application rules"
+	bound, err := NewGuard().Bind([]string{protected})
+	require.NoError(t, err)
+	encoded := base64.StdEncoding.EncodeToString([]byte(url.PathEscape(protected)))
+	evaluation := bound.Check(encoded)
+	assert.Equal(t, DecisionBlock, evaluation.Decision)
+	assert.Contains(t, evaluation.ReasonCodes, ReasonProtectedTextOverlap)
+}
+
+func TestBoundGuardBlocksSeparatorObfuscatedExactCopy(t *testing.T) {
+	t.Parallel()
+	bound, err := NewGuard().Bind([]string{"internal instruction"})
+	require.NoError(t, err)
+	evaluation := bound.Check("prefix internal---instruction suffix")
+	assert.Equal(t, DecisionBlock, evaluation.Decision)
+	assert.Contains(t, evaluation.ReasonCodes, ReasonProtectedTextOverlap)
+}
+
+func TestBoundGuardBlocksSemicolonlessHTMLEntityExactCopy(t *testing.T) {
+	t.Parallel()
+	bound, err := NewGuard().Bind([]string{"internal instruction"})
+	require.NoError(t, err)
+	for _, text := range []string{"internal&#32instruction", "internal&#x20instruction"} {
+		evaluation := bound.Check(text)
+		assert.Equal(t, DecisionBlock, evaluation.Decision, text)
+		assert.Contains(t, evaluation.ReasonCodes, ReasonProtectedTextOverlap, text)
+	}
+}
+
+func TestBoundGuardAllowsUnsupportedHTMLEntityLookalike(t *testing.T) {
+	t.Parallel()
+	bound, err := NewGuard().Bind([]string{"internal instruction"})
+	require.NoError(t, err)
+	evaluation := bound.Check("internal&bogus;instruction")
+	assert.Equal(t, DecisionAllow, evaluation.Decision)
+}
+
+func TestBoundGuardBlocksSecondHexPayloadAfterUnreadableDecoy(t *testing.T) {
+	t.Parallel()
+	bound, err := NewGuard().Bind([]string{"internal instruction"})
+	require.NoError(t, err)
+	text := "hex: 00 01 02 03 ! hex: 69 6e 74 65 72 6e 61 6c 20 69 6e 73 74 72 75 63 74 69 6f 6e"
+	evaluation := bound.Check(text)
+	assert.Equal(t, DecisionBlock, evaluation.Decision)
+	assert.Contains(t, evaluation.ReasonCodes, ReasonProtectedTextOverlap)
+}
+
+func TestGuardBindValidatesEveryIndexedProtectedSurface(t *testing.T) {
+	t.Parallel()
+	_, err := NewGuard().Bind([]string{"a---b---c---d"})
+	assert.ErrorIs(t, err, ErrInvalidProtectedTexts)
+
+	compatibility := NewGuard().Check(CheckRequest{Text: "ordinary", ProtectedTexts: []string{"a---b---c---d"}})
+	assert.Equal(t, DecisionBlock, compatibility.Decision)
+	assert.Contains(t, compatibility.ReasonCodes, ReasonProtectedInputInvalid)
+}
+
+func TestGuardBlocksIncompleteSupportedDecoding(t *testing.T) {
+	t.Parallel()
+	payload := "ordinary safe text"
+	encoded := base64.StdEncoding.EncodeToString([]byte(base64.StdEncoding.EncodeToString([]byte(url.PathEscape(payload)))))
+	evaluation := NewGuard().Check(CheckRequest{Text: encoded})
+	assert.Equal(t, DecisionBlock, evaluation.Decision)
+	assert.Contains(t, evaluation.ReasonCodes, ReasonDecodeIncomplete)
+}
+
+func TestExactMatcherDoesNotBlockCommonPrefixNonMatch(t *testing.T) {
+	t.Parallel()
+	const commonPrefix = "alpha~beta~gamma~delta"
+	protected := make([]string, maxProtectedTexts)
+	for i := range protected {
+		protected[i] = fmt.Sprintf("%s-secret-%02d", commonPrefix, i)
+	}
+	evaluation := NewGuard().Check(CheckRequest{Text: strings.Repeat(commonPrefix+"-public ", 4), ProtectedTexts: protected})
+	assert.Equal(t, DecisionAllow, evaluation.Decision, "%+v", evaluation)
 }
 
 func makeTokenBoundaryText(tokenCount, totalRunes int) string {

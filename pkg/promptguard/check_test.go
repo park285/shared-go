@@ -1,9 +1,11 @@
 package promptguard
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"reflect"
 	"slices"
 	"sync"
@@ -52,6 +54,34 @@ func TestCheckEnforcementMatrixForEverySource(t *testing.T) {
 					}
 				})
 			}
+		}
+	}
+}
+
+func TestCheckEmitsDecodeIncompleteRuleOnMissAndCacheHit(t *testing.T) {
+	t.Parallel()
+	payload := "ordinary safe text"
+	input := base64.StdEncoding.EncodeToString([]byte(base64.StdEncoding.EncodeToString([]byte(url.PathEscape(payload)))))
+	var events []EvaluationEvent
+	guard, err := NewGuard(Config{Enabled: true, UseEmbeddedDefaults: true, OnEvaluation: func(event EvaluationEvent) { events = append(events, event) }}, nil)
+	if err != nil {
+		t.Fatalf("NewGuard: %v", err)
+	}
+
+	first, firstErr := guard.Check(CheckRequest{Text: input, Source: SourceUserPrompt, Enforcement: EnforcementObserve})
+	second, secondErr := guard.Check(CheckRequest{Text: input, Source: SourcePromptBundle, Enforcement: EnforcementObserve})
+	if firstErr != nil || secondErr != nil {
+		t.Fatalf("observe errors = (%v, %v)", firstErr, secondErr)
+	}
+	if !first.DecodeIncomplete || !second.DecodeIncomplete || first.Decision != DecisionBlock || second.Decision != DecisionBlock {
+		t.Fatalf("evaluations = (%#v, %#v)", first, second)
+	}
+	if len(events) != 2 {
+		t.Fatalf("events = %d, want 2", len(events))
+	}
+	for i, wantSource := range []Source{SourceUserPrompt, SourcePromptBundle} {
+		if events[i].Source != wantSource || events[i].CacheHit != (i == 1) || !events[i].DecodeIncomplete || !slices.Contains(events[i].RuleIDs, ruleDecodeIncomplete) {
+			t.Fatalf("event[%d] = %#v", i, events[i])
 		}
 	}
 }

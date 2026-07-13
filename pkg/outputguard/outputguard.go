@@ -26,13 +26,9 @@ var restrictedRules = []restrictedRule{
 	{id: "private_key", reason: ReasonSecretPattern, pattern: regexp.MustCompile(`(?i)BEGIN [A-Z ]*PRIVATE KEY`)},
 }
 
-type Guard struct {
-	cache *protectedIndexCache
-}
+type Guard struct{}
 
-func NewGuard() *Guard {
-	return &Guard{cache: newProtectedIndexCache(defaultProtectedCacheCapacity, defaultProtectedCacheTTL, nil)}
-}
+func NewGuard() *Guard { return &Guard{} }
 
 func (g *Guard) Check(req CheckRequest) Evaluation {
 	evaluation := Evaluation{Decision: DecisionAllow, OutputBytes: len(req.Text)}
@@ -43,17 +39,23 @@ func (g *Guard) Check(req CheckRequest) Evaluation {
 		return evaluation
 	}
 
-	protectedTexts, ok := validateProtectedTexts(req.ProtectedTexts)
-	if !ok {
+	index, invalid, oversize := buildCompatibilityIndex(req.ProtectedTexts)
+	if oversize {
 		evaluation.Decision = DecisionBlock
 		evaluation.ReasonCodes = []ReasonCode{ReasonProtectedInputOversize}
 
 		return evaluation
 	}
+	if invalid {
+		appendReason(&evaluation, ReasonProtectedInputInvalid)
+	}
 
-	surfaces := outputSurfaces(req.Text)
+	surfaces, incomplete := outputSurfaces(req.Text)
 	collectRestrictedMatches(surfaces, &evaluation)
-	if len(protectedTexts) > 0 && g.protectedOverlap(surfaces, protectedTexts) {
+	if incomplete {
+		appendReason(&evaluation, ReasonDecodeIncomplete)
+	}
+	if index != nil && protectedOverlap(surfaces, index) {
 		appendReason(&evaluation, ReasonProtectedTextOverlap)
 	}
 	if len(evaluation.ReasonCodes) > 0 {
@@ -71,20 +73,12 @@ func (g *Guard) Validate(req CheckRequest) error {
 	return nil
 }
 
-func (g *Guard) protectedOverlap(surfaces, protectedTexts []string) bool {
-	if len(protectedTexts) == 0 || len(surfaces) == 0 {
+func protectedOverlap(surfaces []string, index *protectedIndex) bool {
+	if index == nil || len(surfaces) == 0 {
 		return false
 	}
-	var cache *protectedIndexCache
-	if g != nil {
-		cache = g.cache
-	}
-	if cache == nil {
-		cache = newProtectedIndexCache(defaultProtectedCacheCapacity, defaultProtectedCacheTTL, nil)
-	}
-	index := cache.loadOrBuild(protectedTexts)
 	for _, surface := range surfaces {
-		if index.overlaps([]rune(guardtext.Normalize(surface))) {
+		if index.overlapsText(surface) {
 			return true
 		}
 	}
@@ -92,19 +86,19 @@ func (g *Guard) protectedOverlap(surfaces, protectedTexts []string) bool {
 	return false
 }
 
-func outputSurfaces(text string) []string {
+func outputSurfaces(text string) ([]string, bool) {
 	views := guardtext.NormalizeViews(text)
 	stripped := guardtext.StripFormatAndCombining(text)
-	decodedCandidates := guardtext.DecodeCandidates(text)
-	surfaces := make([]string, 0, 4+len(decodedCandidates)*4)
+	decoded := guardtext.DecodeCandidates(text)
+	surfaces := make([]string, 0, 4+len(decoded.Candidates)*4)
 	surfaces = append(surfaces, views.Raw, views.Norm, views.Joined, guardtext.Normalize(stripped))
-	for _, decoded := range decodedCandidates {
-		decodedViews := guardtext.NormalizeViews(decoded)
-		decodedStripped := guardtext.StripFormatAndCombining(decoded)
+	for _, candidate := range decoded.Candidates {
+		decodedViews := guardtext.NormalizeViews(candidate)
+		decodedStripped := guardtext.StripFormatAndCombining(candidate)
 		surfaces = append(surfaces, decodedViews.Raw, decodedViews.Norm, decodedViews.Joined, guardtext.Normalize(decodedStripped))
 	}
 
-	return compactStrings(surfaces)
+	return compactStrings(surfaces), !decoded.Complete()
 }
 
 func collectRestrictedMatches(surfaces []string, evaluation *Evaluation) {

@@ -45,14 +45,15 @@ type CheckRequest struct {
 }
 
 type EvaluationEvent struct {
-	Source       Source
-	Decision     Decision
-	CacheHit     bool
-	PolicyDigest string
-	Score        float64
-	Families     []string
-	RuleIDs      []string
-	InputBytes   int
+	Source           Source
+	Decision         Decision
+	CacheHit         bool
+	PolicyDigest     string
+	Score            float64
+	Families         []string
+	RuleIDs          []string
+	InputBytes       int
+	DecodeIncomplete bool
 }
 
 var (
@@ -81,6 +82,7 @@ type Evaluation struct {
 	OversizeBlocked       bool     `json:"oversize_blocked,omitempty"`
 	FallbackBlocked       bool     `json:"fallback_blocked,omitempty"`
 	SegmentBudgetExceeded bool     `json:"segment_budget_exceeded,omitempty"`
+	DecodeIncomplete      bool     `json:"decode_incomplete,omitempty"`
 }
 
 type BlockedError struct {

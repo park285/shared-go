@@ -21,6 +21,7 @@ const (
 	ruleInputOversize         = "input_oversize"
 	ruleEvaluationFallback    = "evaluation_fallback"
 	ruleSegmentBudgetExceeded = "segment_budget_exceeded"
+	ruleDecodeIncomplete      = "decode_incomplete"
 	maxLoggedMatchValues      = 16
 )
 
@@ -115,6 +116,9 @@ func blockedErrorFromEvaluation(evaluation Evaluation) *BlockedError {
 	}
 	if evaluation.SegmentBudgetExceeded {
 		rules = append(rules, ruleSegmentBudgetExceeded)
+	}
+	if evaluation.DecodeIncomplete {
+		rules = append(rules, ruleDecodeIncomplete)
 	}
 
 	return &BlockedError{
@@ -292,9 +296,14 @@ func (g *Guard) evaluateRaw(input string) Evaluation {
 			SegmentBudgetExceeded: true,
 		}
 	}
-	segments = append(segments, decodedTextSegments(input)...)
-
-	return g.evaluateSegments(policy, segments)
+	decoded, status := decodedTextSegments(input)
+	segments = append(segments, decoded...)
+	evaluation := g.evaluateSegments(policy, segments)
+	if status != 0 {
+		evaluation.Decision = DecisionBlock
+		evaluation.DecodeIncomplete = true
+	}
+	return evaluation
 }
 
 func (g *Guard) evaluateSegments(policy compiledPolicy, segments []textSegment) Evaluation {
@@ -351,16 +360,20 @@ func (g *Guard) observeEvaluation(evaluation Evaluation, cacheHit bool, inputByt
 	if g.onEvaluation != nil {
 		families := distinctPositiveFamilies(evaluation.Hits)
 		rules := matchedRuleIDs(evaluation.Hits)
+		if evaluation.DecodeIncomplete {
+			rules = append(rules, ruleDecodeIncomplete)
+		}
 		slices.Sort(rules)
 		g.onEvaluation(EvaluationEvent{
-			Source:       evaluation.Source,
-			Decision:     evaluation.Decision,
-			CacheHit:     cacheHit,
-			PolicyDigest: g.policyDigest,
-			Score:        evaluation.Score,
-			Families:     slices.Clone(families),
-			RuleIDs:      slices.Clone(rules),
-			InputBytes:   inputBytes,
+			Source:           evaluation.Source,
+			Decision:         evaluation.Decision,
+			CacheHit:         cacheHit,
+			PolicyDigest:     g.policyDigest,
+			Score:            evaluation.Score,
+			Families:         slices.Clone(families),
+			RuleIDs:          slices.Clone(rules),
+			InputBytes:       inputBytes,
+			DecodeIncomplete: evaluation.DecodeIncomplete,
 		})
 	}
 }
