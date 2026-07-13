@@ -76,6 +76,10 @@ type transformFamily struct {
 // DecodeCandidates breadth-first expands readable supported encodings. It never
 // silently truncates a supported readable candidate: Status records the limit.
 func DecodeCandidates(input string) DecodeResult {
+	if !hasPotentialDecodeSurface(input) {
+		return DecodeResult{}
+	}
+
 	result := DecodeResult{Candidates: make([]string, 0, maxDecodeCandidates)}
 	queue := []decodeQueueEntry{{text: input}}
 	visited := map[string]struct{}{input: {}}
@@ -113,6 +117,40 @@ func DecodeCandidates(input string) DecodeResult {
 		}
 	}
 	return result
+}
+
+func hasPotentialDecodeSurface(input string) bool {
+	if strings.ContainsAny(input, `%&\`) || containsASCIIFold(input, "hex") {
+		return true
+	}
+	for i := 0; i < len(input); {
+		match := nextBase64Candidate(input, i)
+		i = match.next
+		if len(match.value) >= minBase64CandidateLen {
+			return true
+		}
+	}
+	return false
+}
+
+func containsASCIIFold(input, target string) bool {
+	for i := 0; i+len(target) <= len(input); i++ {
+		matched := true
+		for j := range len(target) {
+			value := input[i+j]
+			if value >= 'A' && value <= 'Z' {
+				value += 'a' - 'A'
+			}
+			if value != target[j] {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return true
+		}
+	}
+	return false
 }
 
 func decodeSurfaces(input string, scans *int, status *DecodeStatus) []string {

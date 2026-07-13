@@ -48,7 +48,11 @@ func (r *compiledRule) matchInput(segment textSegment, policy compiledPolicy) (s
 	if strings.TrimSpace(text) == "" {
 		return "", 0, false
 	}
-	if r.View != viewRaw && len(r.RequiredAny) > 0 && !containsAnyLiteral(text, r.RequiredAny) {
+	prefilterText := text
+	if r.View == viewRaw {
+		prefilterText = segment.Views.Norm
+	}
+	if !containsAllLiteralGroups(prefilterText, r.RequiredLiteralGroups) {
 		return "", 0, false
 	}
 
@@ -96,6 +100,15 @@ func containsAnyLiteral(text string, literals []string) bool {
 	}
 
 	return false
+}
+
+func containsAllLiteralGroups(text string, groups [][]string) bool {
+	for _, group := range groups {
+		if !containsAnyLiteral(text, group) {
+			return false
+		}
+	}
+	return true
 }
 
 func segmentView(segment textSegment, view string) string {

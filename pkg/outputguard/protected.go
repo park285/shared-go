@@ -36,6 +36,11 @@ type protectedEntry struct {
 	runeFallback bool
 }
 
+type preparedProtectedText struct {
+	normalized string
+	exact      string
+}
+
 type normalizedSurface struct {
 	text  string
 	runes []rune
@@ -54,15 +59,22 @@ type protectedIndex struct {
 	exactNodes   []exactNode
 }
 
-type exactNode struct {
-	edges    []exactEdge
-	fail     int
-	terminal bool
-}
-type exactEdge struct {
-	byte byte
-	next int
-}
+type exactNode uint64
+
+const (
+	exactFirstBits      = 19
+	exactFirstMask      = uint64(1<<exactFirstBits - 1)
+	exactCountBits      = 9
+	exactCountMask      = uint64(1<<exactCountBits - 1)
+	exactCountShift     = exactFirstBits
+	exactTerminalShift  = exactCountShift + exactCountBits
+	exactFailureShift   = exactTerminalShift + 1
+	exactFailureBits    = 19
+	exactFailureMask    = uint64(1<<exactFailureBits - 1)
+	exactIncomingShift  = exactFailureShift + exactFailureBits
+	exactFailureReady   = uint64(1 << 56)
+	exactTransitionMask = uint64(1<<exactFailureShift - 1)
+)
 
 func validateProtectedTexts(input []string) ([]string, bool, bool) {
 	protected := make([]string, 0, min(len(input), maxProtectedTexts))
@@ -92,12 +104,16 @@ func buildCompatibilityIndex(input []string) (*protectedIndex, bool, bool) {
 	if !ok {
 		return nil, false, oversize
 	}
+	if len(protected) == 0 {
+		return nil, false, false
+	}
 	index, err := newProtectedIndex(protected)
 	return index, err != nil, false
 }
 
 func newProtectedIndex(protectedTexts []string) (*protectedIndex, error) {
-	patterns := protectedExactPatterns(protectedTexts)
+	prepared := prepareProtectedTexts(protectedTexts)
+	patterns := protectedExactPatterns(prepared)
 	normalizedTotal := 0
 	for _, pattern := range patterns {
 		if len([]rune(pattern)) < 8 {
@@ -111,31 +127,22 @@ func newProtectedIndex(protectedTexts []string) (*protectedIndex, error) {
 			return nil, ErrInvalidProtectedTexts
 		}
 	}
-	return buildProtectedIndexWithPatterns(protectedTexts, patterns), nil
+	return buildProtectedIndexWithPatterns(prepared, patterns), nil
 }
 
 func buildProtectedIndex(protectedTexts []string) *protectedIndex {
-	return buildProtectedIndexWithPatterns(protectedTexts, protectedExactPatterns(protectedTexts))
+	prepared := prepareProtectedTexts(protectedTexts)
+	return buildProtectedIndexWithPatterns(prepared, protectedExactPatterns(prepared))
 }
 
-func buildProtectedIndexWithPatterns(protectedTexts, exactPatterns []string) *protectedIndex {
+func buildProtectedIndexWithPatterns(protectedTexts []preparedProtectedText, exactPatterns []string) *protectedIndex {
 	index := &protectedIndex{
 		entries:      make([]protectedEntry, 0, len(protectedTexts)),
 		tokenAnchors: make(map[uint64][]anchorRef),
 		runeAnchors:  make(map[uint64][]anchorRef),
 	}
-	seen := make(map[string]struct{}, len(protectedTexts))
-	for _, text := range slices.Clone(protectedTexts) {
-		normalized := guardtext.Normalize(text)
-		if normalized == "" {
-			continue
-		}
-		if _, exists := seen[normalized]; exists {
-			continue
-		}
-		seen[normalized] = struct{}{}
-
-		entry := protectedEntry{normalized: normalized, runes: []rune(normalized)}
+	for _, text := range protectedTexts {
+		entry := protectedEntry{normalized: text.normalized, runes: []rune(text.normalized)}
 		entry.tokens = tokenizeRunes(entry.runes)
 		entry.runeFallback = len(entry.tokens) <= 1
 		entryIndex := len(index.entries)
@@ -148,12 +155,35 @@ func buildProtectedIndexWithPatterns(protectedTexts, exactPatterns []string) *pr
 	return index
 }
 
-func protectedExactPatterns(protectedTexts []string) []string {
-	patterns := make([]string, 0, len(protectedTexts)*2)
+func prepareProtectedTexts(protectedTexts []string) []preparedProtectedText {
+	prepared := make([]preparedProtectedText, 0, len(protectedTexts))
+	seen := make(map[string]struct{}, len(protectedTexts))
 	for _, text := range protectedTexts {
-		views := guardtext.NormalizeViews(text)
-		stripped := guardtext.StripFormatAndCombining(text)
-		patterns = append(patterns, views.Norm, guardtext.Normalize(views.Joined), guardtext.Normalize(stripped))
+		normalized := guardtext.NormalizeViews(text).Norm
+		if normalized == "" {
+			continue
+		}
+		if _, exists := seen[normalized]; exists {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		prepared = append(prepared, preparedProtectedText{
+			normalized: normalized,
+			exact:      exactProtectedProjection(text),
+		})
+	}
+	return prepared
+}
+
+func exactProtectedProjection(text string) string {
+	stripped := guardtext.StripFormatAndCombining(text)
+	return guardtext.NormalizeViews(stripped).Joined
+}
+
+func protectedExactPatterns(protectedTexts []preparedProtectedText) []string {
+	patterns := make([]string, 0, len(protectedTexts))
+	for _, text := range protectedTexts {
+		patterns = append(patterns, text.exact)
 	}
 	return compactProtectedPatterns(patterns)
 }
@@ -175,58 +205,176 @@ func compactProtectedPatterns(patterns []string) []string {
 }
 
 func buildExactMatcher(patterns []string) []exactNode {
-	children := []map[byte]int{{}}
-	terminals := []bool{false}
+	if len(patterns) == 0 {
+		return nil
+	}
+	slices.Sort(patterns)
+	totalBytes := 0
 	for _, pattern := range patterns {
-		state := 0
-		for _, b := range []byte(pattern) {
-			next, ok := children[state][b]
-			if !ok {
-				next = len(children)
-				children[state][b] = next
-				children = append(children, map[byte]int{})
-				terminals = append(terminals, false)
-			}
-			state = next
-		}
-		terminals[state] = true
+		totalBytes += len(pattern)
 	}
-	nodes := make([]exactNode, len(children))
-	for i, childMap := range children {
-		nodes[i].terminal = terminals[i]
-		for b, next := range childMap {
-			nodes[i].edges = append(nodes[i].edges, exactEdge{byte: b, next: next})
-		}
-		sort.Slice(nodes[i].edges, func(a, b int) bool { return nodes[i].edges[a].byte < nodes[i].edges[b].byte })
+	if totalBytes > maxProtectedTotalBytes {
+		return nil
 	}
-	queue := make([]int, 0, len(nodes))
-	for _, edge := range nodes[0].edges {
-		queue = append(queue, edge.next)
-	}
-	for len(queue) > 0 {
-		state := queue[0]
-		queue = queue[1:]
-		for _, edge := range nodes[state].edges {
-			fallback := nodes[state].fail
-			for fallback != 0 && exactNext(nodes[fallback].edges, edge.byte) < 0 {
-				fallback = nodes[fallback].fail
-			}
-			if next := exactNext(nodes[fallback].edges, edge.byte); next >= 0 {
-				nodes[edge.next].fail = next
-			}
-			nodes[edge.next].terminal = nodes[edge.next].terminal || nodes[nodes[edge.next].fail].terminal
-			queue = append(queue, edge.next)
-		}
-	}
+	nodes := make([]exactNode, 1, totalBytes+1)
+	buildExactTrieNode(&nodes, 0, patterns, 0)
+	buildExactFailures(nodes)
+
 	return nodes
 }
 
-func exactNext(edges []exactEdge, b byte) int {
-	i := sort.Search(len(edges), func(i int) bool { return edges[i].byte >= b })
-	if i < len(edges) && edges[i].byte == b {
-		return edges[i].next
+func buildExactTrieNode(nodes *[]exactNode, node uint32, patterns []string, depth int) {
+	if len(patterns) == 1 {
+		pattern := patterns[0]
+		for depth < len(pattern) {
+			child := uint32(len(*nodes))
+			setExactTransitions(&(*nodes)[node], int(child), 1, false)
+			*nodes = append(*nodes, packExactParent(node, pattern[depth]))
+			node = child
+			depth++
+		}
+		setExactTransitions(&(*nodes)[node], 0, 0, true)
+		return
 	}
-	return -1
+
+	remaining := 0
+	for remaining < len(patterns) && len(patterns[remaining]) == depth {
+		remaining++
+	}
+	terminal := remaining > 0
+	patterns = patterns[remaining:]
+	childCount := 0
+	for start := 0; start < len(patterns); {
+		childCount++
+		value := patterns[start][depth]
+		start++
+		for start < len(patterns) && patterns[start][depth] == value {
+			start++
+		}
+	}
+	first := len(*nodes)
+	for range childCount {
+		*nodes = append(*nodes, 0)
+	}
+	setExactTransitions(&(*nodes)[node], first, childCount, terminal)
+
+	childOffset := 0
+	for start := 0; start < len(patterns); {
+		end := start + 1
+		value := patterns[start][depth]
+		for end < len(patterns) && patterns[end][depth] == value {
+			end++
+		}
+		child := uint32(first + childOffset)
+		(*nodes)[child] = packExactParent(node, value)
+		childOffset++
+		buildExactTrieNode(nodes, child, patterns[start:end], depth+1)
+		start = end
+	}
+}
+
+func buildExactFailures(nodes []exactNode) {
+	nodes[0] |= exactNode(exactFailureReady)
+	for node := uint32(1); node < uint32(len(nodes)); node++ {
+		resolveExactFailure(nodes, node)
+	}
+}
+
+func resolveExactFailure(nodes []exactNode, node uint32) uint32 {
+	packed := nodes[node]
+	if uint64(packed)&exactFailureReady != 0 {
+		return exactFailure(nodes[node])
+	}
+	parent := exactFailure(nodes[node])
+	value := exactIncoming(nodes[node])
+	if parent == 0 {
+		setExactFailure(&nodes[node], 0)
+		return 0
+	}
+
+	fallback := resolveExactFailure(nodes, parent)
+	for {
+		next, ok := exactNext(nodes, fallback, value)
+		if ok && next != node {
+			fallback = next
+			break
+		}
+		if fallback == 0 {
+			break
+		}
+		fallback = resolveExactFailure(nodes, fallback)
+	}
+	resolveExactFailure(nodes, fallback)
+	setExactFailure(&nodes[node], fallback)
+	if exactTerminal(nodes[fallback]) {
+		nodes[node] |= 1 << exactTerminalShift
+	}
+	return fallback
+}
+
+func setExactTransitions(node *exactNode, first, count int, terminal bool) {
+	if count == 0 {
+		first = 0
+	}
+	packed := uint64(first) | uint64(count)<<exactCountShift
+	if terminal {
+		packed |= 1 << exactTerminalShift
+	}
+	*node = exactNode(uint64(*node)&^exactTransitionMask | packed)
+}
+
+func packExactParent(parent uint32, value byte) exactNode {
+	return exactNode(uint64(parent)<<exactFailureShift | uint64(value)<<exactIncomingShift)
+}
+
+func setExactFailure(node *exactNode, failure uint32) {
+	const failureFieldMask = exactFailureMask << exactFailureShift
+	*node = exactNode(uint64(*node)&^failureFieldMask | uint64(failure)<<exactFailureShift | exactFailureReady)
+}
+
+func exactFirst(node exactNode) uint32 {
+	return uint32(uint64(node) & exactFirstMask)
+}
+
+func exactCount(node exactNode) int {
+	return int(uint64(node) >> exactCountShift & exactCountMask)
+}
+
+func exactTerminal(node exactNode) bool {
+	return uint64(node)&(1<<exactTerminalShift) != 0
+}
+
+func exactFailure(node exactNode) uint32 {
+	return uint32(uint64(node) >> exactFailureShift & exactFailureMask)
+}
+
+func exactIncoming(node exactNode) byte {
+	return byte(uint64(node) >> exactIncomingShift)
+}
+
+func exactNext(nodes []exactNode, state uint32, value byte) (uint32, bool) {
+	node := nodes[state]
+	first := exactFirst(node)
+	count := exactCount(node)
+	if count == 1 {
+		if exactIncoming(nodes[first]) == value {
+			return first, true
+		}
+		return 0, false
+	}
+	low, high := 0, count
+	for low < high {
+		middle := int(uint(low+high) >> 1)
+		if exactIncoming(nodes[first+uint32(middle)]) < value {
+			low = middle + 1
+		} else {
+			high = middle
+		}
+	}
+	if low < count && exactIncoming(nodes[first+uint32(low)]) == value {
+		return first + uint32(low), true
+	}
+	return 0, false
 }
 
 func (index *protectedIndex) addTokenAnchors(entryIndex int) {
@@ -282,15 +430,17 @@ func (index *protectedIndex) exactContains(text string) bool {
 	if len(index.exactNodes) == 0 {
 		return false
 	}
-	state := 0
+	state := uint32(0)
 	for _, b := range []byte(text) {
-		for state != 0 && exactNext(index.exactNodes[state].edges, b) < 0 {
-			state = index.exactNodes[state].fail
+		next, ok := exactNext(index.exactNodes, state, b)
+		for !ok && state != 0 {
+			state = exactFailure(index.exactNodes[state])
+			next, ok = exactNext(index.exactNodes, state, b)
 		}
-		if next := exactNext(index.exactNodes[state].edges, b); next >= 0 {
+		if ok {
 			state = next
 		}
-		if index.exactNodes[state].terminal {
+		if exactTerminal(index.exactNodes[state]) {
 			return true
 		}
 	}

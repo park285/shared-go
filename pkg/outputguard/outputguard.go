@@ -50,7 +50,7 @@ func (g *Guard) Check(req CheckRequest) Evaluation {
 		appendReason(&evaluation, ReasonProtectedInputInvalid)
 	}
 
-	surfaces, incomplete := outputSurfaces(req.Text)
+	surfaces, incomplete := outputSurfaces(req.Text, index != nil)
 	collectRestrictedMatches(surfaces, &evaluation)
 	if incomplete {
 		appendReason(&evaluation, ReasonDecodeIncomplete)
@@ -81,16 +81,26 @@ func protectedOverlap(surfaces []string, index *protectedIndex) bool {
 	return slices.ContainsFunc(surfaces, index.overlapsText)
 }
 
-func outputSurfaces(text string) ([]string, bool) {
+func outputSurfaces(text string, includeProtectedProjection bool) ([]string, bool) {
 	views := guardtext.NormalizeViews(text)
 	stripped := guardtext.StripFormatAndCombining(text)
 	decoded := guardtext.DecodeCandidates(text)
-	surfaces := make([]string, 0, 4+len(decoded.Candidates)*4)
+	viewsPerCandidate := 4
+	if includeProtectedProjection {
+		viewsPerCandidate++
+	}
+	surfaces := make([]string, 0, viewsPerCandidate*(1+len(decoded.Candidates)))
 	surfaces = append(surfaces, views.Raw, views.Norm, views.Joined, guardtext.Normalize(stripped))
+	if includeProtectedProjection {
+		surfaces = append(surfaces, exactProtectedProjection(text))
+	}
 	for _, candidate := range decoded.Candidates {
 		decodedViews := guardtext.NormalizeViews(candidate)
 		decodedStripped := guardtext.StripFormatAndCombining(candidate)
 		surfaces = append(surfaces, decodedViews.Raw, decodedViews.Norm, decodedViews.Joined, guardtext.Normalize(decodedStripped))
+		if includeProtectedProjection {
+			surfaces = append(surfaces, exactProtectedProjection(candidate))
+		}
 	}
 
 	return compactStrings(surfaces), !decoded.Complete()

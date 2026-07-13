@@ -40,18 +40,18 @@ type compiledPolicy struct {
 }
 
 type compiledRule struct {
-	ID             string
-	Family         string
-	Type           string
-	Action         string
-	View           string
-	Segments       map[segmentKind]struct{}
-	Pattern        *regexp.Regexp
-	Phrases        []string
-	Weight         float64
-	MatchMode      string
-	MaxOccurrences int
-	RequiredAny    []string
+	ID                    string
+	Family                string
+	Type                  string
+	Action                string
+	View                  string
+	Segments              map[segmentKind]struct{}
+	Pattern               *regexp.Regexp
+	Phrases               []string
+	Weight                float64
+	MatchMode             string
+	MaxOccurrences        int
+	RequiredLiteralGroups [][]string
 }
 
 type compiledPack struct {

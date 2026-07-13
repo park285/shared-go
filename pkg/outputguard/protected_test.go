@@ -134,6 +134,11 @@ func TestProtectedOverlapBlocksNormalizedShortExactCopies(t *testing.T) {
 			protected: "Ｓуѕtеm\u200b boundary note",
 			output:    "system boundary note",
 		},
+		{
+			name:      "decomposed combining mark removal",
+			protected: "internal cafe\u0301 criteria",
+			output:    "internal cafe criteria",
+		},
 	}
 
 	guard := NewGuard()

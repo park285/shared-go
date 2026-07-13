@@ -31,7 +31,7 @@ func (g *BoundGuard) Check(text string) Evaluation {
 		evaluation.ReasonCodes = []ReasonCode{ReasonOutputOversize}
 		return evaluation
 	}
-	surfaces, incomplete := outputSurfaces(text)
+	surfaces, incomplete := outputSurfaces(text, true)
 	collectRestrictedMatches(surfaces, &evaluation)
 	if incomplete {
 		appendReason(&evaluation, ReasonDecodeIncomplete)

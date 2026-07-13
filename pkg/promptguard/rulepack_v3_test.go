@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"regexp"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -243,6 +244,44 @@ func TestV3MatchRespectsRemainingOccurrenceBudget(t *testing.T) {
 	segment := textSegment{Kind: segmentPlain, Views: normalizeViews(strings.Repeat("x ", maxRuleOccurrences))}
 	if got := len(rule.matchSegment(segment, compilePolicy(&rawRulepack{Version: 3}), 2)); got != 2 {
 		t.Fatalf("matchSegment() count = %d, want remaining limit 2", got)
+	}
+}
+
+func TestRegexLiteralPrefilterKeepsConjunctiveRequirements(t *testing.T) {
+	t.Parallel()
+
+	groups := requiredRegexLiteralGroups(regexp.MustCompile(`(?i)(?:show|reveal)[\s\S]{0,12}(?:prompt|policy)`))
+	if len(groups) < 2 {
+		t.Fatalf("required literal groups = %#v, want conjunctive groups", groups)
+	}
+	if !containsAllLiteralGroups("show the prompt", groups) {
+		t.Fatal("required literal groups rejected a valid matching surface")
+	}
+	if containsAllLiteralGroups("ordinary instruction", groups) {
+		t.Fatal("required literal groups accepted a surface missing both requirements")
+	}
+}
+
+func TestRawRegexPrefilterUsesNormalizedCaseFoldedView(t *testing.T) {
+	t.Parallel()
+
+	rule, err := compileRule(&rawRule{
+		ID:             "raw-role",
+		Family:         "raw-role",
+		Type:           "regex",
+		Action:         "score",
+		View:           "raw",
+		Segments:       []string{"plain"},
+		Pattern:        `(?:system|developer)[\s]+message`,
+		Weight:         1,
+		MaxOccurrences: 1,
+	})
+	if err != nil {
+		t.Fatalf("compileRule() error = %v", err)
+	}
+	segment := textSegment{Kind: segmentPlain, Views: normalizeViews("DEVELOPER MESSAGE")}
+	if matches := rule.matchSegment(segment, compilePolicy(&rawRulepack{Version: 3}), 1); len(matches) != 1 {
+		t.Fatalf("raw case-insensitive matches = %d, want 1", len(matches))
 	}
 }
 

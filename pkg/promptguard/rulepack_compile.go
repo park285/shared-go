@@ -141,7 +141,7 @@ func assignRegexMatcher(compiled *compiledRule, rule *rawRule) error {
 	}
 
 	compiled.Pattern = pattern
-	compiled.RequiredAny = requiredRegexLiterals(pattern)
+	compiled.RequiredLiteralGroups = requiredRegexLiteralGroups(pattern)
 
 	return nil
 }
@@ -170,44 +170,48 @@ func assignPhraseMatcher(compiled *compiledRule, rule *rawRule) error {
 	}
 
 	compiled.Phrases = phrases
-	compiled.RequiredAny = slices.Clone(phrases)
+	compiled.RequiredLiteralGroups = [][]string{slices.Clone(phrases)}
 
 	return nil
 }
 
-func requiredRegexLiterals(pattern *regexp.Regexp) []string {
+func requiredRegexLiteralGroups(pattern *regexp.Regexp) [][]string {
 	parsed, err := syntax.Parse(pattern.String(), syntax.Perl)
 	if err != nil {
 		return nil
 	}
-	literals := requiredLiterals(parsed)
-	for i := range literals {
-		literals[i] = strings.ToLower(literals[i])
+	groups := requiredLiteralGroups(parsed)
+	for i := range groups {
+		for j := range groups[i] {
+			groups[i][j] = strings.ToLower(groups[i][j])
+		}
+		slices.Sort(groups[i])
+		groups[i] = slices.Compact(groups[i])
 	}
-	slices.Sort(literals)
-	literals = slices.Compact(literals)
 
-	return literals
+	return groups
 }
 
-func requiredLiterals(expression *syntax.Regexp) []string {
+func requiredLiteralGroups(expression *syntax.Regexp) [][]string {
 	if expression == nil {
 		return nil
 	}
 	switch expression.Op {
 	case syntax.OpLiteral:
-		return literalExpression(expression)
+		if literals := literalExpression(expression); len(literals) > 0 {
+			return [][]string{literals}
+		}
 	case syntax.OpCapture:
-		return requiredSingleSubexpression(expression)
+		return requiredSingleSubexpressionGroups(expression)
 	case syntax.OpConcat:
-		return requiredConcatLiterals(expression.Sub)
+		return requiredConcatLiteralGroups(expression.Sub)
 	case syntax.OpAlternate:
-		return requiredAlternateLiterals(expression.Sub)
+		return requiredAlternateLiteralGroups(expression.Sub)
 	case syntax.OpPlus:
-		return requiredSingleSubexpression(expression)
+		return requiredSingleSubexpressionGroups(expression)
 	case syntax.OpRepeat:
 		if expression.Min > 0 && len(expression.Sub) == 1 {
-			return requiredLiterals(expression.Sub[0])
+			return requiredLiteralGroups(expression.Sub[0])
 		}
 	}
 
@@ -222,40 +226,47 @@ func literalExpression(expression *syntax.Regexp) []string {
 	return []string{string(expression.Rune)}
 }
 
-func requiredSingleSubexpression(expression *syntax.Regexp) []string {
+func requiredSingleSubexpressionGroups(expression *syntax.Regexp) [][]string {
 	if len(expression.Sub) != 1 {
 		return nil
 	}
 
-	return requiredLiterals(expression.Sub[0])
+	return requiredLiteralGroups(expression.Sub[0])
 }
 
-func requiredConcatLiterals(expressions []*syntax.Regexp) []string {
-	var best []string
-	bestLength := 0
+func requiredConcatLiteralGroups(expressions []*syntax.Regexp) [][]string {
+	groups := make([][]string, 0, len(expressions))
 	for _, expression := range expressions {
-		candidate := requiredLiterals(expression)
-		minimum := minimumLiteralRunes(candidate)
-		if minimum > bestLength {
-			best = candidate
-			bestLength = minimum
-		}
+		groups = append(groups, requiredLiteralGroups(expression)...)
 	}
 
-	return best
+	return groups
 }
 
-func requiredAlternateLiterals(expressions []*syntax.Regexp) []string {
+func requiredAlternateLiteralGroups(expressions []*syntax.Regexp) [][]string {
 	var combined []string
 	for _, expression := range expressions {
-		candidate := requiredLiterals(expression)
+		candidate := bestRequiredLiteralGroup(requiredLiteralGroups(expression))
 		if len(candidate) == 0 {
 			return nil
 		}
 		combined = append(combined, candidate...)
 	}
 
-	return combined
+	return [][]string{combined}
+}
+
+func bestRequiredLiteralGroup(groups [][]string) []string {
+	var best []string
+	bestLength := 0
+	for _, group := range groups {
+		minimum := minimumLiteralRunes(group)
+		if minimum > bestLength {
+			best = group
+			bestLength = minimum
+		}
+	}
+	return best
 }
 
 func minimumLiteralRunes(values []string) int {
