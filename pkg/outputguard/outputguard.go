@@ -92,14 +92,14 @@ func outputSurfaces(text string, includeProtectedProjection bool) ([]string, boo
 	surfaces := make([]string, 0, viewsPerCandidate*(1+len(decoded.Candidates)))
 	surfaces = append(surfaces, views.Raw, views.Norm, views.Joined, guardtext.Normalize(stripped))
 	if includeProtectedProjection {
-		surfaces = append(surfaces, exactProtectedProjection(text))
+		surfaces = append(surfaces, exactProtectedOutputProjection(text, views))
 	}
 	for _, candidate := range decoded.Candidates {
 		decodedViews := guardtext.NormalizeViews(candidate)
 		decodedStripped := guardtext.StripFormatAndCombining(candidate)
 		surfaces = append(surfaces, decodedViews.Raw, decodedViews.Norm, decodedViews.Joined, guardtext.Normalize(decodedStripped))
 		if includeProtectedProjection {
-			surfaces = append(surfaces, exactProtectedProjection(candidate))
+			surfaces = append(surfaces, exactProtectedOutputProjection(candidate, decodedViews))
 		}
 	}
 

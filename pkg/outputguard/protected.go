@@ -177,7 +177,24 @@ func prepareProtectedTexts(protectedTexts []string) []preparedProtectedText {
 
 func exactProtectedProjection(text string) string {
 	stripped := guardtext.StripFormatAndCombining(text)
-	return guardtext.NormalizeViews(stripped).Joined
+	return exactProtectedProjectionFromViews(guardtext.NormalizeViews(stripped))
+}
+
+func exactProtectedOutputProjection(text string, views guardtext.Views) string {
+	stripped := guardtext.StripFormatAndCombining(text)
+	if stripped != text {
+		views = guardtext.NormalizeViews(stripped)
+	}
+	return exactProtectedProjectionFromViews(views)
+}
+
+func exactProtectedProjectionFromViews(views guardtext.Views) string {
+	joined := guardtext.JoinShortSeparators(views.Raw, len(views.Raw))
+	normalized := views.Norm
+	if joined != views.Raw {
+		normalized = guardtext.Normalize(joined)
+	}
+	return guardtext.JoinShortSeparators(normalized, len(normalized))
 }
 
 func protectedExactPatterns(protectedTexts []preparedProtectedText) []string {

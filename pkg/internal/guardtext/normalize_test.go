@@ -17,6 +17,9 @@ func TestNormalizeViewsPreservesLegacyBehavior(t *testing.T) {
 	if !strings.Contains(NormalizeViews("시 스 템  프 롬 프 트").Joined, "시스템프롬프트") {
 		t.Fatal("NormalizeViews() did not collapse short separators")
 	}
+	if got := NormalizeViews("alpha-----beta").Joined; got != "alpha beta" {
+		t.Fatalf("NormalizeViews() long separator behavior = %q, want %q", got, "alpha beta")
+	}
 }
 
 func TestNormalizeFastPathASCIIAllowlistMatchesPredicate(t *testing.T) {

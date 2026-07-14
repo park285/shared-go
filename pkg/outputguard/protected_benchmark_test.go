@@ -111,6 +111,27 @@ func BenchmarkProtectedExactJoinedSeparator(b *testing.B) {
 	}
 }
 
+func BenchmarkProtectedExactLongSeparatorRun(b *testing.B) {
+	bound, err := NewGuard().Bind([]string{"internal boundary"})
+	if err != nil {
+		b.Fatalf("Bind: %v", err)
+	}
+	for _, separatorBytes := range []int{64, 4 << 10, 64 << 10} {
+		text := "internal" + strings.Repeat("-", separatorBytes) + "boundary"
+		b.Run(fmt.Sprintf("%d", separatorBytes), func(b *testing.B) {
+			if evaluation := bound.Check(text); evaluation.Decision != DecisionBlock {
+				b.Fatalf("decision = %q, want block", evaluation.Decision)
+			}
+			b.ReportAllocs()
+			b.SetBytes(int64(len(text)))
+			b.ResetTimer()
+			for range b.N {
+				_ = bound.Check(text)
+			}
+		})
+	}
+}
+
 func makeExactBenchmarkProtectedTexts(count int) []string {
 	protected := make([]string, count)
 	for i := range protected {

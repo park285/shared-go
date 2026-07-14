@@ -155,6 +155,34 @@ func TestProtectedOverlapBlocksNormalizedShortExactCopies(t *testing.T) {
 	}
 }
 
+func TestProtectedOverlapBlocksArbitraryInterwordSeparators(t *testing.T) {
+	t.Parallel()
+
+	protected := "internal boundary"
+	tests := []struct {
+		name   string
+		output string
+		want   Decision
+	}{
+		{name: "five separators", output: "internal-----boundary", want: DecisionBlock},
+		{name: "sixty four separators", output: "internal" + strings.Repeat("-", 64) + "boundary", want: DecisionBlock},
+		{name: "four thousand separators", output: "internal" + strings.Repeat("-", 4<<10) + "boundary", want: DecisionBlock},
+		{name: "mixed unicode separators", output: "internal" + strings.Repeat("・／—　", 16) + "boundary", want: DecisionBlock},
+		{name: "decoded separators", output: base64.StdEncoding.EncodeToString([]byte("internal" + strings.Repeat("-", 64) + "boundary")), want: DecisionBlock},
+		{name: "intervening word", output: "internal public boundary", want: DecisionAllow},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			evaluation := NewGuard().Check(CheckRequest{Text: test.output, ProtectedTexts: []string{protected}})
+			assert.Equal(t, test.want, evaluation.Decision, "projection=%q", exactProtectedProjection(test.output))
+			if test.want == DecisionBlock {
+				assert.Contains(t, evaluation.ReasonCodes, ReasonProtectedTextOverlap)
+			}
+		})
+	}
+}
+
 func TestProtectedOverlapKoreanAndEnglishCorpus(t *testing.T) {
 	t.Parallel()
 
