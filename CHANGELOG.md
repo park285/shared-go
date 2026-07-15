@@ -1,5 +1,21 @@
 # Changelog
 
+## 미출시
+
+### 추가
+
+- `outputguard`가 지원하는 Base64·hex 조각을 decode할 때 주변 평문을 보존하며,
+  protected text 비교에는 제한된 짧은 조각 확장을 적용합니다.
+- `workerpool.ManagedPool`이 reservation, concurrency, timeout, panic, 지연 완료와 종료 상태를
+  진단할 수 있는 bounded finalizer scheduler를 소유합니다.
+- `workerpool.ManagedPool.TrySubmitResult`가 admission과 finalizer ownership을 반환하여
+  거부된 durable work를 호출자가 정확히 한 번 복구할 수 있습니다.
+
+### 변경 (호환성 변경)
+
+- `workerpool.ManagedPool.TrySubmit`은 거부된 job의 `Finalize` callback ownership을 호출자에게
+  남깁니다. 거부된 finalization도 pool에 위임하려면 `TrySubmitResult`를 사용해야 합니다.
+
 ## v1.30.0 - 2026-07-12
 
 ### Fixed
