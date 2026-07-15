@@ -6,6 +6,14 @@ import (
 
 const maxAggregateAutomatonNodes = 2048
 
+type aggregateAutomatonState uint16
+
+const (
+	aggregateAutomatonOutput    aggregateAutomatonState = 1 << 15
+	aggregateAutomatonStateMask                         = aggregateAutomatonOutput - 1
+	_                           aggregateAutomatonState = aggregateAutomatonStateMask - (maxAggregateAutomatonNodes - 1)
+)
+
 type aggregatePrefilterSet struct {
 	rawNorm aggregateViewPrefilter
 	norm    aggregateViewPrefilter
@@ -86,15 +94,15 @@ type aggregateLiteralAutomaton struct {
 }
 
 type aggregateAutomatonNode struct {
-	next   [256]uint32
-	fail   uint32
+	next   [256]aggregateAutomatonState
+	fail   aggregateAutomatonState
 	output bool
 }
 
 func newAggregateLiteralAutomaton(literals []string) (aggregateLiteralAutomaton, bool) {
 	automaton := aggregateLiteralAutomaton{nodes: make([]aggregateAutomatonNode, 1)}
 	for _, literal := range literals {
-		state := uint32(0)
+		state := aggregateAutomatonState(0)
 		for index := range len(literal) {
 			value := literal[index]
 			next := automaton.nodes[state].next[value]
@@ -102,7 +110,7 @@ func newAggregateLiteralAutomaton(literals []string) (aggregateLiteralAutomaton,
 				if len(automaton.nodes) >= maxAggregateAutomatonNodes {
 					return aggregateLiteralAutomaton{}, false
 				}
-				next = uint32(len(automaton.nodes))
+				next = aggregateAutomatonState(len(automaton.nodes))
 				automaton.nodes = append(automaton.nodes, aggregateAutomatonNode{})
 				automaton.nodes[state].next[value] = next
 			}
@@ -111,11 +119,12 @@ func newAggregateLiteralAutomaton(literals []string) (aggregateLiteralAutomaton,
 		automaton.nodes[state].output = true
 	}
 	automaton.buildFailureTransitions()
+	automaton.encodeOutputTransitions()
 	return automaton, true
 }
 
 func (automaton *aggregateLiteralAutomaton) buildFailureTransitions() {
-	queue := make([]uint32, 0, len(automaton.nodes))
+	queue := make([]aggregateAutomatonState, 0, len(automaton.nodes))
 	for value := range 256 {
 		child := automaton.nodes[0].next[byte(value)]
 		if child != 0 {
@@ -141,26 +150,75 @@ func (automaton *aggregateLiteralAutomaton) buildFailureTransitions() {
 	}
 }
 
+func (automaton *aggregateLiteralAutomaton) encodeOutputTransitions() {
+	for nodeIndex := range automaton.nodes {
+		for value := range 256 {
+			target := automaton.nodes[nodeIndex].next[byte(value)]
+			if automaton.nodes[target].output {
+				automaton.nodes[nodeIndex].next[byte(value)] = target | aggregateAutomatonOutput
+			}
+		}
+	}
+}
+
 func (automaton aggregateLiteralAutomaton) matches(text []byte) bool {
-	state := uint32(0)
+	state := aggregateAutomatonState(0)
 	for _, value := range text {
-		state = automaton.nodes[state].next[value]
-		if automaton.nodes[state].output {
+		transition := automaton.nodes[state].next[value]
+		if transition&aggregateAutomatonOutput != 0 {
 			return true
 		}
+		state = transition & aggregateAutomatonStateMask
 	}
 	return false
 }
 
 func (automaton aggregateLiteralAutomaton) matchesString(text string) bool {
-	state := uint32(0)
+	state := aggregateAutomatonState(0)
 	for index := range len(text) {
-		state = automaton.nodes[state].next[text[index]]
-		if automaton.nodes[state].output {
+		transition := automaton.nodes[state].next[text[index]]
+		if transition&aggregateAutomatonOutput != 0 {
 			return true
 		}
+		state = transition & aggregateAutomatonStateMask
 	}
 	return false
+}
+
+func (automaton aggregateLiteralAutomaton) matchesNormalizedASCII(text []byte) (bool, bool) {
+	state := aggregateAutomatonState(0)
+	pendingSpace := false
+	wrote := false
+	for _, value := range text {
+		replacement, ok := normalizeASCIIByteReplacement(value)
+		if !ok {
+			return false, false
+		}
+		if replacement == "" {
+			continue
+		}
+		if replacement == " " {
+			pendingSpace = wrote
+			continue
+		}
+		if pendingSpace {
+			transition := automaton.nodes[state].next[' ']
+			if transition&aggregateAutomatonOutput != 0 {
+				return true, true
+			}
+			state = transition & aggregateAutomatonStateMask
+			pendingSpace = false
+		}
+		for index := range len(replacement) {
+			transition := automaton.nodes[state].next[replacement[index]]
+			if transition&aggregateAutomatonOutput != 0 {
+				return true, true
+			}
+			state = transition & aggregateAutomatonStateMask
+		}
+		wrote = true
+	}
+	return false, true
 }
 
 func (filters aggregatePrefilterSet) mayMatch(tail *aggregateTail, right textSegment) bool {
@@ -170,9 +228,8 @@ func (filters aggregatePrefilterSet) mayMatch(tail *aggregateTail, right textSeg
 			return true
 		}
 		raw := buffer.buildRaw(tail, right)
-		var normalizedBuffer aggregateViewBuffer
-		if normalized, ok := normalizeASCIIInto(normalizedBuffer.data[:0], raw); ok {
-			if filters.rawNorm.automaton.matches(normalized) {
+		if matched, complete := filters.rawNorm.automaton.matchesNormalizedASCII(raw); complete {
+			if matched {
 				return true
 			}
 		} else if filters.rawNorm.automaton.matchesString(normalizeText(string(raw))) {

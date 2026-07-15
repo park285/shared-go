@@ -1,6 +1,10 @@
 package promptguard
 
-import "testing"
+import (
+	"strings"
+	"testing"
+	"unicode/utf8"
+)
 
 func TestEmbeddedRulesHaveRequiredLiteralPrefilters(t *testing.T) {
 	t.Parallel()
@@ -25,6 +29,74 @@ func TestAggregatePrefilterFailsOpenAtNodeLimit(t *testing.T) {
 	filter := newAggregateViewPrefilter(literals, false)
 	if !filter.hasRules || !filter.unfiltered {
 		t.Fatalf("aggregate filter = %#v, want bounded fail-open filter", filter)
+	}
+}
+
+func TestAggregateAutomatonMatchesReference(t *testing.T) {
+	t.Parallel()
+
+	literals := []string{"he", "she", "hers", "정책"}
+	automaton, complete := newAggregateLiteralAutomaton(literals)
+	if !complete {
+		t.Fatal("automaton unexpectedly exceeded its node budget")
+	}
+	for _, input := range []string{"", "ushers", "her", "she", "정책 우회", "보안 규칙"} {
+		want := false
+		for _, literal := range literals {
+			want = want || strings.Contains(input, literal)
+		}
+		if got := automaton.matches([]byte(input)); got != want {
+			t.Errorf("matches(%q) = %t, want %t", input, got, want)
+		}
+		if got := automaton.matchesString(input); got != want {
+			t.Errorf("matchesString(%q) = %t, want %t", input, got, want)
+		}
+	}
+}
+
+func TestAggregateAutomatonNormalizedASCIIMatchesNormalize(t *testing.T) {
+	t.Parallel()
+
+	for _, literal := range []string{"a", "a b", "ab", "o", "system", "</"} {
+		automaton, complete := newAggregateLiteralAutomaton([]string{literal})
+		if !complete {
+			t.Fatalf("automaton for %q exceeded its node budget", literal)
+		}
+		for first := range utf8.RuneSelf {
+			for second := range utf8.RuneSelf {
+				input := []byte{byte(first), byte(second)}
+				got, ascii := automaton.matchesNormalizedASCII(input)
+				if !ascii {
+					t.Fatalf("matchesNormalizedASCII(%q) reported non-ASCII", input)
+				}
+				want := automaton.matchesString(normalizeText(string(input)))
+				if got != want {
+					t.Fatalf("matchesNormalizedASCII(%q, %q) = %t, want %t", literal, input, got, want)
+				}
+			}
+		}
+		for _, input := range []string{"a  b", " a b ", "a\tb", "A B", "a\x00b"} {
+			got, ascii := automaton.matchesNormalizedASCII([]byte(input))
+			if !ascii {
+				t.Fatalf("matchesNormalizedASCII(%q) reported non-ASCII", input)
+			}
+			want := automaton.matchesString(normalizeText(input))
+			if got != want {
+				t.Fatalf("matchesNormalizedASCII(%q, %q) = %t, want %t", literal, input, got, want)
+			}
+		}
+	}
+}
+
+func TestAggregateAutomatonNormalizedASCIIRejectsNonASCII(t *testing.T) {
+	t.Parallel()
+
+	automaton, complete := newAggregateLiteralAutomaton([]string{"system"})
+	if !complete {
+		t.Fatal("automaton unexpectedly exceeded its node budget")
+	}
+	if matched, ascii := automaton.matchesNormalizedASCII([]byte{0xff}); matched || ascii {
+		t.Fatalf("matchesNormalizedASCII(non-ASCII) = (%t, %t), want (false, false)", matched, ascii)
 	}
 }
 
