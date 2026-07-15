@@ -1,4 +1,4 @@
-package cipolicy
+package cipolicy_test
 
 import (
 	"os/exec"
@@ -8,6 +8,8 @@ import (
 )
 
 func TestWorkflowPolicyRegressionSuite(t *testing.T) {
+	t.Parallel()
+
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("resolve test source path")
