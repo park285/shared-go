@@ -27,15 +27,6 @@ func (r *compiledRule) appliesToTextSegment(segment textSegment) bool {
 	return false
 }
 
-func (r *compiledRule) appliesToKinds(kinds segmentKindSet) bool {
-	for _, kind := range allSegmentKinds {
-		if kinds.contains(kind) && r.appliesToSegment(kind) {
-			return true
-		}
-	}
-	return false
-}
-
 func (r *compiledRule) matchSegment(segment textSegment, policy compiledPolicy, limit int) []Match {
 	text, weight, ok := r.matchInput(segment, policy)
 	if !ok {

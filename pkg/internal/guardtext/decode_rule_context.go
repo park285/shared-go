@@ -111,16 +111,10 @@ func decodeSingleShortRuleContext(input string, mayContribute func(string) bool)
 		}
 
 		decodedText := string(decoded)
-		contributes, status := matchingDecodedContribution(decodedText, mayContribute)
+		span := encodedSpan{start: start, end: match.next}
+		contributes, status := shortRuleCandidateContributes(input, span, decodedText, mayContribute)
 		if status != 0 {
 			return DecodeResult{}, false
-		}
-		if !contributes {
-			contextual := replaceDecodedSpan(input, encodedSpan{start: start, end: match.next}, decodedText)
-			contributes, status = matchingDecodedContribution(contextual, mayContribute)
-			if status != 0 {
-				return DecodeResult{}, false
-			}
 		}
 		if !contributes {
 			continue
@@ -128,7 +122,7 @@ func decodeSingleShortRuleContext(input string, mayContribute func(string) bool)
 		if selectedDecoded != "" {
 			return DecodeResult{}, false
 		}
-		selectedSpan = encodedSpan{start: start, end: match.next}
+		selectedSpan = span
 		selectedDecoded = decodedText
 	}
 
@@ -140,6 +134,19 @@ func decodeSingleShortRuleContext(input string, mayContribute func(string) bool)
 		return DecodeResult{}, false
 	}
 	return DecodeResult{Candidates: []string{candidate}}, true
+}
+
+func shortRuleCandidateContributes(
+	input string,
+	span encodedSpan,
+	decoded string,
+	mayContribute func(string) bool,
+) (bool, DecodeStatus) {
+	contributes, status := matchingDecodedContribution(decoded, mayContribute)
+	if contributes || status != 0 {
+		return contributes, status
+	}
+	return matchingDecodedContribution(replaceDecodedSpan(input, span, decoded), mayContribute)
 }
 
 func hasPlausibleShortRuleDecodeSurface(input string) bool {
