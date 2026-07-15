@@ -2,28 +2,30 @@ package guardtext
 
 const maxShortBase64CandidateLen = minBase64CandidateLen - 1
 
-// DecodeCandidatesWithContextForRules expands the standard transform families and
-// adds only short Base64/hex fragments that can contribute to a compiled rule.
-// All work shares the existing candidate, byte, depth, scan, and protected-work
-// budgets, so callers retain deterministic fail-closed behavior.
-func DecodeCandidatesWithContextForRules(input string, mayContribute func(string) bool) DecodeResult {
-	if mayContribute == nil {
-		return DecodeCandidatesWithContext(input)
+func decodeCandidatesWithContextForRules(
+	input string,
+	mayContribute func(string) bool,
+	originalPotential bool,
+	needsNormalization bool,
+) DecodeResult {
+	if !originalPotential && !needsNormalization {
+		return DecodeResult{}
+	}
+	if originalPotential && !needsNormalization {
+		if result, ok := decodeSingleShortRuleContext(input, mayContribute); ok {
+			return result
+		}
 	}
 
 	roots := []string{input}
-	normalized := NormalizeEncodingSyntax(input)
-	if normalized != input {
-		roots = append(roots, normalized)
-	}
-	potential := false
-	for _, root := range roots {
-		if hasPotentialDecodeSurface(root) || hasPlausibleShortRuleDecodeSurface(root) {
-			potential = true
-			break
+	if needsNormalization {
+		normalized := NormalizeEncodingSyntax(input)
+		if normalized != input && (hasPotentialDecodeSurface(normalized) || hasPlausibleShortRuleDecodeSurface(normalized)) {
+			roots = append(roots, normalized)
+			originalPotential = true
 		}
 	}
-	if !potential {
+	if !originalPotential {
 		return DecodeResult{}
 	}
 
@@ -45,6 +47,7 @@ func DecodeCandidatesWithContextForRules(input string, mayContribute func(string
 		current := decoder.queue[decoder.cursor]
 		decoder.cursor++
 
+		standardCandidate := false
 		decodeContextSurfaces(
 			current.text,
 			false,
@@ -53,10 +56,20 @@ func DecodeCandidatesWithContextForRules(input string, mayContribute func(string
 			&decoder.protectedWork,
 			&decoder.scans,
 			&decoder.result.Status,
-			func(candidate string) { decoder.admit(current, candidate) },
-			func(span encodedSpan, decoded string) { decoder.admitContextual(current, span, decoded) },
+			func(candidate string) {
+				standardCandidate = true
+				decoder.admit(current, candidate)
+			},
+			func(span encodedSpan, decoded string) {
+				standardCandidate = true
+				decoder.admitContextual(current, span, decoded)
+			},
 		)
 		if !decoder.result.Complete() {
+			continue
+		}
+
+		if standardCandidate {
 			continue
 		}
 
@@ -73,10 +86,68 @@ func DecodeCandidatesWithContextForRules(input string, mayContribute func(string
 	return decoder.result
 }
 
+func decodeSingleShortRuleContext(input string, mayContribute func(string) bool) (DecodeResult, bool) {
+	if hasPotentialDecodeSurface(input) || containsASCIIFold(input, "hex") && shortHexPayloadPattern.MatchString(input) {
+		return DecodeResult{}, false
+	}
+
+	var selectedSpan encodedSpan
+	selectedDecoded := ""
+	for position := 0; position < len(input); {
+		start := position
+		match := nextBase64Candidate(input, position)
+		position = match.next
+		if len(match.value) < 4 || len(match.value) > maxShortBase64CandidateLen {
+			continue
+		}
+
+		var storage [maxShortBase64CandidateLen]byte
+		decoded, err := decodeBase64CandidateInto(storage[:], match.value)
+		if err != nil || !IsReadableText(decoded) {
+			if looksLikeEmbeddedBase64(match.value) {
+				return DecodeResult{}, false
+			}
+			continue
+		}
+
+		decodedText := string(decoded)
+		contributes, status := matchingDecodedContribution(decodedText, mayContribute)
+		if status != 0 {
+			return DecodeResult{}, false
+		}
+		if !contributes {
+			contextual := replaceDecodedSpan(input, encodedSpan{start: start, end: match.next}, decodedText)
+			contributes, status = matchingDecodedContribution(contextual, mayContribute)
+			if status != 0 {
+				return DecodeResult{}, false
+			}
+		}
+		if !contributes {
+			continue
+		}
+		if selectedDecoded != "" {
+			return DecodeResult{}, false
+		}
+		selectedSpan = encodedSpan{start: start, end: match.next}
+		selectedDecoded = decodedText
+	}
+
+	if selectedDecoded == "" {
+		return DecodeResult{}, false
+	}
+	candidate := replaceDecodedSpan(input, selectedSpan, selectedDecoded)
+	if hasPotentialDecodeSurface(candidate) || hasPlausibleShortRuleDecodeSurface(candidate) {
+		return DecodeResult{}, false
+	}
+	return DecodeResult{Candidates: []string{candidate}}, true
+}
+
 func hasPlausibleShortRuleDecodeSurface(input string) bool {
-	for _, span := range shortRuleHexSpans(input) {
-		if span.end > span.start {
-			return true
+	if containsASCIIFold(input, "hex") {
+		for _, span := range shortRuleHexSpans(input) {
+			if span.end > span.start {
+				return true
+			}
 		}
 	}
 

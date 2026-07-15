@@ -22,8 +22,12 @@ func (g *Guard) decodedTextSegments(input string) ([]textSegment, guardtext.Deco
 		return decodedTextSegments(input)
 	}
 
-	result := guardtext.DecodeCandidatesWithContextForRules(input, g.decodedCandidateMayContribute)
+	result := guardtext.DecodeCandidatesWithContextForRuleOwner(input, g, decodedCandidateMayContributeForGuard)
 	return textSegmentsFromDecodeResult(result)
+}
+
+func decodedCandidateMayContributeForGuard(guard *Guard, candidate string) bool {
+	return guard.decodedCandidateMayContribute(candidate)
 }
 
 func textSegmentsFromDecodeResult(result guardtext.DecodeResult) ([]textSegment, guardtext.DecodeStatus) {
@@ -40,17 +44,6 @@ func textSegmentsFromDecodeResult(result guardtext.DecodeResult) ([]textSegment,
 
 func (g *Guard) decodedCandidateMayContribute(candidate string) bool {
 	views := normalizeViews(candidate)
-	segment := textSegment{Kind: segmentPlain, Views: views}
-	policy := g.policy()
-	for i := range g.packs {
-		for j := range g.packs[i].Rules {
-			rule := &g.packs[i].Rules[j]
-			if len(rule.matchSegment(segment, policy, 1)) > 0 {
-				return true
-			}
-		}
-	}
-
 	if len(candidate) > maxDecodedRuleFragmentBytes {
 		return false
 	}
@@ -100,26 +93,31 @@ func decodedTextOverlapsLiteral(text, literal string) bool {
 		return true
 	}
 
-	for _, run := range decodedLiteralRuns(text) {
-		minimum := 3
-		if containsNonASCII(run) {
-			minimum = 2
-		}
-		if utf8.RuneCountInString(run) < minimum {
+	start := -1
+	for index, value := range text {
+		if unicode.IsLetter(value) || unicode.IsNumber(value) {
+			if start < 0 {
+				start = index
+			}
 			continue
 		}
-		if strings.HasPrefix(literal, run) || strings.HasSuffix(literal, run) {
+		if start >= 0 && decodedRunOverlapsLiteral(text[start:index], literal) {
 			return true
 		}
+		start = -1
 	}
-
-	return false
+	return start >= 0 && decodedRunOverlapsLiteral(text[start:], literal)
 }
 
-func decodedLiteralRuns(text string) []string {
-	return strings.FieldsFunc(text, func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsNumber(r)
-	})
+func decodedRunOverlapsLiteral(run, literal string) bool {
+	minimum := 3
+	if containsNonASCII(run) {
+		minimum = 2
+	}
+	if utf8.RuneCountInString(run) < minimum {
+		return false
+	}
+	return strings.HasPrefix(literal, run) || strings.HasSuffix(literal, run)
 }
 
 func containsNonASCII(value string) bool {

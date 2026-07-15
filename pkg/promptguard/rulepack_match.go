@@ -7,6 +7,8 @@ import (
 	"unicode/utf8"
 )
 
+var allSegmentKinds = [...]segmentKind{segmentPlain, segmentQuote, segmentCode, segmentConfig}
+
 func (r *compiledRule) appliesToSegment(kind segmentKind) bool {
 	_, ok := r.Segments[kind]
 	return ok
@@ -17,7 +19,21 @@ func (r *compiledRule) appliesToTextSegment(segment textSegment) bool {
 		return r.appliesToSegment(segment.Kind)
 	}
 
-	return slices.ContainsFunc(segment.Kinds, r.appliesToSegment)
+	for _, kind := range allSegmentKinds {
+		if segment.Kinds.contains(kind) && r.appliesToSegment(kind) {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *compiledRule) appliesToKinds(kinds segmentKindSet) bool {
+	for _, kind := range allSegmentKinds {
+		if kinds.contains(kind) && r.appliesToSegment(kind) {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *compiledRule) matchSegment(segment textSegment, policy compiledPolicy, limit int) []Match {
@@ -50,10 +66,7 @@ func (r *compiledRule) matchInput(segment textSegment, policy compiledPolicy) (s
 	}
 	prefilterText := text
 	if r.View == viewRaw {
-		prefilterText = segment.Views.Norm
-		if segment.Aggregate {
-			prefilterText = normalizeViews(text).Norm
-		}
+		prefilterText = segment.rawNormalizedView()
 	}
 	if !containsAllLiteralGroups(prefilterText, r.RequiredLiteralGroups) {
 		return "", 0, false
@@ -71,6 +84,9 @@ func (r *compiledRule) matchRegexSegment(segment textSegment, text string, weigh
 	}
 
 	normalized := normalizeViews(text).Norm
+	if segment.Aggregate {
+		normalized = segment.rawNormalizedView()
+	}
 	if normalized == text {
 		return nil
 	}
@@ -105,10 +121,20 @@ func (r *compiledRule) matchPhraseSegment(segment textSegment, text string, weig
 	}
 
 	normalized := normalizeViews(text).Norm
+	if segment.Aggregate {
+		normalized = segment.rawNormalizedView()
+	}
 	if normalized == text {
 		return nil
 	}
 	return r.matchPhraseText(segment, normalized, weight, limit)
+}
+
+func (segment textSegment) rawNormalizedView() string {
+	if segment.Aggregate {
+		return segment.rawNorm
+	}
+	return segment.Views.Norm
 }
 
 func (r *compiledRule) matchPhraseText(segment textSegment, text string, weight float64, limit int) []Match {
@@ -172,12 +198,14 @@ func newRuleMatch(rule *compiledRule, segment textSegment, span string, weight f
 }
 
 func segmentWeightMultiplier(policy compiledPolicy, segment textSegment) float64 {
-	if !segment.Aggregate || len(segment.Kinds) == 0 {
+	if !segment.Aggregate || segment.Kinds == 0 {
 		return policy.segmentMultiplier(segment.Kind)
 	}
 	multiplier := 0.0
-	for _, kind := range segment.Kinds {
-		multiplier = max(multiplier, policy.segmentMultiplier(kind))
+	for _, kind := range allSegmentKinds {
+		if segment.Kinds.contains(kind) {
+			multiplier = max(multiplier, policy.segmentMultiplier(kind))
+		}
 	}
 
 	return multiplier

@@ -6,8 +6,8 @@ func shortRuleBase64Spans(
 	work *protectedDecodeWork,
 	status *DecodeStatus,
 ) []encodedSpan {
-	spans := make([]encodedSpan, 0, min(maxDecodeScans+1, len(input)/4))
-	seen := make(map[encodedSpan]struct{}, min(maxDecodeScans+1, 16))
+	var spans []encodedSpan
+	var seen map[encodedSpan]struct{}
 
 	for i := 0; i < len(input) && len(spans) <= maxDecodeScans && decodeWorkComplete(status); {
 		match := nextBase64Candidate(input, i)
@@ -30,7 +30,6 @@ func shortRuleBase64Spans(
 				work,
 				status,
 			)
-			seen[whole] = struct{}{}
 		} else {
 			wholeReadable = readableBase64Span(input, whole, work, status)
 		}
@@ -41,6 +40,10 @@ func shortRuleBase64Spans(
 		if wholeReadable || !looksLikeEmbeddedBase64(match.value) || !decodeWorkComplete(status) {
 			continue
 		}
+		if seen == nil {
+			seen = make(map[encodedSpan]struct{}, min(maxDecodeScans+1, 16))
+		}
+		seen[whole] = struct{}{}
 
 		for subStart := whole.start; subStart < whole.end && len(spans) <= maxDecodeScans && decodeWorkComplete(status); subStart++ {
 			maximumEnd := min(whole.end, subStart+maxShortBase64CandidateLen)
@@ -104,6 +107,7 @@ func plausibleShortBase64Value(value string) bool {
 	if looksLikeEmbeddedBase64(value) {
 		return true
 	}
-	decoded, err := DecodeBase64Candidate(value)
+	var storage [maxShortBase64CandidateLen]byte
+	decoded, err := decodeBase64CandidateInto(storage[:], value)
 	return err == nil && IsReadableText(decoded)
 }

@@ -8,6 +8,8 @@ import (
 
 type segmentKind string
 
+type segmentKindSet uint8
+
 const (
 	segmentPlain  segmentKind = "plain"
 	segmentQuote  segmentKind = "quote"
@@ -17,8 +19,9 @@ const (
 
 type textSegment struct {
 	Kind      segmentKind
-	Kinds     []segmentKind
+	Kinds     segmentKindSet
 	Views     Views
+	rawNorm   string
 	Aggregate bool
 }
 
@@ -32,129 +35,6 @@ const (
 
 func JoinParts(parts ...string) string {
 	return strings.Join(parts, guardBoundaryMarker)
-}
-
-func buildEvaluationSegments(text string) ([]textSegment, bool) {
-	const maxSegments = maxSegmentBoundaries + 1
-
-	segments := make([]textSegment, 0, min(8, maxSegments))
-	for part := range strings.SplitSeq(text, guardBoundaryMarker) {
-		partSegments, exceeded := splitTextSegmentsBounded(part, maxSegments-len(segments))
-		if exceeded {
-			return nil, true
-		}
-		segments = append(segments, partSegments...)
-	}
-	boundaries := len(segments) - 1
-	if boundaries <= 0 {
-		return segments, false
-	}
-
-	aggregates := make([]textSegment, 0, boundaries)
-	tail := aggregateTail{}
-	tail.append(segments[0])
-	for i := 1; i < len(segments); i++ {
-		aggregates = append(aggregates, tail.aggregateWith(segments[i]))
-		tail.append(segments[i])
-	}
-
-	return append(segments, aggregates...), false
-}
-
-type aggregateTail struct {
-	Views  Views
-	chunks []aggregateTailChunk
-}
-
-type aggregateTailChunk struct {
-	Kind        segmentKind
-	RawRunes    int
-	NormRunes   int
-	JoinedRunes int
-}
-
-func (t *aggregateTail) aggregateWith(right textSegment) textSegment {
-	return textSegment{
-		Kind:  segmentPlain,
-		Kinds: t.kindsWith(right.Kind),
-		Views: Views{
-			Raw:    t.Views.Raw + firstRunes(right.Views.Raw, boundaryWindowRunes),
-			Norm:   t.Views.Norm + guardBoundaryMarker + firstRunes(right.Views.Norm, boundaryWindowRunes),
-			Joined: t.Views.Joined + firstRunes(right.Views.Joined, boundaryWindowRunes),
-		},
-		Aggregate: true,
-	}
-}
-
-func (t *aggregateTail) append(segment textSegment) {
-	hasPrior := len(t.chunks) > 0
-	rawSeparator := ""
-	normSeparator := ""
-	joinedSeparator := ""
-	if hasPrior {
-		normSeparator = guardBoundaryMarker
-	}
-
-	rawAdded := utf8.RuneCountInString(rawSeparator + segment.Views.Raw)
-	normAdded := utf8.RuneCountInString(normSeparator + segment.Views.Norm)
-	joinedAdded := utf8.RuneCountInString(joinedSeparator + segment.Views.Joined)
-	t.chunks = append(t.chunks, aggregateTailChunk{
-		Kind:        segment.Kind,
-		RawRunes:    rawAdded,
-		NormRunes:   normAdded,
-		JoinedRunes: joinedAdded,
-	})
-
-	var rawTrimmed, normTrimmed, joinedTrimmed int
-	t.Views.Raw, rawTrimmed = appendAggregateTailView(t.Views.Raw, rawSeparator, segment.Views.Raw)
-	t.Views.Norm, normTrimmed = appendAggregateTailView(t.Views.Norm, normSeparator, segment.Views.Norm)
-	t.Views.Joined, joinedTrimmed = appendAggregateTailView(t.Views.Joined, joinedSeparator, segment.Views.Joined)
-
-	trimAggregateTailChunks(t.chunks, rawTrimmed, func(chunk *aggregateTailChunk) *int { return &chunk.RawRunes })
-	trimAggregateTailChunks(t.chunks, normTrimmed, func(chunk *aggregateTailChunk) *int { return &chunk.NormRunes })
-	trimAggregateTailChunks(t.chunks, joinedTrimmed, func(chunk *aggregateTailChunk) *int { return &chunk.JoinedRunes })
-	t.compactChunks()
-}
-
-func appendAggregateTailView(current, separator, next string) (string, int) {
-	combined := current + separator + next
-	runes := utf8.RuneCountInString(combined)
-	if runes <= boundaryWindowRunes {
-		return combined, 0
-	}
-	return lastRunes(combined, boundaryWindowRunes), runes - boundaryWindowRunes
-}
-
-func trimAggregateTailChunks(chunks []aggregateTailChunk, trim int, selectRunes func(*aggregateTailChunk) *int) {
-	for i := range chunks {
-		if trim <= 0 {
-			return
-		}
-		value := selectRunes(&chunks[i])
-		removed := min(*value, trim)
-		*value -= removed
-		trim -= removed
-	}
-}
-
-func (t *aggregateTail) compactChunks() {
-	kept := t.chunks[:0]
-	for _, chunk := range t.chunks {
-		if chunk.RawRunes == 0 && chunk.NormRunes == 0 && chunk.JoinedRunes == 0 {
-			continue
-		}
-		kept = append(kept, chunk)
-	}
-	t.chunks = kept
-}
-
-func (t *aggregateTail) kindsWith(right segmentKind) []segmentKind {
-	values := make([]segmentKind, 0, len(t.chunks)+1)
-	for _, chunk := range t.chunks {
-		values = append(values, chunk.Kind)
-	}
-	values = append(values, right)
-	return distinctSegmentKinds(values...)
 }
 
 func splitTextSegments(text string) []textSegment {
@@ -188,35 +68,64 @@ func splitTextSegmentsBounded(text string, limit int) ([]textSegment, bool) {
 }
 
 func firstRunes(text string, limit int) string {
-	runes := []rune(text)
-	if len(runes) <= limit {
+	if limit <= 0 {
+		return ""
+	}
+	if len(text) <= limit {
 		return text
 	}
-
-	return string(runes[:limit])
+	count := 0
+	for index := range text {
+		if count == limit {
+			return text[:index]
+		}
+		count++
+	}
+	return text
 }
 
 func lastRunes(text string, limit int) string {
-	runes := []rune(text)
-	if len(runes) <= limit {
+	if limit <= 0 {
+		return ""
+	}
+	if len(text) <= limit {
 		return text
 	}
-
-	return string(runes[len(runes)-limit:])
+	start := len(text)
+	for range limit {
+		_, size := utf8.DecodeLastRuneInString(text[:start])
+		if size == 0 {
+			return text
+		}
+		start -= size
+		if start == 0 {
+			return text
+		}
+	}
+	return text[start:]
 }
 
-func distinctSegmentKinds(values ...segmentKind) []segmentKind {
-	seen := make(map[segmentKind]struct{}, len(values))
-	result := make([]segmentKind, 0, len(values))
-	for _, value := range values {
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		result = append(result, value)
-	}
+func (kinds segmentKindSet) with(kind segmentKind) segmentKindSet {
+	return kinds | segmentKindBit(kind)
+}
 
-	return result
+func (kinds segmentKindSet) contains(kind segmentKind) bool {
+	return kinds&segmentKindBit(kind) != 0
+}
+
+func segmentKindBit(kind segmentKind) segmentKindSet {
+	switch kind {
+	case segmentPlain:
+		return 1 << 0
+	case segmentQuote:
+		return 1 << 1
+	case segmentCode:
+		return 1 << 2
+	case segmentConfig:
+		return 1 << 3
+	default:
+		return 0
+	}
 }
 
 func segmentizeTextBounded(text string, limit int) ([]textSegment, bool) {

@@ -8,6 +8,10 @@ func normalizeViews(text string) Views {
 	return guardtext.NormalizeViews(text)
 }
 
+func normalizeText(text string) string {
+	return guardtext.Normalize(text)
+}
+
 func normalizePostProcess(text string) string {
 	return guardtext.NormalizePostProcess(text)
 }

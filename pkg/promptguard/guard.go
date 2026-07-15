@@ -48,6 +48,7 @@ type Guard struct {
 	policyDigest    string
 	effectivePolicy compiledPolicy
 	rulepackVersion int
+	aggregateFilter aggregatePrefilterSet
 	evaluateInputFn func(string) (Evaluation, error)
 }
 
@@ -87,6 +88,7 @@ func NewGuard(cfg Config, logger *slog.Logger) (*Guard, error) {
 		policyDigest:    set.Digest,
 		effectivePolicy: set.Policy,
 		rulepackVersion: set.Version,
+		aggregateFilter: compileAggregatePrefilters(set.Packs),
 	}, nil
 }
 
@@ -286,7 +288,7 @@ func (g *Guard) detectEvaluation(input string) (Evaluation, error) {
 
 func (g *Guard) evaluateRaw(input string) Evaluation {
 	policy := g.policy()
-	segments, budgetExceeded := buildEvaluationSegments(input)
+	segments, budgetExceeded := buildEvaluationSegmentsFiltered(input, g.aggregateMayMatch)
 	if budgetExceeded {
 		return Evaluation{
 			Decision:              DecisionBlock,
@@ -304,6 +306,10 @@ func (g *Guard) evaluateRaw(input string) Evaluation {
 		evaluation.DecodeIncomplete = true
 	}
 	return evaluation
+}
+
+func (g *Guard) aggregateMayMatch(tail *aggregateTail, right textSegment) bool {
+	return g.aggregateFilter.mayMatch(tail, right)
 }
 
 func (g *Guard) evaluateSegments(policy compiledPolicy, segments []textSegment) Evaluation {
