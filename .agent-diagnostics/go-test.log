@@ -1,66 +1,66 @@
 go: downloading github.com/stretchr/testify v1.11.1
 go: downloading github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 go: downloading github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
-ok  	github.com/park285/shared-go/pkg/backoff	0.002s
-ok  	github.com/park285/shared-go/pkg/db/pgxdb	16.816s
+ok  	github.com/park285/shared-go/pkg/backoff	0.006s
+ok  	github.com/park285/shared-go/pkg/db/pgxdb	17.405s
 ok  	github.com/park285/shared-go/pkg/db/sqldb	0.002s
-ok  	github.com/park285/shared-go/pkg/dbmigrate	0.009s
-ok  	github.com/park285/shared-go/pkg/envutil	0.012s
-ok  	github.com/park285/shared-go/pkg/ginjson	0.018s
-ok  	github.com/park285/shared-go/pkg/h3	0.028s
-ok  	github.com/park285/shared-go/pkg/healthprobe	0.084s
-ok  	github.com/park285/shared-go/pkg/httputil	1.612s
-ok  	github.com/park285/shared-go/pkg/httputil/ginauth	0.011s
-ok  	github.com/park285/shared-go/pkg/internal/guardtext	0.028s
-ok  	github.com/park285/shared-go/pkg/json	0.029s
-ok  	github.com/park285/shared-go/pkg/jsonutil	0.024s
-ok  	github.com/park285/shared-go/pkg/llm	0.020s
+ok  	github.com/park285/shared-go/pkg/dbmigrate	0.008s
+ok  	github.com/park285/shared-go/pkg/envutil	0.016s
+ok  	github.com/park285/shared-go/pkg/ginjson	0.041s
+ok  	github.com/park285/shared-go/pkg/h3	0.078s
+ok  	github.com/park285/shared-go/pkg/healthprobe	0.300s
+ok  	github.com/park285/shared-go/pkg/httputil	2.177s
+ok  	github.com/park285/shared-go/pkg/httputil/ginauth	0.033s
+ok  	github.com/park285/shared-go/pkg/internal/guardtext	0.024s
+ok  	github.com/park285/shared-go/pkg/json	0.039s
+ok  	github.com/park285/shared-go/pkg/jsonutil	0.047s
+ok  	github.com/park285/shared-go/pkg/llm	0.017s
 ?   	github.com/park285/shared-go/pkg/llm/internal/openaidiag	[no test files]
-ok  	github.com/park285/shared-go/pkg/llm/openaipreset	0.141s
-2026-07-15T04:14:50Z INF logging/logging.go:147 file_logging_enabled path=/tmp/TestEnableFileLogging_UsesRestrictedFileAndDirectoryPerms1234986227/001/service.log archive_dir=/tmp/TestEnableFileLogging_UsesRestrictedFileAndDirectoryPerms1234986227/001/archive otel_correlation=false async_stdout=false
-2026-07-15T04:14:50Z INF logging/logging.go:147 file_logging_enabled path=/tmp/TestEnableFileLoggingDoesNotSetDefault861935214/001/service.log archive_dir=/tmp/TestEnableFileLoggingDoesNotSetDefault861935214/001/archive otel_correlation=false async_stdout=false
+ok  	github.com/park285/shared-go/pkg/llm/openaipreset	0.145s
+2026-07-15T04:15:56Z INF logging/logging.go:147 file_logging_enabled path=/tmp/TestEnableFileLogging_UsesRestrictedFileAndDirectoryPerms2925262557/001/service.log archive_dir=/tmp/TestEnableFileLogging_UsesRestrictedFileAndDirectoryPerms2925262557/001/archive otel_correlation=false async_stdout=false
+2026-07-15T04:15:56Z INF logging/logging.go:147 file_logging_enabled path=/tmp/TestEnableFileLoggingDoesNotSetDefault3084853783/001/service.log archive_dir=/tmp/TestEnableFileLoggingDoesNotSetDefault3084853783/001/archive otel_correlation=false async_stdout=false
 --- FAIL: TestBareKey_NameAloneNotMasked_ValueGatesRedaction_8e92058d (0.00s)
     sanitize_h2_test.go:67: isSensitiveKey("key") = true, want false: key name alone must not force redaction
 --- FAIL: TestSanitizeKey_NonSecretLiteralKeyValuesNotMasked_8e92058d (0.00s)
-    sanitize_keyvalue_test.go:52: non-secret literal key field value "member:news:rooms" must not be masked, got: time=2026-07-15T04:14:50.213Z level=INFO msg=m key=***REDACTED***
-    sanitize_keyvalue_test.go:55: non-secret literal key field value "member:news:rooms" must be preserved, got: time=2026-07-15T04:14:50.213Z level=INFO msg=m key=***REDACTED***
-    sanitize_keyvalue_test.go:52: non-secret literal key field value "member:news:room_names" must not be masked, got: time=2026-07-15T04:14:50.213Z level=INFO msg=m key=***REDACTED***
-    sanitize_keyvalue_test.go:55: non-secret literal key field value "member:news:room_names" must be preserved, got: time=2026-07-15T04:14:50.213Z level=INFO msg=m key=***REDACTED***
-    sanitize_keyvalue_test.go:52: non-secret literal key field value "notification:egress:lease" must not be masked, got: time=2026-07-15T04:14:50.213Z level=INFO msg=m key=***REDACTED***
-    sanitize_keyvalue_test.go:55: non-secret literal key field value "notification:egress:lease" must be preserved, got: time=2026-07-15T04:14:50.213Z level=INFO msg=m key=***REDACTED***
-    sanitize_keyvalue_test.go:52: non-secret literal key field value "session:index:ghost" must not be masked, got: time=2026-07-15T04:14:50.213Z level=INFO msg=m key=***REDACTED***
-    sanitize_keyvalue_test.go:55: non-secret literal key field value "session:index:ghost" must be preserved, got: time=2026-07-15T04:14:50.213Z level=INFO msg=m key=***REDACTED***
-    sanitize_keyvalue_test.go:52: non-secret literal key field value "official_schedule_page" must not be masked, got: time=2026-07-15T04:14:50.213Z level=INFO msg=m key=***REDACTED***
-    sanitize_keyvalue_test.go:55: non-secret literal key field value "official_schedule_page" must be preserved, got: time=2026-07-15T04:14:50.213Z level=INFO msg=m key=***REDACTED***
-    sanitize_keyvalue_test.go:52: non-secret literal key field value "user-1234" must not be masked, got: time=2026-07-15T04:14:50.213Z level=INFO msg=m key=***REDACTED***
-    sanitize_keyvalue_test.go:55: non-secret literal key field value "user-1234" must be preserved, got: time=2026-07-15T04:14:50.213Z level=INFO msg=m key=***REDACTED***
-    sanitize_keyvalue_test.go:52: non-secret literal key field value "lock-abc" must not be masked, got: time=2026-07-15T04:14:50.213Z level=INFO msg=m key=***REDACTED***
-    sanitize_keyvalue_test.go:55: non-secret literal key field value "lock-abc" must be preserved, got: time=2026-07-15T04:14:50.213Z level=INFO msg=m key=***REDACTED***
-    sanitize_keyvalue_test.go:52: non-secret literal key field value "apikey123" must not be masked, got: time=2026-07-15T04:14:50.213Z level=INFO msg=m key=***REDACTED***
-    sanitize_keyvalue_test.go:55: non-secret literal key field value "apikey123" must be preserved, got: time=2026-07-15T04:14:50.213Z level=INFO msg=m key=***REDACTED***
-    sanitize_keyvalue_test.go:52: non-secret literal key field value "42" must not be masked, got: time=2026-07-15T04:14:50.213Z level=INFO msg=m key=***REDACTED***
-    sanitize_keyvalue_test.go:55: non-secret literal key field value "42" must be preserved, got: time=2026-07-15T04:14:50.213Z level=INFO msg=m key=***REDACTED***
-    sanitize_keyvalue_test.go:52: non-secret literal key field value "en-US" must not be masked, got: time=2026-07-15T04:14:50.213Z level=INFO msg=m key=***REDACTED***
-    sanitize_keyvalue_test.go:55: non-secret literal key field value "en-US" must be preserved, got: time=2026-07-15T04:14:50.213Z level=INFO msg=m key=***REDACTED***
-    sanitize_keyvalue_test.go:52: non-secret literal key field value "hololive" must not be masked, got: time=2026-07-15T04:14:50.213Z level=INFO msg=m key=***REDACTED***
-    sanitize_keyvalue_test.go:55: non-secret literal key field value "hololive" must be preserved, got: time=2026-07-15T04:14:50.213Z level=INFO msg=m key=***REDACTED***
-    sanitize_keyvalue_test.go:52: non-secret literal key field value "/api/v1/cache" must not be masked, got: time=2026-07-15T04:14:50.213Z level=INFO msg=m key=***REDACTED***
-    sanitize_keyvalue_test.go:55: non-secret literal key field value "/api/v1/cache" must be preserved, got: time=2026-07-15T04:14:50.213Z level=INFO msg=m key=***REDACTED***
-2026-07-15T04:14:50Z INF logging/logging.go:147 file_logging_enabled path=/tmp/TestEnableFileLogging_DoesNotCreateCombinedLog987708594/001/service.log archive_dir=/tmp/TestEnableFileLogging_DoesNotCreateCombinedLog987708594/001/archive otel_correlation=false async_stdout=false
+    sanitize_keyvalue_test.go:52: non-secret literal key field value "member:news:rooms" must not be masked, got: time=2026-07-15T04:15:56.499Z level=INFO msg=m key=***REDACTED***
+    sanitize_keyvalue_test.go:55: non-secret literal key field value "member:news:rooms" must be preserved, got: time=2026-07-15T04:15:56.499Z level=INFO msg=m key=***REDACTED***
+    sanitize_keyvalue_test.go:52: non-secret literal key field value "member:news:room_names" must not be masked, got: time=2026-07-15T04:15:56.499Z level=INFO msg=m key=***REDACTED***
+    sanitize_keyvalue_test.go:55: non-secret literal key field value "member:news:room_names" must be preserved, got: time=2026-07-15T04:15:56.499Z level=INFO msg=m key=***REDACTED***
+    sanitize_keyvalue_test.go:52: non-secret literal key field value "notification:egress:lease" must not be masked, got: time=2026-07-15T04:15:56.499Z level=INFO msg=m key=***REDACTED***
+    sanitize_keyvalue_test.go:55: non-secret literal key field value "notification:egress:lease" must be preserved, got: time=2026-07-15T04:15:56.499Z level=INFO msg=m key=***REDACTED***
+    sanitize_keyvalue_test.go:52: non-secret literal key field value "session:index:ghost" must not be masked, got: time=2026-07-15T04:15:56.499Z level=INFO msg=m key=***REDACTED***
+    sanitize_keyvalue_test.go:55: non-secret literal key field value "session:index:ghost" must be preserved, got: time=2026-07-15T04:15:56.499Z level=INFO msg=m key=***REDACTED***
+    sanitize_keyvalue_test.go:52: non-secret literal key field value "official_schedule_page" must not be masked, got: time=2026-07-15T04:15:56.500Z level=INFO msg=m key=***REDACTED***
+    sanitize_keyvalue_test.go:55: non-secret literal key field value "official_schedule_page" must be preserved, got: time=2026-07-15T04:15:56.500Z level=INFO msg=m key=***REDACTED***
+    sanitize_keyvalue_test.go:52: non-secret literal key field value "user-1234" must not be masked, got: time=2026-07-15T04:15:56.500Z level=INFO msg=m key=***REDACTED***
+    sanitize_keyvalue_test.go:55: non-secret literal key field value "user-1234" must be preserved, got: time=2026-07-15T04:15:56.500Z level=INFO msg=m key=***REDACTED***
+    sanitize_keyvalue_test.go:52: non-secret literal key field value "lock-abc" must not be masked, got: time=2026-07-15T04:15:56.500Z level=INFO msg=m key=***REDACTED***
+    sanitize_keyvalue_test.go:55: non-secret literal key field value "lock-abc" must be preserved, got: time=2026-07-15T04:15:56.500Z level=INFO msg=m key=***REDACTED***
+    sanitize_keyvalue_test.go:52: non-secret literal key field value "apikey123" must not be masked, got: time=2026-07-15T04:15:56.500Z level=INFO msg=m key=***REDACTED***
+    sanitize_keyvalue_test.go:55: non-secret literal key field value "apikey123" must be preserved, got: time=2026-07-15T04:15:56.500Z level=INFO msg=m key=***REDACTED***
+    sanitize_keyvalue_test.go:52: non-secret literal key field value "42" must not be masked, got: time=2026-07-15T04:15:56.500Z level=INFO msg=m key=***REDACTED***
+    sanitize_keyvalue_test.go:55: non-secret literal key field value "42" must be preserved, got: time=2026-07-15T04:15:56.500Z level=INFO msg=m key=***REDACTED***
+    sanitize_keyvalue_test.go:52: non-secret literal key field value "en-US" must not be masked, got: time=2026-07-15T04:15:56.500Z level=INFO msg=m key=***REDACTED***
+    sanitize_keyvalue_test.go:55: non-secret literal key field value "en-US" must be preserved, got: time=2026-07-15T04:15:56.500Z level=INFO msg=m key=***REDACTED***
+    sanitize_keyvalue_test.go:52: non-secret literal key field value "hololive" must not be masked, got: time=2026-07-15T04:15:56.500Z level=INFO msg=m key=***REDACTED***
+    sanitize_keyvalue_test.go:55: non-secret literal key field value "hololive" must be preserved, got: time=2026-07-15T04:15:56.500Z level=INFO msg=m key=***REDACTED***
+    sanitize_keyvalue_test.go:52: non-secret literal key field value "/api/v1/cache" must not be masked, got: time=2026-07-15T04:15:56.500Z level=INFO msg=m key=***REDACTED***
+    sanitize_keyvalue_test.go:55: non-secret literal key field value "/api/v1/cache" must be preserved, got: time=2026-07-15T04:15:56.500Z level=INFO msg=m key=***REDACTED***
+2026-07-15T04:15:56Z INF logging/logging.go:147 file_logging_enabled path=/tmp/TestEnableFileLogging_DoesNotCreateCombinedLog80859271/001/service.log archive_dir=/tmp/TestEnableFileLogging_DoesNotCreateCombinedLog80859271/001/archive otel_correlation=false async_stdout=false
 FAIL
-FAIL	github.com/park285/shared-go/pkg/logging	0.014s
-ok  	github.com/park285/shared-go/pkg/logging/internal/archive	0.009s
+FAIL	github.com/park285/shared-go/pkg/logging	0.015s
+ok  	github.com/park285/shared-go/pkg/logging/internal/archive	0.012s
 ok  	github.com/park285/shared-go/pkg/netguard	0.004s
-ok  	github.com/park285/shared-go/pkg/obsmetrics	0.006s
-ok  	github.com/park285/shared-go/pkg/outputguard	0.336s
-ok  	github.com/park285/shared-go/pkg/promptguard	0.104s
-ok  	github.com/park285/shared-go/pkg/retry	0.002s
-ok  	github.com/park285/shared-go/pkg/runtime/automaxprocs	0.003s
-ok  	github.com/park285/shared-go/pkg/runtime/bootstrap	0.005s
-ok  	github.com/park285/shared-go/pkg/runtime/httpserver	0.004s
-ok  	github.com/park285/shared-go/pkg/runtime/lifecycle	0.021s
-ok  	github.com/park285/shared-go/pkg/stringutil	0.005s
-ok  	github.com/park285/shared-go/pkg/telemetry	0.007s
+ok  	github.com/park285/shared-go/pkg/obsmetrics	0.005s
+ok  	github.com/park285/shared-go/pkg/outputguard	0.399s
+ok  	github.com/park285/shared-go/pkg/promptguard	0.122s
+ok  	github.com/park285/shared-go/pkg/retry	0.004s
+ok  	github.com/park285/shared-go/pkg/runtime/automaxprocs	0.005s
+ok  	github.com/park285/shared-go/pkg/runtime/bootstrap	0.006s
+ok  	github.com/park285/shared-go/pkg/runtime/httpserver	0.006s
+ok  	github.com/park285/shared-go/pkg/runtime/lifecycle	0.024s
+ok  	github.com/park285/shared-go/pkg/stringutil	0.003s
+ok  	github.com/park285/shared-go/pkg/telemetry	0.005s
 ok  	github.com/park285/shared-go/pkg/workerconfig	0.004s
-ok  	github.com/park285/shared-go/pkg/workerpool	0.231s
+ok  	github.com/park285/shared-go/pkg/workerpool	0.232s
 FAIL
