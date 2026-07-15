@@ -47,7 +47,7 @@ type base64Candidate struct {
 	next  int
 }
 
-var hexPayloadPattern = regexp.MustCompile(`(?i)(?:^|\b)hex\s*:\s*((?:[0-9a-f]{2}(?:[\s,:-]+|$)){4,})`)
+var hexPayloadPattern = regexp.MustCompile(`(?i)(?:^|\b)hex\s*:\s*((?:[0-9a-f]{2}[\s,:-]+){3,}[0-9a-f]{2})(?:[^0-9a-f]|$)`)
 
 type decodeQueueEntry struct {
 	text  string
