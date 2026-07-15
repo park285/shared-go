@@ -1,9 +1,6 @@
 name: agent security patch
 
 on:
-  push:
-    branches:
-      - agent/security-hardening-20260715
   pull_request:
     branches:
       - main
@@ -17,7 +14,7 @@ concurrency:
 
 jobs:
   apply-and-verify:
-    if: github.head_ref == 'agent/security-hardening-20260715' || github.ref_name == 'agent/security-hardening-20260715'
+    if: github.head_ref == 'agent/security-hardening-20260715'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
