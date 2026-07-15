@@ -1,0 +1,68 @@
+name: agent security patch
+
+on:
+  push:
+    branches:
+      - agent/security-hardening-20260715
+
+permissions:
+  contents: write
+
+concurrency:
+  group: agent-security-patch-shared-go
+  cancel-in-progress: false
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout patch branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: agent/security-hardening-20260715
+          persist-credentials: true
+
+      - name: Setup Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Apply security patch
+        run: python3 scripts/ci/agent_security_patch.py
+
+      - name: Format changed Go files
+        run: |
+          gofmt -w \
+            pkg/promptguard/rulepack_match.go \
+            pkg/promptguard/rulepack_raw_security_test.go \
+            pkg/obsmetrics/vec.go \
+            pkg/obsmetrics/vec_security_test.go \
+            pkg/logging/sanitize.go \
+            pkg/logging/sanitize_test.go
+
+      - name: Verify workflow policy regression suite
+        run: bash scripts/ci/check-workflow-secrets_test.sh
+
+      - name: Run Go tests
+        run: go test -count=1 ./...
+
+      - name: Run Go vet
+        run: go vet ./...
+
+      - name: Validate patch
+        run: |
+          git diff --check
+          if git diff --quiet; then
+            echo "security patch produced no changes" >&2
+            exit 1
+          fi
+
+      - name: Commit verified patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "security: harden shared library boundaries"
+          git push origin HEAD:agent/security-hardening-20260715
