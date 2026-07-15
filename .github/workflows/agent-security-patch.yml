@@ -107,9 +107,13 @@ jobs:
             git push origin HEAD:agent/security-hardening-20260715
           fi
 
-      - name: Commit verified patch
+      - name: Commit verified non-workflow patch
         if: success()
         run: |
+          # GitHub's workflow token is intentionally not used to rewrite workflow
+          # definitions. Restore those two paths, commit the already-verified code
+          # and tests, then the trusted GitHub connector will finalize CI policy.
+          git checkout HEAD -- .github/workflows/ci.yml .github/workflows/agent-security-patch.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
