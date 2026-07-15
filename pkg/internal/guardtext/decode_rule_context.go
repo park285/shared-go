@@ -1,0 +1,296 @@
+package guardtext
+
+const maxShortBase64CandidateLen = minBase64CandidateLen - 1
+
+// DecodeCandidatesWithContextForRules expands the standard transform families and
+// adds only short Base64/hex fragments that can contribute to a compiled rule.
+// All work shares the existing candidate, byte, depth, scan, and protected-work
+// budgets, so callers retain deterministic fail-closed behavior.
+func DecodeCandidatesWithContextForRules(input string, mayContribute func(string) bool) DecodeResult {
+	if mayContribute == nil {
+		return DecodeCandidatesWithContext(input)
+	}
+
+	roots := []string{input}
+	normalized := NormalizeEncodingSyntax(input)
+	if normalized != input {
+		roots = append(roots, normalized)
+	}
+	potential := false
+	for _, root := range roots {
+		if hasPotentialDecodeSurface(root) || hasPlausibleShortRuleDecodeSurface(root) {
+			potential = true
+			break
+		}
+	}
+	if !potential {
+		return DecodeResult{}
+	}
+
+	decoder := contextDecoder{
+		result:        DecodeResult{Candidates: make([]string, 0, maxDecodeCandidates)},
+		queue:         make([]decodeQueueEntry, 0, len(roots)+maxDecodeCandidates),
+		visited:       make(map[string]struct{}, len(roots)+maxDecodeCandidates),
+		mayContribute: mayContribute,
+	}
+	for _, root := range roots {
+		if _, exists := decoder.visited[root]; exists {
+			continue
+		}
+		decoder.visited[root] = struct{}{}
+		decoder.queue = append(decoder.queue, decodeQueueEntry{text: root})
+	}
+
+	for decoder.pending() {
+		current := decoder.queue[decoder.cursor]
+		decoder.cursor++
+
+		decodeContextSurfaces(
+			current.text,
+			false,
+			false,
+			nil,
+			&decoder.protectedWork,
+			&decoder.scans,
+			&decoder.result.Status,
+			func(candidate string) { decoder.admit(current, candidate) },
+			func(span encodedSpan, decoded string) { decoder.admitContextual(current, span, decoded) },
+		)
+		if !decoder.result.Complete() {
+			continue
+		}
+
+		decodeShortRuleSurfaces(
+			current.text,
+			mayContribute,
+			&decoder.protectedWork,
+			&decoder.scans,
+			&decoder.result.Status,
+			func(span encodedSpan, decoded string) { decoder.admitContextual(current, span, decoded) },
+		)
+	}
+
+	return decoder.result
+}
+
+func hasPlausibleShortRuleDecodeSurface(input string) bool {
+	for _, span := range shortRuleHexSpans(input) {
+		if span.end > span.start {
+			return true
+		}
+	}
+
+	for i := 0; i < len(input); {
+		match := nextBase64Candidate(input, i)
+		i = match.next
+		if len(match.value) < 4 {
+			continue
+		}
+		if len(match.value) <= maxShortBase64CandidateLen {
+			if plausibleShortBase64Value(match.value) {
+				return true
+			}
+			continue
+		}
+		if looksLikeEmbeddedBase64(match.value) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func decodeShortRuleSurfaces(
+	input string,
+	mayContribute func(string) bool,
+	work *protectedDecodeWork,
+	scans *int,
+	status *DecodeStatus,
+	admitContextual func(encodedSpan, string),
+) {
+	base64Spans := shortRuleBase64Spans(input, mayContribute, work, status)
+	hexSpans := matchingShortHexSpans(input, mayContribute, work, status)
+	families := []transformFamily{
+		{kind: decodeBase64, input: input, spans: base64Spans},
+		{kind: decodeHex, input: input, spans: hexSpans},
+	}
+	for familiesPending(families) {
+		for i := range families {
+			family := &families[i]
+			if family.next >= len(family.spans) {
+				continue
+			}
+			if !consumeContextDecodeScan(scans, status) {
+				return
+			}
+
+			span := family.spans[family.next]
+			decoded, ok := family.attempt()
+			if !ok || !IsReadableText([]byte(decoded)) {
+				continue
+			}
+			if family.kind == decodeHex {
+				span.start = contextualHexStart(input, span.start)
+			}
+
+			admitContextual(span, decoded)
+		}
+	}
+}
+
+func shortRuleBase64Spans(
+	input string,
+	mayContribute func(string) bool,
+	work *protectedDecodeWork,
+	status *DecodeStatus,
+) []encodedSpan {
+	spans := make([]encodedSpan, 0, min(maxDecodeScans+1, len(input)/4))
+	seen := make(map[encodedSpan]struct{}, min(maxDecodeScans+1, 16))
+
+	for i := 0; i < len(input) && len(spans) <= maxDecodeScans && decodeWorkComplete(status); {
+		match := nextBase64Candidate(input, i)
+		start := i
+		i = match.next
+		if len(match.value) < 4 {
+			continue
+		}
+
+		whole := encodedSpan{start: start, end: match.next}
+		if len(match.value) <= maxShortBase64CandidateLen && plausibleShortBase64Value(match.value) {
+			spans = appendMatchingShortBase64Span(spans, seen, input, whole, mayContribute, work, status)
+		}
+		if !looksLikeEmbeddedBase64(match.value) || !decodeWorkComplete(status) {
+			continue
+		}
+
+		for subStart := whole.start; subStart < whole.end && len(spans) <= maxDecodeScans && decodeWorkComplete(status); subStart++ {
+			maximumEnd := min(whole.end, subStart+maxShortBase64CandidateLen)
+			for subEnd := maximumEnd; subEnd-subStart >= 4 && len(spans) <= maxDecodeScans; subEnd-- {
+				span := encodedSpan{start: subStart, end: subEnd}
+				if span == whole {
+					continue
+				}
+				spans = appendMatchingShortBase64Span(spans, seen, input, span, mayContribute, work, status)
+				if !decodeWorkComplete(status) {
+					break
+				}
+			}
+		}
+	}
+
+	return spans
+}
+
+func appendMatchingShortBase64Span(
+	spans []encodedSpan,
+	seen map[encodedSpan]struct{},
+	input string,
+	span encodedSpan,
+	mayContribute func(string) bool,
+	work *protectedDecodeWork,
+	status *DecodeStatus,
+) []encodedSpan {
+	if _, exists := seen[span]; exists {
+		return spans
+	}
+	seen[span] = struct{}{}
+
+	updated, _ := appendProtectedBase64Span(
+		spans,
+		input,
+		span,
+		true,
+		true,
+		mayContribute,
+		work,
+		status,
+	)
+	return updated
+}
+
+func matchingShortHexSpans(
+	input string,
+	mayContribute func(string) bool,
+	work *protectedDecodeWork,
+	status *DecodeStatus,
+) []encodedSpan {
+	matches := shortHexPayloadPattern.FindAllStringSubmatchIndex(input, maxProtectedDecodeTries+1)
+	spans := make([]encodedSpan, 0, min(len(matches), maxDecodeScans+1))
+	for _, match := range matches {
+		if len(match) != 4 {
+			continue
+		}
+		span := encodedSpan{start: match[2], end: match[3]}
+		if decodedHexByteCount(input[span.start:span.end]) >= 4 {
+			continue
+		}
+		if !consumeProtectedDecodeWork(work, status, span.end-span.start) {
+			break
+		}
+		decoded, err := decodeHexPayload(input[span.start:span.end])
+		if err != nil || !IsReadableText(decoded) {
+			continue
+		}
+		contributes, nestedStatus := matchingDecodedContribution(string(decoded), mayContribute)
+		mergeDecodeStatus(status, nestedStatus)
+		if !contributes && decodeWorkComplete(status) {
+			contextSpan := span
+			contextSpan.start = contextualHexStart(input, span.start)
+			contextBytes := len(input) - (contextSpan.end - contextSpan.start) + len(decoded)
+			if contextBytes > maxDecodedCandidateLen {
+				*status |= DecodeByteLimit
+				break
+			}
+			if !consumeProtectedContextWork(work, status, contextBytes) {
+				break
+			}
+			contextual := replaceDecodedSpan(input, contextSpan, string(decoded))
+			contributes, nestedStatus = matchingDecodedContribution(contextual, mayContribute)
+			mergeDecodeStatus(status, nestedStatus)
+		}
+		if contributes {
+			spans = append(spans, span)
+		}
+		if len(spans) > maxDecodeScans || !decodeWorkComplete(status) {
+			break
+		}
+	}
+	if len(matches) > maxProtectedDecodeTries {
+		markProtectedDecodeWorkIncomplete(status)
+	}
+
+	return spans
+}
+
+func shortRuleHexSpans(input string) []encodedSpan {
+	matches := shortHexPayloadPattern.FindAllStringSubmatchIndex(input, maxDecodeScans+1)
+	spans := make([]encodedSpan, 0, len(matches))
+	for _, match := range matches {
+		if len(match) != 4 {
+			continue
+		}
+		span := encodedSpan{start: match[2], end: match[3]}
+		if decodedHexByteCount(input[span.start:span.end]) < 4 {
+			spans = append(spans, span)
+		}
+	}
+	return spans
+}
+
+func decodedHexByteCount(payload string) int {
+	digits := 0
+	for i := range len(payload) {
+		if isHex(payload[i]) {
+			digits++
+		}
+	}
+	return digits / 2
+}
+
+func plausibleShortBase64Value(value string) bool {
+	if looksLikeEmbeddedBase64(value) {
+		return true
+	}
+	decoded, err := DecodeBase64Candidate(value)
+	return err == nil && IsReadableText(decoded)
+}
