@@ -16,11 +16,6 @@ func DecodeCandidatesWithContextForRules(input string, mayContribute func(string
 		return DecodeCandidatesWithContext(input)
 	}
 
-	roots := ruleDecodeRoots(input)
-	if len(roots) == 0 {
-		return DecodeResult{}
-	}
-
 	standalone := DecodeCandidates(input)
 	if !standalone.Complete() {
 		return standalone
@@ -28,6 +23,11 @@ func DecodeCandidatesWithContextForRules(input string, mayContribute func(string
 	if standalone.standaloneBase64 && len(standalone.Candidates) > 0 &&
 		!decodeCandidatesContainShortRuleSurface(standalone.Candidates) {
 		return standalone
+	}
+
+	roots := ruleDecodeRoots(input)
+	if len(roots) == 0 {
+		return DecodeResult{}
 	}
 
 	decoder := contextDecoder{
