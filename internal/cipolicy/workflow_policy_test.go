@@ -8,14 +8,12 @@ import (
 )
 
 func TestWorkflowPolicyRegressionSuite(t *testing.T) {
-	t.Helper()
-
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("resolve test source path")
 	}
 	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
-	cmd := exec.Command("bash", "scripts/ci/check-workflow-secrets_test.sh")
+	cmd := exec.CommandContext(t.Context(), "bash", "scripts/ci/check-workflow-secrets_test.sh")
 	cmd.Dir = repoRoot
 	output, err := cmd.CombinedOutput()
 	if err != nil {
