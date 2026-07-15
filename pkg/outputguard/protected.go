@@ -53,10 +53,11 @@ type anchorRef struct {
 }
 
 type protectedIndex struct {
-	entries      []protectedEntry
-	tokenAnchors map[uint64][]anchorRef
-	runeAnchors  map[uint64][]anchorRef
-	exactNodes   []exactNode
+	entries          []protectedEntry
+	fragmentPatterns []string
+	tokenAnchors     map[uint64][]anchorRef
+	runeAnchors      map[uint64][]anchorRef
+	exactNodes       []exactNode
 }
 
 type exactNode uint64
@@ -137,11 +138,13 @@ func buildProtectedIndex(protectedTexts []string) *protectedIndex {
 
 func buildProtectedIndexWithPatterns(protectedTexts []preparedProtectedText, exactPatterns []string) *protectedIndex {
 	index := &protectedIndex{
-		entries:      make([]protectedEntry, 0, len(protectedTexts)),
-		tokenAnchors: make(map[uint64][]anchorRef),
-		runeAnchors:  make(map[uint64][]anchorRef),
+		entries:          make([]protectedEntry, 0, len(protectedTexts)),
+		fragmentPatterns: make([]string, 0, len(protectedTexts)+len(exactPatterns)),
+		tokenAnchors:     make(map[uint64][]anchorRef),
+		runeAnchors:      make(map[uint64][]anchorRef),
 	}
 	for _, text := range protectedTexts {
+		index.fragmentPatterns = append(index.fragmentPatterns, text.normalized)
 		entry := protectedEntry{normalized: text.normalized, runes: []rune(text.normalized)}
 		entry.tokens = tokenizeRunes(entry.runes)
 		entry.runeFallback = len(entry.tokens) <= 1
@@ -150,9 +153,28 @@ func buildProtectedIndexWithPatterns(protectedTexts []preparedProtectedText, exa
 		index.addTokenAnchors(entryIndex)
 		index.addRuneAnchors(entryIndex)
 	}
+	index.fragmentPatterns = compactProtectedPatterns(append(index.fragmentPatterns, exactPatterns...))
 	index.exactNodes = buildExactMatcher(exactPatterns)
 
 	return index
+}
+
+func (index *protectedIndex) mayContainFragment(surfaces []string) bool {
+	if index == nil {
+		return false
+	}
+	for _, surface := range surfaces {
+		if surface == "" {
+			continue
+		}
+		for _, pattern := range index.fragmentPatterns {
+			if strings.Contains(pattern, surface) || strings.Contains(surface, pattern) {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func prepareProtectedTexts(protectedTexts []string) []preparedProtectedText {

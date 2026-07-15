@@ -67,6 +67,11 @@ func Normalize(text string) string {
 	return NormalizePostProcess(normalized)
 }
 
+// NormalizeEncodingSyntax는 Base64 대소문자를 보존하면서 호환 문법과 인코딩 경계의 format/control 문자를 정규화한다.
+func NormalizeEncodingSyntax(text string) string {
+	return StripControlChars(norm.NFKC.String(SanitizeUTF8(text)))
+}
+
 func normalizeFastASCIIText(text string) (string, bool) {
 	needsRewrite := false
 	lastSpace := false

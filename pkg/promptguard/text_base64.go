@@ -5,7 +5,7 @@ import "github.com/park285/shared-go/pkg/internal/guardtext"
 const maxBase64Candidates = 8
 
 func decodedTextSegments(input string) ([]textSegment, guardtext.DecodeStatus) {
-	result := guardtext.DecodeCandidates(input)
+	result := guardtext.DecodeCandidatesWithContext(input)
 	segments := make([]textSegment, 0, len(result.Candidates))
 	for _, candidate := range result.Candidates {
 		segments = append(segments, textSegment{
@@ -15,9 +15,4 @@ func decodedTextSegments(input string) ([]textSegment, guardtext.DecodeStatus) {
 	}
 
 	return segments, result.Status
-}
-
-func decodedBase64Segments(input string) []textSegment {
-	segments, _ := decodedTextSegments(input)
-	return segments
 }
