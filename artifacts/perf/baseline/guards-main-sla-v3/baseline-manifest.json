@@ -1,0 +1,79 @@
+{
+  "schema_version": 2,
+  "evidence_role": "baseline",
+  "git_sha": "45cb28a53e2410e551d26bbb383625bd24bcc683",
+  "approved_sha": "45cb28a53e2410e551d26bbb383625bd24bcc683",
+  "git_dirty": false,
+  "created_at": "2026-07-15T16:48:24Z",
+  "identity": {
+    "contract": "benchgate-evidence-v2",
+    "repository": "shared-go",
+    "gate_id": "guard-perf-gate",
+    "selection_gate": "pr",
+    "policy_sha256": "38dd814355951318d6c2b930306e6ee6c8e5f343dd757da043d6e3f5d35d1227",
+    "selection_sha256": "0418ba4a6368c2527ef0feb4cbcdea38ab23c42ff56ceef9ee00e5a6ae6dc706",
+    "harness_sha256": "dd948b1a5218606531cadb5026606173db1499179365f033e47c9778e9b15301",
+    "benchmarks": [
+      "BenchmarkOutputGuardBaseline",
+      "BenchmarkOutputGuardExactCommonPrefix",
+      "BenchmarkOutputGuardExactNoMatch",
+      "BenchmarkOutputGuardExactRepeatedPrefix",
+      "BenchmarkOutputGuardProtectedIndex",
+      "BenchmarkOutputGuardProtectedOverlap",
+      "BenchmarkPromptGuardAggregateBoundary",
+      "BenchmarkPromptGuardBenignFastPath",
+      "BenchmarkPromptGuardDecoderHeavy",
+      "BenchmarkPromptGuardRollingAggregate",
+      "BenchmarkPromptGuardShortRuleContext"
+    ]
+  },
+  "environment": {
+    "go_version": "go1.26.5",
+    "goos": "linux",
+    "goarch": "amd64",
+    "cpu_model": "AMD Ryzen 5 5600G with Radeon Graphics"
+  },
+  "collection": {
+    "count": 6,
+    "benchtime": "100ms",
+    "benchmem": true,
+    "race": false,
+    "commands": [
+      {
+        "package": "./pkg/outputguard",
+        "workdir": ".",
+        "argv": [
+          "go",
+          "test",
+          "-run",
+          "^$",
+          "-bench",
+          "^(BenchmarkOutputGuardBaseline|BenchmarkOutputGuardExactCommonPrefix|BenchmarkOutputGuardExactNoMatch|BenchmarkOutputGuardExactRepeatedPrefix|BenchmarkOutputGuardProtectedIndex|BenchmarkOutputGuardProtectedOverlap)$",
+          "-benchmem",
+          "-count=6",
+          "-benchtime=100ms",
+          "./pkg/outputguard"
+        ]
+      },
+      {
+        "package": "./pkg/promptguard",
+        "workdir": ".",
+        "argv": [
+          "go",
+          "test",
+          "-run",
+          "^$",
+          "-bench",
+          "^(BenchmarkPromptGuardAggregateBoundary|BenchmarkPromptGuardBenignFastPath|BenchmarkPromptGuardDecoderHeavy|BenchmarkPromptGuardRollingAggregate|BenchmarkPromptGuardShortRuleContext)$",
+          "-benchmem",
+          "-count=6",
+          "-benchtime=100ms",
+          "./pkg/promptguard"
+        ]
+      }
+    ]
+  },
+  "files": {
+    "go-bench/shared-go.txt": "4e6944a6318e003ebcf7697341ac405ef70840a272b80d5f8d9c5c9a2190ee9a"
+  }
+}
