@@ -43,17 +43,23 @@ func textSegmentsFromDecodeResult(result guardtext.DecodeResult) ([]textSegment,
 }
 
 func (g *Guard) decodedCandidateMayContribute(candidate string) bool {
-	views := normalizeViews(candidate)
-	if len(candidate) > maxDecodedRuleFragmentBytes {
+	if !guardtext.DecodedCandidateFitsBudget(candidate) {
 		return false
 	}
+	views := normalizeViews(candidate)
 	if decodedCandidateHasBoundarySyntax(views.Raw) {
 		return true
 	}
+	shortFragment := len(candidate) <= maxDecodedRuleFragmentBytes
 	for i := range g.packs {
 		for j := range g.packs[i].Rules {
 			rule := &g.packs[i].Rules[j]
-			if decodedTextOverlapsRequiredLiterals(decodedContributionView(rule, views), rule.RequiredLiteralGroups) {
+			text := decodedContributionView(rule, views)
+			if shortFragment && decodedTextOverlapsRequiredLiterals(text, rule.RequiredLiteralGroups) {
+				return true
+			}
+			if !shortFragment && len(rule.RequiredLiteralGroups) > 0 &&
+				containsAllLiteralGroups(text, rule.RequiredLiteralGroups) {
 				return true
 			}
 		}

@@ -7,7 +7,9 @@ import (
 const maxAggregateAutomatonNodes = 2048
 
 type aggregatePrefilterSet struct {
-	joined aggregateViewPrefilter
+	rawNorm aggregateViewPrefilter
+	norm    aggregateViewPrefilter
+	joined  aggregateViewPrefilter
 }
 
 type aggregateViewPrefilter struct {
@@ -17,30 +19,48 @@ type aggregateViewPrefilter struct {
 }
 
 func compileAggregatePrefilters(packs []compiledPack) aggregatePrefilterSet {
-	var literals []string
-	unfiltered := false
+	var rawNormLiterals, normLiterals, joinedLiterals []string
+	var rawNormUnfiltered, normUnfiltered, joinedUnfiltered bool
 	for packIndex := range packs {
-		for ruleIndex := range packs[packIndex].Rules {
-			rule := &packs[packIndex].Rules[ruleIndex]
-			if rule.View != viewRaw && rule.View != viewAggregateNorm && rule.View != viewAggregateJoined {
+		rules := packs[packIndex].Rules
+		for ruleIndex := range rules {
+			rule := &rules[ruleIndex]
+			var literals *[]string
+			var unfiltered *bool
+			switch rule.View {
+			case viewRaw:
+				literals = &rawNormLiterals
+				unfiltered = &rawNormUnfiltered
+			case viewAggregateNorm:
+				literals = &normLiterals
+				unfiltered = &normUnfiltered
+			case viewAggregateJoined:
+				literals = &joinedLiterals
+				unfiltered = &joinedUnfiltered
+			default:
 				continue
 			}
 			if len(rule.AggregatePrefilter) == 0 {
-				unfiltered = true
+				*unfiltered = true
 				continue
 			}
 			for _, literal := range rule.AggregatePrefilter {
-				joined := normalizeViews(literal).Joined
-				if joined == "" {
-					unfiltered = true
+				value := literal
+				if rule.View == viewAggregateJoined {
+					value = normalizeViews(literal).Joined
+				}
+				if value == "" {
+					*unfiltered = true
 					continue
 				}
-				literals = append(literals, joined)
+				*literals = append(*literals, value)
 			}
 		}
 	}
 	return aggregatePrefilterSet{
-		joined: newAggregateViewPrefilter(literals, unfiltered),
+		rawNorm: newAggregateViewPrefilter(rawNormLiterals, rawNormUnfiltered),
+		norm:    newAggregateViewPrefilter(normLiterals, normUnfiltered),
+		joined:  newAggregateViewPrefilter(joinedLiterals, joinedUnfiltered),
 	}
 }
 
@@ -132,20 +152,61 @@ func (automaton aggregateLiteralAutomaton) matches(text []byte) bool {
 	return false
 }
 
+func (automaton aggregateLiteralAutomaton) matchesString(text string) bool {
+	state := uint32(0)
+	for index := range len(text) {
+		state = automaton.nodes[state].next[text[index]]
+		if automaton.nodes[state].output {
+			return true
+		}
+	}
+	return false
+}
+
 func (filters aggregatePrefilterSet) mayMatch(tail *aggregateTail, right textSegment) bool {
-	if !filters.joined.hasRules {
-		return false
-	}
-	if filters.joined.unfiltered {
-		return true
-	}
 	var buffer aggregateViewBuffer
-	text := buffer.buildJoined(tail, right)
-	return filters.joined.automaton.matches(text)
+	if filters.rawNorm.hasRules {
+		if filters.rawNorm.unfiltered {
+			return true
+		}
+		raw := buffer.buildRaw(tail, right)
+		var normalizedBuffer aggregateViewBuffer
+		if normalized, ok := normalizeASCIIInto(normalizedBuffer.data[:0], raw); ok {
+			if filters.rawNorm.automaton.matches(normalized) {
+				return true
+			}
+		} else if filters.rawNorm.automaton.matchesString(normalizeText(string(raw))) {
+			return true
+		}
+	}
+	if filters.norm.hasRules {
+		if filters.norm.unfiltered || filters.norm.automaton.matches(buffer.buildNorm(tail, right)) {
+			return true
+		}
+	}
+	if filters.joined.hasRules {
+		return filters.joined.unfiltered || filters.joined.automaton.matches(buffer.buildJoined(tail, right))
+	}
+	return false
 }
 
 type aggregateViewBuffer struct {
 	data [rollingViewCapacity]byte
+}
+
+func (buffer *aggregateViewBuffer) buildRaw(tail *aggregateTail, right textSegment) []byte {
+	length := appendAggregateBytes(buffer.data[:], tail.raw.data, "", firstRunes(right.Views.Raw, boundaryWindowRunes))
+	return buffer.data[:length]
+}
+
+func (buffer *aggregateViewBuffer) buildNorm(tail *aggregateTail, right textSegment) []byte {
+	length := appendAggregateBytes(
+		buffer.data[:],
+		tail.norm.data,
+		guardBoundaryMarker,
+		firstRunes(right.Views.Norm, boundaryWindowRunes),
+	)
+	return buffer.data[:length]
 }
 
 func (buffer *aggregateViewBuffer) buildJoined(tail *aggregateTail, right textSegment) []byte {

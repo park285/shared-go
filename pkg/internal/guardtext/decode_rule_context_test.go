@@ -20,6 +20,28 @@ func TestDecodeCandidatesWithContextForRulesReinsertsShortBase64(t *testing.T) {
 	}
 }
 
+func TestDecodeCandidatesWithContextForRulesRejectsOversizedShortContext(t *testing.T) {
+	t.Parallel()
+
+	input := "aWdub3Jl " + strings.Repeat("!", maxDecodedCandidateLen)
+	result := DecodeCandidatesWithContextForRules(input, func(candidate string) bool {
+		return strings.Contains(candidate, "ignore")
+	})
+	if result.Status&DecodeByteLimit == 0 || len(result.Candidates) != 0 {
+		t.Fatalf("result = %#v, want byte-limit failure without oversized candidate", result)
+	}
+}
+
+func TestDecodeCandidatesWithContextForRulesBoundsShortTokenScans(t *testing.T) {
+	t.Parallel()
+
+	input := strings.TrimSpace(strings.Repeat("eHl6 ", maxDecodeScans+1))
+	result := DecodeCandidatesWithContextForRules(input, func(string) bool { return false })
+	if result.Status&DecodeScanLimit == 0 {
+		t.Fatalf("result = %#v, want shared scan limit", result)
+	}
+}
+
 func TestEncodingSyntaxNormalizationPreflight(t *testing.T) {
 	t.Parallel()
 

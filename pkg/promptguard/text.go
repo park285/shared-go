@@ -12,6 +12,10 @@ func normalizeText(text string) string {
 	return guardtext.Normalize(text)
 }
 
+func normalizeASCIIInto(destination, text []byte) ([]byte, bool) {
+	return guardtext.NormalizeASCIIInto(destination, text)
+}
+
 func normalizePostProcess(text string) string {
 	return guardtext.NormalizePostProcess(text)
 }

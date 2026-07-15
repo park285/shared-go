@@ -32,3 +32,8 @@ func DecodeCandidatesWithContextForRuleOwner[T any](input string, owner T, mayCo
 func ruleDecodePreflight(input string) (bool, bool) {
 	return hasPotentialDecodeSurface(input) || hasPlausibleShortRuleDecodeSurface(input), EncodingSyntaxNeedsNormalization(input)
 }
+
+// DecodedCandidateFitsBudget은 단일 decode candidate가 검사 가능한 크기인지 보고한다.
+func DecodedCandidateFitsBudget(candidate string) bool {
+	return len(candidate) <= maxDecodedCandidateLen
+}

@@ -87,18 +87,24 @@ func decodeCandidatesWithContextForRules(
 }
 
 func decodeSingleShortRuleContext(input string, mayContribute func(string) bool) (DecodeResult, bool) {
-	if hasPotentialDecodeSurface(input) || containsASCIIFold(input, "hex") && shortHexPayloadPattern.MatchString(input) {
+	if shortRuleFastPathUnsupported(input) {
 		return DecodeResult{}, false
 	}
 
-	var selectedSpan encodedSpan
-	selectedDecoded := ""
+	var work protectedDecodeWork
+	scans := 0
+	status := DecodeStatus(0)
+	selectedCandidate := ""
 	for position := 0; position < len(input); {
 		start := position
 		match := nextBase64Candidate(input, position)
 		position = match.next
 		if len(match.value) < 4 || len(match.value) > maxShortBase64CandidateLen {
 			continue
+		}
+		if !consumeProtectedDecodeWork(&work, &status, len(match.value)) ||
+			!consumeContextDecodeScan(&scans, &status) {
+			return DecodeResult{Status: status}, true
 		}
 
 		var storage [maxShortBase64CandidateLen]byte
@@ -112,41 +118,64 @@ func decodeSingleShortRuleContext(input string, mayContribute func(string) bool)
 
 		decodedText := string(decoded)
 		span := encodedSpan{start: start, end: match.next}
-		contributes, status := shortRuleCandidateContributes(input, span, decodedText, mayContribute)
+		candidate, contributes, nestedStatus := shortRuleCandidateContribution(
+			input,
+			span,
+			decodedText,
+			mayContribute,
+			&work,
+		)
+		mergeDecodeStatus(&status, nestedStatus)
 		if status != 0 {
-			return DecodeResult{}, false
+			return DecodeResult{Status: status}, true
 		}
 		if !contributes {
 			continue
 		}
-		if selectedDecoded != "" {
+		if selectedCandidate != "" {
 			return DecodeResult{}, false
 		}
-		selectedSpan = span
-		selectedDecoded = decodedText
+		selectedCandidate = candidate
 	}
 
-	if selectedDecoded == "" {
+	if selectedCandidate == "" {
 		return DecodeResult{}, false
 	}
-	candidate := replaceDecodedSpan(input, selectedSpan, selectedDecoded)
-	if hasPotentialDecodeSurface(candidate) || hasPlausibleShortRuleDecodeSurface(candidate) {
+	if hasPotentialDecodeSurface(selectedCandidate) || hasPlausibleShortRuleDecodeSurface(selectedCandidate) {
 		return DecodeResult{}, false
 	}
-	return DecodeResult{Candidates: []string{candidate}}, true
+	return DecodeResult{Candidates: []string{selectedCandidate}}, true
 }
 
-func shortRuleCandidateContributes(
+func shortRuleFastPathUnsupported(input string) bool {
+	return hasPotentialDecodeSurface(input) ||
+		containsASCIIFold(input, "hex") && shortHexPayloadPattern.MatchString(input)
+}
+
+func shortRuleCandidateContribution(
 	input string,
 	span encodedSpan,
 	decoded string,
 	mayContribute func(string) bool,
-) (bool, DecodeStatus) {
+	work *protectedDecodeWork,
+) (string, bool, DecodeStatus) {
 	contributes, status := matchingDecodedContribution(decoded, mayContribute)
-	if contributes || status != 0 {
-		return contributes, status
+	if status != 0 {
+		return "", false, status
 	}
-	return matchingDecodedContribution(replaceDecodedSpan(input, span, decoded), mayContribute)
+	contextBytes := len(input) - (span.end - span.start) + len(decoded)
+	if contextBytes > maxDecodedCandidateLen {
+		return "", false, DecodeByteLimit
+	}
+	if !consumeProtectedContextWork(work, &status, contextBytes) {
+		return "", false, status
+	}
+	contextual := replaceDecodedSpan(input, span, decoded)
+	if contributes {
+		return contextual, true, 0
+	}
+	contributes, status = matchingDecodedContribution(contextual, mayContribute)
+	return contextual, contributes, status
 }
 
 func hasPlausibleShortRuleDecodeSurface(input string) bool {
