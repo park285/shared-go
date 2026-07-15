@@ -1,0 +1,80 @@
+# package: ./pkg/outputguard
+goos: linux
+goarch: amd64
+pkg: github.com/park285/shared-go/pkg/outputguard
+cpu: AMD Ryzen 5 5600G with Radeon Graphics         
+BenchmarkOutputGuardBaseline-12               	    5132	     22819 ns/op	     767 B/op	      20 allocs/op
+BenchmarkOutputGuardBaseline-12               	    5210	     22833 ns/op	     766 B/op	      20 allocs/op
+BenchmarkOutputGuardBaseline-12               	    5188	     22772 ns/op	     766 B/op	      20 allocs/op
+BenchmarkOutputGuardBaseline-12               	    4814	     23407 ns/op	     760 B/op	      20 allocs/op
+BenchmarkOutputGuardBaseline-12               	    5280	     22678 ns/op	     766 B/op	      20 allocs/op
+BenchmarkOutputGuardBaseline-12               	    5233	     22468 ns/op	     766 B/op	      20 allocs/op
+BenchmarkOutputGuardProtectedOverlap-12       	     963	    123910 ns/op	    6802 B/op	      33 allocs/op
+BenchmarkOutputGuardProtectedOverlap-12       	     958	    126389 ns/op	    6763 B/op	      33 allocs/op
+BenchmarkOutputGuardProtectedOverlap-12       	     979	    124134 ns/op	    6763 B/op	      33 allocs/op
+BenchmarkOutputGuardProtectedOverlap-12       	     957	    122538 ns/op	    6841 B/op	      33 allocs/op
+BenchmarkOutputGuardProtectedOverlap-12       	     957	    122584 ns/op	    6763 B/op	      33 allocs/op
+BenchmarkOutputGuardProtectedOverlap-12       	     969	    123240 ns/op	    6840 B/op	      33 allocs/op
+BenchmarkOutputGuardProtectedIndex-12         	     968	    126630 ns/op	   69632 B/op	     185 allocs/op
+BenchmarkOutputGuardProtectedIndex-12         	     901	    122738 ns/op	   69638 B/op	     185 allocs/op
+BenchmarkOutputGuardProtectedIndex-12         	     916	    120678 ns/op	   69632 B/op	     185 allocs/op
+BenchmarkOutputGuardProtectedIndex-12         	     970	    122111 ns/op	   69632 B/op	     185 allocs/op
+BenchmarkOutputGuardProtectedIndex-12         	     922	    120164 ns/op	   69632 B/op	     185 allocs/op
+BenchmarkOutputGuardProtectedIndex-12         	     837	    122537 ns/op	   69632 B/op	     185 allocs/op
+BenchmarkOutputGuardExactNoMatch-12           	     812	    145265 ns/op	   65536 B/op	       3 allocs/op
+BenchmarkOutputGuardExactNoMatch-12           	     813	    145904 ns/op	   65536 B/op	       3 allocs/op
+BenchmarkOutputGuardExactNoMatch-12           	     745	    155444 ns/op	   65536 B/op	       3 allocs/op
+BenchmarkOutputGuardExactNoMatch-12           	     770	    146190 ns/op	   65536 B/op	       3 allocs/op
+BenchmarkOutputGuardExactNoMatch-12           	     774	    144438 ns/op	   65536 B/op	       3 allocs/op
+BenchmarkOutputGuardExactNoMatch-12           	     810	    150019 ns/op	   65536 B/op	       3 allocs/op
+BenchmarkOutputGuardExactCommonPrefix-12      	     717	    167140 ns/op	   73728 B/op	       3 allocs/op
+BenchmarkOutputGuardExactCommonPrefix-12      	     712	    170449 ns/op	   73728 B/op	       3 allocs/op
+BenchmarkOutputGuardExactCommonPrefix-12      	     673	    167665 ns/op	   73728 B/op	       3 allocs/op
+BenchmarkOutputGuardExactCommonPrefix-12      	     686	    169961 ns/op	   73728 B/op	       3 allocs/op
+BenchmarkOutputGuardExactCommonPrefix-12      	     686	    167975 ns/op	   73728 B/op	       3 allocs/op
+BenchmarkOutputGuardExactCommonPrefix-12      	     715	    167886 ns/op	   73728 B/op	       3 allocs/op
+BenchmarkOutputGuardExactRepeatedPrefix-12    	      96	   1219647 ns/op	  540675 B/op	       2 allocs/op
+BenchmarkOutputGuardExactRepeatedPrefix-12    	     100	   1211737 ns/op	  540673 B/op	       2 allocs/op
+BenchmarkOutputGuardExactRepeatedPrefix-12    	     100	   1224813 ns/op	  540672 B/op	       2 allocs/op
+BenchmarkOutputGuardExactRepeatedPrefix-12    	     100	   1229738 ns/op	  540673 B/op	       2 allocs/op
+BenchmarkOutputGuardExactRepeatedPrefix-12    	      98	   1241333 ns/op	  540673 B/op	       2 allocs/op
+BenchmarkOutputGuardExactRepeatedPrefix-12    	     100	   1243705 ns/op	  540673 B/op	       2 allocs/op
+PASS
+ok  	github.com/park285/shared-go/pkg/outputguard	4.874s
+# package: ./pkg/promptguard
+goos: linux
+goarch: amd64
+pkg: github.com/park285/shared-go/pkg/promptguard
+cpu: AMD Ryzen 5 5600G with Radeon Graphics         
+BenchmarkPromptGuardBenignFastPath-12       	   16954	      7079 ns/op	    2232 B/op	      15 allocs/op
+BenchmarkPromptGuardBenignFastPath-12       	   16771	      7139 ns/op	    2232 B/op	      15 allocs/op
+BenchmarkPromptGuardBenignFastPath-12       	   16809	      7177 ns/op	    2232 B/op	      15 allocs/op
+BenchmarkPromptGuardBenignFastPath-12       	   16491	      7210 ns/op	    2232 B/op	      15 allocs/op
+BenchmarkPromptGuardBenignFastPath-12       	   17077	      7433 ns/op	    2232 B/op	      15 allocs/op
+BenchmarkPromptGuardBenignFastPath-12       	   15825	      7069 ns/op	    2232 B/op	      15 allocs/op
+BenchmarkPromptGuardAggregateBoundary-12    	     244	    499521 ns/op	  120806 B/op	     997 allocs/op
+BenchmarkPromptGuardAggregateBoundary-12    	     247	    483490 ns/op	  120631 B/op	     997 allocs/op
+BenchmarkPromptGuardAggregateBoundary-12    	     247	    488451 ns/op	  121079 B/op	     997 allocs/op
+BenchmarkPromptGuardAggregateBoundary-12    	     242	    494869 ns/op	  120813 B/op	     997 allocs/op
+BenchmarkPromptGuardAggregateBoundary-12    	     237	    479240 ns/op	  121014 B/op	     997 allocs/op
+BenchmarkPromptGuardAggregateBoundary-12    	     248	    490864 ns/op	  120927 B/op	     997 allocs/op
+BenchmarkPromptGuardDecoderHeavy-12         	    1362	     83873 ns/op	    5525 B/op	      39 allocs/op
+BenchmarkPromptGuardDecoderHeavy-12         	    1335	     82680 ns/op	    5711 B/op	      39 allocs/op
+BenchmarkPromptGuardDecoderHeavy-12         	    1321	     84806 ns/op	    5678 B/op	      39 allocs/op
+BenchmarkPromptGuardDecoderHeavy-12         	    1412	     83622 ns/op	    5540 B/op	      39 allocs/op
+BenchmarkPromptGuardDecoderHeavy-12         	    1340	     86544 ns/op	    5617 B/op	      39 allocs/op
+BenchmarkPromptGuardDecoderHeavy-12         	    1375	     82773 ns/op	    5469 B/op	      39 allocs/op
+BenchmarkPromptGuardShortRuleContext-12     	    7998	     16223 ns/op	    1916 B/op	       6 allocs/op
+BenchmarkPromptGuardShortRuleContext-12     	    6526	     15596 ns/op	    1931 B/op	       6 allocs/op
+BenchmarkPromptGuardShortRuleContext-12     	    6750	     15329 ns/op	    1918 B/op	       6 allocs/op
+BenchmarkPromptGuardShortRuleContext-12     	    7843	     15987 ns/op	    1970 B/op	       6 allocs/op
+BenchmarkPromptGuardShortRuleContext-12     	    7584	     15688 ns/op	    1950 B/op	       6 allocs/op
+BenchmarkPromptGuardShortRuleContext-12     	    7263	     15838 ns/op	    1940 B/op	       6 allocs/op
+BenchmarkPromptGuardRollingAggregate-12     	     301	    394415 ns/op	  164262 B/op	     832 allocs/op
+BenchmarkPromptGuardRollingAggregate-12     	     294	    395153 ns/op	  162424 B/op	     831 allocs/op
+BenchmarkPromptGuardRollingAggregate-12     	     301	    390111 ns/op	  162586 B/op	     831 allocs/op
+BenchmarkPromptGuardRollingAggregate-12     	     300	    395552 ns/op	  163446 B/op	     832 allocs/op
+BenchmarkPromptGuardRollingAggregate-12     	     303	    395432 ns/op	  162828 B/op	     831 allocs/op
+BenchmarkPromptGuardRollingAggregate-12     	     307	    396256 ns/op	  163301 B/op	     832 allocs/op
+PASS
+ok  	github.com/park285/shared-go/pkg/promptguard	5.064s
