@@ -1,5 +1,10 @@
 package guardtext
 
+import (
+	"unicode"
+	"unicode/utf8"
+)
+
 const maxShortBase64CandidateLen = minBase64CandidateLen - 1
 
 // DecodeCandidatesWithContextForRules expands the standard transform families and
@@ -11,19 +16,8 @@ func DecodeCandidatesWithContextForRules(input string, mayContribute func(string
 		return DecodeCandidatesWithContext(input)
 	}
 
-	roots := []string{input}
-	normalized := NormalizeEncodingSyntax(input)
-	if normalized != input {
-		roots = append(roots, normalized)
-	}
-	potential := false
-	for _, root := range roots {
-		if hasPotentialDecodeSurface(root) || hasPlausibleShortRuleDecodeSurface(root) {
-			potential = true
-			break
-		}
-	}
-	if !potential {
+	roots := ruleDecodeRoots(input)
+	if len(roots) == 0 {
 		return DecodeResult{}
 	}
 
@@ -56,7 +50,7 @@ func DecodeCandidatesWithContextForRules(input string, mayContribute func(string
 			func(candidate string) { decoder.admit(current, candidate) },
 			func(span encodedSpan, decoded string) { decoder.admitContextual(current, span, decoded) },
 		)
-		if !decoder.result.Complete() {
+		if !decoder.result.Complete() || !hasPlausibleShortRuleDecodeSurface(current.text) {
 			continue
 		}
 
@@ -73,6 +67,39 @@ func DecodeCandidatesWithContextForRules(input string, mayContribute func(string
 	return decoder.result
 }
 
+func ruleDecodeRoots(input string) []string {
+	roots := make([]string, 0, 2)
+	if hasRuleDecodeSurface(input) {
+		roots = append(roots, input)
+	}
+	if !needsRuleEncodingSyntaxNormalization(input) {
+		return roots
+	}
+
+	normalized := NormalizeEncodingSyntax(input)
+	if normalized != input && hasRuleDecodeSurface(normalized) {
+		roots = append(roots, normalized)
+	}
+	return roots
+}
+
+func hasRuleDecodeSurface(input string) bool {
+	return hasPotentialDecodeSurface(input) || hasPlausibleShortRuleDecodeSurface(input)
+}
+
+func needsRuleEncodingSyntaxNormalization(input string) bool {
+	for _, value := range input {
+		if unicode.Is(unicode.Cf, value) {
+			return true
+		}
+		if value < utf8.RuneSelf || unicode.Is(hangulTable, value) || unicode.Is(jamoTable, value) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
 func hasPlausibleShortRuleDecodeSurface(input string) bool {
 	for _, span := range shortRuleHexSpans(input) {
 		if span.end > span.start {
@@ -83,16 +110,14 @@ func hasPlausibleShortRuleDecodeSurface(input string) bool {
 	for i := 0; i < len(input); {
 		match := nextBase64Candidate(input, i)
 		i = match.next
-		if len(match.value) < 4 {
+		switch {
+		case len(match.value) < 4:
 			continue
-		}
-		if len(match.value) <= maxShortBase64CandidateLen {
+		case len(match.value) <= maxShortBase64CandidateLen:
 			if plausibleShortBase64Value(match.value) {
 				return true
 			}
-			continue
-		}
-		if looksLikeEmbeddedBase64(match.value) {
+		case looksLikeEmbeddedBase64(match.value):
 			return true
 		}
 	}
@@ -158,6 +183,9 @@ func shortRuleBase64Spans(
 		whole := encodedSpan{start: start, end: match.next}
 		var wholeReadable bool
 		if len(match.value) <= maxShortBase64CandidateLen {
+			if !plausibleShortBase64Value(match.value) {
+				continue
+			}
 			spans, wholeReadable = appendProtectedBase64Span(
 				spans,
 				input,
@@ -170,13 +198,16 @@ func shortRuleBase64Spans(
 			)
 			seen[whole] = struct{}{}
 		} else {
+			if !looksLikeEmbeddedBase64(match.value) {
+				continue
+			}
 			wholeReadable = readableBase64Span(input, whole, work, status)
 		}
 
 		// A readable whole token is the authoritative encoding boundary. Looking
 		// inside it would reinterpret valid benign Base64, create dangling-padding
 		// variants, and spend the shared candidate budget before useful composition.
-		if wholeReadable || !looksLikeEmbeddedBase64(match.value) || !decodeWorkComplete(status) {
+		if wholeReadable || !decodeWorkComplete(status) {
 			continue
 		}
 
@@ -318,9 +349,22 @@ func decodedHexByteCount(payload string) int {
 }
 
 func plausibleShortBase64Value(value string) bool {
+	if len(value) < 4 || len(value) > maxShortBase64CandidateLen || len(value)%4 == 1 {
+		return false
+	}
 	if looksLikeEmbeddedBase64(value) {
 		return true
 	}
-	decoded, err := DecodeBase64Candidate(value)
-	return err == nil && IsReadableText(decoded)
+
+	hasLower := false
+	uppercaseAfterFirst := 0
+	for i := range len(value) {
+		switch {
+		case value[i] >= 'a' && value[i] <= 'z':
+			hasLower = true
+		case value[i] >= 'A' && value[i] <= 'Z' && i > 0:
+			uppercaseAfterFirst++
+		}
+	}
+	return hasLower && uppercaseAfterFirst > 0
 }
