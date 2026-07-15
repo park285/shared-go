@@ -1,6 +1,9 @@
 package promptguard
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestEmbeddedRulesHaveRequiredLiteralPrefilters(t *testing.T) {
 	t.Parallel()
@@ -95,4 +98,25 @@ func TestAggregatePrefilterKeepsRawPunctuationSplit(t *testing.T) {
 		}
 	}
 	t.Fatal("raw punctuation split was removed by aggregate prefilter")
+}
+
+func TestRollingBenchmarkFixtureExercisesAggregatePath(t *testing.T) {
+	t.Parallel()
+
+	parts := make([]string, 64)
+	for index := range parts {
+		parts[index] = strings.Repeat("ordinary context ", 2)
+	}
+	parts[len(parts)-1] = "ordinary instructions reference"
+	guard := newTestGuardFromRulepacks(t)
+	segments, exceeded := buildEvaluationSegmentsFiltered(JoinParts(parts...), guard.aggregateMayMatch)
+	if exceeded {
+		t.Fatal("segment budget unexpectedly exceeded")
+	}
+	for _, segment := range segments {
+		if segment.Aggregate {
+			return
+		}
+	}
+	t.Fatal("rolling benchmark fixture did not exercise an aggregate segment")
 }
