@@ -1,4 +1,7 @@
-# Changelog
+# 변경 이력
+
+이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
+옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
 ## 미출시
 
@@ -16,199 +19,440 @@
 - `workerpool.ManagedPool.TrySubmit`은 거부된 job의 `Finalize` callback ownership을 호출자에게
   남깁니다. 거부된 finalization도 pool에 위임하려면 `TrySubmitResult`를 사용해야 합니다.
 
-## v1.30.0 - 2026-07-12
+## v1.30.0 - 2026-07-13
 
-### Fixed
+### 수정
 
-- `workerpool.ManagedPool` now uses a condition variable for queue availability, so a burst
-  wakes the configured workers without the capacity-one notification interleaving collapsing
-  execution to a single worker.
-- Queue expiry and shutdown now operate on every admitted job immediately; there is no
-  admission-callback state that can hide a job from the stale reaper or delay pool shutdown.
+- `workerpool.ManagedPool`이 queue 가용성 대기에 condition variable을 사용합니다. burst가
+  들어오면 설정된 worker들이 모두 깨어나며, capacity-one notification의 interleaving 때문에
+  실행이 worker 하나로 축소되지 않습니다.
+- queue 만료와 종료 처리가 admission 직후 모든 job에 적용됩니다. stale reaper로부터 job을
+  숨기거나 pool 종료를 지연할 수 있었던 admission callback 상태를 제거했습니다.
 
-### Removed (Breaking)
+### 제거 (호환성 변경)
 
-- `workerpool.JobSpec.OnAdmitted` was removed. Admission must remain an in-memory ownership
-  decision; progress replies and other external I/O belong at the start of `Run`, where the
-  dequeue-time job context, timeout cause, expiry, finalizer, and shutdown contract apply.
+- `workerpool.JobSpec.OnAdmitted`를 제거했습니다. admission은 메모리 내부의 ownership 결정으로
+  유지해야 합니다. 진행 답변과 기타 외부 I/O는 dequeue 시점의 job context, timeout cause,
+  expiry, finalizer, shutdown 계약이 적용되는 `Run` 시작부에서 수행해야 합니다.
+
+## v1.29.0 - 2026-07-12
+
+### 추가
+
+- managed worker runtime과 strict worker-profile envelope를 추가했습니다.
+- prompt injection 강제 경계를 v3로 강화하고 LLM instruction purpose layer와 provider profile을
+  추가했습니다.
+- `dbmigrate` manifest 검증, advisory-lock 격리, migration session timeout을 강화했습니다.
+
+### 수정
+
+- OpenAI Responses JSON tool envelope 판별과 안전한 진단, `httputil` JSON 단일 값·크기 상한,
+  제한된 `umask`에서의 log 권한 계약을 보강했습니다.
+
+## v1.28.4 - 2026-07-07
+
+### 변경
+
+- `dbmigrate` ledger API가 parameterized execution을 요구하며 SQL을 embedded asset으로
+  이동했습니다.
+
+## v1.28.3 - 2026-07-05
+
+### 변경
+
+- `netguard`의 `staticcheck` 예외를 로컬·원격 검사 도구 양쪽에 맞췄습니다.
+
+## v1.28.2 - 2026-07-05
+
+### 변경
+
+- `netguard.DialTLS`의 `staticcheck` 예외 형식을 정리했습니다.
+
+## v1.28.1 - 2026-07-05
+
+### 변경
+
+- `grpc`를 `v1.82.0`으로 갱신하고 CI action과 `govulncheck` 버전을 고정했습니다.
+- benchmark gate가 Git worktree에서도 repository 이름을 올바르게 판별하도록 했습니다.
+
+## v1.28.0 - 2026-07-04
+
+### 추가
+
+- `dbmigrate` advisory lock과 ledger, `netguard` SSRF guard, `httputil` JSON request decoder를
+  추가했습니다.
+
+### 수정
+
+- `netguard.GuardedTransport`에서 deprecated `DialTLS` 처리를 제거했습니다.
 
 ## v1.27.0 - 2026-07-04
 
-### Added
+### 추가
 
-- `httputil`: shared admin API key auth helpers (`HeaderAPIKey`, `AdminAuthConfig`,
-  `AdminAuthMiddleware`, `APIKeyFromRequest`, `ConstantTimeStringEqual`, `WriteErrorJSON`)
-  matching the bot-side `X-API-Key`/Bearer fail-closed semantics. `AdminAuthConfig` uses
-  explicit `Disabled` opt-out so its zero value enforces auth.
-- `httputil/ginauth`: gin adapter for hololive-style API key middleware and authenticated
-  `NoRoute` handling without linking gin into the base `httputil` package.
-- `httputil`: fixed-window rate limiting, login-failure lockout limiting, API-key/IP
-  rate-limit identities, and trusted-proxy client IP helpers covering the twentyq and
-  admin-dashboard forwarded-header contracts.
-- `dbmigrate`: manifest.txt runner core with `fs.FS` input, `Execer` function seam,
-  `SQLExec` adapter, and `WithOnly` filtering for bot-local migration wrappers.
-- `envutil`: dotenv loading helpers for service-prefix OpenBao paths (`/run/<svc>/<svc>.env`)
-  and opt-in local dotenv files without adding a third-party dotenv dependency.
-- `healthprobe`: `RunMain` is now the documented healthcheck command entry point; tests pin
-  exit-code behavior through an internal URL-check seam.
-- `llm/openaipreset`: non-streaming OpenAI Responses completion core for message-list
-  requests, with shared response text/usage parsing hooks for stack-local clients that keep
-  their own streaming or image paths.
-- `docs/adoption/shared-go-v1.27.0-admin-surface.md`: next-wave consumer migration guide.
+- `httputil`: bot의 `X-API-Key`/Bearer fail-closed 의미와 일치하는 공용 admin API key 인증
+  helper(`HeaderAPIKey`, `AdminAuthConfig`, `AdminAuthMiddleware`, `APIKeyFromRequest`,
+  `ConstantTimeStringEqual`, `WriteErrorJSON`)를 추가했습니다. `AdminAuthConfig`는 명시적인
+  `Disabled` opt-out을 사용하므로 zero value에서도 인증을 강제합니다.
+- `httputil/ginauth`: base `httputil` package에 gin을 연결하지 않고 hololive 방식의 API key
+  middleware와 인증된 `NoRoute` 처리를 제공하는 gin adapter를 추가했습니다.
+- `httputil`: twentyq와 admin-dashboard의 forwarded-header 계약을 포괄하는 fixed-window rate
+  limiting, login-failure lockout limiting, API-key/IP rate-limit identity, trusted-proxy client IP
+  helper를 추가했습니다.
+- `dbmigrate`: `fs.FS` 입력, `Execer` function seam, `SQLExec` adapter, bot-local migration
+  wrapper용 `WithOnly` filtering을 지원하는 `manifest.txt` runner core를 추가했습니다.
+- `envutil`: third-party dotenv dependency 없이 service-prefix OpenBao 경로
+  (`/run/<svc>/<svc>.env`)와 opt-in local dotenv file을 읽는 helper를 추가했습니다.
+- `healthprobe`: `RunMain`을 문서화된 healthcheck command entry point로 정하고, 내부 URL-check
+  seam을 통해 exit-code 동작을 고정하는 test를 추가했습니다.
+- `llm/openaipreset`: message-list request용 non-streaming OpenAI Responses completion core와,
+  streaming 또는 image 경로를 자체 유지하는 stack-local client용 공용 response text/usage
+  parsing hook을 추가했습니다.
+- `docs/adoption/shared-go-v1.27.0-admin-surface.md`: 다음 consumer migration guide를
+  추가했습니다.
 
-### Removed (Breaking)
+### 제거 (호환성 변경)
 
-- `logging/archive`: internalized under `pkg/logging/internal/archive`; file logging behavior and
-  log archive/prune semantics are unchanged through `pkg/logging`.
-- `workerconfig`: unexported zero-consumer Iris worker-profile detail types
+- `logging/archive`: `pkg/logging/internal/archive` 아래로 internalize했습니다.
+  `pkg/logging`을 통한 file logging과 log archive/prune 동작은 바뀌지 않습니다.
+- `workerconfig`: 사용처가 없는 Iris worker-profile detail type
   (`BotPoolWorkerProfile`, `BotWebhookReceiveWorkerProfile`, `IrisWebhookDeliveryWorkerProfile`,
-  `IrisBotWebhookWorkerProfileValidation`) and the zero-consumer
-  `DefaultIrisBotWebhookWorkerProfile` helper.
-- `json`: removed zero-consumer stdlib compatibility re-exports `Decoder` and `Number`; use
-  `NewDecoder` or the concrete decoder returned from it.
-- `logging`: unexported zero-consumer handler/plumbing helpers (`SanitizeHandler`,
-  `OTelHandler`, `NewSanitizeHandler`, `NewOTelHandler`, `Component`, `JobID`, `NewID`,
-  `ParseLevel`, and `*FromContext`). Public logger construction, operation logging,
-  context enrichment, and file logging entry points remain.
+  `IrisBotWebhookWorkerProfileValidation`)과 `DefaultIrisBotWebhookWorkerProfile` helper를
+  비공개로 전환했습니다.
+- `json`: 사용처가 없는 stdlib compatibility re-export `Decoder`, `Number`를 제거했습니다.
+  `NewDecoder` 또는 이 함수가 반환하는 concrete decoder를 사용해야 합니다.
+- `logging`: 사용처가 없는 handler·plumbing helper(`SanitizeHandler`, `OTelHandler`,
+  `NewSanitizeHandler`, `NewOTelHandler`, `Component`, `JobID`, `NewID`, `ParseLevel`,
+  `*FromContext`)를 비공개로 전환했습니다. public logger 생성, operation logging, context
+  enrichment, file logging entry point는 유지됩니다.
 
-### Changed
+### 변경
 
-- `logging` (Breaking): `EnableFileLogging*` no longer calls `slog.SetDefault`; callers that
-  want a process default logger must call `slog.SetDefault(logger)` themselves after receiving
-  the returned logger.
-- `logging`: a literal `key` field or `?key=` query parameter no longer triggers redaction by
-  name alone; `api_key`, `apikey`, token/password/secret variants, and suffix rules continue to
-  redact.
-- `httputil`: zero-value `FixedWindowOptions` now applies pruning defaults
-  (`MaxIdentities=10000`, `EntryTTL=2m`), rightmost forwarded-header parsing accepts only plain
-  IP hops, and `LoginFailureRateLimiter.Stop` is safe before `Start` and on repeated calls.
+- `logging` (호환성 변경): `EnableFileLogging*`이 더 이상 `slog.SetDefault`를 호출하지
+  않습니다. process default logger가 필요한 호출자는 반환된 logger로 직접
+  `slog.SetDefault(logger)`를 호출해야 합니다.
+- `logging`: literal `key` field 또는 `?key=` query parameter라는 이름만으로는 redaction하지
+  않습니다. `api_key`, `apikey`, token/password/secret 변형과 suffix 규칙은 계속
+  redaction합니다.
+- `httputil`: zero-value `FixedWindowOptions`에 pruning 기본값
+  (`MaxIdentities=10000`, `EntryTTL=2m`)을 적용합니다. 오른쪽 forwarded-header parsing은 plain
+  IP hop만 허용하며, `LoginFailureRateLimiter.Stop`은 `Start` 전이나 반복 호출에도 안전합니다.
 
-### Docs
+### 문서
 
-- Removed generated public-surface and internal-helper inventories from package `doc.go` files,
-  keeping package overviews and usage examples.
-- Annotated `REFACTORING_PLAN_20260602.md` with the closed P1/P3 dispositions for this wave.
+- package `doc.go`에서 생성된 public-surface와 internal-helper 목록을 제거하고 package 개요와
+  사용 예시는 유지했습니다.
+- `REFACTORING_PLAN_20260602.md`에 이 작업의 완료된 P1/P3 결정을 기록했습니다.
+
+## v1.26.1 - 2026-07-03
+
+### 수정
+
+- log archiver가 `Close` 뒤 `Trigger`를 거부하여 log directory 정리와의 경합을
+  차단했습니다.
 
 ## v1.26.0 - 2026-07-03
 
-### Removed (Breaking)
+### 제거 (호환성 변경)
 
-- `retry`: removed `DefaultRetryOptions` — declaration-only surface with no callers across the
-  stack; construct `RetryOptions` literals instead.
-- `workerconfig`: removed `DecodeIrisBotWebhookWorkerProfile` — consumers decode through
-  `DecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics`, which remains the only entry point.
-- `envutil`: unexported `SecretFile` (now `secretFile`) — external consumers read secret files
-  through `StringOrSecretFile` / `FirstStringOrSecretFile` only.
+- `retry`: stack 전체에 호출자가 없던 declaration-only API `DefaultRetryOptions`를
+  제거했습니다. 대신 `RetryOptions` literal을 생성해야 합니다.
+- `workerconfig`: `DecodeIrisBotWebhookWorkerProfile`을 제거했습니다. consumer는 유일한
+  entry point로 유지되는 `DecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics`를 통해
+  decode해야 합니다.
+- `envutil`: `SecretFile`을 비공개 `secretFile`로 전환했습니다. 외부 consumer는
+  `StringOrSecretFile` 또는 `FirstStringOrSecretFile`을 통해서만 secret file을 읽습니다.
 
-## v1.25.0 - 2026-07-02
+## v1.25.0 - 2026-07-03
 
-(Entry backfilled on 2026-07-03; the tag shipped without a changelog entry.)
+이 항목은 tag가 changelog 없이 배포된 뒤 2026-07-03에 보완했습니다.
 
-### Added
+### 추가
 
-- `obsmetrics`: labeled metric vectors (`Labels`, `CounterVec` / `GaugeVec` / `HistogramVec`
-  with `NewCounterVec` / `NewGaugeVec` / `NewHistogramVec`) and labeled exposition writers
-  (`WriteCounterWithLabels` / `WriteGaugeWithLabels` / `WriteHistogramWithLabels`).
-- `h3`: `ServerOptions` plus `NewServerWithOptions` / `NewServerWithTLSConfigAndOptions`.
+- `obsmetrics`: label metric vector(`Labels`, `CounterVec` / `GaugeVec` / `HistogramVec`와
+  `NewCounterVec` / `NewGaugeVec` / `NewHistogramVec`) 및 label exposition writer
+  (`WriteCounterWithLabels` / `WriteGaugeWithLabels` / `WriteHistogramWithLabels`)를
+  추가했습니다.
+- `h3`: `ServerOptions`와 `NewServerWithOptions` / `NewServerWithTLSConfigAndOptions`를
+  추가했습니다.
 
 ## v1.24.2 - 2026-07-02
 
-### Fixed
+### 수정
 
-- `runtime/lifecycle`: `RunCloseSteps` now recovers a panic from an individual
-  close step, converts it to an error (preserving `errors.Is` identity when the
-  panic value is an error) so it is aggregated via `errors.Join`, and continues
-  running the remaining steps. Previously a panicking step aborted the whole
-  shutdown and skipped every later resource-cleanup step.
+- `runtime/lifecycle`: `RunCloseSteps`가 개별 close step의 panic을 recover하고 error로
+  변환합니다. panic 값이 error이면 `errors.Is` identity를 보존하고 `errors.Join`으로
+  집계한 뒤 나머지 step도 계속 실행합니다. 이전에는 panic 하나가 전체 shutdown을
+  중단하여 뒤의 resource-cleanup step을 모두 건너뛰었습니다.
 
-### Changed
+### 변경
 
-- `llm/openaipreset`: `WithReasoningEffort` now stores the whitespace-trimmed value
-  instead of the raw input, preserving the normalization consumers (twentyq) applied
-  before passing it in. Blank/whitespace-only input is still ignored.
-- `.gitguardian.yaml`: narrowed the blanket `**/*_test.go` secret-scan exclusion to
-  the three packages whose tests must embed synthetic secrets to verify redaction /
-  output-guard / secret-file handling (`pkg/logging`, `pkg/outputguard`,
-  `pkg/envutil`). The `pgxdb` test fixtures were renamed to placeholders in ab42ac6
-  and no longer rely on a path exclusion, so all other `*_test.go` files are scanned
-  again.
+- `llm/openaipreset`: `WithReasoningEffort`가 raw input 대신 whitespace를 trim한 값을
+  저장합니다. twentyq consumer가 전달 전에 적용하던 정규화를 보존하며, blank 또는
+  whitespace-only 입력을 무시하는 동작은 유지됩니다.
+- `.gitguardian.yaml`: 모든 `**/*_test.go`를 제외하던 secret-scan 규칙을 synthetic secret이
+  필요한 세 package(`pkg/logging`, `pkg/outputguard`, `pkg/envutil`)로 좁혔습니다. `pgxdb`
+  test fixture는 `ab42ac6`에서 placeholder로 바뀌어 path 제외가 필요하지 않으며, 그 밖의
+  `*_test.go` 파일은 다시 검사합니다.
 
-### Docs
+### 문서
 
-- `runtime/lifecycle`: added `doc.go` documenting the non-obvious `RunCloseSteps`
-  contract (slice order, not reverse; every step runs even after a failure; steps
-  run even under an already-cancelled context; `errors.Join` aggregation;
-  panic-to-error conversion).
-- `retry`: documented the context-error precedence contract — when context
-  cancellation and a prior `fn` error coexist, `WithRetry` returns the operational
-  (last `fn`) error; the wrapped `context error: <ctx.Err()>` is returned only when
-  no prior `fn` error exists. Behavior unchanged.
-- `db/pgxdb`: documented that `DNSFallback=true` triggers the localhost fallback only
-  when the configured host is exactly `postgres` (case-insensitive) and the connect
-  error is a DNS "no such host" error for that host.
+- `runtime/lifecycle`: `RunCloseSteps`의 비명시적 계약을 설명하는 `doc.go`를 추가했습니다.
+  순서는 slice 순서이며 reverse가 아니고, 실패 뒤에도 모든 step을 실행하며, 이미 취소된
+  context에서도 step을 실행하고, `errors.Join`으로 집계하며 panic을 error로 변환합니다.
+- `retry`: context error 우선순위 계약을 문서화했습니다. context 취소와 이전 `fn` error가
+  함께 존재하면 `WithRetry`는 마지막 `fn`의 operational error를 반환합니다. 이전 `fn`
+  error가 없을 때만 `context error: <ctx.Err()>`로 wrap한 error를 반환합니다. 동작은
+  바뀌지 않았습니다.
+- `db/pgxdb`: `DNSFallback=true`가 설정 host가 대소문자 구분 없이 정확히 `postgres`이고,
+  connect error가 그 host의 DNS `no such host`일 때만 localhost fallback을 실행한다고
+  문서화했습니다.
 
 ## v1.24.1 - 2026-07-02
 
-### Fixed
+### 수정
 
-- `db/pgxdb`: `OpenPoolWithRetry` no longer retries permanent failures. It now
-  pre-validates `cfg.Validate()` and the pool connection-count range before entering
-  the retry loop (config errors such as an `sslmode` typo return immediately), and the
-  in-loop retry predicate treats authentication failures (`pgconn.PgError` SQLSTATE
-  `28000`/`28P01`) and parent-context cancellation/deadline as permanent (immediate
-  return). Recoverable startup-race errors — database-not-found (`3D000`), connection
-  refused, DNS failures, and ping timeouts while the parent context is still live —
-  remain retryable. Previously these permanent errors were retried for ~30s under the
-  default `RetryConfig`.
-- `db/pgxdb`: unified the pool default fallback to a single source. `withPoolDefaults`
-  now sources `MinConns`/`MaxConns`/`ConnMaxLifetime`/`ConnMaxIdleTime` from
-  `DefaultPoolConfig()` (env-tunable `DB_POOL_MIN_CONNS`/`DB_POOL_MAX_CONNS`, default
-  5/20) instead of a divergent hardcoded 2/10 that ignored the env vars;
-  `ConnMaxLifetimeJitter` is still derived as `ConnMaxLifetime/5`. `OpenPool(Options{})`
-  and `DefaultOptions()` now yield the same pool configuration. `OpenPoolDSN` keeps its
-  overlay semantics (it never overwrites DSN-specified `pool_*` parameters and delegates
-  unset parameters to pgx's own defaults); pass `opts.Pool` (e.g. `DefaultPoolConfig()`)
-  to apply shared-go defaults. The exact contract of all three entry points is now
-  documented in `db/pgxdb/doc.go`.
+- `db/pgxdb`: `OpenPoolWithRetry`가 permanent failure를 재시도하지 않습니다. retry loop 전에
+  `cfg.Validate()`와 pool connection-count range를 검증하여 `sslmode` 오타 같은 config
+  error는 즉시 반환합니다. loop 안에서는 authentication failure(`pgconn.PgError` SQLSTATE
+  `28000`/`28P01`)와 parent-context cancellation/deadline을 permanent로 분류해 즉시
+  반환합니다. parent context가 유효한 동안의 database-not-found(`3D000`), connection
+  refused, DNS failure, ping timeout 같은 복구 가능한 startup race는 계속 재시도합니다.
+  이전 기본 `RetryConfig`는 permanent error도 약 30초 동안 재시도했습니다.
+- `db/pgxdb`: pool 기본 fallback의 출처를 하나로 통합했습니다. `withPoolDefaults`는 env로
+  조정 가능한 `DefaultPoolConfig()`의 `MinConns`/`MaxConns`/`ConnMaxLifetime`/
+  `ConnMaxIdleTime`을 사용하며 기본값은 5/20입니다. env를 무시하던 별도 hardcoded 2/10은
+  제거했고 `ConnMaxLifetimeJitter`는 계속 `ConnMaxLifetime/5`로 계산합니다.
+  `OpenPool(Options{})`와 `DefaultOptions()`는 이제 같은 pool configuration을 만듭니다.
+  `OpenPoolDSN`은 DSN에 명시된 `pool_*` parameter를 덮어쓰지 않고 미설정 parameter를 pgx
+  기본값에 맡기는 overlay 의미를 유지합니다. shared-go 기본값을 적용하려면
+  `opts.Pool`에 `DefaultPoolConfig()` 등을 전달해야 합니다. 세 entry point의 계약은
+  `db/pgxdb/doc.go`에 문서화했습니다.
+
+## v1.24.0 - 2026-07-02
+
+### 추가
+
+- `pkg/runtime/lifecycle`에 순서가 보장되는 종료 helper `CloseStep`과 `RunCloseSteps`를
+  추가했습니다.
+
+## v1.23.0 - 2026-07-02
+
+### 추가
+
+- `pkg/db/pgxdb`와 `pkg/db/sqldb`를 추가하여 pgxpool과 `database/sql` pool 생성을
+  공용화하고 `sslmode` 명시를 강제했습니다.
+
+## v1.22.0 - 2026-07-02
+
+### 추가
+
+- `pkg/llm/openaipreset`에 OpenAI-compatible functional-options preset인 `GenerateJSON`과
+  `RunInto`를 추가했습니다.
+
+## v1.21.0 - 2026-07-02
+
+### 추가
+
+- hololive의 공용 구현을 승격한 `pkg/retry.WithRetry` 재시도 loop를 추가했습니다.
+
+## v1.20.0 - 2026-07-02
+
+### 제거
+
+- stack 전체에서 consumer가 없는 dead code를 제거했습니다.
+
+## v1.19.0 - 2026-06-26
+
+### 변경
+
+- `healthprobe.FetchURLWithOptions`를 secure-by-default로 전환하고 private network 접근은
+  `FetchOptions.AllowPrivateNetworks`로 명시하게 했습니다.
+
+## v1.18.0 - 2026-06-23
+
+### 변경
+
+- `healthprobe` SSRF 방어를 secure-by-default로 전환하고 JSON decoder에 hard cap을
+  적용했습니다.
+
+## v1.17.2 - 2026-06-22
+
+### 추가
+
+- `envutil` strict secret-file API와 `obsmetrics` webhook decode-latency histogram을
+  추가했습니다.
+
+## v1.17.1 - 2026-06-22
+
+### 변경
+
+- `golang.org/x` indirect dependency를 갱신하고 lint gate를 정리했습니다.
+
+## v1.17.0 - 2026-06-22
+
+### 추가
+
+- `healthprobe` SSRF dial guard와 `h3.DialGuard` option을 추가했습니다.
+
+## v1.16.0 - 2026-06-22
+
+### 변경
+
+- dependency minor version을 갱신했습니다.
+
+## v1.15.0 - 2026-06-21
+
+### 변경
+
+- secret, network, logging 경계를 중심으로 보안을 강화했습니다.
+
+## v1.14.0 - 2026-06-20
+
+### 수정
+
+- log archiver goroutine을 closer에 연결하여 종료 시 drain되도록 했습니다.
+
+## v1.13.0 - 2026-06-20
+
+### 변경
+
+- `check-workflow-secrets.sh`를 stack 정본과 동기화했습니다.
+
+## v1.12.0 - 2026-06-17
+
+### 테스트
+
+- `healthprobe.RunMain`의 URL check 분기와 exit-code 동작을 보강했습니다.
+
+## v1.11.0 - 2026-06-17
+
+### 추가
+
+- `client_golang`에 의존하지 않는 공용 webhook metric kit `obsmetrics`를 추가했습니다.
+
+## v1.10.0 - 2026-06-14
+
+### 추가
+
+- 공용 prompt/output guard package를 추가했습니다.
+
+## v1.9.0 - 2026-06-11
+
+### 변경
+
+- 성능, I/O, 신뢰성, 보안에 걸친 NFR 18건을 정비했습니다.
 
 ## v1.8.0 - 2026-06-10
 
-### BREAKING
+### 제거 (호환성 변경)
 
-Removed dead public API surface. Every removed symbol was verified to have zero call
-sites across all stack consumers (hololive-bot, chat-bot-go-kakao) by exhaustive
-package-qualified grep (2026-06-10 T3 plan, "실측 결과 1"). This module is internal to
-the iris-stack workspace with no external consumers, which is the basis for shipping
-these removals in a minor release despite the repo's API-stability policy — the
-policy's intent (zero consumer impact) is satisfied by evidence rather than by
-retention.
+dead public API를 제거했습니다. 제거한 모든 symbol은 2026-06-10 T3 계획의 실측 결과에
+따라 stack consumer인 hololive-bot과 chat-bot-go-kakao 전체에서 package-qualified 검색으로
+호출자가 없음을 확인했습니다. 이 module은 외부 consumer가 없는 iris-stack 내부 module이므로,
+API 안정성 정책의 의도인 consumer 영향 없음이 보존된다는 근거로 minor release에서
+제거했습니다.
 
-- `httputil`: removed `timeout_preset.go` entirely (`TimeoutPreset`, `FetchTimeout`,
-  `LongPollTimeout`, `ScraperTimeout`, `Duration`, `NewClientWithPreset`,
-  `NewExternalAPIClientWithPreset`, `NewInternalServiceClientWithPreset`).
-- `httputil`: removed `DefaultClient`; use `NewProfiledClient` /
-  `NewExternalAPIClient` / `NewInternalServiceClient`.
-- `httputil`: removed `AsAPIError`; use `errors.As` with `*APIError` or `IsStatus`
-  (which now inlines the unwrap).
-- `runtime/httpserver`: removed the concrete `StartHTTPServer` / `ShutdownHTTPServer`
-  pair; the generic `Start` / `Shutdown` / `StartServerWithPrefix` surface is
-  unchanged.
-- `healthprobe`: unexported `ParseURL` (now internal `parseURL`); use `CheckURL` /
-  `FetchURL`.
-- `stringutil`: removed `StripLeadingHeader`.
+- `httputil`: `timeout_preset.go` 전체(`TimeoutPreset`, `FetchTimeout`, `LongPollTimeout`,
+  `ScraperTimeout`, `Duration`, `NewClientWithPreset`, `NewExternalAPIClientWithPreset`,
+  `NewInternalServiceClientWithPreset`)를 제거했습니다.
+- `httputil`: `DefaultClient`를 제거했습니다. `NewProfiledClient`, `NewExternalAPIClient`,
+  `NewInternalServiceClient`를 사용해야 합니다.
+- `httputil`: `AsAPIError`를 제거했습니다. `*APIError`에 `errors.As`를 사용하거나 unwrap을
+  내부화한 `IsStatus`를 사용해야 합니다.
+- `runtime/httpserver`: concrete `StartHTTPServer` / `ShutdownHTTPServer`를 제거했습니다.
+  generic `Start` / `Shutdown` / `StartServerWithPrefix` API는 유지됩니다.
+- `healthprobe`: `ParseURL`을 내부 `parseURL`로 전환했습니다. `CheckURL` 또는 `FetchURL`을
+  사용해야 합니다.
+- `stringutil`: `StripLeadingHeader`를 제거했습니다.
 
-`pkg/telemetry` is intentionally retained (kept-reusable helper per AGENTS.md, held
-for the OTel rollout).
+`pkg/telemetry`는 AGENTS.md의 재사용 가능 helper로 분류되어 향후 OTel rollout을 위해
+의도적으로 유지했습니다.
 
-### Added
+### 추가
 
-- `envutil.StringOrFile`: reads `$KEY`, falling back to the contents of the file at
-  `$KEY_FILE` (OpenBao secret-mount pattern), then to the default.
-- `envutil.List` / `envutil.ListWithFallback`: comma/whitespace-separated list parser
-  with trimming and de-duplication, sourced through `StringOrFile`.
-- `envutil.Map`: `k:v` / `k=v` entry parser (comma/newline/tab separated), sourced
-  through `StringOrFile`.
-- `envutil.Bool` now recognizes the canonical 3-way truth set: `{1, true, yes, y, on}`
-  → true, `{0, false, no, n, off}` → false, anything unrecognized → default
-  (previously a 2-way set where unrecognized values collapsed to false). Existing
-  true-set behavior is preserved; `BoolStrict` is unchanged.
+- `envutil.StringOrFile`: `$KEY`를 읽고, 없으면 `$KEY_FILE`이 가리키는 파일 내용
+  (OpenBao secret-mount pattern), 그다음 기본값을 사용합니다.
+- `envutil.List` / `envutil.ListWithFallback`: comma 또는 whitespace로 구분된 list를 trim하고
+  중복 제거하며 `StringOrFile`을 통해 읽습니다.
+- `envutil.Map`: comma/newline/tab으로 구분된 `k:v` / `k=v` entry를 parsing하며
+  `StringOrFile`을 통해 읽습니다.
+- `envutil.Bool`: canonical 3-way truth set을 지원합니다. `{1, true, yes, y, on}`은 true,
+  `{0, false, no, n, off}`는 false, 인식하지 못한 값은 기본값이 됩니다. 이전에는 2-way
+  set이라 인식하지 못한 값이 false로 축소됐습니다. 기존 true-set 동작과 `BoolStrict`는
+  유지됩니다.
+
+## v1.7.1 - 2026-06-08
+
+### 변경
+
+- dependency를 갱신하고 pull request secret-boundary 검증을 추가했으며 중복 build 단계를
+  제거했습니다.
+
+## v1.7.0 - 2026-06-06
+
+### 추가
+
+- `logging.RunOperation`에 started/succeeded log level을 제어하는 `Level` option을
+  추가했습니다. zero value는 `Info`를 유지합니다.
+
+## v1.6.0 - 2026-06-05
+
+### 추가
+
+- `logging.EnableFileLoggingWithOptions`와 async stdout lane option, `Closer` 반환을
+  추가했습니다.
+
+## v1.5.2 - 2026-06-03
+
+### 변경
+
+- toolchain 하한을 `go1.26.4`로 명시했습니다.
+
+## v1.5.1 - 2026-06-03
+
+### 수정
+
+- `QueuedPool`의 panic recovery와 log `Message` masking을 보강하고 lint 경로·module 설정을
+  교정했습니다.
+
+### 변경
+
+- Go 1.26.x patch를 자동 추종하도록 toolchain 고정을 제거했습니다.
+
+## v1.5.0 - 2026-05-26
+
+### 추가
+
+- `workerconfig.BotPoolWorkerProfile`을 추가했습니다.
+
+## v1.4.0 - 2026-05-25
+
+### 추가
+
+- Iris-Bot worker-profile 계약을 추가했습니다.
+
+## v1.3.0 - 2026-05-25
+
+### 추가
+
+- `QueuedPool`을 추가하고 ants 기반 pool을 제거했습니다.
+
+## v1.2.0 - 2026-05-25
+
+### 변경
+
+- `logging/archive` subpackage를 분리하고 `runtime/loop`를 `lifecycle`로 이동했습니다.
+- `httputil` timeout preset을 추가했습니다.
+
+## v1.1.0 - 2026-05-25
+
+### 변경
+
+- 전체 dependency를 당시 최신 version으로 갱신했습니다.
+
+## v1.0.0 - 2026-05-25
+
+### 추가
+
+- iris-stack 공용 Go utility를 독립 `shared-go` repository로 초기화했습니다.
