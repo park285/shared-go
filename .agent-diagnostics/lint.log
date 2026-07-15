@@ -6,9 +6,9 @@ go: downloading github.com/fatih/color v1.19.0
 go: downloading github.com/gofrs/flock v0.13.0
 go: downloading github.com/ldez/grignotin v0.10.1
 go: downloading github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
-go: downloading github.com/pelletier/go-toml v1.9.5
 go: downloading github.com/spf13/cobra v1.10.2
 go: downloading github.com/spf13/pflag v1.0.10
+go: downloading github.com/pelletier/go-toml v1.9.5
 go: downloading github.com/spf13/viper v1.12.0
 go: downloading go.yaml.in/yaml/v3 v3.0.4
 go: downloading golang.org/x/mod v0.35.0
@@ -29,9 +29,9 @@ go: downloading golang.org/x/sys v0.43.0
 go: downloading github.com/charmbracelet/colorprofile v0.4.3
 go: downloading github.com/charmbracelet/ultraviolet v0.0.0-20251205161215-1948445e3318
 go: downloading github.com/charmbracelet/x/ansi v0.11.7
+go: downloading github.com/charmbracelet/x/term v0.2.2
 go: downloading github.com/clipperhouse/displaywidth v0.11.0
 go: downloading github.com/lucasb-eyer/go-colorful v1.4.0
-go: downloading github.com/charmbracelet/x/term v0.2.2
 go: downloading github.com/rivo/uniseg v0.4.7
 go: downloading golang.org/x/text v0.36.0
 go: downloading github.com/fsnotify/fsnotify v1.5.4
@@ -100,8 +100,8 @@ go: downloading github.com/xen0n/gosmopolitan v1.3.0
 go: downloading github.com/uudashr/iface v1.4.2
 go: downloading github.com/leonklingele/grouper v1.1.2
 go: downloading github.com/julz/importas v0.2.0
-go: downloading github.com/macabu/inamedparam v0.2.0
 go: downloading github.com/gordonklaus/ineffassign v0.2.0
+go: downloading github.com/macabu/inamedparam v0.2.0
 go: downloading github.com/sashamelentyev/interfacebloat v1.1.0
 go: downloading github.com/ckaznocha/intrange v0.3.1
 go: downloading github.com/AdminBenni/iota-mixing v1.0.0
@@ -161,17 +161,17 @@ go: downloading github.com/davecgh/go-spew v1.1.1
 go: downloading github.com/pmezard/go-difflib v1.0.0
 go: downloading github.com/stretchr/objx v0.5.2
 go: downloading github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e
-go: downloading github.com/clipperhouse/uax29/v2 v2.7.0
-go: downloading github.com/mattn/go-runewidth v0.0.23
 go: downloading github.com/charmbracelet/x/termios v0.1.1
 go: downloading github.com/charmbracelet/x/windows v0.2.2
 go: downloading github.com/muesli/cancelreader v0.2.2
+go: downloading github.com/clipperhouse/uax29/v2 v2.7.0
+go: downloading github.com/mattn/go-runewidth v0.0.23
 go: downloading github.com/subosito/gotenv v1.4.1
 go: downloading github.com/hashicorp/hcl v1.0.0
 go: downloading gopkg.in/ini.v1 v1.67.0
 go: downloading github.com/magiconair/properties v1.8.6
-go: downloading go.uber.org/zap v1.27.0
 go: downloading github.com/hexops/gotextdiff v1.0.3
+go: downloading go.uber.org/zap v1.27.0
 go: downloading github.com/google/go-cmp v0.7.0
 go: downloading github.com/dave/dst v0.27.3
 go: downloading github.com/gostaticanalysis/analysisutil v0.7.1
@@ -196,8 +196,8 @@ go: downloading github.com/alfatraining/structtag v1.0.0
 go: downloading github.com/dlclark/regexp2 v1.12.0
 go: downloading go.uber.org/multierr v1.10.0
 go: downloading github.com/ldez/structtags v0.6.1
-go: downloading github.com/quasilyte/gogrep v0.5.0
 go: downloading golang.org/x/exp/typeparams v0.0.0-20260209203927-2842357ff358
+go: downloading github.com/quasilyte/gogrep v0.5.0
 go: downloading golang.org/x/exp v0.0.0-20250620022241-b7579e27df2b
 go: downloading github.com/quasilyte/stdinfo v0.0.0-20220114132959-f7386bf02567
 go: downloading codeberg.org/chavacava/garif v0.2.0
@@ -208,18 +208,6 @@ go: downloading github.com/prometheus/procfs v0.7.3
 go: downloading google.golang.org/protobuf v1.36.10
 go: downloading github.com/hashicorp/golang-lru/v2 v2.0.7
 go: downloading github.com/matttproud/golang_protobuf_extensions v1.0.1
-pkg/runtime/bootstrap/bootstrap.go:11:16: could not import github.com/park285/shared-go/pkg/logging (-: # github.com/park285/shared-go/pkg/logging
-pkg/logging/sanitize.go:129:10: undefined: sanitizeHandler
-pkg/logging/sanitize.go:133:10: undefined: sanitizeHandler
-pkg/logging/sanitize.go:159:10: undefined: sanitizeHandler
-pkg/logging/sanitize.go:164:10: undefined: sanitizeHandler
-pkg/logging/sanitize.go:167:10: undefined: sanitizeHandler
-pkg/logging/sanitize.go:168:10: undefined: sanitizeHandler
-pkg/logging/logging.go:50:18: undefined: newSanitizeHandler
-pkg/logging/logging.go:141:12: undefined: newSanitizeHandler
-pkg/logging/logging.go:165:12: undefined: newSanitizeHandler) (typecheck)
-	sharedlogging "github.com/park285/shared-go/pkg/logging"
-	              ^
-1 issues:
-* typecheck: 1
-make: *** [Makefile:23: lint] Error 1
+0 issues.
+( cd scripts/perf/benchgate && GOWORK=off bash /home/runner/work/shared-go/shared-go/scripts/ci/go-tooling.sh golangci-lint run )
+0 issues.
