@@ -156,7 +156,7 @@ func shortRuleBase64Spans(
 		}
 
 		whole := encodedSpan{start: start, end: match.next}
-		wholeReadable := false
+		var wholeReadable bool
 		if len(match.value) <= maxShortBase64CandidateLen {
 			spans, wholeReadable = appendProtectedBase64Span(
 				spans,
