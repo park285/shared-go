@@ -8,8 +8,10 @@ defaults:
 benchmarks:
   BenchmarkPromptGuardBenignFastPath: { package: ./pkg/promptguard, class: hotpath, gate: pr, harness_files: [pkg/promptguard/guard_benchmark_test.go] }
   BenchmarkPromptGuardAggregateBoundary: { package: ./pkg/promptguard, class: hotpath, gate: pr, harness_files: [pkg/promptguard/guard_benchmark_test.go] }
-  BenchmarkPromptGuardDecoderHeavy: { package: ./pkg/promptguard, class: critical, gate: pr, harness_files: [pkg/promptguard/guard_benchmark_test.go] }
-  BenchmarkPromptGuardShortRuleContext: { package: ./pkg/promptguard, class: critical, gate: pr, harness_files: [pkg/promptguard/hardening_benchmark_test.go] }
+  BenchmarkPromptGuardDecoderHeavy:
+    { package: ./pkg/promptguard, class: critical, gate: pr, harness_files: [pkg/promptguard/guard_benchmark_test.go], max_allocs_per_op: 64 }
+  BenchmarkPromptGuardShortRuleContext:
+    { package: ./pkg/promptguard, class: critical, gate: pr, harness_files: [pkg/promptguard/hardening_benchmark_test.go], max_ns_per_op: 45000, max_bytes_per_op: 3072, max_allocs_per_op: 20 }
   BenchmarkPromptGuardRollingAggregate: { package: ./pkg/promptguard, class: hotpath, gate: pr, harness_files: [pkg/promptguard/hardening_benchmark_test.go] }
   BenchmarkOutputGuardBaseline: { package: ./pkg/outputguard, class: hotpath, gate: pr, harness_files: [pkg/outputguard/outputguard_benchmark_test.go] }
   BenchmarkOutputGuardProtectedOverlap: { package: ./pkg/outputguard, class: hotpath, gate: pr, harness_files: [pkg/outputguard/outputguard_benchmark_test.go] }
