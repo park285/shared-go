@@ -19,6 +19,7 @@ type textSegment struct {
 	Kind      segmentKind
 	Kinds     []segmentKind
 	Views     Views
+	RawNorm   string
 	Aggregate bool
 }
 
@@ -74,11 +75,13 @@ type aggregateTailChunk struct {
 }
 
 func (t *aggregateTail) aggregateWith(right textSegment) textSegment {
+	raw := t.Views.Raw + firstRunes(right.Views.Raw, boundaryWindowRunes)
 	return textSegment{
-		Kind:  segmentPlain,
-		Kinds: t.kindsWith(right.Kind),
+		Kind:    segmentPlain,
+		Kinds:   t.kindsWith(right.Kind),
+		RawNorm: normalizeViews(raw).Norm,
 		Views: Views{
-			Raw:    t.Views.Raw + firstRunes(right.Views.Raw, boundaryWindowRunes),
+			Raw:    raw,
 			Norm:   t.Views.Norm + guardBoundaryMarker + firstRunes(right.Views.Norm, boundaryWindowRunes),
 			Joined: t.Views.Joined + firstRunes(right.Views.Joined, boundaryWindowRunes),
 		},
@@ -87,28 +90,22 @@ func (t *aggregateTail) aggregateWith(right textSegment) textSegment {
 }
 
 func (t *aggregateTail) append(segment textSegment) {
-	hasPrior := len(t.chunks) > 0
-	rawSeparator := ""
 	normSeparator := ""
-	joinedSeparator := ""
-	if hasPrior {
+	if len(t.chunks) > 0 {
 		normSeparator = guardBoundaryMarker
 	}
 
-	rawAdded := utf8.RuneCountInString(rawSeparator + segment.Views.Raw)
-	normAdded := utf8.RuneCountInString(normSeparator + segment.Views.Norm)
-	joinedAdded := utf8.RuneCountInString(joinedSeparator + segment.Views.Joined)
 	t.chunks = append(t.chunks, aggregateTailChunk{
 		Kind:        segment.Kind,
-		RawRunes:    rawAdded,
-		NormRunes:   normAdded,
-		JoinedRunes: joinedAdded,
+		RawRunes:    utf8.RuneCountInString(segment.Views.Raw),
+		NormRunes:   utf8.RuneCountInString(normSeparator) + utf8.RuneCountInString(segment.Views.Norm),
+		JoinedRunes: utf8.RuneCountInString(segment.Views.Joined),
 	})
 
 	var rawTrimmed, normTrimmed, joinedTrimmed int
-	t.Views.Raw, rawTrimmed = appendAggregateTailView(t.Views.Raw, rawSeparator, segment.Views.Raw)
+	t.Views.Raw, rawTrimmed = appendAggregateTailView(t.Views.Raw, "", segment.Views.Raw)
 	t.Views.Norm, normTrimmed = appendAggregateTailView(t.Views.Norm, normSeparator, segment.Views.Norm)
-	t.Views.Joined, joinedTrimmed = appendAggregateTailView(t.Views.Joined, joinedSeparator, segment.Views.Joined)
+	t.Views.Joined, joinedTrimmed = appendAggregateTailView(t.Views.Joined, "", segment.Views.Joined)
 
 	trimAggregateTailChunks(t.chunks, rawTrimmed, func(chunk *aggregateTailChunk) *int { return &chunk.RawRunes })
 	trimAggregateTailChunks(t.chunks, normTrimmed, func(chunk *aggregateTailChunk) *int { return &chunk.NormRunes })
@@ -117,12 +114,19 @@ func (t *aggregateTail) append(segment textSegment) {
 }
 
 func appendAggregateTailView(current, separator, next string) (string, int) {
-	combined := current + separator + next
-	runes := utf8.RuneCountInString(combined)
-	if runes <= boundaryWindowRunes {
-		return combined, 0
+	currentRunes := utf8.RuneCountInString(current)
+	separatorRunes := utf8.RuneCountInString(separator)
+	nextRunes := utf8.RuneCountInString(next)
+	total := currentRunes + separatorRunes + nextRunes
+	if total <= boundaryWindowRunes {
+		return current + separator + next, 0
 	}
-	return lastRunes(combined, boundaryWindowRunes), runes - boundaryWindowRunes
+
+	keepCurrent := boundaryWindowRunes - separatorRunes - nextRunes
+	if keepCurrent <= 0 {
+		return lastRunes(separator+next, boundaryWindowRunes), total - boundaryWindowRunes
+	}
+	return lastRunes(current, keepCurrent) + separator + next, total - boundaryWindowRunes
 }
 
 func trimAggregateTailChunks(chunks []aggregateTailChunk, trim int, selectRunes func(*aggregateTailChunk) *int) {
@@ -149,12 +153,11 @@ func (t *aggregateTail) compactChunks() {
 }
 
 func (t *aggregateTail) kindsWith(right segmentKind) []segmentKind {
-	values := make([]segmentKind, 0, len(t.chunks)+1)
+	result := make([]segmentKind, 0, 4)
 	for _, chunk := range t.chunks {
-		values = append(values, chunk.Kind)
+		result = appendDistinctSegmentKind(result, chunk.Kind)
 	}
-	values = append(values, right)
-	return distinctSegmentKinds(values...)
+	return appendDistinctSegmentKind(result, right)
 }
 
 func splitTextSegments(text string) []textSegment {
@@ -188,35 +191,54 @@ func splitTextSegmentsBounded(text string, limit int) ([]textSegment, bool) {
 }
 
 func firstRunes(text string, limit int) string {
-	runes := []rune(text)
-	if len(runes) <= limit {
-		return text
+	if limit <= 0 {
+		return ""
 	}
-
-	return string(runes[:limit])
+	count := 0
+	for index := range text {
+		if count == limit {
+			return text[:index]
+		}
+		count++
+	}
+	return text
 }
 
 func lastRunes(text string, limit int) string {
-	runes := []rune(text)
-	if len(runes) <= limit {
+	if limit <= 0 {
+		return ""
+	}
+	total := utf8.RuneCountInString(text)
+	if total <= limit {
 		return text
 	}
 
-	return string(runes[len(runes)-limit:])
+	skip := total - limit
+	count := 0
+	for index := range text {
+		if count == skip {
+			return text[index:]
+		}
+		count++
+	}
+	return ""
 }
 
 func distinctSegmentKinds(values ...segmentKind) []segmentKind {
-	seen := make(map[segmentKind]struct{}, len(values))
-	result := make([]segmentKind, 0, len(values))
+	result := make([]segmentKind, 0, min(len(values), 4))
 	for _, value := range values {
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		result = append(result, value)
+		result = appendDistinctSegmentKind(result, value)
 	}
-
 	return result
+}
+
+func appendDistinctSegmentKind(values []segmentKind, value segmentKind) []segmentKind {
+	for _, existing := range values {
+		if existing == value {
+			return values
+		}
+	}
+	return append(values, value)
 }
 
 func segmentizeTextBounded(text string, limit int) ([]textSegment, bool) {
