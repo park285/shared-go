@@ -11,7 +11,6 @@ set -euo pipefail
 python3 - "$@" <<'PY'
 from __future__ import annotations
 
-import os
 import re
 import sys
 from pathlib import Path
@@ -36,12 +35,6 @@ PR_HEAVY_LINE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
 
 
 def resolve_profile() -> str:
-    override = os.environ.get("WORKFLOW_GATE_PROFILE", "").strip()
-    if override:
-        if override not in {"app", "lib"}:
-            print(f"unsupported WORKFLOW_GATE_PROFILE={override}; expected app or lib", file=sys.stderr)
-            raise SystemExit(2)
-        return override
     try:
         declaration = PROFILE_PATH.read_text(encoding="utf-8")
     except OSError as exc:

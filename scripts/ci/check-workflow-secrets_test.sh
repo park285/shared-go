@@ -414,7 +414,14 @@ write_workflow "${quoted_pr_go_test}" \
   "    runs-on: ubuntu-latest" \
   "    steps:" \
   '      - run: "go test ./..."'
-expect_failure_app_profile "quoted pull_request full go test fails" "full repository go test" "${quoted_pr_go_test}"
+expect_success "lib profile permits quoted pull_request full go test" "${quoted_pr_go_test}"
+
+if ! WORKFLOW_GATE_PROFILE=app "${CHECKER}" "${quoted_pr_go_test}" >/dev/null 2>"${TMP_DIR}/profile-override.err"; then
+  cat "${TMP_DIR}/profile-override.err" >&2
+  record_fail "WORKFLOW_GATE_PROFILE must not override the repository lib profile"
+else
+  pass "environment profile override is ignored"
+fi
 
 quoted_checkout="${TMP_DIR}/quoted-checkout.yml"
 write_workflow "${quoted_checkout}" \
