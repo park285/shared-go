@@ -13,6 +13,14 @@ import (
 	"strings"
 )
 
+var (
+	legacySelectionHashFields = [...]string{
+		"package", "class", "gate",
+		"max_ns_regression_percent", "max_bytes_regression_percent", "allow_alloc_increase",
+	}
+	absoluteSelectionHashFields = [...]string{"max_ns_per_op", "max_bytes_per_op", "max_allocs_per_op"}
+)
+
 func canonicalHash(write func(*bytes.Buffer)) string {
 	var b bytes.Buffer
 	write(&b)
@@ -57,14 +65,11 @@ func hashesForEvidence(policyPath, repoRoot string, selected selection) (string,
 	})
 	ordered := append(selection(nil), selected...)
 	slices.SortFunc(ordered, func(a, b benchEntry) int { return strings.Compare(a.name, b.name) })
+	hashFields := selectionHashFields(ordered)
 	selectionHash := canonicalHash(func(b *bytes.Buffer) {
 		for _, entry := range ordered {
 			hashString(b, entry.name)
-			for _, field := range []string{
-				"package", "class", "gate",
-				"max_ns_regression_percent", "max_bytes_regression_percent", "allow_alloc_increase",
-				"max_ns_per_op", "max_bytes_per_op", "max_allocs_per_op",
-			} {
+			for _, field := range hashFields {
 				value, _ := entry.config.get(field)
 				hashString(b, fmt.Sprint(value))
 			}
@@ -74,6 +79,18 @@ func hashesForEvidence(policyPath, repoRoot string, selected selection) (string,
 		}
 	})
 	return hex.EncodeToString(policySum[:]), selectionHash, harnessHash, harnessFiles, nil
+}
+
+func selectionHashFields(selected selection) []string {
+	for _, entry := range selected {
+		for _, field := range absoluteSelectionHashFields {
+			if _, ok := entry.config.get(field); ok {
+				fields := slices.Clone(legacySelectionHashFields[:])
+				return append(fields, absoluteSelectionHashFields[:]...)
+			}
+		}
+	}
+	return legacySelectionHashFields[:]
 }
 
 func evidenceContext(policyPath, repoRoot, repoName string, selected selection, args *cliArgs) (EvidenceIdentity, error) {
