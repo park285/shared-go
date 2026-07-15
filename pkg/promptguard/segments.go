@@ -19,7 +19,7 @@ type textSegment struct {
 	Kind      segmentKind
 	Kinds     []segmentKind
 	Views     Views
-	RawNorm   string
+	Part      int
 	Aggregate bool
 }
 
@@ -38,28 +38,62 @@ func JoinParts(parts ...string) string {
 func buildEvaluationSegments(text string) ([]textSegment, bool) {
 	const maxSegments = maxSegmentBoundaries + 1
 
+	explicitParts := strings.Contains(text, guardBoundaryMarker)
 	segments := make([]textSegment, 0, min(8, maxSegments))
+	partIndex := 0
 	for part := range strings.SplitSeq(text, guardBoundaryMarker) {
 		partSegments, exceeded := splitTextSegmentsBounded(part, maxSegments-len(segments))
 		if exceeded {
 			return nil, true
 		}
+		for i := range partSegments {
+			partSegments[i].Part = partIndex
+		}
 		segments = append(segments, partSegments...)
+		partIndex++
 	}
-	boundaries := len(segments) - 1
-	if boundaries <= 0 {
+	if len(segments) <= 1 {
 		return segments, false
 	}
 
-	aggregates := make([]textSegment, 0, boundaries)
+	aggregates := buildBoundaryAggregates(segments, explicitParts)
+	return append(segments, aggregates...), false
+}
+
+func buildBoundaryAggregates(segments []textSegment, explicitParts bool) []textSegment {
+	aggregates := make([]textSegment, 0, len(segments)-1)
+	if !explicitParts {
+		for i := 1; i < len(segments); i++ {
+			aggregates = append(aggregates, adjacentAggregate(segments[i-1], segments[i]))
+		}
+		return aggregates
+	}
+
 	tail := aggregateTail{}
 	tail.append(segments[0])
 	for i := 1; i < len(segments); i++ {
-		aggregates = append(aggregates, tail.aggregateWith(segments[i]))
+		if segments[i-1].Part == segments[i].Part {
+			aggregates = append(aggregates, adjacentAggregate(segments[i-1], segments[i]))
+		} else {
+			aggregates = append(aggregates, tail.aggregateWith(segments[i]))
+		}
 		tail.append(segments[i])
 	}
+	return aggregates
+}
 
-	return append(segments, aggregates...), false
+func adjacentAggregate(left, right textSegment) textSegment {
+	return textSegment{
+		Kind:  segmentPlain,
+		Kinds: distinctSegmentKinds(left.Kind, right.Kind),
+		Views: Views{
+			Raw:    lastRunes(left.Views.Raw, boundaryWindowRunes) + firstRunes(right.Views.Raw, boundaryWindowRunes),
+			Norm:   lastRunes(left.Views.Norm, boundaryWindowRunes) + guardBoundaryMarker + firstRunes(right.Views.Norm, boundaryWindowRunes),
+			Joined: lastRunes(left.Views.Joined, boundaryWindowRunes) + firstRunes(right.Views.Joined, boundaryWindowRunes),
+		},
+		Part:      right.Part,
+		Aggregate: true,
+	}
 }
 
 type aggregateTail struct {
@@ -75,16 +109,15 @@ type aggregateTailChunk struct {
 }
 
 func (t *aggregateTail) aggregateWith(right textSegment) textSegment {
-	raw := t.Views.Raw + firstRunes(right.Views.Raw, boundaryWindowRunes)
 	return textSegment{
-		Kind:    segmentPlain,
-		Kinds:   t.kindsWith(right.Kind),
-		RawNorm: normalizeViews(raw).Norm,
+		Kind:  segmentPlain,
+		Kinds: t.kindsWith(right.Kind),
 		Views: Views{
-			Raw:    raw,
+			Raw:    t.Views.Raw + firstRunes(right.Views.Raw, boundaryWindowRunes),
 			Norm:   t.Views.Norm + guardBoundaryMarker + firstRunes(right.Views.Norm, boundaryWindowRunes),
 			Joined: t.Views.Joined + firstRunes(right.Views.Joined, boundaryWindowRunes),
 		},
+		Part:      right.Part,
 		Aggregate: true,
 	}
 }
