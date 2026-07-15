@@ -50,7 +50,12 @@ jobs:
         run: bash scripts/ci/check-workflow-secrets_test.sh
 
       - name: Run Go tests
-        run: go test -count=1 ./...
+        run: |
+          set +e
+          go test -count=1 ./... > /tmp/agent-go-test.log 2>&1
+          status=$?
+          cat /tmp/agent-go-test.log
+          exit "$status"
 
       - name: Run Go vet
         run: go vet ./...
@@ -63,7 +68,19 @@ jobs:
             exit 1
           fi
 
+      - name: Persist failure diagnostics
+        if: failure()
+        run: |
+          mkdir -p .agent-diagnostics
+          cp /tmp/agent-go-test.log .agent-diagnostics/go-test.log 2>/dev/null || echo "test log unavailable" > .agent-diagnostics/go-test.log
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .agent-diagnostics/go-test.log
+          git commit -m "chore: record security patch test failure"
+          git push origin HEAD:agent/security-hardening-20260715
+
       - name: Commit verified patch
+        if: success()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
