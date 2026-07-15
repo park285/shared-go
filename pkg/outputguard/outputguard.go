@@ -84,7 +84,7 @@ func protectedOverlap(surfaces []string, index *protectedIndex) bool {
 func outputSurfaces(text string, includeProtectedProjection bool) ([]string, bool) {
 	views := guardtext.NormalizeViews(text)
 	stripped := guardtext.StripFormatAndCombining(text)
-	decoded := guardtext.DecodeCandidates(text)
+	decoded := guardtext.DecodeCandidatesWithContext(text)
 	viewsPerCandidate := 4
 	if includeProtectedProjection {
 		viewsPerCandidate++
