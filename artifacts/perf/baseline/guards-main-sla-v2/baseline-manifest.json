@@ -1,10 +1,10 @@
 {
   "schema_version": 2,
   "evidence_role": "baseline",
-  "git_sha": "a6cdebc622f77204aa27790859ee5a85947ca0d8",
-  "approved_sha": "a6cdebc622f77204aa27790859ee5a85947ca0d8",
+  "git_sha": "7bc57ac3ebf0e97193fe3d83be12337fe71608ab",
+  "approved_sha": "7bc57ac3ebf0e97193fe3d83be12337fe71608ab",
   "git_dirty": false,
-  "created_at": "2026-07-15T16:45:10Z",
+  "created_at": "2026-07-15T16:46:58Z",
   "identity": {
     "contract": "benchgate-evidence-v2",
     "repository": "shared-go",
@@ -12,7 +12,7 @@
     "selection_gate": "pr",
     "policy_sha256": "f86e36fa5ffec2daea13952a78c98d89ff43de361720ce2219812e53c66a7c12",
     "selection_sha256": "196597a20998cea81a38b290954e8366090ba8223c76b0e629be37209a1e85e5",
-    "harness_sha256": "724dd826da032420ffca91dee146d53dd069741fb88cfebbb264670282f6ec69",
+    "harness_sha256": "dd948b1a5218606531cadb5026606173db1499179365f033e47c9778e9b15301",
     "benchmarks": [
       "BenchmarkOutputGuardBaseline",
       "BenchmarkOutputGuardExactCommonPrefix",
@@ -74,6 +74,6 @@
     ]
   },
   "files": {
-    "go-bench/shared-go.txt": "1a84cdd8b20e4832cc3e521e7f81335fcfb7d84d0c90cd145b00262d1342ae2a"
+    "go-bench/shared-go.txt": "2071c20a5625fc186fe059f059a1b82cbe91bbb727cd1406a950bb3598245102"
   }
 }
