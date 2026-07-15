@@ -18,15 +18,20 @@ func BenchmarkPromptGuardShortRuleContext(b *testing.B) {
 
 func BenchmarkPromptGuardRollingAggregate(b *testing.B) {
 	guard := newBenchmarkGuard(b)
-	parts := make([]string, 64)
-	for i := range parts {
-		parts[i] = strings.Repeat("ordinary context ", 2)
-	}
-	input := JoinParts(parts...)
+	input := rollingAggregateBenchmarkInput()
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for range b.N {
 		_ = guard.evaluateRaw(input)
 	}
+}
+
+func rollingAggregateBenchmarkInput() string {
+	parts := make([]string, 64)
+	for i := range parts {
+		parts[i] = strings.Repeat("ordinary context ", 2)
+	}
+	parts[len(parts)-1] = "ordinary instructions reference"
+	return JoinParts(parts...)
 }
