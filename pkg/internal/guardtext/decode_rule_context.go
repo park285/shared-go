@@ -134,8 +134,12 @@ func hasPlausibleShortRuleDecodeSurface(input string) bool {
 	}
 
 	for i := 0; i < len(input); {
+		start := i
 		match := nextBase64Candidate(input, i)
 		i = match.next
+		if shortBase64CandidateInsideEscape(input, start, match.value) {
+			continue
+		}
 		switch {
 		case len(match.value) < 4:
 			continue
@@ -149,6 +153,20 @@ func hasPlausibleShortRuleDecodeSurface(input string) bool {
 	}
 
 	return false
+}
+
+func shortBase64CandidateInsideEscape(input string, start int, value string) bool {
+	if start <= 0 {
+		return false
+	}
+	switch input[start-1] {
+	case '%':
+		return len(value) >= 2 && isHex(value[0]) && isHex(value[1])
+	case '\\':
+		return len(value) >= 5 && value[0] == 'u' && allHex(value[1:5])
+	default:
+		return false
+	}
 }
 
 func decodeShortRuleSurfaces(
@@ -199,10 +217,10 @@ func shortRuleBase64Spans(
 	seen := make(map[encodedSpan]struct{}, min(maxDecodeScans+1, 16))
 
 	for i := 0; i < len(input) && len(spans) <= maxDecodeScans && decodeWorkComplete(status); {
-		match := nextBase64Candidate(input, i)
 		start := i
+		match := nextBase64Candidate(input, i)
 		i = match.next
-		if len(match.value) < 4 {
+		if len(match.value) < 4 || shortBase64CandidateInsideEscape(input, start, match.value) {
 			continue
 		}
 
