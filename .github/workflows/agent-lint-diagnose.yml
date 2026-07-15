@@ -1,0 +1,42 @@
+name: agent lint diagnose
+
+on:
+  push:
+    branches:
+      - agent/security-hardening-20260715
+    paths-ignore:
+      - .agent-diagnostics/**
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: agent/security-hardening-20260715
+          persist-credentials: true
+      - name: Setup Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Capture lint output
+        run: |
+          set +e
+          make lint > /tmp/lint.log 2>&1
+          status=$?
+          cat /tmp/lint.log
+          mkdir -p .agent-diagnostics
+          cp /tmp/lint.log .agent-diagnostics/lint.log
+          printf '%s\n' "$status" > .agent-diagnostics/lint.status
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .agent-diagnostics
+          git commit -m "chore: record final lint diagnostics"
+          git push origin HEAD:agent/security-hardening-20260715
+          exit "$status"
