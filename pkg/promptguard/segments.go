@@ -2,6 +2,7 @@ package promptguard
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 	"unicode/utf8"
 )
@@ -266,10 +267,8 @@ func distinctSegmentKinds(values ...segmentKind) []segmentKind {
 }
 
 func appendDistinctSegmentKind(values []segmentKind, value segmentKind) []segmentKind {
-	for _, existing := range values {
-		if existing == value {
-			return values
-		}
+	if slices.Contains(values, value) {
+		return values
 	}
 	return append(values, value)
 }
