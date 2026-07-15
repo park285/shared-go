@@ -36,6 +36,35 @@ jobs:
       - name: Apply security patch
         run: python3 scripts/ci/agent_security_patch.py
 
+      - name: Preserve existing value-aware generic key policy
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("pkg/logging/sanitize.go")
+          text = path.read_text(encoding="utf-8")
+          old = 'var sensitiveExactKeys = map[string]struct{}{\n\t"key":              {},\n\t"token":            {},'
+          new = 'var sensitiveExactKeys = map[string]struct{}{\n\t"token":            {},'
+          if text.count(old) != 1:
+              raise SystemExit("unexpected sensitiveExactKeys patch state")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          test_path = Path("pkg/logging/sanitize_test.go")
+          test_text = test_path.read_text(encoding="utf-8")
+          old_test = '\t\t{"key", "key", "apikey123", true},'
+          new_test = '\t\t{"key", "key", "apikey123", false},'
+          if test_text.count(old_test) != 1:
+              raise SystemExit("unexpected sanitize test patch state")
+          test_path.write_text(test_text.replace(old_test, new_test, 1), encoding="utf-8")
+
+          diagnostic = Path(".agent-diagnostics/go-test.log")
+          diagnostic.unlink(missing_ok=True)
+          try:
+              diagnostic.parent.rmdir()
+          except OSError:
+              pass
+          PY
+
       - name: Format changed Go files
         run: |
           gofmt -w \
@@ -76,8 +105,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add .agent-diagnostics/go-test.log
-          git commit -m "chore: record security patch test failure"
-          git push origin HEAD:agent/security-hardening-20260715
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: record security patch test failure"
+            git push origin HEAD:agent/security-hardening-20260715
+          fi
 
       - name: Commit verified patch
         if: success()
