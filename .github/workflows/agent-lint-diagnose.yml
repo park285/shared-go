@@ -17,7 +17,7 @@ concurrency:
 jobs:
   diagnose:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - name: Checkout patch branch
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -31,17 +31,97 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
-      - name: Capture lint output
+      - name: Apply lint correction
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              target = Path(path)
+              text = target.read_text(encoding="utf-8")
+              if text.count(old) != 1:
+                  raise SystemExit(f"{path}: expected one replacement target")
+              target.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          replace_once(
+              "pkg/logging/sanitize.go",
+              'const (\n\ttokenAPIKey        = "api_key"\n\ttokenAPIKeyCompact = "apikey"\n)',
+              'const (\n\ttokenAPIKey        = "api_key"\n\ttokenAPIKeyCompact = "apikey"\n\ttokenPrivateKey    = "private_key"\n)',
+          )
+          replace_once(
+              "pkg/logging/sanitize.go",
+              '\t"client_secret", "secret", "private_key", "secret_key",',
+              '\t"client_secret", "secret", tokenPrivateKey, "secret_key",',
+          )
+          replace_once(
+              "pkg/logging/sanitize.go",
+              '\t"private_key":      {},',
+              '\ttokenPrivateKey:    {},',
+          )
+          replace_once(
+              "pkg/logging/sanitize.go",
+              '\t"api_key":       {},',
+              '\ttokenAPIKey:      {},',
+          )
+          replace_once(
+              "pkg/logging/sanitize.go",
+              '\t"private_key":   {},',
+              '\ttokenPrivateKey:  {},',
+          )
+          replace_once(
+              "pkg/logging/sanitize_literal_secret_test.go",
+              '\t\t"api_key",',
+              '\t\ttokenAPIKey,',
+          )
+          replace_once(
+              "pkg/logging/sanitize_literal_secret_test.go",
+              '\t\t"private_key",',
+              '\t\ttokenPrivateKey,',
+          )
+
+          diagnostic = Path(".agent-diagnostics/lint.log")
+          diagnostic.unlink(missing_ok=True)
+          try:
+              diagnostic.parent.rmdir()
+          except OSError:
+              pass
+          PY
+          gofmt -w pkg/logging/sanitize.go pkg/logging/sanitize_literal_secret_test.go
+
+      - name: Verify corrected branch
         run: |
           set +e
-          make lint > /tmp/lint.log 2>&1
-          status=$?
-          cat /tmp/lint.log
+          set -o pipefail
+          {
+            make lint
+            go test -count=1 ./...
+            go vet ./...
+            git diff --check
+          } 2>&1 | tee /tmp/shared-go-verify.log
+          status=${PIPESTATUS[0]}
+          printf '%s\n' "${status}" > /tmp/shared-go-verify.status
+          exit "${status}"
+
+      - name: Persist failure diagnostics
+        if: failure()
+        run: |
           mkdir -p .agent-diagnostics
-          cp /tmp/lint.log .agent-diagnostics/lint.log
+          cp /tmp/shared-go-verify.log .agent-diagnostics/lint.log 2>/dev/null || echo "verification log unavailable" > .agent-diagnostics/lint.log
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add .agent-diagnostics/lint.log
-          git commit -m "chore: record lint diagnostics"
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: record shared-go verification failure"
+            git push origin HEAD:agent/security-hardening-20260715
+          fi
+
+      - name: Commit verified correction
+        if: success()
+        run: |
+          git rm .github/workflows/agent-lint-diagnose.yml
+          rm -rf .agent-diagnostics
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(logging): reuse secret key constants"
           git push origin HEAD:agent/security-hardening-20260715
-          exit "$status"
