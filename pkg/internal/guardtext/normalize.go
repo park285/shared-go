@@ -72,6 +72,19 @@ func NormalizeEncodingSyntax(text string) string {
 	return StripControlChars(norm.NFKC.String(SanitizeUTF8(text)))
 }
 
+func EncodingSyntaxNeedsNormalization(text string) bool {
+	requiresCompatibilityCheck := false
+	for _, value := range text {
+		if unicode.Is(unicode.Cf, value) || unicode.Is(unicode.Cc, value) {
+			return true
+		}
+		if value >= utf8.RuneSelf && (value < 0xAC00 || value > 0xD7A3) {
+			requiresCompatibilityCheck = true
+		}
+	}
+	return requiresCompatibilityCheck && norm.NFKC.QuickSpanString(text) != len(text)
+}
+
 func normalizeFastASCIIText(text string) (string, bool) {
 	needsRewrite := false
 	lastSpace := false

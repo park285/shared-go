@@ -3,9 +3,12 @@ package promptguard
 import (
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 type segmentKind string
+
+type segmentKindSet uint8
 
 const (
 	segmentPlain  segmentKind = "plain"
@@ -16,8 +19,9 @@ const (
 
 type textSegment struct {
 	Kind      segmentKind
-	Kinds     []segmentKind
+	Kinds     segmentKindSet
 	Views     Views
+	rawNorm   string
 	Aggregate bool
 }
 
@@ -31,38 +35,6 @@ const (
 
 func JoinParts(parts ...string) string {
 	return strings.Join(parts, guardBoundaryMarker)
-}
-
-func buildEvaluationSegments(text string) ([]textSegment, bool) {
-	const maxSegments = maxSegmentBoundaries + 1
-
-	segments := make([]textSegment, 0, min(8, maxSegments))
-	for part := range strings.SplitSeq(text, guardBoundaryMarker) {
-		partSegments, exceeded := splitTextSegmentsBounded(part, maxSegments-len(segments))
-		if exceeded {
-			return nil, true
-		}
-		segments = append(segments, partSegments...)
-	}
-	boundaries := len(segments) - 1
-
-	aggregates := make([]textSegment, 0, max(0, boundaries))
-	for i := range boundaries {
-		left := segments[i].Views
-		right := segments[i+1].Views
-		aggregates = append(aggregates, textSegment{
-			Kind:  segmentPlain,
-			Kinds: distinctSegmentKinds(segments[i].Kind, segments[i+1].Kind),
-			Views: Views{
-				Raw:    lastRunes(left.Raw, boundaryWindowRunes) + guardBoundaryMarker + firstRunes(right.Raw, boundaryWindowRunes),
-				Norm:   lastRunes(left.Norm, boundaryWindowRunes) + guardBoundaryMarker + firstRunes(right.Norm, boundaryWindowRunes),
-				Joined: lastRunes(left.Joined, boundaryWindowRunes) + guardBoundaryMarker + firstRunes(right.Joined, boundaryWindowRunes),
-			},
-			Aggregate: true,
-		})
-	}
-
-	return append(segments, aggregates...), false
 }
 
 func splitTextSegments(text string) []textSegment {
@@ -96,35 +68,64 @@ func splitTextSegmentsBounded(text string, limit int) ([]textSegment, bool) {
 }
 
 func firstRunes(text string, limit int) string {
-	runes := []rune(text)
-	if len(runes) <= limit {
+	if limit <= 0 {
+		return ""
+	}
+	if len(text) <= limit {
 		return text
 	}
-
-	return string(runes[:limit])
+	count := 0
+	for index := range text {
+		if count == limit {
+			return text[:index]
+		}
+		count++
+	}
+	return text
 }
 
 func lastRunes(text string, limit int) string {
-	runes := []rune(text)
-	if len(runes) <= limit {
+	if limit <= 0 {
+		return ""
+	}
+	if len(text) <= limit {
 		return text
 	}
-
-	return string(runes[len(runes)-limit:])
+	start := len(text)
+	for range limit {
+		_, size := utf8.DecodeLastRuneInString(text[:start])
+		if size == 0 {
+			return text
+		}
+		start -= size
+		if start == 0 {
+			return text
+		}
+	}
+	return text[start:]
 }
 
-func distinctSegmentKinds(values ...segmentKind) []segmentKind {
-	seen := make(map[segmentKind]struct{}, len(values))
-	result := make([]segmentKind, 0, len(values))
-	for _, value := range values {
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		result = append(result, value)
-	}
+func (kinds segmentKindSet) with(kind segmentKind) segmentKindSet {
+	return kinds | segmentKindBit(kind)
+}
 
-	return result
+func (kinds segmentKindSet) contains(kind segmentKind) bool {
+	return kinds&segmentKindBit(kind) != 0
+}
+
+func segmentKindBit(kind segmentKind) segmentKindSet {
+	switch kind {
+	case segmentPlain:
+		return 1 << 0
+	case segmentQuote:
+		return 1 << 1
+	case segmentCode:
+		return 1 << 2
+	case segmentConfig:
+		return 1 << 3
+	default:
+		return 0
+	}
 }
 
 func segmentizeTextBounded(text string, limit int) ([]textSegment, bool) {

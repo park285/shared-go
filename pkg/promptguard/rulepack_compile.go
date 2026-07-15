@@ -77,6 +77,7 @@ func compileRule(rule *rawRule) (compiledRule, error) {
 		return compiledRule{}, fmt.Errorf("compile matcher: %w", err)
 	}
 	compiled.RequiredLiteralGroups = normalizePrefilterLiteralGroups(compiled.RequiredLiteralGroups)
+	compiled.AggregatePrefilter = bestRequiredLiteralGroup(compiled.RequiredLiteralGroups)
 
 	if err := validateCompiledRule(&compiled); err != nil {
 		return compiledRule{}, fmt.Errorf("validate rule: %w", err)

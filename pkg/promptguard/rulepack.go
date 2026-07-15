@@ -52,6 +52,7 @@ type compiledRule struct {
 	MatchMode             string
 	MaxOccurrences        int
 	RequiredLiteralGroups [][]string
+	AggregatePrefilter    []string
 }
 
 type compiledPack struct {

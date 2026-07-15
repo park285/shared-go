@@ -3,8 +3,6 @@ package guardtext
 import (
 	"encoding/base64"
 	"errors"
-	"fmt"
-	"strings"
 	"unicode"
 	"unicode/utf8"
 )
@@ -121,8 +119,35 @@ func DecodeBase64Candidate(input string) ([]byte, error) {
 		}
 		lastErr = err
 	}
+	return nil, lastErr
+}
 
-	return nil, fmt.Errorf("base64 decode: %w", lastErr)
+var (
+	strictBase64Std    = base64.StdEncoding.Strict()
+	strictBase64URL    = base64.URLEncoding.Strict()
+	strictBase64RawStd = base64.RawStdEncoding.Strict()
+	strictBase64RawURL = base64.RawURLEncoding.Strict()
+	base64PaddedURL    = [...]*base64.Encoding{strictBase64URL, strictBase64Std}
+	base64PaddedStd    = [...]*base64.Encoding{strictBase64Std, strictBase64URL}
+	base64RawURL       = [...]*base64.Encoding{strictBase64RawURL, strictBase64RawStd, strictBase64URL, strictBase64Std}
+	base64RawStd       = [...]*base64.Encoding{strictBase64RawStd, strictBase64Std, strictBase64RawURL, strictBase64URL}
+)
+
+func decodeBase64CandidateInto(destination []byte, input string) ([]byte, error) {
+	if input == "" {
+		return nil, errors.New("base64 decode: empty input")
+	}
+
+	source := []byte(input)
+	var lastErr error
+	for _, encoding := range candidateBase64Encodings(input) {
+		decodedBytes, err := encoding.Decode(destination, source)
+		if err == nil {
+			return destination[:decodedBytes], nil
+		}
+		lastErr = err
+	}
+	return nil, lastErr
 }
 
 func IsReadableText(data []byte) bool {
@@ -171,30 +196,28 @@ func isBase64Char(char byte) bool {
 }
 
 func candidateBase64Encodings(input string) []*base64.Encoding {
-	hasPadding := strings.ContainsRune(input, '=')
-	hasURLAlphabet := strings.ContainsAny(input, "-_")
-	hasStandardAlphabet := strings.ContainsAny(input, "+/")
+	hasPadding := false
+	hasURLAlphabet := false
+	hasStandardAlphabet := false
+	for i := range len(input) {
+		switch input[i] {
+		case '=':
+			hasPadding = true
+		case '-', '_':
+			hasURLAlphabet = true
+		case '+', '/':
+			hasStandardAlphabet = true
+		}
+	}
 
 	if hasPadding {
 		if hasURLAlphabet && !hasStandardAlphabet {
-			return []*base64.Encoding{base64.URLEncoding.Strict(), base64.StdEncoding.Strict()}
+			return base64PaddedURL[:]
 		}
-
-		return []*base64.Encoding{base64.StdEncoding.Strict(), base64.URLEncoding.Strict()}
+		return base64PaddedStd[:]
 	}
 	if hasURLAlphabet && !hasStandardAlphabet {
-		return []*base64.Encoding{
-			base64.RawURLEncoding.Strict(),
-			base64.RawStdEncoding.Strict(),
-			base64.URLEncoding.Strict(),
-			base64.StdEncoding.Strict(),
-		}
+		return base64RawURL[:]
 	}
-
-	return []*base64.Encoding{
-		base64.RawStdEncoding.Strict(),
-		base64.StdEncoding.Strict(),
-		base64.RawURLEncoding.Strict(),
-		base64.URLEncoding.Strict(),
-	}
+	return base64RawStd[:]
 }

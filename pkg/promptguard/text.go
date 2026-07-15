@@ -8,6 +8,14 @@ func normalizeViews(text string) Views {
 	return guardtext.NormalizeViews(text)
 }
 
+func normalizeText(text string) string {
+	return guardtext.Normalize(text)
+}
+
+func normalizeASCIIByteReplacement(value byte) (string, bool) {
+	return guardtext.NormalizeASCIIByteReplacement(value)
+}
+
 func normalizePostProcess(text string) string {
 	return guardtext.NormalizePostProcess(text)
 }
