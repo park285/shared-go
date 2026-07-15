@@ -161,6 +161,10 @@ func (g *Guard) evaluate(input string, source Source) Evaluation {
 	}
 
 	value, err, _ := g.group.Do(key, func() (any, error) {
+		if cached, ok := g.cache.Get(key); ok {
+			return cloneEvaluation(cached), nil
+		}
+
 		result, detectErr := g.detectEvaluation(input)
 		if detectErr != nil {
 			return nil, detectErr
