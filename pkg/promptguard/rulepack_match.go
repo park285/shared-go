@@ -50,10 +50,7 @@ func (r *compiledRule) matchInput(segment textSegment, policy compiledPolicy) (s
 	}
 	prefilterText := text
 	if r.View == viewRaw {
-		prefilterText = segment.Views.Norm
-		if segment.Aggregate {
-			prefilterText = normalizeViews(text).Norm
-		}
+		prefilterText = normalizedRawSegmentView(segment)
 	}
 	if !containsAllLiteralGroups(prefilterText, r.RequiredLiteralGroups) {
 		return "", 0, false
@@ -70,7 +67,7 @@ func (r *compiledRule) matchRegexSegment(segment textSegment, text string, weigh
 		return matches
 	}
 
-	normalized := normalizeViews(text).Norm
+	normalized := normalizedRawSegmentView(segment)
 	if normalized == text {
 		return nil
 	}
@@ -104,7 +101,7 @@ func (r *compiledRule) matchPhraseSegment(segment textSegment, text string, weig
 		return matches
 	}
 
-	normalized := normalizeViews(text).Norm
+	normalized := normalizedRawSegmentView(segment)
 	if normalized == text {
 		return nil
 	}
@@ -127,6 +124,16 @@ func (r *compiledRule) matchPhraseText(segment textSegment, text string, weight 
 	}
 
 	return matches
+}
+
+func normalizedRawSegmentView(segment textSegment) string {
+	if !segment.Aggregate {
+		return segment.Views.Norm
+	}
+	if segment.RawNorm != "" || segment.Views.Raw == "" {
+		return segment.RawNorm
+	}
+	return normalizeViews(segment.Views.Raw).Norm
 }
 
 func containsAnyLiteral(text string, literals []string) bool {
