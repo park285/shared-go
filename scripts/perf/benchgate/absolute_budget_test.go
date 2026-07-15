@@ -1,11 +1,56 @@
 package main
 
 import (
+	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
+	"strings"
 	"testing"
 )
+
+func TestSelectionHashPreservesLegacyPolicyWithoutAbsoluteBudgets(t *testing.T) {
+	root, _, selected, args := setupCollectionFixture(t)
+	_, got, _, _, err := hashesForEvidence(args.policy, root, selected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := legacySelectionHash(selected)
+	if got != want {
+		t.Fatalf("selection hash = %s, want legacy hash %s", got, want)
+	}
+
+	selected[0].config.vals["max_ns_per_op"] = 100
+	_, withAbsolute, _, _, err := hashesForEvidence(args.policy, root, selected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if withAbsolute == want {
+		t.Fatal("absolute SLA did not change the selection hash")
+	}
+}
+
+func legacySelectionHash(selected selection) string {
+	ordered := append(selection(nil), selected...)
+	slices.SortFunc(ordered, func(a, b benchEntry) int { return strings.Compare(a.name, b.name) })
+	return canonicalHash(func(buffer *bytes.Buffer) {
+		for _, entry := range ordered {
+			hashString(buffer, entry.name)
+			for _, field := range []string{
+				"package", "class", "gate",
+				"max_ns_regression_percent", "max_bytes_regression_percent", "allow_alloc_increase",
+			} {
+				value, _ := entry.config.get(field)
+				hashString(buffer, fmt.Sprint(value))
+			}
+		}
+		for _, path := range harnessFilesForSelection(selected) {
+			hashString(buffer, path)
+		}
+	})
+}
 
 func TestAbsoluteBudgetsReplaceRelativeChecksPerMetric(t *testing.T) {
 	policy, selected := loadAbsoluteBudgetPolicy(t, 200, 32, 4)
