@@ -24,6 +24,7 @@ var (
 const (
 	tokenAPIKey        = "api_key"
 	tokenAPIKeyCompact = "apikey"
+	tokenPrivateKey    = "private_key"
 )
 
 // querySecretTokens는 querySecretRegex가 매치할 수 있는 키 이름 집합으로,
@@ -31,7 +32,7 @@ const (
 // 입력은 반드시 이 토큰 중 하나를 case-insensitive로 포함하므로 게이트는 안전하다.
 var querySecretTokens = []string{
 	"key", tokenAPIKey, tokenAPIKeyCompact, "token", "password", "pwd", "passwd",
-	"client_secret", "secret", "private_key", "secret_key",
+	"client_secret", "secret", tokenPrivateKey, "secret_key",
 }
 
 var sensitiveExactKeys = map[string]struct{}{
@@ -46,7 +47,7 @@ var sensitiveExactKeys = map[string]struct{}{
 	"client_secret":    {},
 	tokenAPIKey:        {},
 	tokenAPIKeyCompact: {},
-	"private_key":      {},
+	tokenPrivateKey:    {},
 	"secret_key":       {},
 	"authorization":    {},
 	"auth_header":      {},
@@ -252,9 +253,9 @@ var secretLikeExactValues = map[string]struct{}{
 	"access-token":  {},
 	"access_token":  {},
 	"api-key":       {},
-	"api_key":       {},
+	tokenAPIKey:     {},
 	"private-key":   {},
-	"private_key":   {},
+	tokenPrivateKey: {},
 	"refresh-token": {},
 	"refresh_token": {},
 	"secret-key":    {},
