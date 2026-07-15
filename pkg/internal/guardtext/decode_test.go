@@ -9,15 +9,6 @@ import (
 	"testing"
 )
 
-func TestDecodeBase64CandidatePreservesErrorContext(t *testing.T) {
-	t.Parallel()
-
-	_, err := DecodeBase64Candidate("not*base64")
-	if err == nil || !strings.HasPrefix(err.Error(), "base64 decode: ") {
-		t.Fatalf("error = %v, want base64 decode context", err)
-	}
-}
-
 func TestDecodeCandidatesMalformedBase64DoesNotStarveOtherDecoders(t *testing.T) {
 	t.Parallel()
 

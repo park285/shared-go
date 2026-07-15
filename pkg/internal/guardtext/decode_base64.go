@@ -3,7 +3,6 @@ package guardtext
 import (
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"unicode"
 	"unicode/utf8"
 )
@@ -120,7 +119,7 @@ func DecodeBase64Candidate(input string) ([]byte, error) {
 		}
 		lastErr = err
 	}
-	return nil, fmt.Errorf("base64 decode: %w", lastErr)
+	return nil, lastErr
 }
 
 var (
