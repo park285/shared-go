@@ -22,6 +22,7 @@ func BenchmarkPromptGuardRollingAggregate(b *testing.B) {
 	for i := range parts {
 		parts[i] = strings.Repeat("ordinary context ", 2)
 	}
+	parts[len(parts)-1] = "ordinary instructions reference"
 	input := JoinParts(parts...)
 
 	b.ReportAllocs()
