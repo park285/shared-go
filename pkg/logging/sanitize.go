@@ -248,9 +248,25 @@ var secretLikePrefixes = []string{
 	"eyj",
 }
 
+var secretLikeExactValues = map[string]struct{}{
+	"access-token":  {},
+	"access_token":  {},
+	"api-key":       {},
+	"api_key":       {},
+	"private-key":   {},
+	"private_key":   {},
+	"refresh-token": {},
+	"refresh_token": {},
+	"secret-key":    {},
+	"secret_key":    {},
+}
+
 const secretLikeMinLen = 24
 
 func isSecretLikeValue(v string) bool {
+	if _, ok := secretLikeExactValues[strings.ToLower(strings.TrimSpace(v))]; ok {
+		return true
+	}
 	if hasSecretLikePrefix(v) {
 		return true
 	}
