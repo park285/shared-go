@@ -48,11 +48,11 @@ func (r *compiledRule) matchInput(segment textSegment, policy compiledPolicy) (s
 	if strings.TrimSpace(text) == "" {
 		return "", 0, false
 	}
-	prefilterText := text
 	if r.View == viewRaw {
-		prefilterText = normalizedRawSegmentView(segment)
-	}
-	if !containsAllLiteralGroups(prefilterText, r.RequiredLiteralGroups) {
+		if !rawRulePrefilterAllows(segment, text, r.RequiredLiteralGroups) {
+			return "", 0, false
+		}
+	} else if !containsAllLiteralGroups(text, r.RequiredLiteralGroups) {
 		return "", 0, false
 	}
 
@@ -61,9 +61,19 @@ func (r *compiledRule) matchInput(segment textSegment, policy compiledPolicy) (s
 	return text, weight, weight > 0
 }
 
+func rawRulePrefilterAllows(segment textSegment, text string, groups [][]string) bool {
+	if containsAllLiteralGroups(text, groups) || containsASCIIUpper(text) {
+		return true
+	}
+	if !rawTextNeedsNormalization(text) {
+		return false
+	}
+	return containsAllLiteralGroups(normalizedRawSegmentView(segment), groups)
+}
+
 func (r *compiledRule) matchRegexSegment(segment textSegment, text string, weight float64, limit int) []Match {
 	matches := r.matchRegexText(segment, text, weight, limit)
-	if len(matches) > 0 || r.View != viewRaw {
+	if len(matches) > 0 || r.View != viewRaw || !rawTextNeedsNormalization(text) {
 		return matches
 	}
 
@@ -97,7 +107,7 @@ func (r *compiledRule) matchRegexText(segment textSegment, text string, weight f
 
 func (r *compiledRule) matchPhraseSegment(segment textSegment, text string, weight float64, limit int) []Match {
 	matches := r.matchPhraseText(segment, text, weight, limit)
-	if len(matches) > 0 || r.View != viewRaw {
+	if len(matches) > 0 || r.View != viewRaw || !rawPhraseNeedsNormalizedFallback(text) {
 		return matches
 	}
 
@@ -130,10 +140,29 @@ func normalizedRawSegmentView(segment textSegment) string {
 	if !segment.Aggregate {
 		return segment.Views.Norm
 	}
-	if segment.RawNorm != "" || segment.Views.Raw == "" {
-		return segment.RawNorm
-	}
 	return normalizeViews(segment.Views.Raw).Norm
+}
+
+func rawTextNeedsNormalization(text string) bool {
+	for i := range len(text) {
+		if text[i] >= utf8.RuneSelf {
+			return true
+		}
+	}
+	return false
+}
+
+func rawPhraseNeedsNormalizedFallback(text string) bool {
+	return rawTextNeedsNormalization(text) || containsASCIIUpper(text)
+}
+
+func containsASCIIUpper(text string) bool {
+	for i := range len(text) {
+		if text[i] >= 'A' && text[i] <= 'Z' {
+			return true
+		}
+	}
+	return false
 }
 
 func containsAnyLiteral(text string, literals []string) bool {
