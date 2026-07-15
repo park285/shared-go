@@ -60,7 +60,11 @@ func hashesForEvidence(policyPath, repoRoot string, selected selection) (string,
 	selectionHash := canonicalHash(func(b *bytes.Buffer) {
 		for _, entry := range ordered {
 			hashString(b, entry.name)
-			for _, field := range []string{"package", "class", "gate", "max_ns_regression_percent", "max_bytes_regression_percent", "allow_alloc_increase"} {
+			for _, field := range []string{
+				"package", "class", "gate",
+				"max_ns_regression_percent", "max_bytes_regression_percent", "allow_alloc_increase",
+				"max_ns_per_op", "max_bytes_per_op", "max_allocs_per_op",
+			} {
 				value, _ := entry.config.get(field)
 				hashString(b, fmt.Sprint(value))
 			}

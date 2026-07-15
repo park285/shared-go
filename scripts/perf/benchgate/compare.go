@@ -111,7 +111,13 @@ func compareResults(policy *omap, selected selection, baseline, candidate *Resul
 
 		baseNs, okB := meanMetric(baseSamples, metricNs)
 		candNs, okC := meanMetric(candSamples, metricNs)
-		if okB && okC && candNs > baseNs {
+		if absolute, ok := budget["max_ns_per_op"]; ok && okC {
+			limit := toFloat(absolute)
+			if candNs > limit {
+				issues = append(issues, Issue{"violation", e.name, benchClass, "ns/op", baseNs, candNs,
+					fmt.Sprintf("%.3f ns/op exceeds absolute budget %.3f ns/op", candNs, limit)})
+			}
+		} else if okB && okC && candNs > baseNs {
 			if baseNs < noiseFloor {
 				deltaNs := candNs - baseNs
 				if deltaNs > noiseFloor {
@@ -130,7 +136,13 @@ func compareResults(policy *omap, selected selection, baseline, candidate *Resul
 
 		baseBytes, okBB := meanMetric(baseSamples, metricBytes)
 		candBytes, okCB := meanMetric(candSamples, metricBytes)
-		if okBB && okCB && candBytes > baseBytes {
+		if absolute, ok := budget["max_bytes_per_op"]; ok && okCB {
+			limit := toFloat(absolute)
+			if candBytes > limit {
+				issues = append(issues, Issue{"violation", e.name, benchClass, "B/op", baseBytes, candBytes,
+					fmt.Sprintf("%.3f B/op exceeds absolute budget %.3f B/op", candBytes, limit)})
+			}
+		} else if okBB && okCB && candBytes > baseBytes {
 			deltaPercent := percentDelta(baseBytes, candBytes)
 			limit := toFloat(budget["max_bytes_regression_percent"])
 			if deltaPercent > limit {
@@ -141,7 +153,13 @@ func compareResults(policy *omap, selected selection, baseline, candidate *Resul
 
 		baseAllocs, okBA := meanMetric(baseSamples, metricAllocs)
 		candAllocs, okCA := meanMetric(candSamples, metricAllocs)
-		if okBA && okCA && candAllocs > baseAllocs {
+		if absolute, ok := budget["max_allocs_per_op"]; ok && okCA {
+			limit := toFloat(absolute)
+			if candAllocs > limit {
+				issues = append(issues, Issue{"violation", e.name, benchClass, "allocs/op", baseAllocs, candAllocs,
+					fmt.Sprintf("%.3f allocs/op exceeds absolute budget %.3f allocs/op", candAllocs, limit)})
+			}
+		} else if okBA && okCA && candAllocs > baseAllocs {
 			allow := budget["allow_alloc_increase"]
 			if isFalseVal(allow) {
 				issues = append(issues, Issue{"violation", e.name, benchClass, "allocs/op", baseAllocs, candAllocs,

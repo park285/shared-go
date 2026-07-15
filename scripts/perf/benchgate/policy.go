@@ -17,10 +17,15 @@ var classesSet = map[string]bool{
 var classesList = []string{"critical", "hotpath", "build_path", "non_critical"}
 var budgetFieldsSet = map[string]bool{
 	"max_ns_regression_percent": true, "max_bytes_regression_percent": true, "allow_alloc_increase": true,
+	"max_ns_per_op": true, "max_bytes_per_op": true, "max_allocs_per_op": true,
 }
-var budgetFieldsList = []string{"max_ns_regression_percent", "max_bytes_regression_percent", "allow_alloc_increase"}
+var budgetFieldsList = []string{
+	"max_ns_regression_percent", "max_bytes_regression_percent", "allow_alloc_increase",
+	"max_ns_per_op", "max_bytes_per_op", "max_allocs_per_op",
+}
 var benchFieldsSet = map[string]bool{
 	"max_ns_regression_percent": true, "max_bytes_regression_percent": true, "allow_alloc_increase": true,
+	"max_ns_per_op": true, "max_bytes_per_op": true, "max_allocs_per_op": true,
 	"package": true, "class": true, "gate": true, "harness_files": true,
 }
 var settingsFieldsSet = map[string]bool{
@@ -119,6 +124,9 @@ func validatePolicy(policy *omap, repoName string) error {
 		if err := validateAllocPolicy(av, "defaults."+cls+".allow_alloc_increase"); err != nil {
 			return err
 		}
+		if err := validateAbsoluteBudgets(config, "defaults."+cls); err != nil {
+			return err
+		}
 	}
 
 	benchmarksV, _ := policy.get("benchmarks")
@@ -185,6 +193,9 @@ func validatePolicy(policy *omap, repoName string) error {
 				return err
 			}
 		}
+		if err := validateAbsoluteBudgets(config, benchPath); err != nil {
+			return err
+		}
 	}
 
 	settingsV, _ := policy.get("settings")
@@ -221,6 +232,23 @@ func validatePolicy(policy *omap, repoName string) error {
 	}
 	if noiseFloor < 0 {
 		return perr("settings.noise_floor_ns must be non-negative")
+	}
+	return nil
+}
+
+func validateAbsoluteBudgets(config *omap, path string) error {
+	for _, field := range []string{"max_ns_per_op", "max_bytes_per_op", "max_allocs_per_op"} {
+		value, ok := config.get(field)
+		if !ok {
+			continue
+		}
+		number, err := requireNumber(value, path+"."+field)
+		if err != nil {
+			return err
+		}
+		if number <= 0 {
+			return perr("%s.%s must be positive", path, field)
+		}
 	}
 	return nil
 }
