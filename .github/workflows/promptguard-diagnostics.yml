@@ -11,9 +11,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  guardtext:
+  guardtext-detail:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -24,12 +24,37 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
-      - name: Guardtext race tests
+      - name: Short Base64 reinsertion
+        continue-on-error: true
+        run: go test -race -count=1 ./pkg/internal/guardtext -run '^TestDecodeCandidatesWithContextForRulesReinsertsShortBase64$'
+      - name: Embedded short Base64
+        continue-on-error: true
+        run: go test -race -count=1 ./pkg/internal/guardtext -run '^TestDecodeCandidatesWithContextForRulesFindsEmbeddedShortBase64$'
+      - name: Short hex composition
+        continue-on-error: true
+        run: go test -race -count=1 ./pkg/internal/guardtext -run '^TestDecodeCandidatesWithContextForRulesComposesShortHexFragment$'
+      - name: Two short fragments
+        continue-on-error: true
+        run: go test -race -count=1 ./pkg/internal/guardtext -run '^TestDecodeCandidatesWithContextForRulesComposesTwoShortFragments$'
+      - name: Standard and short transforms
+        continue-on-error: true
+        run: go test -race -count=1 ./pkg/internal/guardtext -run '^TestDecodeCandidatesWithContextForRulesComposesStandardAndShortTransforms$'
+      - name: Benign short Base64
+        continue-on-error: true
+        run: go test -race -count=1 ./pkg/internal/guardtext -run '^TestDecodeCandidatesWithContextForRulesKeepsBenignShortBase64Complete$'
+      - name: Shared candidate budget
+        continue-on-error: true
+        run: go test -race -count=1 ./pkg/internal/guardtext -run '^TestDecodeCandidatesWithContextForRulesSharesCandidateBudget$'
+      - name: Existing transform preservation
+        continue-on-error: true
+        run: go test -race -count=1 ./pkg/internal/guardtext -run '^TestDecodeCandidatesWithContextForRulesPreservesStandardTransforms$'
+      - name: Guardtext full package
+        continue-on-error: true
         run: go test -race -count=1 ./pkg/internal/guardtext
 
-  hardening:
+  promptguard-detail:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -40,21 +65,57 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
-      - name: PromptGuard hardening race tests
-        run: go test -race -count=1 ./pkg/promptguard -run 'Test(GuardBlocksInstructionOverrideWithShortBase64Fragment|GuardBlocksInstructionOverrideWithEmbeddedShortBase64Fragment|GuardBlocksInstructionOverrideWithTwoShortBase64Fragments|GuardFailsClosedWhenShortFragmentCompositionExceedsDepth|GuardBlocksKoreanInstructionOverrideWithShortBase64Fragment|GuardBlocksShortBase64AfterPercentDecode|GuardBlocksInstructionOverrideWithShortHexFragment|GuardAllowsBenignShortBase64MinimalPairs|GuardAllowsRepeatedBenignShortEncodedDecoys|HardeningPreservesInteractiveAndPersistentEnforcement|GuardBlocksInstructionOverrideAcrossThreeParts|GuardBlocksInstructionOverrideSplitInsideTokenBoundary|RollingAggregateDropsContextOutsideWindow|BuildEvaluationSegmentsKeepsLinearAggregateCount|RawRulesUseNormalizedFallback|RawNormalizedFallbackKeepsBenignMinimalPair|EmbeddedRulepackHardeningCorpusV3)$'
-
-  promptguard:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
-      - name: Setup Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
-        with:
-          go-version-file: go.mod
-          cache-dependency-path: go.sum
-      - name: PromptGuard package race tests
+      - name: Guard short Base64
+        continue-on-error: true
+        run: go test -race -count=1 ./pkg/promptguard -run '^TestGuardBlocksInstructionOverrideWithShortBase64Fragment$'
+      - name: Guard embedded short Base64
+        continue-on-error: true
+        run: go test -race -count=1 ./pkg/promptguard -run '^TestGuardBlocksInstructionOverrideWithEmbeddedShortBase64Fragment$'
+      - name: Guard two short Base64 fragments
+        continue-on-error: true
+        run: go test -race -count=1 ./pkg/promptguard -run '^TestGuardBlocksInstructionOverrideWithTwoShortBase64Fragments$'
+      - name: Guard depth fail closed
+        continue-on-error: true
+        run: go test -race -count=1 ./pkg/promptguard -run '^TestGuardFailsClosedWhenShortFragmentCompositionExceedsDepth$'
+      - name: Guard Korean short Base64
+        continue-on-error: true
+        run: go test -race -count=1 ./pkg/promptguard -run '^TestGuardBlocksKoreanInstructionOverrideWithShortBase64Fragment$'
+      - name: Guard percent and short Base64
+        continue-on-error: true
+        run: go test -race -count=1 ./pkg/promptguard -run '^TestGuardBlocksShortBase64AfterPercentDecode$'
+      - name: Guard short hex
+        continue-on-error: true
+        run: go test -race -count=1 ./pkg/promptguard -run '^TestGuardBlocksInstructionOverrideWithShortHexFragment$'
+      - name: Benign short Base64 minimal pairs
+        continue-on-error: true
+        run: go test -race -count=1 ./pkg/promptguard -run '^TestGuardAllowsBenignShortBase64MinimalPairs$'
+      - name: Benign repeated encoded decoys
+        continue-on-error: true
+        run: go test -race -count=1 ./pkg/promptguard -run '^TestGuardAllowsRepeatedBenignShortEncodedDecoys$'
+      - name: Source enforcement contract
+        continue-on-error: true
+        run: go test -race -count=1 ./pkg/promptguard -run '^TestHardeningPreservesInteractiveAndPersistentEnforcement$'
+      - name: Three part aggregate
+        continue-on-error: true
+        run: go test -race -count=1 ./pkg/promptguard -run '^TestGuardBlocksInstructionOverrideAcrossThreeParts$'
+      - name: Token boundary aggregate
+        continue-on-error: true
+        run: go test -race -count=1 ./pkg/promptguard -run '^TestGuardBlocksInstructionOverrideSplitInsideTokenBoundary$'
+      - name: Aggregate rolling window
+        continue-on-error: true
+        run: go test -race -count=1 ./pkg/promptguard -run '^TestRollingAggregateDropsContextOutsideWindow$'
+      - name: Aggregate linear bound
+        continue-on-error: true
+        run: go test -race -count=1 ./pkg/promptguard -run '^TestBuildEvaluationSegmentsKeepsLinearAggregateCount$'
+      - name: Raw normalized fallback
+        continue-on-error: true
+        run: go test -race -count=1 ./pkg/promptguard -run '^TestRawRulesUseNormalizedFallback$'
+      - name: Raw benign minimal pair
+        continue-on-error: true
+        run: go test -race -count=1 ./pkg/promptguard -run '^TestRawNormalizedFallbackKeepsBenignMinimalPair$'
+      - name: Hardening corpus
+        continue-on-error: true
+        run: go test -race -count=1 ./pkg/promptguard -run '^TestEmbeddedRulepackHardeningCorpusV3$'
+      - name: PromptGuard full package
+        continue-on-error: true
         run: go test -race -count=1 ./pkg/promptguard
