@@ -76,12 +76,33 @@ func compileRule(rule *rawRule) (compiledRule, error) {
 	if err := compileRuleMatcher(&compiled, rule); err != nil {
 		return compiledRule{}, fmt.Errorf("compile matcher: %w", err)
 	}
+	compiled.RequiredLiteralGroups = normalizePrefilterLiteralGroups(compiled.RequiredLiteralGroups)
 
 	if err := validateCompiledRule(&compiled); err != nil {
 		return compiledRule{}, fmt.Errorf("validate rule: %w", err)
 	}
 
 	return compiled, nil
+}
+
+func normalizePrefilterLiteralGroups(groups [][]string) [][]string {
+	normalized := make([][]string, 0, len(groups))
+	for _, group := range groups {
+		values := make([]string, 0, len(group))
+		for _, literal := range group {
+			value := normalizeViews(literal).Norm
+			if value != "" {
+				values = append(values, value)
+			}
+		}
+		if len(values) == 0 {
+			continue
+		}
+		slices.Sort(values)
+		normalized = append(normalized, slices.Compact(values))
+	}
+
+	return normalized
 }
 
 func compileRuleSelectors(rule *rawRule) (ruleSelectors, error) {
