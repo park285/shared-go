@@ -1,3 +1,23 @@
+// Copyright (c) 2025 Kapu
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
 package logging
 
 import (
@@ -7,15 +27,6 @@ import (
 	"strings"
 )
 
-type sanitizeHandler struct {
-	inner slog.Handler
-}
-
-func newSanitizeHandler(inner slog.Handler) *sanitizeHandler {
-	return &sanitizeHandler{inner: inner}
-}
-
-// 민감 키 리스트 (case-insensitive 매칭)
 var (
 	bearerTokenRegex = regexp.MustCompile(`(?i)\b(bearer\s+)[A-Za-z0-9._~+/=-]+`)
 	querySecretRegex = regexp.MustCompile(`(?i)([?&;](?:key|api_key|apikey|token|password|pwd|passwd|client_secret|secret|private_key|secret_key)=)[^&\s]+`)
@@ -25,6 +36,7 @@ const (
 	tokenAPIKey        = "api_key"
 	tokenAPIKeyCompact = "apikey"
 	tokenPrivateKey    = "private_key"
+	tokenSecretKey     = "secret_key"
 )
 
 // querySecretTokens는 querySecretRegex가 매치할 수 있는 키 이름 집합으로,
@@ -32,7 +44,7 @@ const (
 // 입력은 반드시 이 토큰 중 하나를 case-insensitive로 포함하므로 게이트는 안전하다.
 var querySecretTokens = []string{
 	"key", tokenAPIKey, tokenAPIKeyCompact, "token", "password", "pwd", "passwd",
-	"client_secret", "secret", tokenPrivateKey, "secret_key",
+	"client_secret", "secret", tokenPrivateKey, tokenSecretKey,
 }
 
 var sensitiveExactKeys = map[string]struct{}{
@@ -48,7 +60,7 @@ var sensitiveExactKeys = map[string]struct{}{
 	tokenAPIKey:        {},
 	tokenAPIKeyCompact: {},
 	tokenPrivateKey:    {},
-	"secret_key":       {},
+	tokenSecretKey:     {},
 	"authorization":    {},
 	"auth_header":      {},
 	"cookie":           {},
@@ -259,7 +271,7 @@ var secretLikeExactValues = map[string]struct{}{
 	"refresh-token": {},
 	"refresh_token": {},
 	"secret-key":    {},
-	"secret_key":    {},
+	tokenSecretKey:  {},
 }
 
 const secretLikeMinLen = 24
