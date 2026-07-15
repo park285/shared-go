@@ -10,7 +10,7 @@ func TestSanitizeKey_LiteralSecretNamesAreMasked(t *testing.T) {
 
 	for _, value := range []string{
 		"secret-key",
-		"secret_key",
+		tokenSecretKey,
 		"api-key",
 		tokenAPIKey,
 		"private-key",
