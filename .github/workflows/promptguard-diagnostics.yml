@@ -15,8 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
-      guardtext: ${{ steps.guardtext.outputs.tests }}
-      promptguard: ${{ steps.promptguard.outputs.tests }}
+      guardtext: ${{ steps.guardtext.outputs.failures }}
+      promptguard: ${{ steps.promptguard.outputs.failures }}
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -35,11 +35,21 @@ jobs:
           go test -race -count=1 -json ./pkg/internal/guardtext > "$RUNNER_TEMP/guardtext.json"
           status=$?
           set -e
-          tests="$(jq -cs '[.[] | select(.Action == "fail" and .Test != null) | .Test] | unique' "$RUNNER_TEMP/guardtext.json")"
-          if [[ "$status" -ne 0 && "$tests" == "[]" ]]; then
-            tests='["__PACKAGE__"]'
+          failures="$(jq -cs '
+            . as $events
+            | [$events[] | select(.Action == "fail" and .Test != null) | .Test] | unique
+            | map(. as $test | {
+                test: $test,
+                detail: ([$events[] | select(.Action == "output" and .Test == $test) | .Output]
+                  | join("")
+                  | gsub("[\\r\\n\\t]+"; " ")
+                  | .[0:180])
+              })
+          ' "$RUNNER_TEMP/guardtext.json")"
+          if [[ "$status" -ne 0 && "$failures" == "[]" ]]; then
+            failures='[{"test":"__PACKAGE__","detail":"package failed without a test-level failure event"}]'
           fi
-          printf 'tests=%s\n' "$tests" >> "$GITHUB_OUTPUT"
+          printf 'failures=%s\n' "$failures" >> "$GITHUB_OUTPUT"
       - name: Discover promptguard failures
         id: promptguard
         shell: bash
@@ -48,70 +58,46 @@ jobs:
           go test -race -count=1 -json ./pkg/promptguard > "$RUNNER_TEMP/promptguard.json"
           status=$?
           set -e
-          tests="$(jq -cs '[.[] | select(.Action == "fail" and .Test != null) | .Test] | unique' "$RUNNER_TEMP/promptguard.json")"
-          if [[ "$status" -ne 0 && "$tests" == "[]" ]]; then
-            tests='["__PACKAGE__"]'
+          failures="$(jq -cs '
+            . as $events
+            | [$events[] | select(.Action == "fail" and .Test != null) | .Test] | unique
+            | map(. as $test | {
+                test: $test,
+                detail: ([$events[] | select(.Action == "output" and .Test == $test) | .Output]
+                  | join("")
+                  | gsub("[\\r\\n\\t]+"; " ")
+                  | .[0:180])
+              })
+          ' "$RUNNER_TEMP/promptguard.json")"
+          if [[ "$status" -ne 0 && "$failures" == "[]" ]]; then
+            failures='[{"test":"__PACKAGE__","detail":"package failed without a test-level failure event"}]'
           fi
-          printf 'tests=%s\n' "$tests" >> "$GITHUB_OUTPUT"
+          printf 'failures=%s\n' "$failures" >> "$GITHUB_OUTPUT"
 
-  guardtext-failures:
+  guardtext-failure-report:
     needs: discover-failures
     if: needs.discover-failures.outputs.guardtext != '[]'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 2
     strategy:
       fail-fast: false
       matrix:
-        test: ${{ fromJSON(needs.discover-failures.outputs.guardtext) }}
-    name: guardtext failure (${{ matrix.test }})
+        failure: ${{ fromJSON(needs.discover-failures.outputs.guardtext) }}
+    name: guardtext ${{ matrix.failure.test }} — ${{ matrix.failure.detail }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
-      - name: Setup Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
-        with:
-          go-version-file: go.mod
-          cache-dependency-path: go.sum
-      - name: Reproduce guardtext failure
-        env:
-          TEST_NAME: ${{ matrix.test }}
-        shell: bash
-        run: |
-          if [[ "$TEST_NAME" == "__PACKAGE__" ]]; then
-            go test -race -count=1 ./pkg/internal/guardtext
-          else
-            go test -race -count=10 ./pkg/internal/guardtext -run "^${TEST_NAME}$"
-          fi
+      - name: Report captured failure
+        run: printf '%s\n' '${{ toJSON(matrix.failure) }}'
 
-  promptguard-failures:
+  promptguard-failure-report:
     needs: discover-failures
     if: needs.discover-failures.outputs.promptguard != '[]'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 2
     strategy:
       fail-fast: false
       matrix:
-        test: ${{ fromJSON(needs.discover-failures.outputs.promptguard) }}
-    name: promptguard failure (${{ matrix.test }})
+        failure: ${{ fromJSON(needs.discover-failures.outputs.promptguard) }}
+    name: promptguard ${{ matrix.failure.test }} — ${{ matrix.failure.detail }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
-      - name: Setup Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
-        with:
-          go-version-file: go.mod
-          cache-dependency-path: go.sum
-      - name: Reproduce promptguard failure
-        env:
-          TEST_NAME: ${{ matrix.test }}
-        shell: bash
-        run: |
-          if [[ "$TEST_NAME" == "__PACKAGE__" ]]; then
-            go test -race -count=1 ./pkg/promptguard
-          else
-            go test -race -count=10 ./pkg/promptguard -run "^${TEST_NAME}$"
-          fi
+      - name: Report captured failure
+        run: printf '%s\n' '${{ toJSON(matrix.failure) }}'
