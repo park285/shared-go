@@ -11,43 +11,66 @@ func DecodeCandidatesWithContext(input string) DecodeResult {
 		return DecodeResult{}
 	}
 
-	result := DecodeResult{Candidates: make([]string, 0, maxDecodeCandidates)}
-	queue := []decodeQueueEntry{{text: input}}
-	visited := map[string]struct{}{input: {}}
-	total, scans := 0, 0
-	for len(queue) > 0 {
-		current := queue[0]
-		queue = queue[1:]
-		for _, candidate := range decodeContextSurfaces(current.text, &scans, &result.Status) {
-			if candidate == current.text {
-				continue
-			}
-			if _, ok := visited[candidate]; ok {
-				continue
-			}
-			visited[candidate] = struct{}{}
-			data := []byte(candidate)
-			if len(data) == 0 || !IsReadableText(data) {
-				continue
-			}
-			if len(data) > maxDecodedCandidateLen || total+len(data) > maxDecodedTotalBytes {
-				result.Status |= DecodeByteLimit
-				continue
-			}
-			if current.depth >= maxDecodeDepth {
-				result.Status |= DecodeDepthLimit
-				continue
-			}
-			if len(result.Candidates) >= maxDecodeCandidates {
-				result.Status |= DecodeCandidateLimit
-				continue
-			}
-			result.Candidates = append(result.Candidates, candidate)
-			total += len(data)
-			queue = append(queue, decodeQueueEntry{text: candidate, depth: current.depth + 1})
-		}
+	decoder := contextDecoder{
+		result:  DecodeResult{Candidates: make([]string, 0, maxDecodeCandidates)},
+		queue:   []decodeQueueEntry{{text: input}},
+		visited: map[string]struct{}{input: {}},
 	}
-	return result
+	for decoder.pending() {
+		decoder.expandNext()
+	}
+	return decoder.result
+}
+
+type contextDecoder struct {
+	result  DecodeResult
+	queue   []decodeQueueEntry
+	visited map[string]struct{}
+	cursor  int
+	total   int
+	scans   int
+}
+
+func (d *contextDecoder) pending() bool {
+	return d.cursor < len(d.queue)
+}
+
+func (d *contextDecoder) expandNext() {
+	current := d.queue[d.cursor]
+	d.cursor++
+	candidates := decodeContextSurfaces(current.text, &d.scans, &d.result.Status)
+	for _, candidate := range candidates {
+		d.admit(current, candidate)
+	}
+}
+
+func (d *contextDecoder) admit(current decodeQueueEntry, candidate string) {
+	if candidate == current.text {
+		return
+	}
+	if _, ok := d.visited[candidate]; ok {
+		return
+	}
+	d.visited[candidate] = struct{}{}
+	data := []byte(candidate)
+	if len(data) == 0 || !IsReadableText(data) {
+		return
+	}
+	if len(data) > maxDecodedCandidateLen || d.total+len(data) > maxDecodedTotalBytes {
+		d.result.Status |= DecodeByteLimit
+		return
+	}
+	if current.depth >= maxDecodeDepth {
+		d.result.Status |= DecodeDepthLimit
+		return
+	}
+	if len(d.result.Candidates) >= maxDecodeCandidates {
+		d.result.Status |= DecodeCandidateLimit
+		return
+	}
+	d.result.Candidates = append(d.result.Candidates, candidate)
+	d.total += len(data)
+	d.queue = append(d.queue, decodeQueueEntry{text: candidate, depth: current.depth + 1})
 }
 
 func decodeContextSurfaces(input string, scans *int, status *DecodeStatus) []string {
