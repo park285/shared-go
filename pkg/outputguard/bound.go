@@ -1,7 +1,6 @@
 package outputguard
 
-// BoundGuard owns one request's protected text index. It is deliberately not
-// reusable across requests because the index retains normalized protected text.
+// BoundGuard는 한 요청의 정규화된 protected text index를 소유한다.
 type BoundGuard struct{ index *protectedIndex }
 
 func (g *Guard) Bind(protectedTexts []string) (*BoundGuard, error) {
@@ -31,14 +30,7 @@ func (g *BoundGuard) Check(text string) Evaluation {
 		evaluation.ReasonCodes = []ReasonCode{ReasonOutputOversize}
 		return evaluation
 	}
-	surfaces, incomplete := outputSurfaces(text, true)
-	collectRestrictedMatches(surfaces, &evaluation)
-	if incomplete {
-		appendReason(&evaluation, ReasonDecodeIncomplete)
-	}
-	if protectedOverlap(surfaces, g.index) {
-		appendReason(&evaluation, ReasonProtectedTextOverlap)
-	}
+	checkOutputSurfaces(text, g.index, &evaluation)
 	if len(evaluation.ReasonCodes) > 0 {
 		evaluation.Decision = DecisionBlock
 	}

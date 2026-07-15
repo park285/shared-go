@@ -50,14 +50,7 @@ func (g *Guard) Check(req CheckRequest) Evaluation {
 		appendReason(&evaluation, ReasonProtectedInputInvalid)
 	}
 
-	surfaces, incomplete := outputSurfaces(req.Text, index != nil)
-	collectRestrictedMatches(surfaces, &evaluation)
-	if incomplete {
-		appendReason(&evaluation, ReasonDecodeIncomplete)
-	}
-	if index != nil && protectedOverlap(surfaces, index) {
-		appendReason(&evaluation, ReasonProtectedTextOverlap)
-	}
+	checkOutputSurfaces(req.Text, index, &evaluation)
 	if len(evaluation.ReasonCodes) > 0 {
 		evaluation.Decision = DecisionBlock
 	}
@@ -81,10 +74,76 @@ func protectedOverlap(surfaces []string, index *protectedIndex) bool {
 	return slices.ContainsFunc(surfaces, index.overlapsText)
 }
 
-func outputSurfaces(text string, includeProtectedProjection bool) ([]string, bool) {
+func checkOutputSurfaces(text string, index *protectedIndex, evaluation *Evaluation) {
+	restrictedSurfaces, restrictedIncomplete := outputSurfacesFromDecoded(
+		text,
+		index != nil,
+		guardtext.DecodeCandidatesWithContextForMatching(text, matchesRestrictedCandidate),
+	)
+	collectRestrictedMatches(restrictedSurfaces, evaluation)
+
+	protectedIncomplete := false
+	if index != nil {
+		if protectedOverlap(restrictedSurfaces, index) {
+			appendReason(evaluation, ReasonProtectedTextOverlap)
+		} else {
+			protectedMatched := false
+			mayContribute := func(candidate string) bool {
+				if isProtectedContextSeparator(candidate) {
+					return true
+				}
+				candidateSurfaces, _ := outputSurfacesFromDecoded(candidate, true, guardtext.DecodeResult{})
+				if protectedOverlap(candidateSurfaces, index) {
+					protectedMatched = true
+
+					return true
+				}
+
+				return index.mayContainFragment(candidateSurfaces)
+			}
+			protectedSurfaces, incomplete := outputSurfacesFromDecoded(
+				text,
+				true,
+				guardtext.DecodeCandidatesWithContextForProtected(text, mayContribute),
+			)
+			protectedIncomplete = incomplete
+			if protectedMatched || protectedOverlap(protectedSurfaces, index) {
+				appendReason(evaluation, ReasonProtectedTextOverlap)
+			}
+		}
+	}
+	if restrictedIncomplete || protectedIncomplete {
+		appendReason(evaluation, ReasonDecodeIncomplete)
+	}
+}
+
+func matchesRestrictedCandidate(candidate string) bool {
+	surfaces, _ := outputSurfacesFromDecoded(candidate, false, guardtext.DecodeResult{})
+	for _, rule := range restrictedRules {
+		if slices.ContainsFunc(surfaces, rule.pattern.MatchString) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isProtectedContextSeparator(candidate string) bool {
+	if candidate == "" || len(candidate) > 16 {
+		return false
+	}
+	for _, value := range candidate {
+		if value > ' ' && !strings.ContainsRune("-_:;,.|/\\()[]{}<>'\"`~!@#$%^&*+=?", value) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func outputSurfacesFromDecoded(text string, includeProtectedProjection bool, decoded guardtext.DecodeResult) ([]string, bool) {
 	views := guardtext.NormalizeViews(text)
 	stripped := guardtext.StripFormatAndCombining(text)
-	decoded := guardtext.DecodeCandidates(text)
 	viewsPerCandidate := 4
 	if includeProtectedProjection {
 		viewsPerCandidate++
