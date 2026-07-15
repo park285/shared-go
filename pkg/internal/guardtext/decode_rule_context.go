@@ -156,10 +156,27 @@ func shortRuleBase64Spans(
 		}
 
 		whole := encodedSpan{start: start, end: match.next}
-		if len(match.value) <= maxShortBase64CandidateLen && plausibleShortBase64Value(match.value) {
-			spans = appendMatchingShortBase64Span(spans, seen, input, whole, mayContribute, work, status)
+		wholeReadable := false
+		if len(match.value) <= maxShortBase64CandidateLen {
+			spans, wholeReadable = appendProtectedBase64Span(
+				spans,
+				input,
+				whole,
+				true,
+				true,
+				mayContribute,
+				work,
+				status,
+			)
+			seen[whole] = struct{}{}
+		} else {
+			wholeReadable = readableBase64Span(input, whole, work, status)
 		}
-		if !looksLikeEmbeddedBase64(match.value) || !decodeWorkComplete(status) {
+
+		// A readable whole token is the authoritative encoding boundary. Looking
+		// inside it would reinterpret valid benign Base64, create dangling-padding
+		// variants, and spend the shared candidate budget before useful composition.
+		if wholeReadable || !looksLikeEmbeddedBase64(match.value) || !decodeWorkComplete(status) {
 			continue
 		}
 
@@ -179,6 +196,19 @@ func shortRuleBase64Spans(
 	}
 
 	return spans
+}
+
+func readableBase64Span(
+	input string,
+	span encodedSpan,
+	work *protectedDecodeWork,
+	status *DecodeStatus,
+) bool {
+	if (span.end-span.start)%4 == 1 || !consumeProtectedDecodeWork(work, status, span.end-span.start) {
+		return false
+	}
+	decoded, err := DecodeBase64Candidate(input[span.start:span.end])
+	return err == nil && IsReadableText(decoded)
 }
 
 func appendMatchingShortBase64Span(
