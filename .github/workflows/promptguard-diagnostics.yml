@@ -17,6 +17,7 @@ jobs:
     outputs:
       guardtext: ${{ steps.guardtext.outputs.failures }}
       promptguard: ${{ steps.promptguard.outputs.failures }}
+      lint: ${{ steps.lint.outputs.failures }}
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -27,6 +28,29 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
+      - name: Discover lint failures
+        id: lint
+        shell: bash
+        run: |
+          set +e
+          make lint > "$RUNNER_TEMP/lint.txt" 2>&1
+          status=$?
+          set -e
+          if [[ "$status" -eq 0 ]]; then
+            failures='[]'
+          else
+            sed -E 's/\x1B\[[0-9;]*[mK]//g' "$RUNNER_TEMP/lint.txt" > "$RUNNER_TEMP/lint-clean.txt"
+            failures="$(grep -E '\.go:[0-9]+:[0-9]+:' "$RUNNER_TEMP/lint-clean.txt" | head -40 | jq -Rsc '
+              split("\n")
+              | map(select(length > 0))
+              | map({detail: .[0:220]})
+            ')"
+            if [[ "$failures" == "[]" ]]; then
+              detail="$(tail -20 "$RUNNER_TEMP/lint-clean.txt" | tr '\n\t' '  ' | cut -c1-220)"
+              failures="$(jq -cn --arg detail "$detail" '[{detail: $detail}]')"
+            fi
+          fi
+          printf 'failures=%s\n' "$failures" >> "$GITHUB_OUTPUT"
       - name: Discover guardtext failures
         id: guardtext
         shell: bash
@@ -73,6 +97,20 @@ jobs:
             failures='[{"test":"__PACKAGE__","detail":"package failed without a test-level failure event"}]'
           fi
           printf 'failures=%s\n' "$failures" >> "$GITHUB_OUTPUT"
+
+  lint-failure-report:
+    needs: discover-failures
+    if: needs.discover-failures.outputs.lint != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    strategy:
+      fail-fast: false
+      matrix:
+        failure: ${{ fromJSON(needs.discover-failures.outputs.lint) }}
+    name: lint — ${{ matrix.failure.detail }}
+    steps:
+      - name: Report captured failure
+        run: printf '%s\n' '${{ toJSON(matrix.failure) }}'
 
   guardtext-failure-report:
     needs: discover-failures
