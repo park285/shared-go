@@ -11,11 +11,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  package-list:
+  discover-failures:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     outputs:
-      packages: ${{ steps.list.outputs.packages }}
+      guardtext: ${{ steps.guardtext.outputs.tests }}
+      promptguard: ${{ steps.promptguard.outputs.tests }}
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -26,19 +27,43 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
-      - name: List packages
-        id: list
-        run: printf 'packages=%s\n' "$(go list ./... | jq -Rsc 'split("\n") | map(select(length > 0))')" >> "$GITHUB_OUTPUT"
+      - name: Discover guardtext failures
+        id: guardtext
+        shell: bash
+        run: |
+          set +e
+          go test -race -count=1 -json ./pkg/internal/guardtext > "$RUNNER_TEMP/guardtext.json"
+          status=$?
+          set -e
+          tests="$(jq -cs '[.[] | select(.Action == "fail" and .Test != null) | .Test] | unique' "$RUNNER_TEMP/guardtext.json")"
+          if [[ "$status" -ne 0 && "$tests" == "[]" ]]; then
+            tests='["__PACKAGE__"]'
+          fi
+          printf 'tests=%s\n' "$tests" >> "$GITHUB_OUTPUT"
+      - name: Discover promptguard failures
+        id: promptguard
+        shell: bash
+        run: |
+          set +e
+          go test -race -count=1 -json ./pkg/promptguard > "$RUNNER_TEMP/promptguard.json"
+          status=$?
+          set -e
+          tests="$(jq -cs '[.[] | select(.Action == "fail" and .Test != null) | .Test] | unique' "$RUNNER_TEMP/promptguard.json")"
+          if [[ "$status" -ne 0 && "$tests" == "[]" ]]; then
+            tests='["__PACKAGE__"]'
+          fi
+          printf 'tests=%s\n' "$tests" >> "$GITHUB_OUTPUT"
 
-  package-race:
-    needs: package-list
+  guardtext-failures:
+    needs: discover-failures
+    if: needs.discover-failures.outputs.guardtext != '[]'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        package: ${{ fromJSON(needs.package-list.outputs.packages) }}
-    name: race (${{ matrix.package }})
+        test: ${{ fromJSON(needs.discover-failures.outputs.guardtext) }}
+    name: guardtext failure (${{ matrix.test }})
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -49,7 +74,44 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
-      - name: Package race test
+      - name: Reproduce guardtext failure
         env:
-          TEST_PACKAGE: ${{ matrix.package }}
-        run: go test -race -count=1 "$TEST_PACKAGE"
+          TEST_NAME: ${{ matrix.test }}
+        shell: bash
+        run: |
+          if [[ "$TEST_NAME" == "__PACKAGE__" ]]; then
+            go test -race -count=1 ./pkg/internal/guardtext
+          else
+            go test -race -count=10 ./pkg/internal/guardtext -run "^${TEST_NAME}$"
+          fi
+
+  promptguard-failures:
+    needs: discover-failures
+    if: needs.discover-failures.outputs.promptguard != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        test: ${{ fromJSON(needs.discover-failures.outputs.promptguard) }}
+    name: promptguard failure (${{ matrix.test }})
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Setup Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Reproduce promptguard failure
+        env:
+          TEST_NAME: ${{ matrix.test }}
+        shell: bash
+        run: |
+          if [[ "$TEST_NAME" == "__PACKAGE__" ]]; then
+            go test -race -count=1 ./pkg/promptguard
+          else
+            go test -race -count=10 ./pkg/promptguard -run "^${TEST_NAME}$"
+          fi
