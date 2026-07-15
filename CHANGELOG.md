@@ -9,6 +9,8 @@
 
 - `outputguard`가 지원하는 Base64·hex 조각을 decode할 때 주변 평문을 보존하며,
   protected text 비교에는 제한된 짧은 조각 확장을 적용합니다.
+- `promptguard`가 Base64·hex 조각을 주변 평문에 다시 삽입한 surface를 검사하여,
+  injection rule을 평문과 인코딩 조각으로 나눈 우회를 차단합니다.
 - `workerpool.ManagedPool`이 reservation, concurrency, timeout, panic, 지연 완료와 종료 상태를
   진단할 수 있는 bounded finalizer scheduler를 소유합니다.
 - `workerpool.ManagedPool.TrySubmitResult`가 admission과 finalizer ownership을 반환하여

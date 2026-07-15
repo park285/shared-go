@@ -7,6 +7,11 @@ import (
 
 // DecodeCandidatesWithContext는 주변 평문을 보존한 채 지원 인코딩을 확장한다.
 func DecodeCandidatesWithContext(input string) DecodeResult {
+	standalone := DecodeCandidates(input)
+	if !standalone.Complete() || standalone.standaloneBase64 && len(standalone.Candidates) > 0 {
+		return standalone
+	}
+
 	return decodeCandidatesWithContext(input, false, false)
 }
 

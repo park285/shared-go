@@ -65,6 +65,14 @@ func (r *compiledRule) matchRegexSegment(segment textSegment, text string, weigh
 	if limit <= 0 {
 		limit = 1
 	}
+	if limit == 1 {
+		location := r.Pattern.FindStringIndex(text)
+		if location == nil {
+			return nil
+		}
+
+		return []Match{newRuleMatch(r, segment, text[location[0]:location[1]], weight)}
+	}
 	spans := r.Pattern.FindAllString(text, limit)
 	matches := make([]Match, 0, len(spans))
 	for _, span := range spans {

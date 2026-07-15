@@ -17,6 +17,16 @@ func TestDecodeCandidatesWithContextRetainsPlaintextAroundBase64(t *testing.T) {
 	}
 }
 
+func TestDecodeCandidatesWithContextFindsEmbeddedBase64WithoutDelimiter(t *testing.T) {
+	t.Parallel()
+
+	encoded := base64.StdEncoding.EncodeToString([]byte("application rules"))
+	result := DecodeCandidatesWithContext("internal" + encoded)
+	if !result.Complete() || !slices.Contains(result.Candidates, "internalapplication rules") {
+		t.Fatalf("result = %#v, want embedded contextual candidate", result)
+	}
+}
+
 func TestDecodeCandidatesWithContextRemovesHexEnvelope(t *testing.T) {
 	t.Parallel()
 
