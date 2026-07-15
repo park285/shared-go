@@ -1,0 +1,60 @@
+name: promptguard-diagnostics
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  guardtext:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Setup Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Guardtext race tests
+        run: go test -race -count=1 ./pkg/internal/guardtext
+
+  hardening:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Setup Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: PromptGuard hardening race tests
+        run: go test -race -count=1 ./pkg/promptguard -run 'Test(GuardBlocksInstructionOverrideWithShortBase64Fragment|GuardBlocksInstructionOverrideWithEmbeddedShortBase64Fragment|GuardBlocksInstructionOverrideWithTwoShortBase64Fragments|GuardFailsClosedWhenShortFragmentCompositionExceedsDepth|GuardBlocksKoreanInstructionOverrideWithShortBase64Fragment|GuardBlocksShortBase64AfterPercentDecode|GuardBlocksInstructionOverrideWithShortHexFragment|GuardAllowsBenignShortBase64MinimalPairs|GuardAllowsRepeatedBenignShortEncodedDecoys|HardeningPreservesInteractiveAndPersistentEnforcement|GuardBlocksInstructionOverrideAcrossThreeParts|GuardBlocksInstructionOverrideSplitInsideTokenBoundary|RollingAggregateDropsContextOutsideWindow|BuildEvaluationSegmentsKeepsLinearAggregateCount|RawRulesUseNormalizedFallback|RawNormalizedFallbackKeepsBenignMinimalPair|EmbeddedRulepackHardeningCorpusV3)$'
+
+  promptguard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Setup Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: PromptGuard package race tests
+        run: go test -race -count=1 ./pkg/promptguard
