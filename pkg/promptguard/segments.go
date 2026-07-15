@@ -3,6 +3,7 @@ package promptguard
 import (
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 type segmentKind string
@@ -45,24 +46,115 @@ func buildEvaluationSegments(text string) ([]textSegment, bool) {
 		segments = append(segments, partSegments...)
 	}
 	boundaries := len(segments) - 1
+	if boundaries <= 0 {
+		return segments, false
+	}
 
-	aggregates := make([]textSegment, 0, max(0, boundaries))
-	for i := range boundaries {
-		left := segments[i].Views
-		right := segments[i+1].Views
-		aggregates = append(aggregates, textSegment{
-			Kind:  segmentPlain,
-			Kinds: distinctSegmentKinds(segments[i].Kind, segments[i+1].Kind),
-			Views: Views{
-				Raw:    lastRunes(left.Raw, boundaryWindowRunes) + guardBoundaryMarker + firstRunes(right.Raw, boundaryWindowRunes),
-				Norm:   lastRunes(left.Norm, boundaryWindowRunes) + guardBoundaryMarker + firstRunes(right.Norm, boundaryWindowRunes),
-				Joined: lastRunes(left.Joined, boundaryWindowRunes) + guardBoundaryMarker + firstRunes(right.Joined, boundaryWindowRunes),
-			},
-			Aggregate: true,
-		})
+	aggregates := make([]textSegment, 0, boundaries)
+	tail := aggregateTail{}
+	tail.append(segments[0])
+	for i := 1; i < len(segments); i++ {
+		aggregates = append(aggregates, tail.aggregateWith(segments[i]))
+		tail.append(segments[i])
 	}
 
 	return append(segments, aggregates...), false
+}
+
+type aggregateTail struct {
+	Views  Views
+	chunks []aggregateTailChunk
+}
+
+type aggregateTailChunk struct {
+	Kind        segmentKind
+	RawRunes    int
+	NormRunes   int
+	JoinedRunes int
+}
+
+func (t *aggregateTail) aggregateWith(right textSegment) textSegment {
+	return textSegment{
+		Kind:  segmentPlain,
+		Kinds: t.kindsWith(right.Kind),
+		Views: Views{
+			Raw:    t.Views.Raw + firstRunes(right.Views.Raw, boundaryWindowRunes),
+			Norm:   t.Views.Norm + guardBoundaryMarker + firstRunes(right.Views.Norm, boundaryWindowRunes),
+			Joined: t.Views.Joined + firstRunes(right.Views.Joined, boundaryWindowRunes),
+		},
+		Aggregate: true,
+	}
+}
+
+func (t *aggregateTail) append(segment textSegment) {
+	hasPrior := len(t.chunks) > 0
+	rawSeparator := ""
+	normSeparator := ""
+	joinedSeparator := ""
+	if hasPrior {
+		normSeparator = guardBoundaryMarker
+	}
+
+	rawAdded := utf8.RuneCountInString(rawSeparator + segment.Views.Raw)
+	normAdded := utf8.RuneCountInString(normSeparator + segment.Views.Norm)
+	joinedAdded := utf8.RuneCountInString(joinedSeparator + segment.Views.Joined)
+	t.chunks = append(t.chunks, aggregateTailChunk{
+		Kind:        segment.Kind,
+		RawRunes:    rawAdded,
+		NormRunes:   normAdded,
+		JoinedRunes: joinedAdded,
+	})
+
+	var rawTrimmed, normTrimmed, joinedTrimmed int
+	t.Views.Raw, rawTrimmed = appendAggregateTailView(t.Views.Raw, rawSeparator, segment.Views.Raw)
+	t.Views.Norm, normTrimmed = appendAggregateTailView(t.Views.Norm, normSeparator, segment.Views.Norm)
+	t.Views.Joined, joinedTrimmed = appendAggregateTailView(t.Views.Joined, joinedSeparator, segment.Views.Joined)
+
+	trimAggregateTailChunks(t.chunks, rawTrimmed, func(chunk *aggregateTailChunk) *int { return &chunk.RawRunes })
+	trimAggregateTailChunks(t.chunks, normTrimmed, func(chunk *aggregateTailChunk) *int { return &chunk.NormRunes })
+	trimAggregateTailChunks(t.chunks, joinedTrimmed, func(chunk *aggregateTailChunk) *int { return &chunk.JoinedRunes })
+	t.compactChunks()
+}
+
+func appendAggregateTailView(current, separator, next string) (string, int) {
+	combined := current + separator + next
+	runes := utf8.RuneCountInString(combined)
+	if runes <= boundaryWindowRunes {
+		return combined, 0
+	}
+	return lastRunes(combined, boundaryWindowRunes), runes - boundaryWindowRunes
+}
+
+func trimAggregateTailChunks(chunks []aggregateTailChunk, trim int, selectRunes func(*aggregateTailChunk) *int) {
+	for i := range chunks {
+		if trim <= 0 {
+			return
+		}
+		value := selectRunes(&chunks[i])
+		removed := min(*value, trim)
+		*value -= removed
+		trim -= removed
+	}
+}
+
+func (t *aggregateTail) compactChunks() {
+	kept := t.chunks[:0]
+	for _, chunk := range t.chunks {
+		if chunk.RawRunes == 0 && chunk.NormRunes == 0 && chunk.JoinedRunes == 0 {
+			continue
+		}
+		kept = append(kept, chunk)
+	}
+	t.chunks = kept
+}
+
+func (t *aggregateTail) kindsWith(right segmentKind) []segmentKind {
+	values := make([]segmentKind, 0, len(t.chunks)+1)
+	for _, chunk := range t.chunks {
+		values = append(values, chunk.Kind)
+	}
+	values = append(values, right)
+	return distinctSegmentKinds(values...)
 }
 
 func splitTextSegments(text string) []textSegment {

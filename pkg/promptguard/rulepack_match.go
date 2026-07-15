@@ -40,7 +40,7 @@ func (r *compiledRule) matchInput(segment textSegment, policy compiledPolicy) (s
 	if !r.appliesToTextSegment(segment) {
 		return "", 0, false
 	}
-	if segment.Aggregate && r.View != viewAggregateNorm && r.View != viewAggregateJoined {
+	if segment.Aggregate && r.View != viewRaw && r.View != viewAggregateNorm && r.View != viewAggregateJoined {
 		return "", 0, false
 	}
 
@@ -51,6 +51,9 @@ func (r *compiledRule) matchInput(segment textSegment, policy compiledPolicy) (s
 	prefilterText := text
 	if r.View == viewRaw {
 		prefilterText = segment.Views.Norm
+		if segment.Aggregate {
+			prefilterText = normalizeViews(text).Norm
+		}
 	}
 	if !containsAllLiteralGroups(prefilterText, r.RequiredLiteralGroups) {
 		return "", 0, false
@@ -62,6 +65,19 @@ func (r *compiledRule) matchInput(segment textSegment, policy compiledPolicy) (s
 }
 
 func (r *compiledRule) matchRegexSegment(segment textSegment, text string, weight float64, limit int) []Match {
+	matches := r.matchRegexText(segment, text, weight, limit)
+	if len(matches) > 0 || r.View != viewRaw {
+		return matches
+	}
+
+	normalized := normalizeViews(text).Norm
+	if normalized == text {
+		return nil
+	}
+	return r.matchRegexText(segment, normalized, weight, limit)
+}
+
+func (r *compiledRule) matchRegexText(segment textSegment, text string, weight float64, limit int) []Match {
 	if limit <= 0 {
 		limit = 1
 	}
@@ -83,6 +99,19 @@ func (r *compiledRule) matchRegexSegment(segment textSegment, text string, weigh
 }
 
 func (r *compiledRule) matchPhraseSegment(segment textSegment, text string, weight float64, limit int) []Match {
+	matches := r.matchPhraseText(segment, text, weight, limit)
+	if len(matches) > 0 || r.View != viewRaw {
+		return matches
+	}
+
+	normalized := normalizeViews(text).Norm
+	if normalized == text {
+		return nil
+	}
+	return r.matchPhraseText(segment, normalized, weight, limit)
+}
+
+func (r *compiledRule) matchPhraseText(segment textSegment, text string, weight float64, limit int) []Match {
 	if limit <= 0 {
 		limit = 1
 	}
