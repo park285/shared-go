@@ -1,0 +1,106 @@
+name: promptguard-benchmark-evidence
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      summaries: ${{ steps.summarize.outputs.summaries }}
+    steps:
+      - name: Checkout base
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+      - name: Setup Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Benchmark base
+        run: |
+          go test ./pkg/promptguard -run '^$' \
+            -bench 'BenchmarkPromptGuard(BenignFastPath|AggregateBoundary|DecoderHeavy)$' \
+            -benchmem -count=6 -benchtime=100ms > "$RUNNER_TEMP/base.txt"
+      - name: Checkout candidate
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Benchmark candidate
+        run: |
+          go test ./pkg/promptguard -run '^$' \
+            -bench 'BenchmarkPromptGuard(BenignFastPath|AggregateBoundary|DecoderHeavy|ShortRuleContext|RollingAggregate)$' \
+            -benchmem -count=6 -benchtime=100ms > "$RUNNER_TEMP/candidate.txt"
+      - name: Summarize benchmark evidence
+        id: summarize
+        shell: bash
+        run: |
+          python3 - "$RUNNER_TEMP/base.txt" "$RUNNER_TEMP/candidate.txt" >> "$GITHUB_OUTPUT" <<'PY'
+          import json
+          import re
+          import statistics
+          import sys
+
+          line_re = re.compile(
+              r'^(BenchmarkPromptGuard\S+?)(?:-\d+)?\s+\d+\s+'
+              r'([0-9.]+) ns/op\s+([0-9.]+) B/op\s+([0-9.]+) allocs/op$'
+          )
+
+          def load(path):
+              values = {}
+              with open(path, encoding='utf-8') as handle:
+                  for raw in handle:
+                      match = line_re.match(raw.strip())
+                      if not match:
+                          continue
+                      values.setdefault(match.group(1), []).append(
+                          tuple(float(match.group(index)) for index in range(2, 5))
+                      )
+              return {
+                  name: tuple(statistics.median(column) for column in zip(*samples))
+                  for name, samples in values.items()
+              }
+
+          base = load(sys.argv[1])
+          candidate = load(sys.argv[2])
+          summaries = []
+          for name in sorted(candidate):
+              ns, size, allocs = candidate[name]
+              if name in base:
+                  base_ns, base_size, base_allocs = base[name]
+                  ns_delta = (ns / base_ns - 1) * 100 if base_ns else 0
+                  size_delta = (size / base_size - 1) * 100 if base_size else 0
+                  detail = (
+                      f'{name}: {ns:.0f} ns/op ({ns_delta:+.1f}%), '
+                      f'{size:.0f} B/op ({size_delta:+.1f}%), '
+                      f'{allocs:.0f} allocs/op ({allocs-base_allocs:+.0f})'
+                  )
+              else:
+                  detail = f'{name}: {ns:.0f} ns/op, {size:.0f} B/op, {allocs:.0f} allocs/op (new)'
+              summaries.append({'detail': detail[:220]})
+          print('summaries=' + json.dumps(summaries, separators=(',', ':')))
+          PY
+
+  report:
+    needs: compare
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    strategy:
+      fail-fast: false
+      matrix:
+        summary: ${{ fromJSON(needs.compare.outputs.summaries) }}
+    name: benchmark — ${{ matrix.summary.detail }}
+    steps:
+      - name: Report benchmark evidence
+        run: printf '%s\n' '${{ matrix.summary.detail }}'
