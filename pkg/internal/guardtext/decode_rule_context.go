@@ -21,6 +21,15 @@ func DecodeCandidatesWithContextForRules(input string, mayContribute func(string
 		return DecodeResult{}
 	}
 
+	standalone := DecodeCandidates(input)
+	if !standalone.Complete() {
+		return standalone
+	}
+	if standalone.standaloneBase64 && len(standalone.Candidates) > 0 &&
+		!decodeCandidatesContainShortRuleSurface(standalone.Candidates) {
+		return standalone
+	}
+
 	decoder := contextDecoder{
 		result:        DecodeResult{Candidates: make([]string, 0, maxDecodeCandidates)},
 		queue:         make([]decodeQueueEntry, 0, len(roots)+maxDecodeCandidates),
@@ -68,11 +77,17 @@ func DecodeCandidatesWithContextForRules(input string, mayContribute func(string
 }
 
 func ruleDecodeRoots(input string) []string {
-	roots := make([]string, 0, 2)
-	if hasRuleDecodeSurface(input) {
+	rawPotential := hasRuleDecodeSurface(input)
+	normalizeSyntax := needsRuleEncodingSyntaxNormalization(input)
+	if !rawPotential && !normalizeSyntax {
+		return nil
+	}
+
+	var roots []string
+	if rawPotential {
 		roots = append(roots, input)
 	}
-	if !needsRuleEncodingSyntaxNormalization(input) {
+	if !normalizeSyntax {
 		return roots
 	}
 
@@ -81,6 +96,15 @@ func ruleDecodeRoots(input string) []string {
 		roots = append(roots, normalized)
 	}
 	return roots
+}
+
+func decodeCandidatesContainShortRuleSurface(candidates []string) bool {
+	for _, candidate := range candidates {
+		if hasPlausibleShortRuleDecodeSurface(candidate) {
+			return true
+		}
+	}
+	return false
 }
 
 func hasRuleDecodeSurface(input string) bool {
@@ -101,9 +125,11 @@ func needsRuleEncodingSyntaxNormalization(input string) bool {
 }
 
 func hasPlausibleShortRuleDecodeSurface(input string) bool {
-	for _, span := range shortRuleHexSpans(input) {
-		if span.end > span.start {
-			return true
+	if containsASCIIFold(input, "hex") {
+		for _, span := range shortRuleHexSpans(input) {
+			if span.end > span.start {
+				return true
+			}
 		}
 	}
 
