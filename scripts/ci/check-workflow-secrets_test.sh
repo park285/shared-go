@@ -492,6 +492,48 @@ write_workflow "${secrets_string_literal}" \
   "      - run: echo ok"
 expect_success "benign secrets string literal passes" "${secrets_string_literal}"
 
+quoted_permissions="${TMP_DIR}/quoted-permissions.yml"
+write_workflow "${quoted_permissions}" \
+  "name: quoted-permissions" \
+  "on:" \
+  "  pull_request:" \
+  '"permissions":' \
+  "  contents: write" \
+  "jobs:" \
+  "  test:" \
+  "    runs-on: ubuntu-latest" \
+  "    steps:" \
+  "      - run: echo ok"
+expect_failure "quoted permissions key fails closed" "quoted policy-sensitive YAML key" "${quoted_permissions}"
+
+quoted_secrets="${TMP_DIR}/quoted-secrets.yml"
+write_workflow "${quoted_secrets}" \
+  "name: quoted-secrets" \
+  "on:" \
+  "  pull_request:" \
+  "permissions:" \
+  "  contents: read" \
+  "jobs:" \
+  "  call:" \
+  "    uses: owner/repo/.github/workflows/reusable.yml@main" \
+  '    "secrets": inherit'
+expect_failure "quoted secrets key fails closed" "quoted policy-sensitive YAML key" "${quoted_secrets}"
+
+quoted_permission_scope="${TMP_DIR}/quoted-permission-scope.yml"
+write_workflow "${quoted_permission_scope}" \
+  "name: quoted-permission-scope" \
+  "on:" \
+  "  pull_request:" \
+  "permissions:" \
+  "  contents: read" \
+  '  "pull-requests": write' \
+  "jobs:" \
+  "  test:" \
+  "    runs-on: ubuntu-latest" \
+  "    steps:" \
+  "      - run: echo ok"
+expect_failure "quoted permission scope cannot hide write" "read-only permissions" "${quoted_permission_scope}"
+
 if (( failures > 0 )); then
   echo "[FAIL] workflow secret checker tests failed: ${failures}" >&2
   exit 1

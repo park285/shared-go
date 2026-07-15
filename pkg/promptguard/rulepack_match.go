@@ -48,11 +48,13 @@ func (r *compiledRule) matchInput(segment textSegment, policy compiledPolicy) (s
 	if strings.TrimSpace(text) == "" {
 		return "", 0, false
 	}
-	prefilterText := text
-	if r.View == viewRaw {
-		prefilterText = segment.Views.Norm
-	}
-	if !containsAllLiteralGroups(prefilterText, r.RequiredLiteralGroups) {
+	// Required literals are compiled in the matcher's own representation. A raw
+	// rule can intentionally contain compatibility characters, provider syntax,
+	// or other bytes that normalize to a different surface. Prefiltering those
+	// rules against the normalized view can therefore create false negatives.
+	// Keep the optimization for normalized/joined views, but always execute raw
+	// matchers against the raw surface.
+	if r.View != viewRaw && !containsAllLiteralGroups(text, r.RequiredLiteralGroups) {
 		return "", 0, false
 	}
 

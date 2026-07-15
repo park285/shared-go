@@ -157,7 +157,14 @@ def structural_yaml_failures(text: str) -> list[tuple[int, str]]:
             failures.append((line_no, "multi-line YAML flow collections are unsupported in workflow policy checks"))
         kv = parse_key_value(raw)
         if kv is not None:
-            _, value = kv
+            key, value = kv
+            source = strip_yaml_comment(raw).strip()
+            if source.startswith("- "):
+                source = source[2:].strip()
+            if source[:1] in {"'", '"'} and key.lower() in {
+                "permissions", "secrets", "jobs", "uses", "with", "persist-credentials"
+            }:
+                failures.append((line_no, f"quoted policy-sensitive YAML key {key!r} is unsupported"))
             normalized = unquote_scalar(value)
             if normalized.startswith("[") and not normalized.endswith("]"):
                 failures.append((line_no, "multi-line YAML flow collections are unsupported in workflow policy checks"))
@@ -400,16 +407,18 @@ def permissions_block_is_readonly(inline_value: str, entries: list[tuple[int, st
     for _, raw in entries:
         if not meaningful(raw):
             continue
-        line = strip_yaml_comment(raw)
-        match = re.match(r"^\s*([A-Za-z0-9_-]+)\s*:\s*([A-Za-z0-9_-]+)\s*$", line)
-        if not match:
-            continue
-        key = match.group(1)
+        parsed = parse_key_value(raw)
+        if parsed is None:
+            return False
+        key, raw_value = parsed
+        value = unquote_scalar(raw_value)
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", value):
+            return False
         if key in seen:
             return False
         seen.add(key)
         saw_entry = True
-        if match.group(2) not in {"read", "none"}:
+        if value not in {"read", "none"}:
             return False
     return saw_entry
 
