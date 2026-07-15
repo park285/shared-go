@@ -24,6 +24,9 @@ func (g *Guard) decodedTextSegments(input string) ([]textSegment, guardtext.Deco
 	if !guardtext.HasPotentialRuleDecodeSurface(input) {
 		return nil, 0
 	}
+	if result, handled := guardtext.DecodeStandaloneBase64RuleFastPath(input); handled {
+		return textSegmentsFromDecodeResult(result)
+	}
 
 	result := guardtext.DecodeCandidatesWithContextForRules(input, g.decodedCandidateMayContribute)
 	return textSegmentsFromDecodeResult(result)
