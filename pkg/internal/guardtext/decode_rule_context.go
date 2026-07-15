@@ -1,6 +1,7 @@
 package guardtext
 
 import (
+	"slices"
 	"unicode"
 	"unicode/utf8"
 )
@@ -99,12 +100,7 @@ func ruleDecodeRoots(input string) []string {
 }
 
 func decodeCandidatesContainShortRuleSurface(candidates []string) bool {
-	for _, candidate := range candidates {
-		if hasPlausibleShortRuleDecodeSurface(candidate) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(candidates, hasPlausibleShortRuleDecodeSurface)
 }
 
 func hasRuleDecodeSurface(input string) bool {
@@ -254,22 +250,34 @@ func shortRuleBase64Spans(
 		if wholeReadable || !decodeWorkComplete(status) {
 			continue
 		}
+		spans = appendShortRuleBase64Subspans(spans, seen, input, whole, mayContribute, work, status)
+	}
 
-		for subStart := whole.start; subStart < whole.end && len(spans) <= maxDecodeScans && decodeWorkComplete(status); subStart++ {
-			maximumEnd := min(whole.end, subStart+maxShortBase64CandidateLen)
-			for subEnd := maximumEnd; subEnd-subStart >= 4 && len(spans) <= maxDecodeScans; subEnd-- {
-				span := encodedSpan{start: subStart, end: subEnd}
-				if span == whole {
-					continue
-				}
-				spans = appendMatchingShortBase64Span(spans, seen, input, span, mayContribute, work, status)
-				if !decodeWorkComplete(status) {
-					break
-				}
+	return spans
+}
+
+func appendShortRuleBase64Subspans(
+	spans []encodedSpan,
+	seen map[encodedSpan]struct{},
+	input string,
+	whole encodedSpan,
+	mayContribute func(string) bool,
+	work *protectedDecodeWork,
+	status *DecodeStatus,
+) []encodedSpan {
+	for subStart := whole.start; subStart < whole.end && len(spans) <= maxDecodeScans && decodeWorkComplete(status); subStart++ {
+		maximumEnd := min(whole.end, subStart+maxShortBase64CandidateLen)
+		for subEnd := maximumEnd; subEnd-subStart >= 4 && len(spans) <= maxDecodeScans; subEnd-- {
+			span := encodedSpan{start: subStart, end: subEnd}
+			if span == whole {
+				continue
+			}
+			spans = appendMatchingShortBase64Span(spans, seen, input, span, mayContribute, work, status)
+			if !decodeWorkComplete(status) {
+				return spans
 			}
 		}
 	}
-
 	return spans
 }
 
