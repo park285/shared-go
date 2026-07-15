@@ -19,6 +19,8 @@ func TestSanitizeKey_LiteralSecretNamesAreMasked(t *testing.T) {
 		"access_token",
 		"refresh-token",
 		"refresh_token",
+		" SECRET-KEY ",
+		"Api_Key",
 	} {
 		value := value
 		t.Run(value, func(t *testing.T) {
