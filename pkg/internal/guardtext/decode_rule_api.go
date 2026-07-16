@@ -29,7 +29,7 @@ func DecodeCandidatesWithContextForRuleOwner[T any](input string, owner T, mayCo
 	)
 }
 
-// DecodedCandidateFitsBudget은 단일 decode candidate가 검사 가능한 크기인지 보고한다.
+// DecodedCandidateFitsBudget은 단일 decode candidate가 admission 크기 한도 안에 있는지 보고한다.
 func DecodedCandidateFitsBudget(candidate string) bool {
 	return len(candidate) <= maxDecodedCandidateLen
 }

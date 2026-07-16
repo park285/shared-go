@@ -102,9 +102,11 @@ func decodeSingleShortRuleContext(input string, mayContribute func(string) bool)
 		if len(match.value) < 4 || len(match.value) > maxShortBase64CandidateLen {
 			continue
 		}
-		if !consumeProtectedDecodeWork(&work, &status, len(match.value)) ||
-			!consumeContextDecodeScan(&scans, &status) {
+		if !consumeProtectedDecodeWork(&work, &status, len(match.value)) {
 			return DecodeResult{Status: status}, true
+		}
+		if !consumeContextDecodeScan(&scans, &status) {
+			return DecodeResult{}, false
 		}
 
 		var storage [maxShortBase64CandidateLen]byte
@@ -164,18 +166,20 @@ func shortRuleCandidateContribution(
 		return "", false, status
 	}
 	contextBytes := len(input) - (span.end - span.start) + len(decoded)
-	if contextBytes > maxDecodedCandidateLen {
-		return "", false, DecodeByteLimit
-	}
 	if !consumeProtectedContextWork(work, &status, contextBytes) {
 		return "", false, status
 	}
 	contextual := replaceDecodedSpan(input, span, decoded)
-	if contributes {
-		return contextual, true, 0
+	if !contributes {
+		contributes, status = matchingDecodedContribution(contextual, mayContribute)
 	}
-	contributes, status = matchingDecodedContribution(contextual, mayContribute)
-	return contextual, contributes, status
+	if status != 0 || !contributes {
+		return contextual, false, status
+	}
+	if contextBytes > maxDecodedCandidateLen {
+		return "", false, DecodeByteLimit
+	}
+	return contextual, true, 0
 }
 
 func hasPlausibleShortRuleDecodeSurface(input string) bool {

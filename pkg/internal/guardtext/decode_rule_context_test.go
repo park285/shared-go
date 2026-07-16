@@ -37,8 +37,8 @@ func TestDecodeCandidatesWithContextForRulesBoundsShortTokenScans(t *testing.T) 
 
 	input := strings.TrimSpace(strings.Repeat("eHl6 ", maxDecodeScans+1))
 	result := DecodeCandidatesWithContextForRules(input, func(string) bool { return false })
-	if result.Status&DecodeScanLimit == 0 {
-		t.Fatalf("result = %#v, want shared scan limit", result)
+	if !result.Complete() || len(result.Candidates) != 0 {
+		t.Fatalf("result = %#v, want complete filtered result after full-path delegation", result)
 	}
 }
 

@@ -196,17 +196,17 @@ func appendProtectedBase64Span(
 	mergeDecodeStatus(status, nestedStatus)
 	if !contributes && matchContext {
 		contextBytes := len(input) - (span.end - span.start) + len(decoded)
-		if contextBytes > maxDecodedCandidateLen {
-			*status |= DecodeByteLimit
-
-			return spans, true
-		}
 		if !consumeProtectedContextWork(work, status, contextBytes) {
 			return spans, true
 		}
 		contextual := replaceDecodedSpan(input, span, string(decoded))
 		contributes, nestedStatus = contribution(contextual, mayContribute)
 		mergeDecodeStatus(status, nestedStatus)
+		if contributes && contextBytes > maxDecodedCandidateLen {
+			*status |= DecodeByteLimit
+
+			return spans, true
+		}
 	}
 	if !contributes {
 		return spans, true
