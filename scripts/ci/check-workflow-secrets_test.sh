@@ -65,30 +65,6 @@ expect_failure() {
   pass "${label}"
 }
 
-expect_failure_app_profile() {
-  local label="$1"
-  local expected="$2"
-  shift 2
-  local out_file="${TMP_DIR}/${label}.out"
-  local err_file="${TMP_DIR}/${label}.err"
-
-  if WORKFLOW_GATE_PROFILE=app "${CHECKER}" "$@" >"${out_file}" 2>"${err_file}"; then
-    cat "${out_file}" >&2
-    cat "${err_file}" >&2
-    record_fail "expected app-profile workflow secret check failure: ${label}"
-    return
-  fi
-
-  if ! grep -Fq "${expected}" "${err_file}"; then
-    cat "${out_file}" >&2
-    cat "${err_file}" >&2
-    record_fail "expected ${expected} in app-profile failure output: ${label}"
-    return
-  fi
-
-  pass "${label}"
-}
-
 repo_fixture="${TMP_DIR}/repo-workflows"
 mkdir -p "${repo_fixture}/.github"
 cp -R "${ROOT_DIR}/.github/workflows" "${repo_fixture}/.github/workflows"
@@ -402,27 +378,6 @@ write_workflow "${trusted_push}" \
   '      - run: echo "${{ secrets.MODULES_TOKEN }}"'
 expect_success "trusted push repository secret passes" "${trusted_push}"
 
-quoted_pr_go_test="${TMP_DIR}/quoted-pr-go-test.yml"
-write_workflow "${quoted_pr_go_test}" \
-  "name: quoted-pr-go-test" \
-  "on:" \
-  "  pull_request:" \
-  "permissions:" \
-  "  contents: read" \
-  "jobs:" \
-  "  test:" \
-  "    runs-on: ubuntu-latest" \
-  "    steps:" \
-  '      - run: "go test ./..."'
-expect_success "lib profile permits quoted pull_request full go test" "${quoted_pr_go_test}"
-
-if ! WORKFLOW_GATE_PROFILE=app "${CHECKER}" "${quoted_pr_go_test}" >/dev/null 2>"${TMP_DIR}/profile-override.err"; then
-  cat "${TMP_DIR}/profile-override.err" >&2
-  record_fail "WORKFLOW_GATE_PROFILE must not override the repository lib profile"
-else
-  pass "environment profile override is ignored"
-fi
-
 quoted_checkout="${TMP_DIR}/quoted-checkout.yml"
 write_workflow "${quoted_checkout}" \
   "name: quoted-checkout" \
@@ -540,6 +495,8 @@ write_workflow "${quoted_permission_scope}" \
   "    steps:" \
   "      - run: echo ok"
 expect_failure "quoted permission scope cannot hide write" "read-only permissions" "${quoted_permission_scope}"
+
+bash "${ROOT_DIR}/scripts/ci/check-workflow-profile_test.sh"
 
 if (( failures > 0 )); then
   echo "[FAIL] workflow secret checker tests failed: ${failures}" >&2
