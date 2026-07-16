@@ -36,6 +36,9 @@ func textSegmentsFromDecodeResult(result guardtext.DecodeResult) ([]textSegment,
 		if len(segments) >= maxBase64Candidates {
 			break
 		}
+		if !guardtext.DecodedCandidateFitsBudget(candidate) {
+			continue
+		}
 		segments = append(segments, textSegment{Kind: segmentPlain, Views: normalizeViews(candidate)})
 	}
 
@@ -43,9 +46,6 @@ func textSegmentsFromDecodeResult(result guardtext.DecodeResult) ([]textSegment,
 }
 
 func (g *Guard) decodedCandidateMayContribute(candidate string) bool {
-	if !guardtext.DecodedCandidateFitsBudget(candidate) {
-		return false
-	}
 	views := normalizeViews(candidate)
 	if decodedCandidateHasBoundarySyntax(views.Raw) {
 		return true
