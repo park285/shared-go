@@ -228,7 +228,7 @@ func DefaultIrisBotWebhookWorkerProfile() IrisBotWebhookWorkerProfile {
 	return defaultIrisBotWebhookWorkerProfile()
 }
 
-// Deprecated: 스택 내 소비자가 없어 다음 minor에서 제거 예정입니다. DecodeRuntimeWorkerProfileEnvelope를 사용하십시오.
+// Deprecated: DecodeRuntimeWorkerProfileEnvelope를 사용하십시오. 다음 minor에서 제거됩니다.
 func DecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics(reader io.Reader) (IrisBotWebhookWorkerProfile, error) {
 	var diagnostics struct {
 		Workers struct {
