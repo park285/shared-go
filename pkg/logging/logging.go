@@ -41,13 +41,12 @@ func parseLevel(level string) slog.Level {
 }
 
 func NewLogger() *slog.Logger {
-	handler := tint.NewHandler(os.Stdout, &tint.Options{
+	return slog.New(newSanitizeHandler(tint.NewTextHandler(os.Stdout, &tint.Options{
 		Level:      slog.LevelInfo,
 		TimeFormat: time.RFC3339,
 		AddSource:  true,
 		NoColor:    shouldDisableColor(os.Stdout),
-	})
-	return slog.New(newSanitizeHandler(handler))
+	})))
 }
 
 func NewTestLogger() *slog.Logger {
@@ -131,14 +130,12 @@ func enableFileLoggingWithStdout(stdout io.Writer, config Config, fileName strin
 
 	w := io.MultiWriter(stdoutLane, &archive.AwareWriter{Inner: logFile, Archiver: logArchiver})
 
-	var handler slog.Handler
-	handler = tint.NewHandler(w, &tint.Options{
+	var handler slog.Handler = newSanitizeHandler(tint.NewTextHandler(w, &tint.Options{
 		Level:      level,
 		TimeFormat: time.RFC3339,
 		AddSource:  true,
 		NoColor:    true,
-	})
-	handler = newSanitizeHandler(handler)
+	}))
 	if opts.OTel {
 		handler = newOTelHandler(handler)
 	}
@@ -155,14 +152,12 @@ func enableFileLoggingWithStdout(stdout io.Writer, config Config, fileName strin
 }
 
 func newConsoleHandler(level slog.Level, w io.Writer, enableOTel bool) slog.Handler {
-	var handler slog.Handler
-	handler = tint.NewHandler(w, &tint.Options{
+	var handler slog.Handler = newSanitizeHandler(tint.NewTextHandler(w, &tint.Options{
 		Level:      level,
 		TimeFormat: time.RFC3339,
 		AddSource:  true,
 		NoColor:    shouldDisableColor(w),
-	})
-	handler = newSanitizeHandler(handler)
+	}))
 	if enableOTel {
 		handler = newOTelHandler(handler)
 	}
