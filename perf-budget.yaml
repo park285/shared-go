@@ -31,7 +31,8 @@ benchmarks:
   BenchmarkNormalizeViewsKorean: { package: ./pkg/promptguard, class: hotpath, gate: pr, harness_files: [pkg/promptguard/text_fastpath_test.go] }
   BenchmarkNormalizeViewsEnglish: { package: ./pkg/promptguard, class: hotpath, gate: pr, harness_files: [pkg/promptguard/text_fastpath_test.go] }
   BenchmarkNormalizeViewsMixed: { package: ./pkg/promptguard, class: hotpath, gate: pr, harness_files: [pkg/promptguard/text_fastpath_test.go] }
-  BenchmarkHistogramObserveConcurrent: { package: ./pkg/obsmetrics, class: hotpath, gate: pr, harness_files: [pkg/obsmetrics/histogram_test.go] }
+  # RunParallel 계열이라 주변 부하의 atomic 경합 특성이 측정을 지배 — 동일 코드에서 ±65% 스윙 실측(2026-07-17). 동류 concurrent 벤치와 같은 분류로 이동.
+  BenchmarkHistogramObserveConcurrent: { package: ./pkg/obsmetrics, class: non_critical, gate: nightly, harness_files: [pkg/obsmetrics/histogram_test.go] }
   BenchmarkCounterVecConcurrentCardinality: { package: ./pkg/obsmetrics, class: non_critical, gate: nightly, harness_files: [pkg/obsmetrics/vec_test.go] }
   BenchmarkHistogramVecConcurrentCardinality: { package: ./pkg/obsmetrics, class: non_critical, gate: nightly, harness_files: [pkg/obsmetrics/vec_test.go] }
 settings:
