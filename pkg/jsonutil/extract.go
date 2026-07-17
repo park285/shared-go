@@ -32,6 +32,7 @@ func Extract(text string) ([]byte, error) {
 	return ExtractWithLimit(text, DefaultExtractMaxBytes)
 }
 
+// Deprecated: Extract를 사용하십시오. 다음 minor에서 제거됩니다.
 func ExtractWithLimit(text string, maxBytes int) ([]byte, error) {
 	if maxBytes <= 0 {
 		maxBytes = DefaultExtractMaxBytes

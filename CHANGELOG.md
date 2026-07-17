@@ -3,7 +3,29 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
-## 미출시
+## 미출시 (v1.31.0 후보)
+
+### 제거 (호환성 변경)
+
+- `netguard.Policy.AllowPrivateNetworks`를 제거했습니다. 스택 내 소비자가 없는 deprecated
+  필드였으며, 허용할 대역은 `AllowedIPPrefixes`로 명시해야 합니다.
+- `outputguard.CheckRequest.ProtectedTexts`를 제거했습니다. protected text 검사는
+  `Guard.Bind`로 요청 단위 `BoundGuard`를 만들어 수행해야 합니다. 이에 따라
+  `Guard.Check`의 호환 경로가 사라져 `ReasonProtectedInputOversize`는 더 이상 생산되지
+  않는 상수로 남습니다(다음 minor 제거 후보). `ReasonProtectedInputInvalid`는 nil
+  `BoundGuard.Check`의 fail-closed 경로에서 계속 생산됩니다.
+
+- `httputil/ginauth`의 deprecated 별칭 `APIKeyAuthMiddleware`/`NoRouteAuthHandler`를
+  제거했습니다. `AuthMiddleware(AuthConfig{...})` / `NoRouteHandler(AuthConfig{...})`를
+  사용하십시오. 스택 내 소비자 0건을 재확인했습니다.
+
+### 지원 중단 예정 (다음 minor에서 제거)
+
+- `jsonutil.ExtractWithLimit` — `Extract`를 사용하십시오.
+- `h3.NewServerWithOptions` / `h3.NewServerWithTLSConfigAndOptions` — `NewServer` /
+  `NewServerWithTLSConfig`를 사용하십시오.
+- `workerconfig.DecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics` —
+  `DecodeRuntimeWorkerProfileEnvelope`를 사용하십시오.
 
 ### 추가
 

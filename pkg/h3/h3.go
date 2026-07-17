@@ -40,6 +40,7 @@ func NewServer(addr string, handler http.Handler, certFile, keyFile string) (*ht
 	return NewServerWithOptions(addr, handler, certFile, keyFile, ServerOptions{})
 }
 
+// Deprecated: NewServer를 사용하십시오. 다음 minor에서 제거됩니다.
 func NewServerWithOptions(addr string, handler http.Handler, certFile, keyFile string, opts ServerOptions) (*http3.Server, error) {
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
@@ -56,6 +57,7 @@ func NewServerWithTLSConfig(addr string, handler http.Handler, tlsConfig *tls.Co
 	return NewServerWithTLSConfigAndOptions(addr, handler, tlsConfig, ServerOptions{})
 }
 
+// Deprecated: NewServerWithTLSConfig를 사용하십시오. 다음 minor에서 제거됩니다.
 func NewServerWithTLSConfigAndOptions(addr string, handler http.Handler, tlsConfig *tls.Config, opts ServerOptions) *http3.Server {
 	if handler == nil {
 		handler = http.NotFoundHandler()

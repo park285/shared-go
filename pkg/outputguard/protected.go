@@ -100,18 +100,6 @@ func validateProtectedTexts(input []string) ([]string, bool, bool) {
 	return protected, true, false
 }
 
-func buildCompatibilityIndex(input []string) (*protectedIndex, bool, bool) {
-	protected, ok, oversize := validateProtectedTexts(input)
-	if !ok {
-		return nil, false, oversize
-	}
-	if len(protected) == 0 {
-		return nil, false, false
-	}
-	index, err := newProtectedIndex(protected)
-	return index, err != nil, false
-}
-
 func newProtectedIndex(protectedTexts []string) (*protectedIndex, error) {
 	prepared := prepareProtectedTexts(protectedTexts)
 	patterns := protectedExactPatterns(prepared)

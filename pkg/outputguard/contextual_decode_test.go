@@ -119,13 +119,15 @@ func TestBoundGuardAllowsMalformedOrEmptyShortHexFragments(t *testing.T) {
 	}
 }
 
-func TestGuardCompatibilityBlocksProtectedTextSplitAcrossOneByteHexFragment(t *testing.T) {
+func TestBoundGuardBlocksProtectedTextSplitAcrossOneByteHexFragment(t *testing.T) {
 	t.Parallel()
 
-	evaluation := NewGuard().Check(CheckRequest{
-		Text:           "internal polic hex: 79",
-		ProtectedTexts: []string{"internal policy"},
-	})
+	bound, err := NewGuard().Bind([]string{"internal policy"})
+	if err != nil {
+		t.Fatalf("Bind() error = %v", err)
+	}
+
+	evaluation := bound.Check("internal polic hex: 79")
 	if evaluation.Decision != DecisionBlock {
 		t.Fatalf("decision = %v, want block: %+v", evaluation.Decision, evaluation)
 	}
