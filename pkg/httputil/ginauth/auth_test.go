@@ -15,7 +15,7 @@ func init() {
 	gin.SetMode(gin.TestMode)
 }
 
-func TestAPIKeyAuthMiddleware(t *testing.T) {
+func TestAuthMiddlewareAPIKey(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -39,7 +39,7 @@ func TestAPIKeyAuthMiddleware(t *testing.T) {
 			t.Parallel()
 
 			router := gin.New()
-			router.Use(APIKeyAuthMiddleware(tt.apiKey))
+			router.Use(AuthMiddleware(AuthConfig{APIKey: tt.apiKey}))
 			router.GET("/test", func(c *gin.Context) {
 				c.Status(http.StatusOK)
 			})
@@ -55,7 +55,7 @@ func TestAPIKeyAuthMiddleware(t *testing.T) {
 	}
 }
 
-func TestNoRouteAuthHandler(t *testing.T) {
+func TestNoRouteHandlerAuth(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -78,7 +78,7 @@ func TestNoRouteAuthHandler(t *testing.T) {
 			t.Parallel()
 
 			router := gin.New()
-			router.NoRoute(NoRouteAuthHandler(tt.apiKey))
+			router.NoRoute(NoRouteHandler(AuthConfig{APIKey: tt.apiKey}))
 
 			req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/missing", http.NoBody)
 			if tt.headerVal != "" {
