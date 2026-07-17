@@ -29,16 +29,16 @@ func matchingShortHexSpans(
 			contextSpan := span
 			contextSpan.start = contextualHexStart(input, span.start)
 			contextBytes := len(input) - (contextSpan.end - contextSpan.start) + len(decoded)
-			if contextBytes > maxDecodedCandidateLen {
-				*status |= DecodeByteLimit
-				break
-			}
 			if !consumeProtectedContextWork(work, status, contextBytes) {
 				break
 			}
 			contextual := replaceDecodedSpan(input, contextSpan, string(decoded))
 			contributes, nestedStatus = matchingDecodedContribution(contextual, mayContribute)
 			mergeDecodeStatus(status, nestedStatus)
+			if contributes && contextBytes > maxDecodedCandidateLen {
+				*status |= DecodeByteLimit
+				break
+			}
 		}
 		if contributes {
 			spans = append(spans, span)

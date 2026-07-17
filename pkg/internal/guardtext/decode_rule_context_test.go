@@ -32,6 +32,28 @@ func TestDecodeCandidatesWithContextForRulesRejectsOversizedShortContext(t *test
 	}
 }
 
+func TestDecodeCandidatesWithContextForRulesKeepsBenignOversizedShortHexContextComplete(t *testing.T) {
+	t.Parallel()
+
+	input := "hex: 74 68 65 " + strings.Repeat("!", maxDecodedCandidateLen)
+	result := DecodeCandidatesWithContextForRules(input, func(string) bool { return false })
+	if !result.Complete() || len(result.Candidates) != 0 {
+		t.Fatalf("result = %#v, want complete filtered result for benign short hex", result)
+	}
+}
+
+func TestDecodeCandidatesWithContextForRulesRejectsOversizedContributingShortHexContext(t *testing.T) {
+	t.Parallel()
+
+	input := "hex: 74 68 65 " + strings.Repeat("!", maxDecodedCandidateLen)
+	result := DecodeCandidatesWithContextForRules(input, func(candidate string) bool {
+		return strings.Contains(candidate, "the !")
+	})
+	if result.Status&DecodeByteLimit == 0 || len(result.Candidates) != 0 {
+		t.Fatalf("result = %#v, want byte-limit failure without oversized hex candidate", result)
+	}
+}
+
 func TestDecodeCandidatesWithContextForRulesBoundsShortTokenScans(t *testing.T) {
 	t.Parallel()
 
