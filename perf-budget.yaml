@@ -35,7 +35,7 @@ benchmarks:
   BenchmarkCounterVecConcurrentCardinality: { package: ./pkg/obsmetrics, class: non_critical, gate: nightly, harness_files: [pkg/obsmetrics/vec_test.go] }
   BenchmarkHistogramVecConcurrentCardinality: { package: ./pkg/obsmetrics, class: non_critical, gate: nightly, harness_files: [pkg/obsmetrics/vec_test.go] }
 settings:
-  mode: warn
+  mode: fail
   benchstat_alpha: 0.05
   min_count: 6
   noise_floor_ns: 50
