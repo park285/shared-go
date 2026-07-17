@@ -38,7 +38,14 @@ func TestOutputGuardCorpus(t *testing.T) {
 			if test.TextRepeatCount > 0 {
 				text = strings.Repeat(test.TextRepeat, test.TextRepeatCount)
 			}
-			evaluation := guard.Check(CheckRequest{Text: text, ProtectedTexts: test.ProtectedTexts})
+			var evaluation Evaluation
+			if len(test.ProtectedTexts) > 0 {
+				bound, bindErr := guard.Bind(test.ProtectedTexts)
+				require.NoError(t, bindErr)
+				evaluation = bound.Check(text)
+			} else {
+				evaluation = guard.Check(CheckRequest{Text: text})
+			}
 			assert.Equal(t, test.ExpectedDecision, evaluation.Decision)
 			assert.Equal(t, len(test.ExpectedReasons), len(evaluation.ReasonCodes))
 			if len(test.ExpectedReasons) > 0 {

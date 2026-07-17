@@ -19,15 +19,21 @@ func BenchmarkOutputGuardBaseline(b *testing.B) {
 }
 
 func BenchmarkOutputGuardProtectedOverlap(b *testing.B) {
-	protected := makeTokenBoundaryText(protectedTokenWindow+8, protectedMinRunes+80)
-	request := CheckRequest{Text: "prefix " + protected + " suffix", ProtectedTexts: []string{protected}}
+	protected := []string{makeTokenBoundaryText(protectedTokenWindow+8, protectedMinRunes+80)}
+	text := "prefix " + protected[0] + " suffix"
 	guard := NewGuard()
-	_ = guard.Check(request)
+	if _, err := guard.Bind(protected); err != nil {
+		b.Fatalf("Bind: %v", err)
+	}
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for range b.N {
-		_ = guard.Check(request)
+		bound, err := guard.Bind(protected)
+		if err != nil {
+			b.Fatal(err)
+		}
+		_ = bound.Check(text)
 	}
 }
 

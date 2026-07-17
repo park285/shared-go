@@ -23,8 +23,6 @@ const (
 
 type CheckRequest struct {
 	Text string `json:"text"`
-	// Deprecated: use Guard.Bind to scope protected text to one request.
-	ProtectedTexts []string `json:"protected_texts,omitempty"`
 }
 
 type Evaluation struct {

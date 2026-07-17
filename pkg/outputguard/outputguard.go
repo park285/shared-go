@@ -39,18 +39,7 @@ func (g *Guard) Check(req CheckRequest) Evaluation {
 		return evaluation
 	}
 
-	index, invalid, oversize := buildCompatibilityIndex(req.ProtectedTexts)
-	if oversize {
-		evaluation.Decision = DecisionBlock
-		evaluation.ReasonCodes = []ReasonCode{ReasonProtectedInputOversize}
-
-		return evaluation
-	}
-	if invalid {
-		appendReason(&evaluation, ReasonProtectedInputInvalid)
-	}
-
-	checkOutputSurfaces(req.Text, index, &evaluation)
+	checkOutputSurfaces(req.Text, nil, &evaluation)
 	if len(evaluation.ReasonCodes) > 0 {
 		evaluation.Decision = DecisionBlock
 	}

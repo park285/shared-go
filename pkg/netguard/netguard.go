@@ -72,10 +72,6 @@ type Policy struct {
 	Resolver Resolver
 	// Timeout은 lookup과 기본 dial timeout이다.
 	Timeout time.Duration
-	// AllowPrivateNetworks는 private 및 특수 목적 IP 대역을 모두 허용하는 하위 호환 옵션이다.
-	//
-	// Deprecated: 필요한 대역만 AllowedIPPrefixes로 명시하십시오.
-	AllowPrivateNetworks bool
 	// AllowedIPPrefixes는 기본 차단 대역 중 의도적으로 허용할 IP prefix 목록이다.
 	AllowedIPPrefixes []netip.Prefix
 	// AllowedHosts는 허용할 host allowlist다.
@@ -403,7 +399,7 @@ func (p Policy) allowsIP(ip net.IP) bool {
 		return false
 	}
 	addr = addr.Unmap()
-	if !IsBlockedAddr(addr) || p.AllowPrivateNetworks {
+	if !IsBlockedAddr(addr) {
 		return true
 	}
 	for _, prefix := range p.AllowedIPPrefixes {
