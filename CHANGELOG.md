@@ -3,6 +3,17 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## 미출시
+
+### 지원 중단 예정 (다음 minor에서 제거)
+
+- `retry.ComputeBackoffDelay` — `backoff.ComputeExponentialBackoff`를 사용하십시오.
+
+### 테스트
+
+- `logging`의 async drop summary 테스트가 stalled target으로 queue overflow를 결정적으로
+  유발하여 scheduler timing에 따른 skip 없이 종료 요약을 검증합니다.
+
 ## v1.31.0 - 2026-07-17
 
 ### 제거 (호환성 변경)

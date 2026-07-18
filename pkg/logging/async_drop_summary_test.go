@@ -9,11 +9,18 @@ import (
 )
 
 type syncBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
+	mu      sync.Mutex
+	buf     bytes.Buffer
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
 }
 
 func (b *syncBuffer) Write(p []byte) (int, error) {
+	if b.started != nil {
+		b.once.Do(func() { close(b.started) })
+		<-b.release
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.buf.Write(p)
@@ -29,21 +36,19 @@ func (b *syncBuffer) String() string {
 func TestAsyncDropWriter_CloseWritesDropSummary(t *testing.T) {
 	t.Parallel()
 
-	var target syncBuffer
-	w := newAsyncDropWriter(&target, 1)
+	target := &syncBuffer{started: make(chan struct{}), release: make(chan struct{})}
+	releaseTarget := sync.OnceFunc(func() { close(target.release) })
+	t.Cleanup(releaseTarget)
+	w := newAsyncDropWriter(target, 1)
 
-	// 큐 capacity(1)를 초과하도록 빠르게 밀어넣어 drop을 유발한다.
-	dropped := false
-	for i := range 10000 {
-		w.Write([]byte(fmt.Sprintf("line-%d\n", i)))
-		if w.droppedCount() > 0 {
-			dropped = true
-			break
-		}
+	w.Write([]byte("line-0\n"))
+	<-target.started
+	w.Write([]byte("line-1\n"))
+	w.Write([]byte("line-2\n"))
+	if w.droppedCount() == 0 {
+		t.Fatal("droppedCount() = 0, want > 0 when queue overflows")
 	}
-	if !dropped {
-		t.Skip("could not induce a drop deterministically on this run")
-	}
+	releaseTarget()
 
 	if err := w.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)
