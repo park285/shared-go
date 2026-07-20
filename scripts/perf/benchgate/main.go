@@ -111,7 +111,7 @@ func parseArgs(argv []string) (string, *cliArgs, error) {
 	args := &cliArgs{
 		baseline:  "artifacts/perf/baseline/main",
 		candidate: "artifacts/perf/pr",
-		policy:    "perf-budget.yaml",
+		policy:    "scripts/perf/perf-budget.yaml",
 		benchtime: DefaultBenchtime,
 	}
 	i := 0
