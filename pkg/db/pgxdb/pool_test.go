@@ -163,6 +163,29 @@ func TestOpenPoolWithRetry_ExhaustsAttempts(t *testing.T) {
 	}
 }
 
+func TestConnectRetryDelay_UsesHalfJitter(t *testing.T) {
+	tests := []struct {
+		name     string
+		computed time.Duration
+		maxDelay time.Duration
+		cap      time.Duration
+	}{
+		{name: "below cap", computed: 2 * time.Second, maxDelay: 30 * time.Second, cap: 2 * time.Second},
+		{name: "above cap", computed: 32 * time.Second, maxDelay: 30 * time.Second, cap: 30 * time.Second},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for range 1000 {
+				got := connectRetryDelay(tt.computed, tt.maxDelay)
+				if got < tt.cap/2 || got >= tt.cap {
+					t.Fatalf("connectRetryDelay(%v, %v) = %v, want in [%v, %v)", tt.computed, tt.maxDelay, got, tt.cap/2, tt.cap)
+				}
+			}
+		})
+	}
+}
+
 func TestIsRetryableConnectError_Classification(t *testing.T) {
 	live := context.Background()
 	cancelled, cancel := context.WithCancel(context.Background())

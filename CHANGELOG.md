@@ -9,6 +9,11 @@
 
 - `retry.ComputeBackoffDelay` — `backoff.ComputeExponentialBackoff`를 사용하십시오.
 
+### 수정
+
+- `pgxdb.OpenPoolWithRetry`가 PostgreSQL 재접속 지연에 half-jitter(절반~전체 범위 무작위화)를
+  적용하여 여러 프로세스의 동시 재시도가 한 시점에 집중되지 않도록 했습니다.
+
 ### 테스트
 
 - `logging`의 async drop summary 테스트가 stalled target으로 queue overflow를 결정적으로

@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/park285/shared-go/pkg/backoff"
 	"github.com/park285/shared-go/pkg/retry"
 )
 
@@ -115,6 +116,9 @@ func OpenPoolWithRetry(ctx context.Context, cfg Config, opts Options) (*pgxpool.
 		MaxAttempts: r.MaxAttempts,
 		BaseDelay:   r.BaseDelay,
 		MaxDelay:    r.MaxDelay,
+		DelayOverride: func(_ error, computed time.Duration) (time.Duration, bool) {
+			return connectRetryDelay(computed, r.MaxDelay), true
+		},
 		ShouldRetry: func(err error) bool {
 			return isRetryableConnectError(ctx, err)
 		},
@@ -279,6 +283,11 @@ func withPoolDefaults(pool PoolConfig) PoolConfig {
 		pool.ConnMaxIdleTime = def.ConnMaxIdleTime
 	}
 	return pool
+}
+
+func connectRetryDelay(computed, maxDelay time.Duration) time.Duration {
+	// computed에는 이미 attempt 기반 지수 증가가 적용되어 있으므로 attempt 0으로 cap과 half-jitter만 계산합니다.
+	return backoff.ComputeExponentialBackoffHalfJitter(0, computed, maxDelay)
 }
 
 func normalizeRetry(r RetryConfig) RetryConfig {
