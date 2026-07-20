@@ -35,25 +35,6 @@ func TestSG03ExtractAcceptsInputAtDefaultLimit_39575489(t *testing.T) {
 	}
 }
 
-func TestSG03ExtractWithLimitAcceptsExplicitLimit_39575489(t *testing.T) {
-	t.Parallel()
-
-	payload := `{"k":"v"}`
-	big := strings.Repeat(" ", DefaultExtractMaxBytes*2) + payload
-
-	if _, err := Extract(big); !errors.Is(err, ErrInputTooLarge) {
-		t.Fatalf("Extract(big) error = %v, want ErrInputTooLarge (default cap)", err)
-	}
-
-	got, err := ExtractWithLimit(big, len(big))
-	if err != nil {
-		t.Fatalf("ExtractWithLimit(big, explicit) error = %v, want nil", err)
-	}
-	if string(got) != payload {
-		t.Fatalf("ExtractWithLimit(big, explicit) = %q, want %q", got, payload)
-	}
-}
-
 func BenchmarkSG03ExtractLargeNoJSONLinear_39575489(b *testing.B) {
 	input := strings.Repeat("x", DefaultExtractMaxBytes)
 	b.ReportAllocs()

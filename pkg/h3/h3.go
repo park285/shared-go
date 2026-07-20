@@ -25,40 +25,19 @@ const (
 	clientHandshakeIdleTimeout = 10 * time.Second
 )
 
-// ServerOptions는 HTTP/3 서버의 QUIC 수신 한도를 노출합니다.
-// zero-value는 기존 quic-go 기본값을 그대로 사용합니다.
-type ServerOptions struct {
-	MaxIncomingStreams             int64
-	MaxIncomingUniStreams          int64
-	InitialStreamReceiveWindow     uint64
-	MaxStreamReceiveWindow         uint64
-	InitialConnectionReceiveWindow uint64
-	MaxConnectionReceiveWindow     uint64
-}
-
 func NewServer(addr string, handler http.Handler, certFile, keyFile string) (*http3.Server, error) {
-	return NewServerWithOptions(addr, handler, certFile, keyFile, ServerOptions{})
-}
-
-// Deprecated: NewServer를 사용하십시오. 다음 minor에서 제거됩니다.
-func NewServerWithOptions(addr string, handler http.Handler, certFile, keyFile string, opts ServerOptions) (*http3.Server, error) {
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
 		return nil, fmt.Errorf("load h3 certificate pair: %w", err)
 	}
 
-	return NewServerWithTLSConfigAndOptions(addr, handler, &tls.Config{
+	return NewServerWithTLSConfig(addr, handler, &tls.Config{
 		MinVersion:   tls.VersionTLS13,
 		Certificates: []tls.Certificate{cert},
-	}, opts), nil
+	}), nil
 }
 
 func NewServerWithTLSConfig(addr string, handler http.Handler, tlsConfig *tls.Config) *http3.Server {
-	return NewServerWithTLSConfigAndOptions(addr, handler, tlsConfig, ServerOptions{})
-}
-
-// Deprecated: NewServerWithTLSConfig를 사용하십시오. 다음 minor에서 제거됩니다.
-func NewServerWithTLSConfigAndOptions(addr string, handler http.Handler, tlsConfig *tls.Config, opts ServerOptions) *http3.Server {
 	if handler == nil {
 		handler = http.NotFoundHandler()
 	}
@@ -67,22 +46,16 @@ func NewServerWithTLSConfigAndOptions(addr string, handler http.Handler, tlsConf
 		Addr:           addr,
 		Handler:        handler,
 		TLSConfig:      http3.ConfigureTLSConfig(tlsConfig),
-		QUICConfig:     newServerQUICConfig(opts),
+		QUICConfig:     newServerQUICConfig(),
 		MaxHeaderBytes: http.DefaultMaxHeaderBytes,
 	}
 }
 
-func newServerQUICConfig(opts ServerOptions) *quic.Config {
+func newServerQUICConfig() *quic.Config {
 	return &quic.Config{
-		InitialPacketSize:              initialPacketSize,
-		KeepAlivePeriod:                serverKeepAlivePeriod,
-		MaxIdleTimeout:                 serverMaxIdleTimeout,
-		MaxIncomingStreams:             opts.MaxIncomingStreams,
-		MaxIncomingUniStreams:          opts.MaxIncomingUniStreams,
-		InitialStreamReceiveWindow:     opts.InitialStreamReceiveWindow,
-		MaxStreamReceiveWindow:         opts.MaxStreamReceiveWindow,
-		InitialConnectionReceiveWindow: opts.InitialConnectionReceiveWindow,
-		MaxConnectionReceiveWindow:     opts.MaxConnectionReceiveWindow,
+		InitialPacketSize: initialPacketSize,
+		KeepAlivePeriod:   serverKeepAlivePeriod,
+		MaxIdleTimeout:    serverMaxIdleTimeout,
 	}
 }
 

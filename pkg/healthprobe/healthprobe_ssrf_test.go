@@ -6,8 +6,11 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/park285/shared-go/pkg/netguard"
 )
 
 func TestFetchURL_DNSRebinding_6ccdf328(t *testing.T) {
@@ -108,12 +111,12 @@ func TestSG04InternalAPIAllowsLoopback_02aae1e0(t *testing.T) {
 func TestSG04ExternalAddressNotClassifiedPrivate_02aae1e0(t *testing.T) {
 	t.Parallel()
 
-	for _, ip := range []string{"203.0.113.10", "8.8.8.8", "2001:db8::1"} {
+	for _, ip := range []string{"8.8.8.8", "2001:4860:4860::8888"} {
 		if isPrivateIP(net.ParseIP(ip)) {
 			t.Fatalf("isPrivateIP(%s) = true, want false (external target must pass default guard)", ip)
 		}
 	}
-	for _, ip := range []string{"127.0.0.1", "10.0.0.1", "192.168.1.1", "169.254.169.254", "::1"} {
+	for _, ip := range []string{"127.0.0.1", "10.0.0.1", "192.168.1.1", "169.254.169.254", "203.0.113.10", "2001:db8::1", "::1"} {
 		if !isPrivateIP(net.ParseIP(ip)) {
 			t.Fatalf("isPrivateIP(%s) = false, want true (must be blocked by default)", ip)
 		}
@@ -127,6 +130,59 @@ func TestSG04HealthprobeRejectsLinkLocalMetadata_02aae1e0(t *testing.T) {
 	if _, err := fetchURL("http://169.254.169.254/latest/meta-data/", nil, opts); !errors.Is(err, ErrPrivateNetwork) {
 		t.Fatalf("fetchURL(link-local) error = %v, want ErrPrivateNetwork", err)
 	}
+}
+
+func TestHealthprobeUsesNetguardBlockedRanges(t *testing.T) {
+	t.Parallel()
+
+	for _, ip := range []string{
+		"100.64.0.1",
+		"198.18.0.1",
+		"240.0.0.1",
+		"192.0.2.1",
+		"224.0.0.1",
+	} {
+		err := dialGuard(net.ParseIP(ip))
+		if !errors.Is(err, ErrPrivateNetwork) {
+			t.Fatalf("dialGuard(%s) error = %v, want ErrPrivateNetwork", ip, err)
+		}
+		if !errors.Is(err, netguard.ErrBlockedIP) {
+			t.Fatalf("dialGuard(%s) error = %v, want netguard.ErrBlockedIP", ip, err)
+		}
+	}
+}
+
+func TestHealthprobeMapsNetguardPolicyErrors(t *testing.T) {
+	t.Parallel()
+
+	opts := FetchOptions{AllowedHosts: []string{"allowed.example"}}
+	err := authorizeTarget(t.Context(), mustParseURL(t, "https://other.example/ready"), opts)
+	if !errors.Is(err, ErrHostNotAllowed) || !errors.Is(err, netguard.ErrHostNotAllowed) {
+		t.Fatalf("authorizeTarget() error = %v, want healthprobe and netguard host errors", err)
+	}
+}
+
+func TestHealthprobeMapsNetguardRedirectLimit(t *testing.T) {
+	t.Parallel()
+
+	req := &http.Request{URL: mustParseURL(t, "https://example.com/final")}
+	via := make([]*http.Request, maxRedirects)
+	for index := range via {
+		via[index] = &http.Request{URL: mustParseURL(t, "https://example.com/hop")}
+	}
+	err := redirectPolicy(FetchOptions{FollowRedirects: true, AllowPrivateNetworks: true})(req, via)
+	if !errors.Is(err, ErrTooManyRedirects) || !errors.Is(err, netguard.ErrTooManyRedirects) {
+		t.Fatalf("redirectPolicy() error = %v, want healthprobe and netguard redirect errors", err)
+	}
+}
+
+func mustParseURL(t *testing.T, rawURL string) *url.URL {
+	t.Helper()
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("url.Parse(%q) error = %v", rawURL, err)
+	}
+	return parsed
 }
 
 func TestSG04HealthprobeRejectsHostNotInAllowlist_02aae1e0(t *testing.T) {

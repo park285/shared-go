@@ -29,15 +29,7 @@ var fenceRe = regexp.MustCompile("(?s)```(?:json)?\\s*([\\s\\S]*?)```")
 // 1. 코드펜스 내 JSON 우선 시도
 // 2. 브라켓 매칭으로 폴백
 func Extract(text string) ([]byte, error) {
-	return ExtractWithLimit(text, DefaultExtractMaxBytes)
-}
-
-// Deprecated: Extract를 사용하십시오. 다음 minor에서 제거됩니다.
-func ExtractWithLimit(text string, maxBytes int) ([]byte, error) {
-	if maxBytes <= 0 {
-		maxBytes = DefaultExtractMaxBytes
-	}
-	if len(text) > maxBytes {
+	if len(text) > DefaultExtractMaxBytes {
 		return nil, ErrInputTooLarge
 	}
 

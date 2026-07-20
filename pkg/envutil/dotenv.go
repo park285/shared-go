@@ -186,7 +186,7 @@ func dotenvBool(key string, def bool) bool {
 		return def
 	}
 	switch value {
-	case "1", boolTrue, "yes", "y", "on":
+	case "1", boolTrue, boolYes, "y", "on":
 		return true
 	case "0", boolFalse, "no", "n", "off":
 		return false

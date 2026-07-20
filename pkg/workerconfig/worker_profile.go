@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"strings"
 	"time"
 )
@@ -226,38 +225,6 @@ func defaultIrisBotWebhookWorkerProfile() IrisBotWebhookWorkerProfile {
 
 func DefaultIrisBotWebhookWorkerProfile() IrisBotWebhookWorkerProfile {
 	return defaultIrisBotWebhookWorkerProfile()
-}
-
-// Deprecated: DecodeRuntimeWorkerProfileEnvelope를 사용하십시오. 다음 minor에서 제거됩니다.
-func DecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics(reader io.Reader) (IrisBotWebhookWorkerProfile, error) {
-	var diagnostics struct {
-		Workers struct {
-			Webhook struct {
-				WebhookPipeline struct {
-					ProfileEnabled *bool                            `json:"profileEnabled"`
-					WorkerProfile  *wireIrisBotWebhookWorkerProfile `json:"workerProfile"`
-				} `json:"webhookPipeline"`
-			} `json:"webhook"`
-		} `json:"workers"`
-	}
-	decoder := json.NewDecoder(reader)
-	if err := decoder.Decode(&diagnostics); err != nil {
-		return IrisBotWebhookWorkerProfile{}, err
-	}
-	if diagnostics.Workers.Webhook.WebhookPipeline.ProfileEnabled == nil {
-		return IrisBotWebhookWorkerProfile{}, errors.New("diagnostics workers.webhook.webhookPipeline.profileEnabled is missing")
-	}
-	if !*diagnostics.Workers.Webhook.WebhookPipeline.ProfileEnabled {
-		return IrisBotWebhookWorkerProfile{}, ErrWorkerProfileDisabled
-	}
-	if diagnostics.Workers.Webhook.WebhookPipeline.WorkerProfile == nil {
-		return IrisBotWebhookWorkerProfile{}, errors.New("diagnostics workers.webhook.webhookPipeline.workerProfile is missing")
-	}
-	profile := fromWire(*diagnostics.Workers.Webhook.WebhookPipeline.WorkerProfile)
-	if err := profile.Validate(); err != nil {
-		return IrisBotWebhookWorkerProfile{}, err
-	}
-	return profile, nil
 }
 
 func (p IrisBotWebhookWorkerProfile) CanonicalJSON() []byte {

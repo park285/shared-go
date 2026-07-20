@@ -12,13 +12,12 @@ const (
 type ReasonCode string
 
 const (
-	ReasonRoleBlock              ReasonCode = "role_block"
-	ReasonSecretPattern          ReasonCode = "secret_pattern"
-	ReasonProtectedTextOverlap   ReasonCode = "protected_text_overlap"
-	ReasonProtectedInputOversize ReasonCode = "protected_input_oversize"
-	ReasonProtectedInputInvalid  ReasonCode = "protected_input_invalid"
-	ReasonDecodeIncomplete       ReasonCode = "decode_incomplete"
-	ReasonOutputOversize         ReasonCode = "output_oversize"
+	ReasonRoleBlock             ReasonCode = "role_block"
+	ReasonSecretPattern         ReasonCode = "secret_pattern"
+	ReasonProtectedTextOverlap  ReasonCode = "protected_text_overlap"
+	ReasonProtectedInputInvalid ReasonCode = "protected_input_invalid"
+	ReasonDecodeIncomplete      ReasonCode = "decode_incomplete"
+	ReasonOutputOversize        ReasonCode = "output_oversize"
 )
 
 type CheckRequest struct {

@@ -64,7 +64,7 @@ Consumer repositories remain unchanged in this task.
 
 - `hololive/hololive-shared/pkg/server/middleware/auth.go`
   - Replace `constantTimeEqualSecret` with `httputil.ConstantTimeStringEqual`.
-  - Replace `APIKeyAuthMiddleware` and `NoRouteAuthHandler` bodies with wrappers around `github.com/park285/shared-go/pkg/httputil/ginauth`.
+  - Keep the local Gin wrappers and delegate constant-time comparison to `httputil.ConstantTimeStringEqual`.
   - Preserve the local `APIKeyHeader` re-export only if downstream imports it from `middleware`.
 - `admin-dashboard/backend/internal/auth/crypto.go`
   - Replace `ConstantTimeStringEqual` with `httputil.ConstantTimeStringEqual`.

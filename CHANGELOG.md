@@ -5,9 +5,41 @@
 
 ## 미출시
 
-### 지원 중단 예정 (다음 minor에서 제거)
+변경 없음.
 
-- `retry.ComputeBackoffDelay` — `backoff.ComputeExponentialBackoff`를 사용하십시오.
+## v1.32.0 - 2026-07-20
+
+### 추가
+
+- `envutil`에 parse 실패를 호출자에게 반환하는 `IntE`, `Int64E`, `FloatE`, `BoolE`와
+  first-non-empty 변형 `IntAnyE`, `Int64AnyE`, `BoolAnyE`를 추가했습니다.
+- `healthprobe.RunMain`이 다중 URL, `--api-key-env`, `--body`, `--body-api-key-env` 경로를
+  지원하여 운영 healthcheck wrapper가 공용 CLI를 그대로 사용할 수 있습니다.
+- `runtime/httpserver.Run`이 server 시작, context 취소 대기, bounded graceful shutdown을
+  단일 blocking lifecycle로 제공합니다.
+- 소형 중복 회수를 위해 `lockutil.KeyedMutex`, `stringutil.HashForLog`·`TruncatedHash`·
+  `TruncatedLogHash`, `sqlutil.MustQuery`, `retry.Sleep`, `pgxdb.IsDuplicateKey`를 추가했습니다.
+
+### 변경 (호환성 변경)
+
+- `healthprobe`의 URL 대상·redirect SSRF 검사를 `netguard.Policy`와
+  `netguard.RedirectPolicy`로 일원화했습니다. 이에 따라 CGNAT `100.64.0.0/10`, benchmark
+  `198.18.0.0/15`, reserved `240.0.0.0/4`, documentation, multicast 대역도 차단됩니다.
+  기존 `healthprobe` error sentinel은 유지되며 underlying `netguard` sentinel에도
+  `errors.Is`로 매칭됩니다.
+
+### 지원 중단 예정
+
+- `retry.ComputeBackoffDelay`는 이번 release에서 처음 지원 중단을 알리며,
+  `backoff.ComputeExponentialBackoff`로 내부 계산을 직접 연결했습니다. 다음 minor에서 제거합니다.
+
+### 제거 (호환성 변경)
+
+- stack local HEAD 전체에서 소비자 0건을 확인한 `jsonutil.ExtractWithLimit`,
+  `h3.ServerOptions`, `h3.NewServerWithOptions`, `h3.NewServerWithTLSConfigAndOptions`,
+  `workerconfig.DecodeIrisBotWebhookWorkerProfileFromRuntimeDiagnostics`를 제거했습니다.
+- 소비자 0건인 `httputil/ginauth` package와
+  `outputguard.ReasonProtectedInputOversize`를 제거했습니다.
 
 ### 수정
 

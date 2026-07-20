@@ -2,6 +2,7 @@ package envutil
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 const (
 	boolTrue  = "true"
 	boolFalse = "false"
+	boolYes   = "yes"
 )
 
 func warnParse(key, value, kind string, err error, def any) {
@@ -69,13 +71,37 @@ func Int(key string, def int) int {
 	return parsed
 }
 
+func IntE(key string, def int) (int, error) {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return def, nil
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, fmt.Errorf("invalid int env %s=%q: %w", key, value, err)
+	}
+	return parsed, nil
+}
+
+func Int64E(key string, def int64) (int64, error) {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return def, nil
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid int64 env %s=%q: %w", key, value, err)
+	}
+	return parsed, nil
+}
+
 func Bool(key string, def bool) bool {
 	value := strings.TrimSpace(os.Getenv(key))
 	if value == "" {
 		return def
 	}
 	switch strings.ToLower(value) {
-	case "1", boolTrue, "yes", "y", "on":
+	case "1", boolTrue, boolYes, "y", "on":
 		return true
 	case "0", boolFalse, "no", "n", "off":
 		return false
@@ -83,6 +109,14 @@ func Bool(key string, def bool) bool {
 		warnParse(key, value, "bool", nil, def)
 		return def
 	}
+}
+
+func BoolE(key string, def bool) (bool, error) {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return def, nil
+	}
+	return parseBoolE(key, value)
 }
 
 func Float(key string, def float64) float64 {
@@ -96,6 +130,18 @@ func Float(key string, def float64) float64 {
 		return def
 	}
 	return parsed
+}
+
+func FloatE(key string, def float64) (float64, error) {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return def, nil
+	}
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid float64 env %s=%q: %w", key, value, err)
+	}
+	return parsed, nil
 }
 
 func Duration(key string, def time.Duration) time.Duration {
@@ -119,6 +165,59 @@ func StringAny(keys ...string) string {
 		}
 	}
 	return ""
+}
+
+func IntAnyE(keys []string, def int) (int, error) {
+	key, value, ok := firstEnvValue(keys)
+	if !ok {
+		return def, nil
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, fmt.Errorf("invalid int env %s=%q: %w", key, value, err)
+	}
+	return parsed, nil
+}
+
+func Int64AnyE(keys []string, def int64) (int64, error) {
+	key, value, ok := firstEnvValue(keys)
+	if !ok {
+		return def, nil
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid int64 env %s=%q: %w", key, value, err)
+	}
+	return parsed, nil
+}
+
+func BoolAnyE(keys []string, def bool) (bool, error) {
+	key, value, ok := firstEnvValue(keys)
+	if !ok {
+		return def, nil
+	}
+	return parseBoolE(key, value)
+}
+
+func firstEnvValue(keys []string) (string, string, bool) {
+	for _, key := range keys {
+		value := strings.TrimSpace(os.Getenv(key))
+		if value != "" {
+			return key, value, true
+		}
+	}
+	return "", "", false
+}
+
+func parseBoolE(key, value string) (bool, error) {
+	switch strings.ToLower(value) {
+	case "1", boolTrue, boolYes, "y":
+		return true, nil
+	case "0", boolFalse, "no", "n":
+		return false, nil
+	default:
+		return false, fmt.Errorf("invalid bool env %s=%q", key, value)
+	}
 }
 
 func List(key string) []string {

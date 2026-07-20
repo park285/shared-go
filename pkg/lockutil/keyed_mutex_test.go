@@ -1,0 +1,98 @@
+package lockutil
+
+import (
+	"sync"
+	"testing"
+	"time"
+)
+
+func TestKeyedMutexSerializesSameKey(t *testing.T) {
+	var mu KeyedMutex
+	mu.Lock("key")
+
+	acquired := make(chan struct{})
+	go func() {
+		mu.Lock("key")
+		close(acquired)
+		mu.Unlock("key")
+	}()
+
+	select {
+	case <-acquired:
+		t.Fatal("Lock() acquired same key while held")
+	case <-time.After(20 * time.Millisecond):
+	}
+	mu.Unlock("key")
+
+	select {
+	case <-acquired:
+	case <-time.After(time.Second):
+		t.Fatal("Lock() did not acquire after Unlock()")
+	}
+}
+
+func TestKeyedMutexAllowsDifferentShards(t *testing.T) {
+	var mu KeyedMutex
+	mu.Lock("sid-1")
+	defer mu.Unlock("sid-1")
+
+	other := keyOnDifferentShard(t, "sid-1")
+	acquired := make(chan struct{})
+	go func() {
+		mu.Lock(other)
+		mu.Unlock(other)
+		close(acquired)
+	}()
+
+	select {
+	case <-acquired:
+	case <-time.After(time.Second):
+		t.Fatal("different shard blocked")
+	}
+}
+
+func TestKeyedMutexRaceSafety(t *testing.T) {
+	var (
+		mu       KeyedMutex
+		counters [4]int
+		wg       sync.WaitGroup
+	)
+	keys := [4]string{"sid-1", "sid-2", "sid-3", "sid-4"}
+	const goroutines = 32
+	const iterations = 1000
+
+	wg.Add(goroutines)
+	for worker := range goroutines {
+		go func() {
+			defer wg.Done()
+			for index := range iterations {
+				position := (worker + index) % len(keys)
+				mu.Lock(keys[position])
+				counters[position]++
+				mu.Unlock(keys[position])
+			}
+		}()
+	}
+	wg.Wait()
+
+	got := 0
+	for _, count := range counters {
+		got += count
+	}
+	if want := goroutines * iterations; got != want {
+		t.Fatalf("guarded increments = %d, want %d", got, want)
+	}
+}
+
+func keyOnDifferentShard(t *testing.T, key string) string {
+	t.Helper()
+	shard := keyedMutexShard(key)
+	for index := range 1024 {
+		candidate := key + string(rune(index+1))
+		if keyedMutexShard(candidate) != shard {
+			return candidate
+		}
+	}
+	t.Fatal("could not find different shard")
+	return ""
+}

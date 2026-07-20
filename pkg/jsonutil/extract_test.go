@@ -2,7 +2,6 @@ package jsonutil
 
 import (
 	"errors"
-	"strings"
 	"testing"
 )
 
@@ -184,32 +183,5 @@ func TestFindMatchingEnd(t *testing.T) {
 				t.Errorf("findMatchingEnd() = %d, want %d", result, tt.want)
 			}
 		})
-	}
-}
-
-func TestSG03ExtractWithLimitNonPositiveEnforcesDefaultCap_39575489(t *testing.T) {
-	t.Parallel()
-
-	oversize := strings.Repeat("a", DefaultExtractMaxBytes+1)
-
-	for _, maxBytes := range []int{0, -1} {
-		if _, err := ExtractWithLimit(oversize, maxBytes); !errors.Is(err, ErrInputTooLarge) {
-			t.Fatalf("ExtractWithLimit(oversize, %d) error = %v, want ErrInputTooLarge (hard cap on maxBytes<=0)", maxBytes, err)
-		}
-	}
-}
-
-func TestSG03ExtractWithLimitNonPositiveAcceptsWithinDefaultCap_39575489(t *testing.T) {
-	t.Parallel()
-
-	payload := `{"k":"v"}`
-	for _, maxBytes := range []int{0, -1} {
-		got, err := ExtractWithLimit(payload, maxBytes)
-		if err != nil {
-			t.Fatalf("ExtractWithLimit(small, %d) error = %v, want nil", maxBytes, err)
-		}
-		if string(got) != payload {
-			t.Fatalf("ExtractWithLimit(small, %d) = %q, want %q", maxBytes, got, payload)
-		}
 	}
 }

@@ -24,6 +24,10 @@ func ComputeBackoffDelay(attempt int, base, jitter time.Duration) time.Duration 
 	return backoff.ComputeExponentialBackoff(attempt, base, 0, jitter)
 }
 
+func Sleep(ctx context.Context, duration time.Duration) bool {
+	return sleepWithContext(ctx, duration)
+}
+
 func WithRetry(ctx context.Context, opts RetryOptions, fn func(ctx context.Context) error) error {
 	opts = normalizeRetryOptions(opts)
 
@@ -111,7 +115,7 @@ func sleepBeforeRetry(ctx context.Context, opts RetryOptions, attempt int, err e
 }
 
 func retryDelay(opts RetryOptions, attempt int, err error) time.Duration {
-	delay := ComputeBackoffDelay(attempt, opts.BaseDelay, opts.Jitter)
+	delay := backoff.ComputeExponentialBackoff(attempt, opts.BaseDelay, 0, opts.Jitter)
 	if opts.DelayOverride != nil {
 		if override, ok := opts.DelayOverride(err, delay); ok {
 			delay = override

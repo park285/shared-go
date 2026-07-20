@@ -39,7 +39,20 @@ func isFallbackEligibleHost(host string) bool {
 const (
 	sqlstateInvalidAuthorization = "28000"
 	sqlstateInvalidPassword      = "28P01"
+	sqlstateUniqueViolation      = "23505"
 )
+
+func IsDuplicateKey(err error) bool {
+	if err == nil {
+		return false
+	}
+	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == sqlstateUniqueViolation {
+		return true
+	}
+	message := err.Error()
+	return strings.Contains(message, "UNIQUE constraint failed") ||
+		strings.Contains(message, "duplicate key value violates unique constraint")
+}
 
 func isRetryableConnectError(ctx context.Context, err error) bool {
 	if ctx.Err() != nil {

@@ -7,36 +7,17 @@ import (
 	"time"
 )
 
-func TestComputeBackoffDelay_ExponentialGrowth(t *testing.T) {
-	base := 100 * time.Millisecond
-
-	tests := []struct {
-		attempt  int
-		expected time.Duration
-	}{
-		{0, 100 * time.Millisecond},
-		{1, 200 * time.Millisecond},
-		{2, 400 * time.Millisecond},
-		{3, 800 * time.Millisecond},
-	}
-
-	for _, tt := range tests {
-		got := ComputeBackoffDelay(tt.attempt, base, 0)
-		if got != tt.expected {
-			t.Errorf("ComputeBackoffDelay(%d, %v, 0) = %v, want %v", tt.attempt, base, got, tt.expected)
-		}
+func TestSleepReturnsTrueAfterDuration(t *testing.T) {
+	if !Sleep(context.Background(), time.Millisecond) {
+		t.Fatal("Sleep() = false, want true")
 	}
 }
 
-func TestComputeBackoffDelay_WithJitter(t *testing.T) {
-	base := 100 * time.Millisecond
-	jitter := 50 * time.Millisecond
-
-	for range 100 {
-		delay := ComputeBackoffDelay(0, base, jitter)
-		if delay < base || delay >= base+jitter {
-			t.Errorf("delay %v outside expected range [%v, %v)", delay, base, base+jitter)
-		}
+func TestSleepReturnsFalseWhenContextCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if Sleep(ctx, time.Hour) {
+		t.Fatal("Sleep() = true, want false")
 	}
 }
 

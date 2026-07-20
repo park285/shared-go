@@ -7,13 +7,14 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
-	"strings"
 	"syscall"
 	"time"
 
 	"github.com/park285/shared-go/pkg/h3"
+	"github.com/park285/shared-go/pkg/netguard"
 )
 
 const (
@@ -156,8 +157,8 @@ func newClient(parsed *url.URL, opts FetchOptions) (*http.Client, func(), error)
 }
 
 func dialGuard(ip net.IP) error {
-	if isPrivateIP(ip) {
-		return fmt.Errorf("%w: dialed %s", ErrPrivateNetwork, ip)
+	if netguard.IsBlockedIP(ip) {
+		return fmt.Errorf("%w: %w: dialed %s", ErrPrivateNetwork, netguard.ErrBlockedIP, ip)
 	}
 	return nil
 }
@@ -185,39 +186,15 @@ func guardedHTTPTransport(guard func(net.IP) error) *http.Transport {
 	}
 }
 
-// redirectPolicy는 redirect를 따를지/얼마나/헤더를 유지할지 강제한다. cross-host redirect에서
-// custom header(예: Authorization, X-API-Key)가 다른 host로 따라가는 누출을 막는다.
 func redirectPolicy(opts FetchOptions) func(req *http.Request, via []*http.Request) error {
+	policy := netguard.RedirectPolicy(netguard.RedirectConfig{
+		Policy:         networkPolicy(opts),
+		MaxRedirects:   maxRedirects - 1,
+		DisableFollow:  !opts.FollowRedirects,
+		ForwardHeaders: opts.ForwardHeadersOnRedirect,
+	})
 	return func(req *http.Request, via []*http.Request) error {
-		if !opts.FollowRedirects {
-			return http.ErrUseLastResponse
-		}
-		if len(via) >= maxRedirects {
-			return ErrTooManyRedirects
-		}
-		if err := authorizeTarget(req.Context(), req.URL, opts); err != nil {
-			return err
-		}
-
-		if opts.ForwardHeadersOnRedirect {
-			return nil
-		}
-
-		previous := via[len(via)-1].URL
-		if !sameHost(previous, req.URL) {
-			stripSensitiveHeaders(req)
-		}
-		return nil
-	}
-}
-
-func sameHost(a, b *url.URL) bool {
-	return strings.EqualFold(a.Hostname(), b.Hostname())
-}
-
-func stripSensitiveHeaders(req *http.Request) {
-	for name := range req.Header {
-		req.Header.Del(name)
+		return mapPolicyError(policy(req, via))
 	}
 }
 
@@ -236,51 +213,56 @@ func readCappedBody(body io.Reader, maxBytes int64) ([]byte, error) {
 }
 
 func authorizeTarget(ctx context.Context, parsed *url.URL, opts FetchOptions) error {
-	host := parsed.Hostname()
-	if len(opts.AllowedHosts) > 0 && !hostAllowed(host, opts.AllowedHosts) {
-		return fmt.Errorf("%w: %s", ErrHostNotAllowed, host)
-	}
-	if !opts.AllowPrivateNetworks {
-		if err := rejectPrivateNetwork(ctx, host); err != nil {
-			return err
-		}
-	}
-	return nil
+	return mapPolicyError(networkPolicy(opts).ValidateTarget(ctx, parsed))
 }
 
-func hostAllowed(host string, allowed []string) bool {
-	for _, candidate := range allowed {
-		if strings.EqualFold(host, strings.TrimSpace(candidate)) {
-			return true
+func networkPolicy(opts FetchOptions) netguard.Policy {
+	policy := netguard.Policy{
+		Resolver:     healthprobeResolver{},
+		Timeout:      requestTimeout,
+		AllowedHosts: opts.AllowedHosts,
+		Schemes:      []string{"http", "https"},
+	}
+	if opts.AllowPrivateNetworks {
+		policy.AllowedIPPrefixes = []netip.Prefix{
+			netip.MustParsePrefix("0.0.0.0/0"),
+			netip.MustParsePrefix("::/0"),
 		}
 	}
-	return false
+	return policy
+}
+
+func mapPolicyError(err error) error {
+	switch {
+	case errors.Is(err, netguard.ErrBlockedIP):
+		return fmt.Errorf("%w: %w", ErrPrivateNetwork, err)
+	case errors.Is(err, netguard.ErrHostNotAllowed):
+		return fmt.Errorf("%w: %w", ErrHostNotAllowed, err)
+	case errors.Is(err, netguard.ErrTooManyRedirects):
+		return fmt.Errorf("%w: %w", ErrTooManyRedirects, err)
+	default:
+		return err
+	}
 }
 
 var lookupIPAddr = net.DefaultResolver.LookupIPAddr
 
-func rejectPrivateNetwork(ctx context.Context, host string) error {
+type healthprobeResolver struct{}
+
+func (healthprobeResolver) LookupIP(ctx context.Context, _ string, host string) ([]net.IP, error) {
 	addrs, err := lookupIPAddr(ctx, host)
 	if err != nil {
-		return fmt.Errorf("resolve host %s: %w", host, err)
+		return nil, err
 	}
-	if len(addrs) == 0 {
-		return fmt.Errorf("%w: %s resolves to no address", ErrPrivateNetwork, host)
-	}
+	ips := make([]net.IP, 0, len(addrs))
 	for _, addr := range addrs {
-		if isPrivateIP(addr.IP) {
-			return fmt.Errorf("%w: %s -> %s", ErrPrivateNetwork, host, addr.IP)
-		}
+		ips = append(ips, addr.IP)
 	}
-	return nil
+	return ips, nil
 }
 
 func isPrivateIP(ip net.IP) bool {
-	return ip.IsLoopback() ||
-		ip.IsPrivate() ||
-		ip.IsLinkLocalUnicast() ||
-		ip.IsLinkLocalMulticast() ||
-		ip.IsUnspecified()
+	return netguard.IsBlockedIP(ip)
 }
 
 func parseURL(raw string) (*url.URL, error) {

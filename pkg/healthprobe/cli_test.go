@@ -20,7 +20,7 @@ func TestRunMainSmoke(t *testing.T) {
 }
 
 func TestRunMainUsage(t *testing.T) {
-	for _, args := range [][]string{{"healthcheck"}, {"healthcheck", "a", "b"}} {
+	for _, args := range [][]string{{"healthcheck"}, {"healthcheck", "--body", "a", "b"}} {
 		var out, errOut bytes.Buffer
 		if code := RunMain(args, &out, &errOut); code != 2 {
 			t.Fatalf("args %v: code = %d, want 2", args, code)
@@ -86,7 +86,7 @@ func TestRunMainExitCodesWithCheckSeam(t *testing.T) {
 			name:       "usage",
 			args:       []string{"healthcheck"},
 			wantCode:   2,
-			wantStderr: "usage: healthcheck <url>|--smoke\n",
+			wantStderr: "usage: healthcheck <url> [url...]|--api-key-env <env> <url> [url...]|--body <url>|--body-api-key-env <env> <url>|--smoke\n",
 		},
 	}
 
