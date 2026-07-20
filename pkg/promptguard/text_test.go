@@ -58,6 +58,22 @@ func TestSplitTextSegments(t *testing.T) {
 	}
 }
 
+func TestSplitTextSegmentsDistinguishesDialogueFromFlatConfig(t *testing.T) {
+	t.Parallel()
+
+	dialogue := "User: first question\nAssistant: first answer\nUser: second question\nAssistant: second answer"
+	dialogueSegments := splitTextSegments(dialogue)
+	if len(dialogueSegments) != 1 || dialogueSegments[0].Kind != segmentPlain {
+		t.Fatalf("dialogue segments = %#v, want one plain segment", dialogueSegments)
+	}
+
+	config := "host: localhost\nport: 8080\ndebug: true"
+	configSegments := splitTextSegments(config)
+	if len(configSegments) != 1 || configSegments[0].Kind != segmentConfig {
+		t.Fatalf("config segments = %#v, want one config segment", configSegments)
+	}
+}
+
 // TestNormalizeViewsSingleJamoPanic은 단일 compatibility jamo 문자
 // (예: "ㄱ" U+3131)가 composeJamoSequences 내부에서 panic을 일으키지 않는지 검증한다.
 // 수정 전에는 jamo.ComposeHangeul이 길이 1 슬라이스에서 combineHangulSyllables를 호출하여

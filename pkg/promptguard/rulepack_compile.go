@@ -76,6 +76,9 @@ func compileRule(rule *rawRule) (compiledRule, error) {
 	if err := compileRuleMatcher(&compiled, rule); err != nil {
 		return compiledRule{}, fmt.Errorf("compile matcher: %w", err)
 	}
+	if compiled.View == viewRaw && compiled.Type == ruleTypeRegex {
+		compiled.RawCasePrefilter, compiled.RawCaseStablePrefilter = rawCasePrefilters(compiled.RequiredLiteralGroups)
+	}
 	compiled.RequiredLiteralGroups = normalizePrefilterLiteralGroups(compiled.RequiredLiteralGroups)
 	compiled.AggregatePrefilter = bestRequiredLiteralGroup(compiled.RequiredLiteralGroups)
 
@@ -86,12 +89,46 @@ func compileRule(rule *rawRule) (compiledRule, error) {
 	return compiled, nil
 }
 
+func rawCasePrefilters(groups [][]string) ([][]string, [][]string) {
+	var stable [][]string
+	varies := false
+	for _, group := range groups {
+		groupVaries := false
+		for _, literal := range group {
+			lower := normalizeViews(literal).Norm
+			upper := normalizeViews(strings.ToUpper(literal)).Norm
+			if lower != upper {
+				groupVaries = true
+				varies = true
+				break
+			}
+		}
+		if !groupVaries {
+			stable = append(stable, slices.Clone(group))
+		}
+	}
+	if !varies {
+		return nil, nil
+	}
+
+	return cloneLiteralGroups(groups), normalizePrefilterLiteralGroups(stable)
+}
+
+func cloneLiteralGroups(groups [][]string) [][]string {
+	cloned := make([][]string, len(groups))
+	for index, group := range groups {
+		cloned[index] = slices.Clone(group)
+	}
+
+	return cloned
+}
+
 func normalizePrefilterLiteralGroups(groups [][]string) [][]string {
 	normalized := make([][]string, 0, len(groups))
 	for _, group := range groups {
 		values := make([]string, 0, len(group))
 		for _, literal := range group {
-			value := normalizeViews(literal).Norm
+			value := normalizeViews(strings.ToLower(literal)).Norm
 			if value != "" {
 				values = append(values, value)
 			}
@@ -164,8 +201,45 @@ func assignRegexMatcher(compiled *compiledRule, rule *rawRule) error {
 
 	compiled.Pattern = pattern
 	compiled.RequiredLiteralGroups = requiredRegexLiteralGroups(pattern)
+	compiled.RequiredLiteralBranches = requiredRegexLiteralBranches(pattern)
 
 	return nil
+}
+
+func requiredRegexLiteralBranches(pattern *regexp.Regexp) [][][]string {
+	parsed, err := syntax.Parse(pattern.String(), syntax.Perl)
+	if err != nil {
+		return nil
+	}
+	return requiredAlternativeBranches(parsed)
+}
+
+func requiredAlternativeBranches(expression *syntax.Regexp) [][][]string {
+	if expression == nil {
+		return nil
+	}
+	if expression.Op == syntax.OpCapture {
+		if len(expression.Sub) == 1 {
+			return requiredAlternativeBranches(expression.Sub[0])
+		}
+	}
+	if expression.Op != syntax.OpAlternate {
+		groups := normalizePrefilterLiteralGroups(requiredLiteralGroups(expression))
+		if len(groups) == 0 {
+			return nil
+		}
+		return [][][]string{groups}
+	}
+
+	branches := make([][][]string, 0, len(expression.Sub))
+	for _, alternative := range expression.Sub {
+		groups := normalizePrefilterLiteralGroups(requiredLiteralGroups(alternative))
+		if len(groups) == 0 {
+			return nil
+		}
+		branches = append(branches, groups)
+	}
+	return branches
 }
 
 func assignPhraseMatcher(compiled *compiledRule, rule *rawRule) error {

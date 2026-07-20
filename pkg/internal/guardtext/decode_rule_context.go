@@ -4,10 +4,12 @@ const maxShortBase64CandidateLen = minBase64CandidateLen - 1
 
 func decodeCandidatesWithContextForRules(
 	input string,
+	normalized string,
 	mayContribute func(string) bool,
+	oversizedWouldBlock func(string, string, []string) bool,
 	originalPotential bool,
-	needsNormalization bool,
 ) DecodeResult {
+	needsNormalization := normalized != ""
 	if !originalPotential && !needsNormalization {
 		return DecodeResult{}
 	}
@@ -19,8 +21,7 @@ func decodeCandidatesWithContextForRules(
 
 	roots := []string{input}
 	if needsNormalization {
-		normalized := NormalizeEncodingSyntax(input)
-		if normalized != input && (hasPotentialDecodeSurface(normalized) || hasPlausibleShortRuleDecodeSurface(normalized)) {
+		if hasPotentialDecodeSurface(normalized) || hasPlausibleShortRuleDecodeSurface(normalized) {
 			roots = append(roots, normalized)
 			originalPotential = true
 		}
@@ -30,10 +31,11 @@ func decodeCandidatesWithContextForRules(
 	}
 
 	decoder := contextDecoder{
-		result:        DecodeResult{Candidates: make([]string, 0, maxDecodeCandidates)},
-		queue:         make([]decodeQueueEntry, 0, len(roots)+maxDecodeCandidates),
-		visited:       make(map[string]struct{}, len(roots)+maxDecodeCandidates),
-		mayContribute: mayContribute,
+		result:              DecodeResult{Candidates: make([]string, 0, maxDecodeCandidates)},
+		queue:               make([]decodeQueueEntry, 0, len(roots)+maxDecodeCandidates),
+		visited:             make(map[string]struct{}, len(roots)+maxDecodeCandidates),
+		mayContribute:       mayContribute,
+		oversizedWouldBlock: oversizedWouldBlock,
 	}
 	for _, root := range roots {
 		if _, exists := decoder.visited[root]; exists {
@@ -52,7 +54,9 @@ func decodeCandidatesWithContextForRules(
 			current.text,
 			false,
 			false,
-			nil,
+			true,
+			mayContribute,
+			oversizedWouldBlock,
 			&decoder.protectedWork,
 			&decoder.scans,
 			&decoder.result.Status,

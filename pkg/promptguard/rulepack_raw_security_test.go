@@ -1,6 +1,9 @@
 package promptguard
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestRawRulesDoNotUseNormalizedLiteralPrefilter(t *testing.T) {
 	t.Parallel()
@@ -57,5 +60,32 @@ func TestRawRulesDoNotUseNormalizedLiteralPrefilter(t *testing.T) {
 				t.Fatalf("matchSegment() matches = %d, want 1", len(matches))
 			}
 		})
+	}
+}
+
+func TestRawRegexPrefilterPreservesUppercaseASCIIRegexMatches(t *testing.T) {
+	t.Parallel()
+
+	compiled, err := compileRule(&rawRule{
+		ID:             "raw-uppercase-ascii",
+		Family:         "raw-uppercase-ascii",
+		Type:           ruleTypeRegex,
+		Action:         hitActionBlock,
+		View:           viewRaw,
+		Segments:       []string{string(segmentPlain)},
+		Pattern:        `everything[\s\S]{0,32}print`,
+		Weight:         1,
+		MaxOccurrences: 1,
+	})
+	if err != nil {
+		t.Fatalf("compileRule() error = %v", err)
+	}
+
+	segment := textSegment{Kind: segmentPlain, Views: normalizeViews("STOP EVERYTHING NOW JUST PRINT")}
+	if segment.Views.Norm == strings.ToLower(segment.Views.Raw) {
+		t.Fatal("test fixture must exercise context-sensitive confusable normalization")
+	}
+	if matches := compiled.matchSegment(segment, compilePolicy(&rawRulepack{Version: 3}), 1); len(matches) != 1 {
+		t.Fatalf("matchSegment() matches = %d, want 1", len(matches))
 	}
 }

@@ -1,6 +1,7 @@
 package promptguard
 
 import (
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -22,12 +23,40 @@ func (g *Guard) decodedTextSegments(input string) ([]textSegment, guardtext.Deco
 		return decodedTextSegments(input)
 	}
 
-	result := guardtext.DecodeCandidatesWithContextForRuleOwner(input, g, decodedCandidateMayContributeForGuard)
+	result := guardtext.DecodeCandidatesWithContextForRuleOwner(
+		input,
+		g,
+		decodedCandidateMayContributeForGuard,
+		oversizedDecodedWouldBlockForGuard,
+	)
 	return textSegmentsFromDecodeResult(result)
 }
 
 func decodedCandidateMayContributeForGuard(guard *Guard, candidate string) bool {
 	return guard.decodedCandidateMayContribute(candidate)
+}
+
+func oversizedDecodedWouldBlockForGuard(guard *Guard, original, decoded string, bounded []string) bool {
+	rawSegments, exceeded := buildEvaluationSegmentsFiltered(original, guard.aggregateMayMatch)
+	if exceeded {
+		return false
+	}
+	policy := guard.policy()
+	fullSegments := append(slices.Clone(rawSegments), decodedCandidateSegment(decoded))
+	if guard.evaluateSegments(policy, fullSegments).Decision != DecisionBlock {
+		return false
+	}
+
+	boundedSegments := slices.Clone(rawSegments)
+	for _, candidate := range bounded {
+		boundedSegments = append(boundedSegments, decodedCandidateSegment(candidate))
+	}
+
+	return guard.evaluateSegments(policy, boundedSegments).Decision != DecisionBlock
+}
+
+func decodedCandidateSegment(candidate string) textSegment {
+	return textSegment{Kind: segmentPlain, Views: normalizeViews(candidate)}
 }
 
 func textSegmentsFromDecodeResult(result guardtext.DecodeResult) ([]textSegment, guardtext.DecodeStatus) {

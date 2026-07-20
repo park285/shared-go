@@ -1,7 +1,6 @@
 package promptguard
 
 import (
-	"regexp"
 	"strings"
 	"unicode/utf8"
 )
@@ -24,8 +23,6 @@ type textSegment struct {
 	rawNorm   string
 	Aggregate bool
 }
-
-var configLinePattern = regexp.MustCompile(`^\s*(?:-\s+)?[A-Za-z0-9_.-]+\s*:`)
 
 const (
 	guardBoundaryMarker  = "\uE100"
@@ -275,6 +272,8 @@ func looksLikeConfig(text string) bool {
 
 	total := 0
 	keyValue := 0
+	var distinctKeys [3]string
+	distinctKeyCount := 0
 	hasRulepackKeys := false
 
 	for _, line := range lines {
@@ -285,8 +284,21 @@ func looksLikeConfig(text string) bool {
 
 		total++
 
-		if configLinePattern.MatchString(line) {
+		if key, ok := configLineKey(line); ok {
 			keyValue++
+			if distinctKeyCount < len(distinctKeys) {
+				seen := false
+				for _, existing := range distinctKeys[:distinctKeyCount] {
+					if strings.EqualFold(existing, key) {
+						seen = true
+						break
+					}
+				}
+				if !seen {
+					distinctKeys[distinctKeyCount] = key
+					distinctKeyCount++
+				}
+			}
 		}
 
 		if strings.Contains(trimmed, "rules:") || strings.Contains(trimmed, "pattern:") || strings.Contains(trimmed, "weight:") {
@@ -298,7 +310,46 @@ func looksLikeConfig(text string) bool {
 		return false
 	}
 
-	return hasRulepackKeys || keyValue >= 3 || float64(keyValue)/float64(total) >= 0.35
+	if hasRulepackKeys {
+		return true
+	}
+	if distinctKeyCount < len(distinctKeys) {
+		return false
+	}
+
+	return keyValue >= 3 || float64(keyValue)/float64(total) >= 0.35
+}
+
+func configLineKey(line string) (string, bool) {
+	value := strings.TrimLeft(line, " \t\r\f\v")
+	if strings.HasPrefix(value, "-") {
+		rest := value[1:]
+		value = strings.TrimLeft(rest, " \t\r\f\v")
+		if len(value) == len(rest) {
+			return "", false
+		}
+	}
+
+	end := 0
+	for end < len(value) && isConfigKeyByte(value[end]) {
+		end++
+	}
+	if end == 0 {
+		return "", false
+	}
+	rest := strings.TrimLeft(value[end:], " \t\r\f\v")
+	if !strings.HasPrefix(rest, ":") {
+		return "", false
+	}
+
+	return value[:end], true
+}
+
+func isConfigKeyByte(value byte) bool {
+	return value >= 'a' && value <= 'z' ||
+		value >= 'A' && value <= 'Z' ||
+		value >= '0' && value <= '9' ||
+		value == '_' || value == '.' || value == '-'
 }
 
 func newInlineSegment(part string, index int) textSegment {

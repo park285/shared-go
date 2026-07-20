@@ -1,10 +1,53 @@
 package promptguard
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"unicode/utf8"
 )
+
+func TestRequiredLiteralBranchesPreserveAlternationConjunctions(t *testing.T) {
+	pattern := regexp.MustCompile(`(?i)(?:show.{0,3}prompt|reveal.{0,3}instructions)`)
+	branches := requiredRegexLiteralBranches(pattern)
+	if len(branches) != 2 {
+		t.Fatalf("branches = %#v, want two alternatives", branches)
+	}
+	if containsAnyLiteralBranch("previous instructions", branches) {
+		t.Fatal("branch prefilter accepted input missing the branch action")
+	}
+	for _, input := range []string{"show prompt", "reveal instructions"} {
+		if !containsAnyLiteralBranch(input, branches) {
+			t.Fatalf("branch prefilter rejected regex candidate %q: %#v", input, branches)
+		}
+	}
+}
+
+func TestRequiredLiteralBranchesAdmitEmbeddedCorpusRegexMatches(t *testing.T) {
+	guard := newTestGuardFromRulepacks(t)
+	for _, tc := range readCorpusCases(t, "testdata/corpus-v3.jsonl") {
+		segments, exceeded := buildEvaluationSegmentsFiltered(tc.Input, guard.aggregateMayMatch)
+		if exceeded {
+			continue
+		}
+		decoded, _ := guard.decodedTextSegments(tc.Input)
+		segments = append(segments, decoded...)
+		for _, pack := range guard.packs {
+			for ruleIndex := range pack.Rules {
+				rule := &pack.Rules[ruleIndex]
+				if rule.Type != ruleTypeRegex || rule.View == viewRaw || len(rule.RequiredLiteralBranches) == 0 {
+					continue
+				}
+				for _, segment := range segments {
+					text := segmentView(segment, rule.View)
+					if rule.Pattern.MatchString(text) && !containsAnyLiteralBranch(text, rule.RequiredLiteralBranches) {
+						t.Fatalf("case %q rule %q matched regex but failed branch prefilter for %q", tc.ID, rule.ID, text)
+					}
+				}
+			}
+		}
+	}
+}
 
 func TestEmbeddedRulesHaveRequiredLiteralPrefilters(t *testing.T) {
 	t.Parallel()

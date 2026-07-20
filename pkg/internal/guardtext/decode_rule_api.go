@@ -8,12 +8,18 @@ func DecodeCandidatesWithContextForRules(input string, mayContribute func(string
 		return DecodeCandidatesWithContext(input)
 	}
 	originalPotential, needsNormalization := ruleDecodePreflight(input)
-	return decodeCandidatesWithContextForRules(input, mayContribute, originalPotential, needsNormalization)
+	normalized := normalizedRuleDecodeInput(input, needsNormalization)
+	return decodeCandidatesWithContextForRules(input, normalized, mayContribute, nil, originalPotential)
 }
 
 // DecodeCandidatesWithContextForRuleOwner avoids allocating an owner-bound
 // callback when the input has no transform surface.
-func DecodeCandidatesWithContextForRuleOwner[T any](input string, owner T, mayContribute func(T, string) bool) DecodeResult {
+func DecodeCandidatesWithContextForRuleOwner[T any](
+	input string,
+	owner T,
+	mayContribute func(T, string) bool,
+	oversizedWouldBlock func(T, string, string, []string) bool,
+) DecodeResult {
 	if mayContribute == nil {
 		return DecodeCandidatesWithContext(input)
 	}
@@ -21,12 +27,31 @@ func DecodeCandidatesWithContextForRuleOwner[T any](input string, owner T, mayCo
 	if !originalPotential && !needsNormalization {
 		return DecodeResult{}
 	}
+	normalized := normalizedRuleDecodeInput(input, needsNormalization)
+	var oversizedCallback func(string, string, []string) bool
+	if (len(input) > maxDecodedCandidateLen || len(normalized) > maxDecodedCandidateLen) && oversizedWouldBlock != nil {
+		oversizedCallback = func(original, decoded string, bounded []string) bool {
+			return oversizedWouldBlock(owner, original, decoded, bounded)
+		}
+	}
 	return decodeCandidatesWithContextForRules(
 		input,
+		normalized,
 		func(candidate string) bool { return mayContribute(owner, candidate) },
+		oversizedCallback,
 		originalPotential,
-		needsNormalization,
 	)
+}
+
+func normalizedRuleDecodeInput(input string, needed bool) string {
+	if !needed {
+		return ""
+	}
+	normalized := NormalizeEncodingSyntax(input)
+	if normalized == input {
+		return ""
+	}
+	return normalized
 }
 
 // DecodedCandidateFitsBudget은 단일 decode candidate가 admission 크기 한도 안에 있는지 보고한다.

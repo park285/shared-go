@@ -73,16 +73,17 @@ func hasPotentialContextDecodeSurface(input string, includeShort bool) bool {
 }
 
 type contextDecoder struct {
-	result        DecodeResult
-	queue         []decodeQueueEntry
-	visited       map[string]struct{}
-	cursor        int
-	total         int
-	scans         int
-	includeShort  bool
-	filterLong    bool
-	mayContribute func(string) bool
-	protectedWork protectedDecodeWork
+	result              DecodeResult
+	queue               []decodeQueueEntry
+	visited             map[string]struct{}
+	cursor              int
+	total               int
+	scans               int
+	includeShort        bool
+	filterLong          bool
+	mayContribute       func(string) bool
+	oversizedWouldBlock func(string, string, []string) bool
+	protectedWork       protectedDecodeWork
 }
 
 func (d *contextDecoder) pending() bool {
@@ -92,7 +93,7 @@ func (d *contextDecoder) pending() bool {
 func (d *contextDecoder) expandNext() {
 	current := d.queue[d.cursor]
 	d.cursor++
-	decodeContextSurfaces(current.text, d.includeShort, d.filterLong, d.mayContribute, &d.protectedWork, &d.scans, &d.result.Status, func(candidate string) {
+	decodeContextSurfaces(current.text, d.includeShort, d.filterLong, d.includeShort, d.mayContribute, d.oversizedWouldBlock, &d.protectedWork, &d.scans, &d.result.Status, func(candidate string) {
 		d.admit(current, candidate)
 	}, func(span encodedSpan, decoded string) {
 		d.admitContextual(current, span, decoded)
@@ -149,7 +150,9 @@ func decodeContextSurfaces(
 	input string,
 	includeShort bool,
 	filterLong bool,
+	boundOversizedStandard bool,
 	mayContribute func(string) bool,
+	oversizedWouldBlock func(string, string, []string) bool,
 	work *protectedDecodeWork,
 	scans *int,
 	status *DecodeStatus,
@@ -169,7 +172,7 @@ func decodeContextSurfaces(
 			if !consumeContextDecodeScan(scans, status) {
 				return
 			}
-			candidate, ok := decodeContextCandidate(input, family, includeShort, mayContribute, work, status)
+			candidate, ok := decodeContextCandidate(input, family, includeShort, boundOversizedStandard, mayContribute, oversizedWouldBlock, work, status)
 			if !ok {
 				continue
 			}
@@ -183,6 +186,8 @@ type decodedContextCandidate struct {
 	span                 encodedSpan
 	decoded              string
 	contextual           string
+	boundedStandard      bool
+	boundedCandidates    []string
 	decodedMayContribute bool
 	contextMayContribute bool
 }
@@ -202,7 +207,9 @@ func decodeContextCandidate(
 	input string,
 	family *transformFamily,
 	includeShort bool,
+	boundOversizedStandard bool,
 	mayContribute func(string) bool,
+	oversizedWouldBlock func(string, string, []string) bool,
 	work *protectedDecodeWork,
 	status *DecodeStatus,
 ) (decodedContextCandidate, bool) {
@@ -213,6 +220,20 @@ func decodeContextCandidate(
 	}
 	if family.kind == decodeHex {
 		span.start = contextualHexStart(input, span.start)
+	}
+	if boundOversizedStandard && len(decoded) > maxDecodedCandidateLen && isWholeContextTransform(family.kind) {
+		bounded, nestedStatus := boundedStandardTransformCandidates(input, family.kind, family.spans, mayContribute)
+		mergeDecodeStatus(status, nestedStatus)
+		if oversizedWouldBlock != nil && oversizedWouldBlock(input, decoded, bounded) {
+			*status |= DecodeByteLimit
+		}
+
+		return decodedContextCandidate{
+			kind:              family.kind,
+			span:              span,
+			boundedStandard:   true,
+			boundedCandidates: bounded,
+		}, true
 	}
 
 	decodedMayContribute, nestedStatus := protectedDecodedContribution(decoded, mayContribute)
@@ -243,6 +264,13 @@ func (c decodedContextCandidate) hasContext() bool {
 }
 
 func admitDecodedContextCandidate(candidate decodedContextCandidate, includeShort bool, admit func(string), admitContextual func(encodedSpan, string)) {
+	if candidate.boundedStandard {
+		for _, bounded := range candidate.boundedCandidates {
+			admit(bounded)
+		}
+
+		return
+	}
 	if !includeShort || candidate.decodedMayContribute {
 		admit(candidate.decoded)
 	}

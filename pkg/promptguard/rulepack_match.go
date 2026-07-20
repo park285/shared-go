@@ -55,17 +55,100 @@ func (r *compiledRule) matchInput(segment textSegment, policy compiledPolicy) (s
 	if strings.TrimSpace(text) == "" {
 		return "", 0, false
 	}
-	prefilterText := text
 	if r.View == viewRaw {
-		prefilterText = segment.rawNormalizedView()
-	}
-	if !containsAllLiteralGroups(prefilterText, r.RequiredLiteralGroups) {
-		return "", 0, false
+		if !containsAllLiteralGroups(segment.rawNormalizedView(), r.RequiredLiteralGroups) {
+			if len(r.RawCasePrefilter) == 0 ||
+				!containsAllLiteralGroups(segment.rawNormalizedView(), r.RawCaseStablePrefilter) ||
+				!containsASCIIUpper(text) ||
+				!containsAllLiteralGroupsASCIIFold(text, r.RawCasePrefilter) {
+				return "", 0, false
+			}
+		}
+	} else {
+		if len(r.RequiredLiteralBranches) > 0 {
+			if !containsAnyLiteralBranch(text, r.RequiredLiteralBranches) {
+				return "", 0, false
+			}
+		} else if !containsAllLiteralGroups(text, r.RequiredLiteralGroups) {
+			return "", 0, false
+		}
 	}
 
 	weight := r.Weight * segmentWeightMultiplier(policy, segment) * policy.viewMultiplier(r.View)
 
 	return text, weight, weight > 0
+}
+
+func containsAnyLiteralBranch(text string, branches [][][]string) bool {
+	for _, branch := range branches {
+		if containsAllLiteralGroups(text, branch) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsASCIIUpper(text string) bool {
+	for index := range len(text) {
+		if text[index] >= 'A' && text[index] <= 'Z' {
+			return true
+		}
+	}
+
+	return false
+}
+
+func containsAllLiteralGroupsASCIIFold(text string, groups [][]string) bool {
+	for _, group := range groups {
+		matched := false
+		for _, literal := range group {
+			if containsASCIIFold(text, literal) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+
+	return true
+}
+
+func containsASCIIFold(text, literal string) bool {
+	if strings.Contains(text, literal) {
+		return true
+	}
+	if literal == "" || len(literal) > len(text) {
+		return literal == ""
+	}
+	for index := range len(literal) {
+		if literal[index] >= 0x80 {
+			return false
+		}
+	}
+	for start := 0; start <= len(text)-len(literal); start++ {
+		matched := true
+		for offset := range len(literal) {
+			if foldASCII(text[start+offset]) != foldASCII(literal[offset]) {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return true
+		}
+	}
+
+	return false
+}
+
+func foldASCII(value byte) byte {
+	if value >= 'A' && value <= 'Z' {
+		return value + ('a' - 'A')
+	}
+
+	return value
 }
 
 func (r *compiledRule) matchRegexSegment(segment textSegment, text string, weight float64, limit int) []Match {

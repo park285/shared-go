@@ -41,6 +41,36 @@ rules:
     pattern: '(?:(?:기억|메모리|세션|앞으로|항상|영구히|저장)[\s\S]{0,48}(?:(?:내|사용자|검색[\s]*결과|이[\s]*페이지)[\s\S]{0,20}(?:지시|명령|내용)[\s\S]{0,24}(?:시스템보다|개발자보다|우선)|(?:시스템보다|개발자보다)[\s\S]{0,20}(?:우선|높은[\s]*우선순위))|(?:검색[\s]*결과|이[\s]*페이지)[\s\S]{0,24}(?:영구히|항상|기억|저장)[\s\S]{0,28}(?:시스템|개발자)[\s\S]{0,16}(?:규칙|지시)?[\s\S]{0,16}(?:우선|높은[\s]*우선순위))'
     weight: 1.0
 
+  - id: persistent_output_control_ko
+    family: memory_poisoning
+    type: regex
+    action: block
+    view: aggregate_joined
+    segments: [plain]
+    max_occurrences: 1
+    pattern: '^[\s]*(?:(?:제발|부탁인데)[\s,]*)?(?:앞으로|이후(?:부터)?|이제부터|항상|영구히|계속)[\s\S]{0,64}(?:(?:라고|이라는|이란)[\s]*만|(?:문구|문자열|텍스트)[\s]*만)[\s\S]{0,16}(?:답|응답|출력)(?:[\s\S]{0,24}(?:기억|저장|유지))?'
+    weight: 1.0
+
+  - id: bracketed_role_override_ko
+    family: role_spoofing
+    type: regex
+    action: block
+    view: raw
+    segments: [plain]
+    max_occurrences: 1
+    pattern: '^[\s]*[\[【<＜][\s]*(?:system|developer|assistant|시스템|개발자|어시스턴트)(?:[\s_-]*message|[\s]*메시지)?[\s]*[\]】>＞][\s\S]{0,96}(?:(?:관리자[\s\S]{0,12})?역할(?:을|이)?[\s]*(?:변경|전환)|(?:이제부터|앞으로)[\s\S]{0,48}(?:(?:라고|이라는|이란)[\s]*만|(?:문구|문자열|텍스트)[\s]*만)[\s\S]{0,16}(?:답|응답|출력)|(?:무시|우회|대체)[\s\S]{0,16}(?:지시|규칙|정책))'
+    weight: 1.0
+
+  - id: interrupt_fixed_output_ko
+    family: override
+    type: regex
+    action: block
+    view: raw
+    segments: [plain]
+    max_occurrences: 1
+    pattern: '(?:^|(?:-{4,})[\s\r\n-]*)(?:전부|모든[\s]*것(?:을)?)[\s]*(?:멈추|멈춰|중단)[\s\S]{0,48}(?:그냥|오직)(?:[\s]*["“][^"”\r\n]{8,512}["”]|[\s\S]{0,160}(?:출력|답|응답)(?:하|해))'
+    weight: 1.0
+
   - id: policy_bypass_ko
     family: policy_bypass
     type: regex

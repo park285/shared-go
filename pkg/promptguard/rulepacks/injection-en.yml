@@ -41,6 +41,36 @@ rules:
     pattern: '(?:(?:always|permanently|forever|remember|store in memory)[\s\S]{0,48}(?:(?:user|my|this page|this result)[\s\S]{0,24}(?:instructions?|commands?|content)[\s\S]{0,24}(?:outrank|override|higher[\s]*priority|above)|(?:this page|this result)[\s\S]{0,28}(?:higher[\s]*priority|outrank)[\s\S]{0,24}(?:system|developer)|(?:higher[\s]*priority|outrank)[\s\S]{0,24}(?:system|developer)))'
     weight: 1.0
 
+  - id: persistent_output_control_en
+    family: memory_poisoning
+    type: regex
+    action: block
+    view: aggregate_joined
+    segments: [plain]
+    max_occurrences: 1
+    pattern: '^[\s]*(?:please)?(?:fromnowon|always|forever|permanently)[\s\S]{0,64}(?:reply|answer|respond|output)[\s\S]{0,24}with(?:only|exactly)(?:the(?:same)?)?(?:word|phrase|string|text)'
+    weight: 1.0
+
+  - id: bracketed_role_override_en
+    family: role_spoofing
+    type: regex
+    action: block
+    view: raw
+    segments: [plain]
+    max_occurrences: 1
+    pattern: '^[\s]*[\[【<＜][\s]*(?:system|developer|assistant|시스템|개발자|어시스턴트)(?:[\s_-]*message|[\s]*메시지)?[\s]*[\]】>＞][\s\S]{0,96}(?:(?:administrator|admin)[\s\S]{0,16}role[\s\S]{0,12}(?:changed|updated)|(?:from[\s]+now[\s]+on|always)[\s\S]{0,48}(?:reply|answer|respond|output)[\s\S]{0,24}(?:only|exactly)|(?:ignore|disregard|override|bypass)[\s\S]{0,20}(?:instructions?|rules?|polic(?:y|ies)))'
+    weight: 1.0
+
+  - id: interrupt_fixed_output_en
+    family: override
+    type: regex
+    action: block
+    view: raw
+    segments: [plain]
+    max_occurrences: 1
+    pattern: '(?:^|(?:-{4,})[\s\r\n-]*)(?:stop|halt)[\s]+(?:everything|all)[\s\S]{0,48}(?:just|only)(?:[\s]*["“][^"”\r\n]{8,512}["”]|[\s]+(?:print|output|reply|answer|respond))'
+    weight: 1.0
+
   - id: role_override
     family: role_spoofing
     type: regex
