@@ -113,6 +113,21 @@ func bootstrapBaseline(policy *omap, selected selection, args *cliArgs, repoRoot
 	if candidate.Collection.Race {
 		return 0, perr("race benchmark evidence is invalid")
 	}
+	candidateResults, err := parseResultsFromManifest(args.candidate, candidate.Files)
+	if err != nil {
+		return 0, err
+	}
+	if missing := checkMissing(candidateResults, selected); len(missing) > 0 {
+		return 0, perr("bootstrap candidate is missing benchmark evidence: %s", strings.Join(missing, ", "))
+	}
+	if !printRequiredMetricDiagnostics(policy, selected, nil, candidateResults) {
+		return 2, nil
+	}
+	if issues := absoluteBudgetIssues(policy, selected, candidateResults); len(issues) > 0 {
+		printIssues(issues)
+		fmt.Fprintln(os.Stderr, "error: bootstrap candidate violates an absolute benchmark budget")
+		return 2, nil
+	}
 	head, dirty, err := gitState(repoRoot)
 	if err != nil {
 		return 0, err

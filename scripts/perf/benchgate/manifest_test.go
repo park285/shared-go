@@ -375,4 +375,19 @@ func TestBootstrapBaselineWritesAbsentTargetOnly(t *testing.T) {
 	if _, err := os.Stat(args.baseline); !os.IsNotExist(err) {
 		t.Fatal("check wrote a missing baseline")
 	}
+	selected[0].config.vals["max_ns_per_op"] = 50
+	identity, err = evidenceContext(policyPath, root, "fixture", selected, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate.Identity = identity
+	if err := writeJSONAtomic(manifestPath(candidateRoot, "candidate"), candidate); err != nil {
+		t.Fatal(err)
+	}
+	if code, err := bootstrapBaseline(policy, selected, args, root, "fixture"); err != nil || code != 2 {
+		t.Fatalf("bootstrap absolute SLA rejection: code=%d err=%v", code, err)
+	}
+	if _, err := os.Stat(args.baseline); !os.IsNotExist(err) {
+		t.Fatal("absolute SLA violation created a baseline")
+	}
 }

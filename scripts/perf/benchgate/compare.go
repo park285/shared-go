@@ -173,6 +173,10 @@ func compareResults(policy *omap, selected selection, baseline, candidate *Resul
 	return issues
 }
 
+func absoluteBudgetIssues(policy *omap, selected selection, results *Results) []Issue {
+	return compareResults(policy, selected, results, results)
+}
+
 func checkMissing(results *Results, selected selection) []string {
 	var missing []string
 	for _, e := range selected {

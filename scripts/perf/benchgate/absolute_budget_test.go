@@ -84,6 +84,14 @@ func TestAbsoluteBudgetsRejectCandidateOverEachLimit(t *testing.T) {
 	}
 }
 
+func TestAbsoluteBudgetIssuesRejectInvalidBaselineEvidence(t *testing.T) {
+	policy, selected := loadAbsoluteBudgetPolicy(t, 200, 32, 4)
+	issues := absoluteBudgetIssues(policy, selected, benchmarkResults(201, 16, 3))
+	if len(issues) != 1 || issues[0].Metric != "ns/op" {
+		t.Fatalf("absoluteBudgetIssues() issues = %#v, want one ns/op violation", issues)
+	}
+}
+
 func TestAbsoluteBudgetsMustBePositive(t *testing.T) {
 	path := writeAbsoluteBudgetPolicy(t, 0, 32, 4)
 	policy, err := loadPolicy(path)
