@@ -1,16 +1,20 @@
 package guardtext
 
+import "html"
+
 func (d *contextDecoder) ruleCandidateMayContributeOrExpand(source, candidate string) bool {
 	if d.mayContribute == nil || d.mayContribute(candidate) {
 		return true
 	}
 
-	changed, ok := transformedCandidateRange(source, candidate)
-	if !ok {
-		changed = encodedSpan{end: len(candidate)}
+	if changed, ok := transformedCandidateRange(source, candidate); ok {
+		return ruleDecodeSurfaceOverlaps(candidate, changed)
+	}
+	if introducesSurface, ok := wholeTransformIntroducesRuleSurface(source, candidate); ok {
+		return introducesSurface
 	}
 
-	return ruleDecodeSurfaceOverlaps(candidate, changed)
+	return ruleDecodeSurfaceOverlaps(candidate, encodedSpan{end: len(candidate)})
 }
 
 func transformedCandidateRange(source, candidate string) (encodedSpan, bool) {
@@ -57,6 +61,51 @@ func replacementRange(source, candidate string, span encodedSpan) (encodedSpan, 
 	}
 
 	return encodedSpan{start: span.start, end: candidateEnd}, true
+}
+
+func wholeTransformIntroducesRuleSurface(source, candidate string) (bool, bool) {
+	if decoded, ok := decodePercentRuns(source); ok && decoded == candidate {
+		return transformedSpansIntroduceRuleSurface(source, candidate, percentSpans(source), decodePercentRuns), true
+	}
+	if decoded := html.UnescapeString(source); decoded != source && decoded == candidate {
+		return transformedSpansIntroduceRuleSurface(source, candidate, htmlEntitySpans(source), decodeHTMLEntity), true
+	}
+	if decoded, ok := decodeJSONStringEscapes(source); ok && decoded == candidate {
+		return transformedSpansIntroduceRuleSurface(source, candidate, jsonEscapeSpans(source), decodeJSONStringEscapes), true
+	}
+
+	return false, false
+}
+
+func transformedSpansIntroduceRuleSurface(
+	source string,
+	candidate string,
+	spans []encodedSpan,
+	decode func(string) (string, bool),
+) bool {
+	sourcePosition := 0
+	candidatePosition := 0
+	for _, span := range spans {
+		candidatePosition += span.start - sourcePosition
+		replacement, changed := decode(source[span.start:span.end])
+		if !changed {
+			replacement = source[span.start:span.end]
+		}
+		replacementSpan := encodedSpan{start: candidatePosition, end: candidatePosition + len(replacement)}
+		if changed && ruleDecodeSurfaceOverlaps(candidate, replacementSpan) {
+			return true
+		}
+		candidatePosition = replacementSpan.end
+		sourcePosition = span.end
+	}
+
+	return false
+}
+
+func decodeHTMLEntity(input string) (string, bool) {
+	decoded := html.UnescapeString(input)
+
+	return decoded, decoded != input
 }
 
 func ruleDecodeSurfaceOverlaps(input string, changed encodedSpan) bool {
@@ -107,17 +156,15 @@ func escapeRuleSurfaceOverlaps(input string, changed encodedSpan) bool {
 }
 
 func hexRuleSurfaceOverlaps(input string, changed encodedSpan) bool {
-	for _, pattern := range []struct {
-		spans []encodedSpan
-	}{
-		{spans: hexSpansForPattern(input, hexPayloadPattern)},
-		{spans: shortRuleHexSpans(input)},
-	} {
-		for _, span := range pattern.spans {
-			span.start = contextualHexStart(input, span.start)
-			if encodedSpansOverlap(span, changed) {
-				return true
-			}
+	return contextualHexSurfaceOverlaps(input, changed, hexSpansForPattern(input, hexPayloadPattern)) ||
+		contextualHexSurfaceOverlaps(input, changed, shortRuleHexSpans(input))
+}
+
+func contextualHexSurfaceOverlaps(input string, changed encodedSpan, spans []encodedSpan) bool {
+	for _, span := range spans {
+		span.start = contextualHexStart(input, span.start)
+		if encodedSpansOverlap(span, changed) {
+			return true
 		}
 	}
 
