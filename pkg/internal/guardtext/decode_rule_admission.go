@@ -5,20 +5,17 @@ import (
 	"strings"
 )
 
-func (d *contextDecoder) ruleCandidateMayContributeOrExpand(source, candidate string) bool {
-	if d.mayContribute == nil || d.mayContribute(candidate) {
-		return true
-	}
+func (d *contextDecoder) ruleCandidateMayExpand(source, candidate string) bool {
 	if !consumeProtectedContextWork(&d.protectedWork, &d.result.Status, len(source)) ||
 		!consumeProtectedContextWork(&d.protectedWork, &d.result.Status, len(candidate)) {
 		return false
 	}
 
-	if changed, ok := transformedCandidateRange(source, candidate); ok {
-		return ruleDecodeSurfaceOverlaps(candidate, changed)
-	}
 	if introducesSurface, ok := wholeTransformIntroducesRuleSurface(source, candidate); ok {
 		return introducesSurface
+	}
+	if changed, ok := transformedCandidateRange(source, candidate); ok {
+		return ruleDecodeSurfaceOverlaps(candidate, changed)
 	}
 
 	return ruleDecodeSurfaceOverlaps(candidate, encodedSpan{end: len(candidate)})
@@ -39,6 +36,9 @@ func transformedCandidateRange(source, candidate string) (encodedSpan, bool) {
 		if replacement, ok := replacementRange(source, candidate, encodedSpan{start: start, end: match.next}); ok {
 			return replacement, true
 		}
+	}
+	if !containsASCIIFold(source, "hex") {
+		return encodedSpan{}, false
 	}
 	for _, span := range hexSpansForPattern(source, hexPayloadPattern) {
 		span.start = contextualHexStart(source, span.start)
@@ -169,6 +169,7 @@ func escapeRuleSurfaceOverlaps(input string, changed encodedSpan) bool {
 				return true
 			}
 		}
+
 	}
 
 	return false
@@ -202,6 +203,9 @@ func (d *contextDecoder) admitRuleCandidate(current decodeQueueEntry, candidate 
 	if d.mayContribute == nil || d.mayContribute(candidate) {
 		d.admit(current, candidate)
 
+		return
+	}
+	if !d.ruleCandidateMayExpand(current.text, candidate) {
 		return
 	}
 
