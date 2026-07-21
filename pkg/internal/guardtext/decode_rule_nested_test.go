@@ -123,7 +123,6 @@ func TestRuleCandidateExpansionIgnoresWholeTransformSiblingSurfaces(t *testing.T
 	t.Parallel()
 
 	second := base64.StdEncoding.EncodeToString([]byte("another ordinary record"))
-	decoder := contextDecoder{mayContribute: func(string) bool { return false }}
 	for name, source := range map[string]string{
 		"percent": "%6f%72%64%69%6e%61%72%79 " + second,
 		"html":    "&#111;rdinary " + second,
@@ -132,6 +131,7 @@ func TestRuleCandidateExpansionIgnoresWholeTransformSiblingSurfaces(t *testing.T
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
+			decoder := contextDecoder{mayContribute: func(string) bool { return false }}
 			if decoder.ruleCandidateMayContributeOrExpand(source, "ordinary "+second) {
 				t.Fatal("unchanged sibling Base64 surface made a whole transform expandable")
 			}
