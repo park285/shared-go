@@ -6,6 +6,10 @@ func (d *contextDecoder) ruleCandidateMayContributeOrExpand(source, candidate st
 	if d.mayContribute == nil || d.mayContribute(candidate) {
 		return true
 	}
+	if !consumeProtectedContextWork(&d.protectedWork, &d.result.Status, len(source)) ||
+		!consumeProtectedContextWork(&d.protectedWork, &d.result.Status, len(candidate)) {
+		return false
+	}
 
 	if changed, ok := transformedCandidateRange(source, candidate); ok {
 		return ruleDecodeSurfaceOverlaps(candidate, changed)
