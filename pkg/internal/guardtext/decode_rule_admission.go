@@ -5,13 +5,22 @@ import (
 	"strings"
 )
 
+const maxRuleExpansionBytes = 2 * maxProtectedContextBytes
+
 type ruleContextDecoder struct {
 	contextDecoder
-	expansionBytes int
+	expansionBytes         int
+	expansionSourceBytes   int
+	expansionSourceCharged bool
+}
+
+func (d *ruleContextDecoder) beginRuleExpansion(source string) {
+	d.expansionSourceBytes = len(source)
+	d.expansionSourceCharged = false
 }
 
 func (d *ruleContextDecoder) ruleCandidateMayExpand(source, candidate string) bool {
-	if !d.consumeRuleExpansionWork(len(source)) || !d.consumeRuleExpansionWork(len(candidate)) {
+	if !d.consumeRuleExpansionWork(len(candidate)) {
 		return false
 	}
 
@@ -25,13 +34,18 @@ func (d *ruleContextDecoder) ruleCandidateMayExpand(source, candidate string) bo
 	return ruleDecodeSurfaceOverlaps(candidate, encodedSpan{end: len(candidate)})
 }
 
-func (d *ruleContextDecoder) consumeRuleExpansionWork(bytes int) bool {
-	if bytes < 0 || bytes > maxProtectedContextBytes-d.expansionBytes {
+func (d *ruleContextDecoder) consumeRuleExpansionWork(candidateBytes int) bool {
+	bytes := candidateBytes
+	if !d.expansionSourceCharged {
+		bytes += d.expansionSourceBytes
+	}
+	if bytes < 0 || bytes > maxRuleExpansionBytes-d.expansionBytes {
 		d.result.Status |= DecodeByteLimit
 
 		return false
 	}
 	d.expansionBytes += bytes
+	d.expansionSourceCharged = true
 
 	return true
 }
