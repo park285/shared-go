@@ -1,6 +1,9 @@
 package guardtext
 
-import "html"
+import (
+	"html"
+	"strings"
+)
 
 func (d *contextDecoder) ruleCandidateMayContributeOrExpand(source, candidate string) bool {
 	if d.mayContribute == nil || d.mayContribute(candidate) {
@@ -68,14 +71,20 @@ func replacementRange(source, candidate string, span encodedSpan) (encodedSpan, 
 }
 
 func wholeTransformIntroducesRuleSurface(source, candidate string) (bool, bool) {
-	if decoded, ok := decodePercentRuns(source); ok && decoded == candidate {
-		return transformedSpansIntroduceRuleSurface(source, candidate, percentSpans(source), decodePercentRuns), true
+	if strings.IndexByte(source, '%') >= 0 {
+		if decoded, ok := decodePercentRuns(source); ok && decoded == candidate {
+			return transformedSpansIntroduceRuleSurface(source, candidate, percentSpans(source), decodePercentRuns), true
+		}
 	}
-	if decoded := html.UnescapeString(source); decoded != source && decoded == candidate {
-		return transformedSpansIntroduceRuleSurface(source, candidate, htmlEntitySpans(source), decodeHTMLEntity), true
+	if strings.IndexByte(source, '&') >= 0 {
+		if decoded := html.UnescapeString(source); decoded != source && decoded == candidate {
+			return transformedSpansIntroduceRuleSurface(source, candidate, htmlEntitySpans(source), decodeHTMLEntity), true
+		}
 	}
-	if decoded, ok := decodeJSONStringEscapes(source); ok && decoded == candidate {
-		return transformedSpansIntroduceRuleSurface(source, candidate, jsonEscapeSpans(source), decodeJSONStringEscapes), true
+	if strings.IndexByte(source, '\\') >= 0 {
+		if decoded, ok := decodeJSONStringEscapes(source); ok && decoded == candidate {
+			return transformedSpansIntroduceRuleSurface(source, candidate, jsonEscapeSpans(source), decodeJSONStringEscapes), true
+		}
 	}
 
 	return false, false
@@ -140,19 +149,25 @@ func base64RuleSurfaceOverlaps(input string, changed encodedSpan) bool {
 }
 
 func escapeRuleSurfaceOverlaps(input string, changed encodedSpan) bool {
-	for _, span := range percentSpans(input) {
-		if encodedSpansOverlap(span, changed) {
-			return true
+	if strings.IndexByte(input, '%') >= 0 {
+		for _, span := range percentSpans(input) {
+			if encodedSpansOverlap(span, changed) {
+				return true
+			}
 		}
 	}
-	for _, span := range htmlEntitySpans(input) {
-		if encodedSpansOverlap(span, changed) {
-			return true
+	if strings.IndexByte(input, '&') >= 0 {
+		for _, span := range htmlEntitySpans(input) {
+			if encodedSpansOverlap(span, changed) {
+				return true
+			}
 		}
 	}
-	for _, span := range jsonEscapeSpans(input) {
-		if encodedSpansOverlap(span, changed) {
-			return true
+	if strings.IndexByte(input, '\\') >= 0 {
+		for _, span := range jsonEscapeSpans(input) {
+			if encodedSpansOverlap(span, changed) {
+				return true
+			}
 		}
 	}
 
@@ -160,6 +175,10 @@ func escapeRuleSurfaceOverlaps(input string, changed encodedSpan) bool {
 }
 
 func hexRuleSurfaceOverlaps(input string, changed encodedSpan) bool {
+	if !containsASCIIFold(input, "hex") {
+		return false
+	}
+
 	return contextualHexSurfaceOverlaps(input, changed, hexSpansForPattern(input, hexPayloadPattern)) ||
 		contextualHexSurfaceOverlaps(input, changed, shortRuleHexSpans(input))
 }
