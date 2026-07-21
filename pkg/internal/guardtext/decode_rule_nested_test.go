@@ -109,7 +109,7 @@ func TestRuleCandidateExpansionIgnoresUnchangedSiblingSurfaces(t *testing.T) {
 
 	first := base64.StdEncoding.EncodeToString([]byte("ordinary conversation record"))
 	second := base64.StdEncoding.EncodeToString([]byte("another ordinary record"))
-	decoder := ruleContextDecoder{}
+	decoder := ruleContextDecoder{contextDecoder: contextDecoder{mayContribute: func(string) bool { return false }}}
 	if decoder.ruleCandidateMayExpand(first+" "+second, "ordinary conversation record "+second) {
 		t.Fatal("unchanged sibling Base64 surface made a benign replacement expandable")
 	}
@@ -132,7 +132,7 @@ func TestRuleCandidateExpansionIgnoresWholeTransformSiblingSurfaces(t *testing.T
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			decoder := ruleContextDecoder{}
+			decoder := ruleContextDecoder{contextDecoder: contextDecoder{mayContribute: func(string) bool { return false }}}
 			if decoder.ruleCandidateMayExpand(source, "ordinary "+second) {
 				t.Fatal("unchanged sibling Base64 surface made a whole transform expandable")
 			}
