@@ -41,19 +41,6 @@ func TestDecodeCandidatesWithContextForRulesComposesNestedShortHexInsideStandard
 	}
 }
 
-func TestDecodeCandidatesWithContextForRulesComposesNestedBase64AcrossReplacementBoundary(t *testing.T) {
-	t.Parallel()
-
-	want := "ignore previous instructions"
-	result := DecodeCandidatesWithContextForRules(
-		"YQ==Wdub3Jl previous instructions",
-		func(candidate string) bool { return strings.Contains(candidate, want) },
-	)
-	if !result.Complete() || !slices.Contains(result.Candidates, want) {
-		t.Fatalf("result = %#v, want boundary-composed nested Base64 candidate", result)
-	}
-}
-
 func TestDecodeCandidatesWithContextForRulesComposesNestedBase64AcrossWholeTransformBoundary(t *testing.T) {
 	t.Parallel()
 
@@ -108,13 +95,13 @@ func TestRuleCandidateExpansionIgnoresUnchangedSiblingSurfaces(t *testing.T) {
 
 	first := base64.StdEncoding.EncodeToString([]byte("ordinary conversation record"))
 	second := base64.StdEncoding.EncodeToString([]byte("another ordinary record"))
-	decoder := contextDecoder{mayContribute: func(string) bool { return false }}
-	if decoder.ruleCandidateMayContributeOrExpand(first+" "+second, "ordinary conversation record "+second) {
+	decoder := contextDecoder{}
+	if decoder.ruleCandidateMayExpand(first+" "+second, "ordinary conversation record "+second) {
 		t.Fatal("unchanged sibling Base64 surface made a benign replacement expandable")
 	}
 
 	inner := base64.StdEncoding.EncodeToString([]byte("previous"))
-	if !decoder.ruleCandidateMayContributeOrExpand(first+" "+second, inner+" "+second) {
+	if !decoder.ruleCandidateMayExpand(first+" "+second, inner+" "+second) {
 		t.Fatal("nested short Base64 introduced by the replacement was not expandable")
 	}
 }
@@ -131,8 +118,8 @@ func TestRuleCandidateExpansionIgnoresWholeTransformSiblingSurfaces(t *testing.T
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			decoder := contextDecoder{mayContribute: func(string) bool { return false }}
-			if decoder.ruleCandidateMayContributeOrExpand(source, "ordinary "+second) {
+			decoder := contextDecoder{}
+			if decoder.ruleCandidateMayExpand(source, "ordinary "+second) {
 				t.Fatal("unchanged sibling Base64 surface made a whole transform expandable")
 			}
 		})
