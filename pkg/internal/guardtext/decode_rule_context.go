@@ -17,7 +17,6 @@ func decodeCandidatesWithContextForRules(
 		if result, ok := decodeSingleShortRuleContext(input, mayContribute); ok {
 			return result
 		}
-	}
 
 	roots := []string{input}
 	if needsNormalization {
@@ -50,6 +49,7 @@ func decodeCandidatesWithContextForRules(
 	for decoder.pending() {
 		current := decoder.queue[decoder.cursor]
 		decoder.cursor++
+		decoder.beginRuleExpansion(current.text)
 
 		standardCandidate := false
 		decodeContextSurfaces(
