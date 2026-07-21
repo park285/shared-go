@@ -5,9 +5,13 @@ import (
 	"strings"
 )
 
-func (d *contextDecoder) ruleCandidateMayExpand(source, candidate string) bool {
-	if !consumeProtectedContextWork(&d.protectedWork, &d.result.Status, len(source)) ||
-		!consumeProtectedContextWork(&d.protectedWork, &d.result.Status, len(candidate)) {
+type ruleContextDecoder struct {
+	contextDecoder
+	expansionBytes int
+}
+
+func (d *ruleContextDecoder) ruleCandidateMayExpand(source, candidate string) bool {
+	if !d.consumeRuleExpansionWork(len(source)) || !d.consumeRuleExpansionWork(len(candidate)) {
 		return false
 	}
 
@@ -19,6 +23,17 @@ func (d *contextDecoder) ruleCandidateMayExpand(source, candidate string) bool {
 	}
 
 	return ruleDecodeSurfaceOverlaps(candidate, encodedSpan{end: len(candidate)})
+}
+
+func (d *ruleContextDecoder) consumeRuleExpansionWork(bytes int) bool {
+	if bytes < 0 || bytes > maxProtectedContextBytes-d.expansionBytes {
+		d.result.Status |= DecodeByteLimit
+
+		return false
+	}
+	d.expansionBytes += bytes
+
+	return true
 }
 
 func transformedCandidateRange(source, candidate string) (encodedSpan, bool) {
@@ -198,7 +213,7 @@ func encodedSpansOverlap(left, right encodedSpan) bool {
 	return left.start < right.end && right.start < left.end
 }
 
-func (d *contextDecoder) admitRuleCandidate(current decodeQueueEntry, candidate string) bool {
+func (d *ruleContextDecoder) admitRuleCandidate(current decodeQueueEntry, candidate string) bool {
 	if d.mayContribute == nil || d.mayContribute(candidate) {
 		d.admit(current, candidate)
 
@@ -213,11 +228,11 @@ func (d *contextDecoder) admitRuleCandidate(current decodeQueueEntry, candidate 
 	return true
 }
 
-func (d *contextDecoder) admitRuleContextualCandidate(current decodeQueueEntry, span encodedSpan, decoded string) bool {
+func (d *ruleContextDecoder) admitRuleContextualCandidate(current decodeQueueEntry, span encodedSpan, decoded string) bool {
 	return d.admitRuleCandidate(current, replaceDecodedSpan(current.text, span, decoded))
 }
 
-func (d *contextDecoder) deferRuleCandidate(current decodeQueueEntry, candidate string) {
+func (d *ruleContextDecoder) deferRuleCandidate(current decodeQueueEntry, candidate string) {
 	if candidate == current.text {
 		return
 	}
