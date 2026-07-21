@@ -6,12 +6,11 @@ func TestRuleCandidateExpansionSharesProtectedContextBudget(t *testing.T) {
 	t.Parallel()
 
 	decoder := contextDecoder{
-		mayContribute: func(string) bool { return false },
 		protectedWork: protectedDecodeWork{
 			contextBytes: maxProtectedContextBytes,
 		},
 	}
-	if decoder.ruleCandidateMayContributeOrExpand("YQ==Wdub3Jl", "aWdub3Jl") {
+	if decoder.ruleCandidateMayExpand("YQ==Wdub3Jl", "aWdub3Jl") {
 		t.Fatal("expansion analysis exceeded the protected context budget")
 	}
 	if decoder.result.Status&DecodeByteLimit == 0 {
