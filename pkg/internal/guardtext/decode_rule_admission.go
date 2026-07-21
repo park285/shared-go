@@ -169,7 +169,6 @@ func escapeRuleSurfaceOverlaps(input string, changed encodedSpan) bool {
 				return true
 			}
 		}
-
 	}
 
 	return false
@@ -199,21 +198,23 @@ func encodedSpansOverlap(left, right encodedSpan) bool {
 	return left.start < right.end && right.start < left.end
 }
 
-func (d *contextDecoder) admitRuleCandidate(current decodeQueueEntry, candidate string) {
+func (d *contextDecoder) admitRuleCandidate(current decodeQueueEntry, candidate string) bool {
 	if d.mayContribute == nil || d.mayContribute(candidate) {
 		d.admit(current, candidate)
 
-		return
+		return true
 	}
 	if !d.ruleCandidateMayExpand(current.text, candidate) {
-		return
+		return false
 	}
 
 	d.deferRuleCandidate(current, candidate)
+
+	return true
 }
 
-func (d *contextDecoder) admitRuleContextualCandidate(current decodeQueueEntry, span encodedSpan, decoded string) {
-	d.admitRuleCandidate(current, replaceDecodedSpan(current.text, span, decoded))
+func (d *contextDecoder) admitRuleContextualCandidate(current decodeQueueEntry, span encodedSpan, decoded string) bool {
+	return d.admitRuleCandidate(current, replaceDecodedSpan(current.text, span, decoded))
 }
 
 func (d *contextDecoder) deferRuleCandidate(current decodeQueueEntry, candidate string) {
