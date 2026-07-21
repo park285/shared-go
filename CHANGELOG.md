@@ -5,7 +5,23 @@
 
 ## 미출시
 
-변경 없음.
+### 보안
+
+- `golang.org/x/text`를 invalid input에서 infinite loop가 발생할 수 있는 `GO-2026-5970` 수정
+  버전 `v0.39.0`으로 갱신했습니다.
+
+### 수정
+
+- `promptguard`의 전역 decode candidate budget을 실제 rule 판정에 기여하는 후보만 소비하도록
+  바꿔, benign Base64 context가 많은 prompt bundle이 무관한 후보 때문에 fail closed되던 오탐을
+  제거했습니다. 악성 nested·encoded prompt 탐지와 decode-depth fail-closed 계약은 유지합니다.
+- 대용량 표준 transform은 bounded window에서 평가하여 정상 입력 오탐을 줄이고, 영속 출력 제어와
+  위조 역할·중단형 출력 공격 규칙을 보강했습니다. regex literal branch prefilter는 유지합니다.
+
+### CI
+
+- benchmark baseline bootstrap은 candidate manifest와 metric 완전성을 검사하고, candidate가
+  absolute budget을 위반하면 baseline 승격을 거부하도록 강화했습니다.
 
 ## v1.32.0 - 2026-07-20
 
