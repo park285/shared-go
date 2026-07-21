@@ -48,15 +48,12 @@ func decodeCandidatesWithContextForRules(
 	for decoder.pending() {
 		current := decoder.queue[decoder.cursor]
 		decoder.cursor++
-		mayContributeOrExpand := func(candidate string) bool {
-			return decoder.ruleCandidateMayContributeOrExpand(current.text, candidate)
-		}
 
 		standardCandidate := false
 		decodeContextSurfaces(
 			current.text,
-			decodeContextOptions{filterCandidates: true, boundOversizedStandard: true},
-			mayContributeOrExpand,
+			decodeContextOptions{boundOversizedStandard: true},
+			mayContribute,
 			oversizedWouldBlock,
 			&decoder.protectedWork,
 			&decoder.scans,
@@ -80,7 +77,7 @@ func decodeCandidatesWithContextForRules(
 
 		decodeShortRuleSurfaces(
 			current.text,
-			mayContributeOrExpand,
+			mayContribute,
 			&decoder.protectedWork,
 			&decoder.scans,
 			&decoder.result.Status,
