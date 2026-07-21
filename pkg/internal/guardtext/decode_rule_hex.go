@@ -23,7 +23,7 @@ func matchingShortHexSpans(
 		if err != nil || !IsReadableText(decoded) {
 			continue
 		}
-		contributes, nestedStatus := matchingDecodedContribution(string(decoded), mayContribute)
+		contributes, nested, nestedStatus := matchingDecodedContributionDetails(string(decoded), mayContribute)
 		mergeDecodeStatus(status, nestedStatus)
 		if !contributes && decodeWorkComplete(status) {
 			contextSpan := span
@@ -32,8 +32,7 @@ func matchingShortHexSpans(
 			if !consumeProtectedContextWork(work, status, contextBytes) {
 				break
 			}
-			contextual := replaceDecodedSpan(input, contextSpan, string(decoded))
-			contributes, nestedStatus = matchingDecodedContribution(contextual, mayContribute)
+			contributes, nestedStatus = matchingContextualDecodedContribution(input, contextSpan, string(decoded), nested, mayContribute)
 			mergeDecodeStatus(status, nestedStatus)
 			if contributes && contextBytes > maxDecodedCandidateLen {
 				*status |= DecodeByteLimit

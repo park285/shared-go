@@ -2,11 +2,25 @@ package guardtext
 
 import (
 	"encoding/base64"
+	"fmt"
 	"net/url"
 	"slices"
 	"strings"
 	"testing"
 )
+
+func TestDecodeCandidatesWithContextForRulesSkipsManyNonContributingBase64Values(t *testing.T) {
+	t.Parallel()
+
+	parts := make([]string, 0, maxDecodeCandidates+1)
+	for i := range maxDecodeCandidates + 1 {
+		parts = append(parts, base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("ordinary conversation record number %d", i))))
+	}
+	result := DecodeCandidatesWithContextForRules(strings.Join(parts, " "), func(string) bool { return false })
+	if !result.Complete() || len(result.Candidates) != 0 {
+		t.Fatalf("result = %#v, want complete empty result", result)
+	}
+}
 
 func TestDecodeCandidatesWithContextForRulesReinsertsShortBase64(t *testing.T) {
 	t.Parallel()

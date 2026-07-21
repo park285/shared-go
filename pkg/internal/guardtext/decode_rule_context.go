@@ -49,12 +49,11 @@ func decodeCandidatesWithContextForRules(
 		current := decoder.queue[decoder.cursor]
 		decoder.cursor++
 
+		// 정상 변환값이 전역 후보 예산을 선점하지 않도록 rule 기여가 확인된 후보만 admission한다.
 		standardCandidate := false
 		decodeContextSurfaces(
 			current.text,
-			false,
-			false,
-			true,
+			decodeContextOptions{filterCandidates: true, boundOversizedStandard: true},
 			mayContribute,
 			oversizedWouldBlock,
 			&decoder.protectedWork,
@@ -165,7 +164,7 @@ func shortRuleCandidateContribution(
 	mayContribute func(string) bool,
 	work *protectedDecodeWork,
 ) (string, bool, DecodeStatus) {
-	contributes, status := matchingDecodedContribution(decoded, mayContribute)
+	contributes, nested, status := matchingDecodedContributionDetails(decoded, mayContribute)
 	if status != 0 {
 		return "", false, status
 	}
@@ -175,7 +174,7 @@ func shortRuleCandidateContribution(
 	}
 	contextual := replaceDecodedSpan(input, span, decoded)
 	if !contributes {
-		contributes, status = matchingDecodedContribution(contextual, mayContribute)
+		contributes, status = matchingContextualDecodedContribution(input, span, decoded, nested, mayContribute)
 	}
 	if status != 0 || !contributes {
 		return contextual, false, status

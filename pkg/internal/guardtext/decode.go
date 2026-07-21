@@ -33,6 +33,7 @@ type DecodeResult struct {
 	Candidates       []string
 	Status           DecodeStatus
 	standaloneBase64 bool
+	maxDepth         int
 }
 
 func (r DecodeResult) Complete() bool { return r.Status == 0 }
@@ -111,7 +112,9 @@ func DecodeCandidates(input string) DecodeResult {
 			}
 			result.Candidates = append(result.Candidates, candidate)
 			total += len(data)
-			queue = append(queue, decodeQueueEntry{text: candidate, depth: current.depth + 1})
+			candidateDepth := current.depth + 1
+			result.maxDepth = max(result.maxDepth, candidateDepth)
+			queue = append(queue, decodeQueueEntry{text: candidate, depth: candidateDepth})
 		}
 	}
 	return result

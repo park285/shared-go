@@ -2,6 +2,7 @@ package promptguard
 
 import (
 	"encoding/base64"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -55,6 +56,29 @@ func TestGuardAllows_Base64EncodedBenignText(t *testing.T) {
 	require.NoError(t, checkInteractiveForTest(t, g, "이 base64 좀 풀어줘: "+payload))
 }
 
+func TestGuardAllowsPromptBundleWithManyBenignBase64Values(t *testing.T) {
+	t.Parallel()
+
+	parts := make([]string, 0, maxBase64Candidates+2)
+	for i := range maxBase64Candidates + 1 {
+		decoded := fmt.Sprintf("ordinary conversation record number %d", i)
+		payload := base64.StdEncoding.EncodeToString([]byte(decoded))
+		parts = append(parts, payload)
+	}
+	parts = append(parts, "포켓몬 어나더레드를 하는중인데 한카리아스 기술 중 공격기로 스케일샷 말고 괜찮은거 없을까 용춤 드래곤클로 보만다가 더 강한 것 같아 한카리아스는 6v인데도 보만다보다 활용이 안돼")
+
+	guard := newTestGuardFromRulepacks(t)
+	input := JoinParts(parts...)
+	evaluation, err := guard.Check(CheckRequest{
+		Text: input, Source: SourcePromptBundle, Enforcement: EnforcementObserve,
+	})
+	require.NoError(t, err)
+	if evaluation.Decision != DecisionAllow || evaluation.DecodeIncomplete {
+		_, status := guard.decodedTextSegments(input)
+		t.Fatalf("evaluation = %#v, decode status = %d, want complete allow", evaluation, status)
+	}
+}
+
 func TestGuardAllows_ShortBase64LikeToken(t *testing.T) {
 	t.Parallel()
 
@@ -83,6 +107,7 @@ func TestGuardFailsClosedWhenDecodedCandidateBudgetIsExhausted(t *testing.T) {
 	parts = append(parts, attack)
 
 	g := newTestGuardFromRulepacks(t)
+	require.False(t, g.decodedCandidateMayContribute("일상적인 안부 인사를 나누는 평범한 문장입니다"))
 	input := strings.Join(parts, " ")
 	segments, status := decodedTextSegments(input)
 	require.LessOrEqual(t, len(segments), maxBase64Candidates)
@@ -90,6 +115,9 @@ func TestGuardFailsClosedWhenDecodedCandidateBudgetIsExhausted(t *testing.T) {
 	for _, segment := range segments {
 		require.Equal(t, segmentPlain, segment.Kind)
 	}
+	evaluation := evaluateForTest(t, g, input)
+	require.Equal(t, DecisionBlock, evaluation.Decision)
+	require.Contains(t, matchedRuleIDs(evaluation.Hits), "direct_prompt_exfil_en")
 	require.Error(t, checkInteractiveForTest(t, g, input))
 }
 

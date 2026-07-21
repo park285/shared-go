@@ -188,11 +188,16 @@ func appendProtectedBase64Span(
 	if err != nil || !IsReadableText(decoded) {
 		return spans, false
 	}
-	contribution := protectedDecodedContribution
+	var (
+		contributes  bool
+		nested       DecodeResult
+		nestedStatus DecodeStatus
+	)
 	if strictContribution {
-		contribution = matchingDecodedContribution
+		contributes, nested, nestedStatus = matchingDecodedContributionDetails(string(decoded), mayContribute)
+	} else {
+		contributes, nestedStatus = protectedDecodedContribution(string(decoded), mayContribute)
 	}
-	contributes, nestedStatus := contribution(string(decoded), mayContribute)
 	mergeDecodeStatus(status, nestedStatus)
 	if !contributes && matchContext {
 		contextBytes := len(input) - (span.end - span.start) + len(decoded)
@@ -200,7 +205,11 @@ func appendProtectedBase64Span(
 			return spans, true
 		}
 		contextual := replaceDecodedSpan(input, span, string(decoded))
-		contributes, nestedStatus = contribution(contextual, mayContribute)
+		if strictContribution {
+			contributes, nestedStatus = matchingContextualDecodedContribution(input, span, string(decoded), nested, mayContribute)
+		} else {
+			contributes, nestedStatus = protectedDecodedContribution(contextual, mayContribute)
+		}
 		mergeDecodeStatus(status, nestedStatus)
 		if contributes && contextBytes > maxDecodedCandidateLen {
 			*status |= DecodeByteLimit
@@ -251,8 +260,52 @@ func protectedDecodedContribution(decoded string, mayContribute func(string) boo
 	return decodedContribution(decoded, mayContribute, true)
 }
 
-func matchingDecodedContribution(decoded string, mayContribute func(string) bool) (bool, DecodeStatus) {
-	return decodedContribution(decoded, mayContribute, false)
+func matchingDecodedContributionDetails(decoded string, mayContribute func(string) bool) (bool, DecodeResult, DecodeStatus) {
+	if mayContribute == nil || mayContribute(decoded) {
+		return true, DecodeResult{}, 0
+	}
+	nested := DecodeCandidates(decoded)
+	if !nested.Complete() {
+		return false, nested, nested.Status
+	}
+	if slices.ContainsFunc(nested.Candidates, mayContribute) {
+		return true, nested, 0
+	}
+	if nested.maxDepth >= maxDecodeDepth {
+		return false, nested, DecodeDepthLimit
+	}
+	if shortNestedDecodeMayContribute(decoded, mayContribute) {
+		return true, nested, 0
+	}
+	if shortResult, ok := decodeSingleShortRuleContext(decoded, mayContribute); ok {
+		if !shortResult.Complete() {
+			return false, nested, shortResult.Status
+		}
+		if len(shortResult.Candidates) > 0 {
+			return true, nested, 0
+		}
+	}
+
+	return false, nested, 0
+}
+
+func matchingContextualDecodedContribution(
+	input string,
+	span encodedSpan,
+	decoded string,
+	nested DecodeResult,
+	mayContribute func(string) bool,
+) (bool, DecodeStatus) {
+	if mayContribute == nil || mayContribute(replaceDecodedSpan(input, span, decoded)) {
+		return true, 0
+	}
+	for _, candidate := range nested.Candidates {
+		if mayContribute(replaceDecodedSpan(input, span, candidate)) {
+			return true, 0
+		}
+	}
+
+	return false, 0
 }
 
 func decodedContribution(decoded string, mayContribute func(string) bool, retainPotentialNested bool) (bool, DecodeStatus) {
@@ -264,9 +317,6 @@ func decodedContribution(decoded string, mayContribute func(string) bool, retain
 		return false, nested.Status
 	}
 	if slices.ContainsFunc(nested.Candidates, mayContribute) {
-		return true, 0
-	}
-	if !retainPotentialNested && len(nested.Candidates) > 0 {
 		return true, 0
 	}
 	if shortNestedDecodeMayContribute(decoded, mayContribute) {

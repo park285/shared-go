@@ -114,4 +114,5 @@ func TestGuardAllows_NormalKoreanChat(t *testing.T) {
 	require.NoError(t, checkInteractiveForTest(t, g, "오늘 점심 뭐 먹을까?"))
 	require.NoError(t, checkInteractiveForTest(t, g, "회의 시간이 변경되었습니다"))
 	require.NoError(t, checkInteractiveForTest(t, g, "프로젝트 일정을 공유해주세요"))
+	require.NoError(t, checkInteractiveForTest(t, g, "포켓몬 어나더레드를 하는중인데 한카리아스 기술 중 공격기로 스케일샷 말고 괜찮은거 없을까 용춤 드래곤클로 보만다가 더 강한 것 같아 한카리아스는 6v인데도 보만다보다 활용이 안돼"))
 }
