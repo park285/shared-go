@@ -59,12 +59,14 @@ func decodeCandidatesWithContextForRules(
 			&decoder.scans,
 			&decoder.result.Status,
 			func(candidate string) {
-				standardCandidate = true
-				decoder.admitRuleCandidate(current, candidate)
+				if decoder.admitRuleCandidate(current, candidate) {
+					standardCandidate = true
+				}
 			},
 			func(span encodedSpan, decoded string) {
-				standardCandidate = true
-				decoder.admitRuleContextualCandidate(current, span, decoded)
+				if decoder.admitRuleContextualCandidate(current, span, decoded) {
+					standardCandidate = true
+				}
 			},
 		)
 		if !decoder.result.Complete() {
