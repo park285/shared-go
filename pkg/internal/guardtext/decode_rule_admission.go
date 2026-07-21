@@ -5,11 +5,16 @@ import (
 	"strings"
 )
 
-const maxRuleExpansionBytes = 2 * maxProtectedContextBytes
+const (
+	maxRuleExpansionBytes  = 2 * maxProtectedContextBytes
+	maxRuleExpansionChecks = 2 * maxDecodeScans
+)
 
 type ruleContextDecoder struct {
 	contextDecoder
 	expansionBytes         int
+	expansionChecks        int
+	expansionScans         int
 	expansionSourceBytes   int
 	expansionSourceCharged bool
 }
@@ -20,18 +25,24 @@ func (d *ruleContextDecoder) beginRuleExpansion(source string) {
 }
 
 func (d *ruleContextDecoder) ruleCandidateMayExpand(source, candidate string) bool {
+	if d.expansionChecks >= maxRuleExpansionChecks {
+		d.result.Status |= DecodeScanLimit
+
+		return false
+	}
+	d.expansionChecks++
 	if !d.consumeRuleExpansionWork(len(candidate)) {
 		return false
 	}
 
-	if introducesSurface, ok := wholeTransformIntroducesRuleSurface(source, candidate); ok {
-		return introducesSurface
+	if introducesSurface, ok := wholeTransformIntroducesRuleSurface(source, candidate); ok && introducesSurface {
+		return true
 	}
-	if changed, ok := transformedCandidateRange(source, candidate); ok {
-		return ruleDecodeSurfaceOverlaps(candidate, changed)
+	if changed, ok := transformedCandidateRange(source, candidate); ok && ruleDecodeSurfaceOverlaps(candidate, changed) {
+		return true
 	}
 
-	return ruleDecodeSurfaceOverlaps(candidate, encodedSpan{end: len(candidate)})
+	return d.ruleCandidateDirectlyContributes(candidate)
 }
 
 func (d *ruleContextDecoder) consumeRuleExpansionWork(candidateBytes int) bool {
@@ -48,6 +59,85 @@ func (d *ruleContextDecoder) consumeRuleExpansionWork(candidateBytes int) bool {
 	d.expansionSourceCharged = true
 
 	return true
+}
+
+func (d *ruleContextDecoder) ruleCandidateDirectlyContributes(input string) bool {
+	contributes, scans, status := d.standardRuleCandidateDirectlyContributes(input)
+	if !d.finishRuleExpansionProbe(scans, status) || contributes {
+		return contributes && d.result.Complete()
+	}
+	if !hasPlausibleShortRuleDecodeSurface(input) {
+		return false
+	}
+
+	var work protectedDecodeWork
+	shortScans := 0
+	shortStatus := DecodeStatus(0)
+	decodeShortRuleSurfaces(
+		input,
+		d.mayContribute,
+		&work,
+		&shortScans,
+		&shortStatus,
+		func(encodedSpan, string) { contributes = true },
+	)
+
+	return d.finishRuleExpansionProbe(shortScans, shortStatus) && contributes
+}
+
+func (d *ruleContextDecoder) standardRuleCandidateDirectlyContributes(input string) (bool, int, DecodeStatus) {
+	families := transformFamilies(input)
+	scans := 0
+	status := DecodeStatus(0)
+	for familiesPending(families) {
+		for i := range families {
+			family := &families[i]
+			if family.next >= len(family.spans) {
+				continue
+			}
+			if !consumeContextDecodeScan(&scans, &status) {
+				return false, scans, status
+			}
+
+			span := family.spans[family.next]
+			decoded, ok := family.attempt()
+			if !ok || !IsReadableText([]byte(decoded)) {
+				continue
+			}
+			if !d.consumeRuleExpansionWork(len(decoded)) {
+				return false, scans, status
+			}
+			if d.mayContribute(decoded) {
+				return true, scans, status
+			}
+			if family.kind != decodeBase64 && family.kind != decodeHex {
+				continue
+			}
+			if family.kind == decodeHex {
+				span.start = contextualHexStart(input, span.start)
+			}
+			contextBytes := len(input) - (span.end - span.start) + len(decoded)
+			if !d.consumeRuleExpansionWork(contextBytes) {
+				return false, scans, status
+			}
+			if d.mayContribute(replaceDecodedSpan(input, span, decoded)) {
+				return true, scans, status
+			}
+		}
+	}
+
+	return false, scans, status
+}
+
+func (d *ruleContextDecoder) finishRuleExpansionProbe(scans int, status DecodeStatus) bool {
+	if scans > maxProtectedDecodeTries-d.expansionScans {
+		status |= DecodeScanLimit
+	} else {
+		d.expansionScans += scans
+	}
+	mergeDecodeStatus(&d.result.Status, status)
+
+	return d.result.Complete()
 }
 
 func transformedCandidateRange(source, candidate string) (encodedSpan, bool) {
