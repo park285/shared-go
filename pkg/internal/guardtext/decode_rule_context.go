@@ -30,12 +30,14 @@ func decodeCandidatesWithContextForRules(
 		return DecodeResult{}
 	}
 
-	decoder := contextDecoder{
-		result:              DecodeResult{Candidates: make([]string, 0, maxDecodeCandidates)},
-		queue:               make([]decodeQueueEntry, 0, len(roots)+maxDecodeCandidates),
-		visited:             make(map[string]struct{}, len(roots)+maxDecodeCandidates),
-		mayContribute:       mayContribute,
-		oversizedWouldBlock: oversizedWouldBlock,
+	decoder := ruleContextDecoder{
+		contextDecoder: contextDecoder{
+			result:              DecodeResult{Candidates: make([]string, 0, maxDecodeCandidates)},
+			queue:               make([]decodeQueueEntry, 0, len(roots)+maxDecodeCandidates),
+			visited:             make(map[string]struct{}, len(roots)+maxDecodeCandidates),
+			mayContribute:       mayContribute,
+			oversizedWouldBlock: oversizedWouldBlock,
+		},
 	}
 	for _, root := range roots {
 		if _, exists := decoder.visited[root]; exists {
