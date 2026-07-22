@@ -38,18 +38,19 @@ type Config struct {
 }
 
 type Guard struct {
-	cfg             Config
-	logger          *slog.Logger
-	packs           []compiledPack
-	cache           *TTLCache[string, Evaluation]
-	group           singleflight.Group
-	onEvaluation    func(EvaluationEvent)
-	maxInputBytes   int
-	policyDigest    string
-	effectivePolicy compiledPolicy
-	rulepackVersion int
-	aggregateFilter aggregatePrefilterSet
-	evaluateInputFn func(string) (Evaluation, error)
+	cfg                 Config
+	logger              *slog.Logger
+	packs               []compiledPack
+	cache               *TTLCache[string, Evaluation]
+	group               singleflight.Group
+	onEvaluation        func(EvaluationEvent)
+	maxInputBytes       int
+	policyDigest        string
+	effectivePolicy     compiledPolicy
+	rulepackVersion     int
+	aggregateFilter     aggregatePrefilterSet
+	decodedContextRunes int
+	evaluateInputFn     func(string) (Evaluation, error)
 }
 
 func NewGuard(cfg Config, logger *slog.Logger) (*Guard, error) {
@@ -79,16 +80,17 @@ func NewGuard(cfg Config, logger *slog.Logger) (*Guard, error) {
 	}
 
 	return &Guard{
-		cfg:             cfg,
-		logger:          logger,
-		packs:           set.Packs,
-		cache:           NewTTLCache[string, Evaluation](cfg.CacheMaxSize, cfg.CacheTTL),
-		onEvaluation:    cfg.OnEvaluation,
-		maxInputBytes:   cfg.MaxInputBytes,
-		policyDigest:    set.Digest,
-		effectivePolicy: set.Policy,
-		rulepackVersion: set.Version,
-		aggregateFilter: compileAggregatePrefilters(set.Packs),
+		cfg:                 cfg,
+		logger:              logger,
+		packs:               set.Packs,
+		cache:               NewTTLCache[string, Evaluation](cfg.CacheMaxSize, cfg.CacheTTL),
+		onEvaluation:        cfg.OnEvaluation,
+		maxInputBytes:       cfg.MaxInputBytes,
+		policyDigest:        set.Digest,
+		effectivePolicy:     set.Policy,
+		rulepackVersion:     set.Version,
+		aggregateFilter:     compileAggregatePrefilters(set.Packs),
+		decodedContextRunes: requiredLiteralContextRunes(set.Packs),
 	}, nil
 }
 

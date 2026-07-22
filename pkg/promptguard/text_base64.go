@@ -22,11 +22,15 @@ func (g *Guard) decodedTextSegments(input string) ([]textSegment, guardtext.Deco
 	if g == nil {
 		return decodedTextSegments(input)
 	}
+	if !guardtext.HasPotentialRuleDecodeSurface(input) {
+		return nil, 0
+	}
 
 	result := guardtext.DecodeCandidatesWithContextForRuleOwner(
 		input,
 		g,
 		decodedCandidateMayContributeForGuard,
+		decodedContextMayContributeForGuard,
 		oversizedDecodedWouldBlockForGuard,
 	)
 	return textSegmentsFromDecodeResult(result)
@@ -34,6 +38,10 @@ func (g *Guard) decodedTextSegments(input string) ([]textSegment, guardtext.Deco
 
 func decodedCandidateMayContributeForGuard(guard *Guard, candidate string) bool {
 	return guard.decodedCandidateMayContribute(candidate)
+}
+
+func decodedContextMayContributeForGuard(guard *Guard, input string, start, end int, decoded string) bool {
+	return guard.decodedContextMayContribute(input, start, end, decoded)
 }
 
 func oversizedDecodedWouldBlockForGuard(guard *Guard, original, decoded string, bounded []string) bool {
@@ -95,6 +103,85 @@ func (g *Guard) decodedCandidateMayContribute(candidate string) bool {
 	}
 
 	return false
+}
+
+func (g *Guard) decodedContextMayContribute(input string, start, end int, decoded string) bool {
+	if g == nil || start < 0 || start > end || end > len(input) || g.decodedContextRunes <= 0 {
+		return false
+	}
+
+	left := lastRunes(input[:start], g.decodedContextRunes)
+	right := firstRunes(input[end:], g.decodedContextRunes)
+	if !g.decodedBoundaryCompletesLiteral(left, decoded, right) {
+		return false
+	}
+
+	context := input[:start] + decoded + input[end:]
+
+	return g.decodedCandidateMayContribute(context)
+}
+
+func (g *Guard) decodedBoundaryCompletesLiteral(left, decoded, right string) bool {
+	combinedViews := normalizeViews(left + decoded + right)
+	leftViews := normalizeViews(left)
+	leftDecodedViews := normalizeViews(left + decoded)
+
+	for packIndex := range g.packs {
+		for ruleIndex := range g.packs[packIndex].Rules {
+			rule := &g.packs[packIndex].Rules[ruleIndex]
+			combined := decodedContributionView(rule, combinedViews)
+			decodedStart := len(decodedContributionView(rule, leftViews))
+			decodedEnd := len(decodedContributionView(rule, leftDecodedViews))
+			for _, group := range rule.RequiredLiteralGroups {
+				for _, literal := range group {
+					if literalNearDecoded(combined, literal, decodedStart, decodedEnd) {
+						return true
+					}
+				}
+			}
+		}
+	}
+
+	return false
+}
+
+func literalNearDecoded(text, literal string, decodedStart, decodedEnd int) bool {
+	if literal == "" || decodedStart < 0 || decodedStart > decodedEnd || decodedStart > len(text) {
+		return false
+	}
+	decodedEnd = min(len(text), decodedEnd)
+
+	windowStart := max(0, decodedStart-len(literal))
+	windowEnd := min(len(text), decodedEnd+len(literal))
+	for offset := windowStart; offset <= windowEnd; {
+		index := strings.Index(text[offset:windowEnd], literal)
+		if index < 0 {
+			return false
+		}
+		start := offset + index
+		end := start + len(literal)
+		if end >= decodedStart && start <= decodedEnd {
+			return true
+		}
+		offset = start + 1
+	}
+
+	return false
+}
+
+func requiredLiteralContextRunes(packs []compiledPack) int {
+	maximum := 0
+	for packIndex := range packs {
+		for ruleIndex := range packs[packIndex].Rules {
+			for _, group := range packs[packIndex].Rules[ruleIndex].RequiredLiteralGroups {
+				for _, literal := range group {
+					maximum = max(maximum, utf8.RuneCountInString(literal))
+				}
+			}
+		}
+	}
+
+	return max(0, maximum-1)
 }
 
 func decodedContributionView(rule *compiledRule, views Views) string {

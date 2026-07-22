@@ -81,6 +81,7 @@ func TestDecodeCandidatesWithContextForRuleOwnerChecksNormalizedOversizedTransfo
 		input,
 		&callbackCalls,
 		func(_ *int, _ string) bool { return true },
+		nil,
 		func(calls *int, _, _ string, _ []string) bool {
 			*calls++
 			return true

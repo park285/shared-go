@@ -9,7 +9,7 @@ import (
 	sharedjson "github.com/park285/shared-go/pkg/json"
 )
 
-const EngineVersion = "promptguard-engine-v3.2.2"
+const EngineVersion = "promptguard-engine-v3.2.3"
 
 type digestEntry[T any] struct {
 	Name  string `json:"name"`

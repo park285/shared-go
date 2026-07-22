@@ -3,6 +3,7 @@ package guardtext
 func shortRuleBase64Spans(
 	input string,
 	mayContribute func(string) bool,
+	embeddedContextMayContribute EmbeddedContextMatcher,
 	work *protectedDecodeWork,
 	status *DecodeStatus,
 ) []encodedSpan {
@@ -18,49 +19,77 @@ func shortRuleBase64Spans(
 		}
 
 		whole := encodedSpan{start: start, end: match.next}
-		var wholeReadable bool
-		if len(match.value) <= maxShortBase64CandidateLen {
-			spans, wholeReadable = appendProtectedBase64Span(
-				spans,
-				input,
-				whole,
-				true,
-				true,
-				mayContribute,
-				work,
-				status,
-			)
-		} else {
-			wholeReadable = readableBase64Span(input, whole, work, status)
-		}
-
-		// A readable whole token is the authoritative encoding boundary. Looking
-		// inside it would reinterpret valid benign Base64, create dangling-padding
-		// variants, and spend the shared candidate budget before useful composition.
-		if wholeReadable || !looksLikeEmbeddedBase64(match.value) || !decodeWorkComplete(status) {
-			continue
-		}
-		if seen == nil {
-			seen = make(map[encodedSpan]struct{}, min(maxDecodeScans+1, 16))
-		}
-		seen[whole] = struct{}{}
-
-		for subStart := whole.start; subStart < whole.end && len(spans) <= maxDecodeScans && decodeWorkComplete(status); subStart++ {
-			maximumEnd := min(whole.end, subStart+maxShortBase64CandidateLen)
-			for subEnd := maximumEnd; subEnd-subStart >= 4 && len(spans) <= maxDecodeScans; subEnd-- {
-				span := encodedSpan{start: subStart, end: subEnd}
-				if span == whole {
-					continue
-				}
-				spans = appendMatchingShortBase64Span(spans, seen, input, span, mayContribute, work, status)
+		if pathSegments, ok := httpURLPathBase64Segments(input, whole, 4); ok {
+			for _, segment := range pathSegments {
+				spans, seen = appendShortRuleBase64Whole(spans, seen, input, segment, mayContribute, embeddedContextMayContribute, work, status)
 				if !decodeWorkComplete(status) {
 					break
 				}
 			}
+			continue
 		}
+		spans, seen = appendShortRuleBase64Whole(spans, seen, input, whole, mayContribute, embeddedContextMayContribute, work, status)
 	}
 
 	return spans
+}
+
+func appendShortRuleBase64Whole(
+	spans []encodedSpan,
+	seen map[encodedSpan]struct{},
+	input string,
+	whole encodedSpan,
+	mayContribute func(string) bool,
+	embeddedContextMayContribute EmbeddedContextMatcher,
+	work *protectedDecodeWork,
+	status *DecodeStatus,
+) ([]encodedSpan, map[encodedSpan]struct{}) {
+	if declaredNonTextDataPayload(input, whole.start) {
+		return spans, seen
+	}
+	value := input[whole.start:whole.end]
+	var wholeReadable bool
+	if len(value) <= maxShortBase64CandidateLen {
+		spans, wholeReadable = appendEmbeddedProtectedBase64Span(
+			spans,
+			input,
+			whole,
+			true,
+			true,
+			embeddedDirectOrContext,
+			mayContribute,
+			embeddedContextMayContribute,
+			work,
+			status,
+		)
+	} else {
+		wholeReadable = readableBase64Span(input, whole, work, status)
+	}
+
+	// 읽을 수 있는 전체 토큰은 권위 있는 인코딩 경계이므로 내부를 재해석하지 않는다.
+	if wholeReadable || !looksLikeEmbeddedBase64(value) || !decodeWorkComplete(status) {
+		return spans, seen
+	}
+	if seen == nil {
+		seen = make(map[encodedSpan]struct{}, min(maxDecodeScans+1, 16))
+	}
+	seen[whole] = struct{}{}
+
+	for subStart := whole.start; subStart < whole.end && len(spans) <= maxDecodeScans && decodeWorkComplete(status); subStart++ {
+		maximumEnd := min(whole.end, subStart+maxShortBase64CandidateLen)
+		for subEnd := maximumEnd; subEnd-subStart >= 4 && len(spans) <= maxDecodeScans; subEnd-- {
+			span := encodedSpan{start: subStart, end: subEnd}
+			if span == whole {
+				continue
+			}
+			spans = appendMatchingShortBase64Span(spans, seen, input, span, mayContribute, embeddedContextMayContribute, work, status)
+			if !decodeWorkComplete(status) {
+				break
+			}
+		}
+	}
+
+	return spans, seen
 }
 
 func readableBase64Span(
@@ -82,6 +111,7 @@ func appendMatchingShortBase64Span(
 	input string,
 	span encodedSpan,
 	mayContribute func(string) bool,
+	embeddedContextMayContribute EmbeddedContextMatcher,
 	work *protectedDecodeWork,
 	status *DecodeStatus,
 ) []encodedSpan {
@@ -90,13 +120,15 @@ func appendMatchingShortBase64Span(
 	}
 	seen[span] = struct{}{}
 
-	updated, _ := appendProtectedBase64Span(
+	updated, _ := appendEmbeddedProtectedBase64Span(
 		spans,
 		input,
 		span,
 		true,
 		true,
+		embeddedDirectOrContext,
 		mayContribute,
+		embeddedContextMayContribute,
 		work,
 		status,
 	)

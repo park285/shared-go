@@ -3,6 +3,7 @@ package guardtext
 func matchingShortHexSpans(
 	input string,
 	mayContribute func(string) bool,
+	embeddedContextMayContribute EmbeddedContextMatcher,
 	work *protectedDecodeWork,
 	status *DecodeStatus,
 ) []encodedSpan {
@@ -29,11 +30,15 @@ func matchingShortHexSpans(
 			contextSpan := span
 			contextSpan.start = contextualHexStart(input, span.start)
 			contextBytes := len(input) - (contextSpan.end - contextSpan.start) + len(decoded)
-			if !consumeProtectedContextWork(work, status, contextBytes) {
-				break
+			if embeddedContextMayContribute != nil {
+				contributes = embeddedContextContributes(input, contextSpan, string(decoded), nested, embeddedContextMayContribute)
+			} else {
+				if !consumeProtectedContextWork(work, status, contextBytes) {
+					break
+				}
+				contributes, nestedStatus = matchingContextualDecodedContribution(input, contextSpan, string(decoded), nested, mayContribute)
+				mergeDecodeStatus(status, nestedStatus)
 			}
-			contributes, nestedStatus = matchingContextualDecodedContribution(input, contextSpan, string(decoded), nested, mayContribute)
-			mergeDecodeStatus(status, nestedStatus)
 			if contributes && contextBytes > maxDecodedCandidateLen {
 				*status |= DecodeByteLimit
 				break

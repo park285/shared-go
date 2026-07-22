@@ -19,7 +19,10 @@ func base64SpansAtLeast(input string, minimum int) []encodedSpan {
 		match := nextBase64Candidate(input, i)
 		i = match.next
 		if len(match.value) >= minimum {
-			spans = append(spans, encodedSpan{start: start, end: match.next})
+			span := encodedSpan{start: start, end: match.next}
+			if !declaredNonTextDataPayload(input, span.start) {
+				spans = append(spans, span)
+			}
 		}
 	}
 	return spans
@@ -37,20 +40,45 @@ func contextualBase64SpansAtLeast(input string, minimum int) []encodedSpan {
 		}
 
 		whole := encodedSpan{start: start, end: match.next}
-		spans = append(spans, whole)
-		decoded, err := DecodeBase64Candidate(match.value)
-		if err == nil && IsReadableText(decoded) || !looksLikeEmbeddedBase64(match.value) {
+		if pathSegments, ok := httpURLPathBase64Segments(input, whole, minimum); ok {
+			for _, segment := range pathSegments {
+				var complete bool
+				spans, complete = appendContextualBase64Whole(spans, input, segment, minimum, &work)
+				if !complete {
+					return appendDecodeScanOverflow(spans, segment)
+				}
+			}
 			continue
 		}
 
 		var complete bool
-		spans, complete = appendReadableBase64Subspans(spans, input, whole, minimum, &work)
+		spans, complete = appendContextualBase64Whole(spans, input, whole, minimum, &work)
 		if !complete {
 			return appendDecodeScanOverflow(spans, whole)
 		}
 	}
 
 	return spans
+}
+
+func appendContextualBase64Whole(
+	spans []encodedSpan,
+	input string,
+	whole encodedSpan,
+	minimum int,
+	work *protectedDecodeWork,
+) ([]encodedSpan, bool) {
+	if declaredNonTextDataPayload(input, whole.start) {
+		return spans, true
+	}
+	spans = append(spans, whole)
+	value := input[whole.start:whole.end]
+	decoded, err := DecodeBase64Candidate(value)
+	if err == nil && IsReadableText(decoded) || !looksLikeEmbeddedBase64(value) {
+		return spans, true
+	}
+
+	return appendReadableBase64Subspans(spans, input, whole, minimum, work)
 }
 
 func appendReadableBase64Subspans(
@@ -92,9 +120,13 @@ func appendDecodeScanOverflow(spans []encodedSpan, fallback encodedSpan) []encod
 
 func ContainsSuspiciousBase64(input string) bool {
 	for i := 0; i < len(input); {
+		start := i
 		match := nextBase64Candidate(input, i)
 		i = match.next
 		if len(match.value) < minBase64CandidateLen {
+			continue
+		}
+		if declaredNonTextDataPayload(input, start) {
 			continue
 		}
 		decoded, err := DecodeBase64Candidate(match.value)

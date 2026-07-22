@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/park285/shared-go/pkg/internal/guardtext"
 )
@@ -64,10 +65,18 @@ func protectedOverlap(surfaces []string, index *protectedIndex) bool {
 }
 
 func checkOutputSurfaces(text string, index *protectedIndex, evaluation *Evaluation) {
+	if index != nil && index.overlapsText(text) {
+		rawSurfaces, _ := outputSurfacesFromDecoded(text, true, guardtext.DecodeResult{})
+		collectRestrictedMatches(rawSurfaces, evaluation)
+		appendReason(evaluation, ReasonProtectedTextOverlap)
+
+		return
+	}
+
 	restrictedSurfaces, restrictedIncomplete := outputSurfacesFromDecoded(
 		text,
 		index != nil,
-		guardtext.DecodeCandidatesWithContextForMatching(text, matchesRestrictedCandidate),
+		guardtext.DecodeCandidatesWithContextForRules(text, matchesRestrictedCandidate),
 	)
 	collectRestrictedMatches(restrictedSurfaces, evaluation)
 
@@ -93,7 +102,13 @@ func checkOutputSurfaces(text string, index *protectedIndex, evaluation *Evaluat
 			protectedSurfaces, incomplete := outputSurfacesFromDecoded(
 				text,
 				true,
-				guardtext.DecodeCandidatesWithContextForProtected(text, mayContribute),
+				guardtext.DecodeCandidatesWithContextForProtected(
+					text,
+					mayContribute,
+					func(input string, encodedStart, encodedEnd int, decoded string) bool {
+						return mayContribute(protectedDecodeContextWindow(input, encodedStart, encodedEnd, decoded))
+					},
+				),
 			)
 			protectedIncomplete = incomplete
 			if protectedMatched || protectedOverlap(protectedSurfaces, index) {
@@ -104,6 +119,27 @@ func checkOutputSurfaces(text string, index *protectedIndex, evaluation *Evaluat
 	if restrictedIncomplete || protectedIncomplete {
 		appendReason(evaluation, ReasonDecodeIncomplete)
 	}
+}
+
+func protectedDecodeContextWindow(input string, encodedStart, encodedEnd int, decoded string) string {
+	const contextBytes = protectedRuneWindow * utf8.UTFMax
+
+	windowStart := max(0, encodedStart-contextBytes)
+	for windowStart < encodedStart && !utf8.RuneStart(input[windowStart]) {
+		windowStart++
+	}
+	windowEnd := min(len(input), encodedEnd+contextBytes)
+	for windowEnd < len(input) && !utf8.RuneStart(input[windowEnd]) {
+		windowEnd--
+	}
+
+	var contextual strings.Builder
+	contextual.Grow(windowEnd - windowStart - (encodedEnd - encodedStart) + len(decoded))
+	contextual.WriteString(input[windowStart:encodedStart])
+	contextual.WriteString(decoded)
+	contextual.WriteString(input[encodedEnd:windowEnd])
+
+	return contextual.String()
 }
 
 func matchesRestrictedCandidate(candidate string) bool {
