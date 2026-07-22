@@ -14,7 +14,7 @@ func isOpaqueBase64Envelope(input string, span encodedSpan) bool {
 
 	value := input[span.start:span.end]
 	if len(value)%4 == 1 && len(value) > 4 {
-		if decoded, ok := decodeBase64Probe(value[1:]); ok && hasOpaqueBinarySignature(decoded) {
+		if decoded, ok := decodeBase64Probe(value[1:]); ok && !IsReadableText(decoded) && hasOpaqueBinarySignature(decoded) {
 			return true
 		}
 	}
@@ -23,7 +23,7 @@ func isOpaqueBase64Envelope(input string, span encodedSpan) bool {
 	if !ok {
 		return false
 	}
-	if hasOpaqueBinarySignature(decoded) {
+	if !IsReadableText(decoded) && hasOpaqueBinarySignature(decoded) {
 		return true
 	}
 
