@@ -18,9 +18,14 @@ func base64SpansAtLeast(input string, minimum int) []encodedSpan {
 		start := i
 		match := nextBase64Candidate(input, i)
 		i = match.next
-		if len(match.value) >= minimum {
-			spans = append(spans, encodedSpan{start: start, end: match.next})
+		if len(match.value) < minimum {
+			continue
 		}
+		span := encodedSpan{start: start, end: match.next}
+		if isOpaqueBase64Envelope(input, span) {
+			continue
+		}
+		spans = append(spans, span)
 	}
 	return spans
 }
@@ -37,6 +42,9 @@ func contextualBase64SpansAtLeast(input string, minimum int) []encodedSpan {
 		}
 
 		whole := encodedSpan{start: start, end: match.next}
+		if isOpaqueBase64Envelope(input, whole) {
+			continue
+		}
 		spans = append(spans, whole)
 		decoded, err := DecodeBase64Candidate(match.value)
 		if err == nil && IsReadableText(decoded) || !looksLikeEmbeddedBase64(match.value) {
