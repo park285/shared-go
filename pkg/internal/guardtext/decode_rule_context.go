@@ -17,6 +17,7 @@ func decodeCandidatesWithContextForRules(
 		if result, ok := decodeSingleShortRuleContext(input, mayContribute); ok {
 			return result
 		}
+	}
 
 	roots := []string{input}
 	if needsNormalization {
@@ -61,12 +62,19 @@ func decodeCandidatesWithContextForRules(
 			&decoder.scans,
 			&decoder.result.Status,
 			func(candidate string) {
+				if !decoder.ruleCandidateAdmissionReady(current, candidate) {
+					return
+				}
 				if decoder.admitRuleCandidate(current, candidate) {
 					standardCandidate = true
 				}
 			},
 			func(span encodedSpan, decoded string) {
-				if decoder.admitRuleContextualCandidate(current, span, decoded) {
+				candidate := replaceDecodedSpan(current.text, span, decoded)
+				if !decoder.ruleCandidateAdmissionReady(current, candidate) {
+					return
+				}
+				if decoder.admitRuleCandidate(current, candidate) {
 					standardCandidate = true
 				}
 			},
@@ -86,7 +94,11 @@ func decodeCandidatesWithContextForRules(
 			&decoder.scans,
 			&decoder.result.Status,
 			func(span encodedSpan, decoded string) {
-				decoder.admitRuleContextualCandidate(current, span, decoded)
+				candidate := replaceDecodedSpan(current.text, span, decoded)
+				if !decoder.ruleCandidateAdmissionReady(current, candidate) {
+					return
+				}
+				decoder.admitRuleCandidate(current, candidate)
 			},
 		)
 	}
