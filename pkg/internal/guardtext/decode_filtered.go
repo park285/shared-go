@@ -5,12 +5,14 @@ import (
 	"strings"
 )
 
-func protectedBase64Spans(input string, mayContribute func(string) bool, work *protectedDecodeWork, status *DecodeStatus) []encodedSpan {
-	return filteredBase64Spans(input, 4, false, false, false, mayContribute, work, status)
-}
-
-func matchingBase64Spans(input string, mayContribute func(string) bool, work *protectedDecodeWork, status *DecodeStatus) []encodedSpan {
-	return filteredBase64Spans(input, minBase64CandidateLen, true, true, true, mayContribute, work, status)
+func protectedBase64Spans(
+	input string,
+	mayContribute func(string) bool,
+	embeddedContextMayContribute EmbeddedContextMatcher,
+	work *protectedDecodeWork,
+	status *DecodeStatus,
+) []encodedSpan {
+	return filteredBase64Spans(input, 4, false, false, mayContribute, embeddedContextMayContribute, work, status)
 }
 
 func filteredBase64Spans(
@@ -18,8 +20,8 @@ func filteredBase64Spans(
 	minimum int,
 	strictContribution bool,
 	matchContext bool,
-	recordWholeTransforms bool,
 	mayContribute func(string) bool,
+	embeddedContextMayContribute EmbeddedContextMatcher,
 	work *protectedDecodeWork,
 	status *DecodeStatus,
 ) []encodedSpan {
@@ -31,11 +33,8 @@ func filteredBase64Spans(
 		if len(match.value) < minimum {
 			continue
 		}
-		if recordWholeTransforms {
-			recordSupportedWholeBase64Transform(match.value, work, status)
-			if !decodeWorkComplete(status) {
-				break
-			}
+		if isOpaqueBase64Envelope(input, encodedSpan{start: start, end: match.next}) {
+			continue
 		}
 		enumerateBoundaries := looksLikeEmbeddedBase64(match.value)
 		spans = appendProtectedBase64Boundaries(
@@ -47,30 +46,12 @@ func filteredBase64Spans(
 			strictContribution,
 			matchContext,
 			mayContribute,
+			embeddedContextMayContribute,
 			work,
 			status,
 		)
 	}
 	return spans
-}
-
-func recordSupportedWholeBase64Transform(value string, work *protectedDecodeWork, status *DecodeStatus) {
-	decoded, err := DecodeBase64Candidate(value)
-	if err != nil || !IsReadableText(decoded) {
-		return
-	}
-	if len(decoded) > maxDecodedCandidateLen || work.supportedBytes+len(decoded) > maxDecodedTotalBytes {
-		*status |= DecodeByteLimit
-
-		return
-	}
-	if work.supportedCandidates >= maxDecodeCandidates {
-		*status |= DecodeCandidateLimit
-
-		return
-	}
-	work.supportedCandidates++
-	work.supportedBytes += len(decoded)
 }
 
 func appendProtectedBase64Boundaries(
@@ -82,6 +63,7 @@ func appendProtectedBase64Boundaries(
 	strictContribution bool,
 	matchContext bool,
 	mayContribute func(string) bool,
+	embeddedContextMayContribute EmbeddedContextMatcher,
 	work *protectedDecodeWork,
 	status *DecodeStatus,
 ) []encodedSpan {
@@ -90,16 +72,87 @@ func appendProtectedBase64Boundaries(
 	if len(spans) > maxDecodeScans || !decodeWorkComplete(status) || !enumerateBoundaries || wholeReadable && wholeIsPadded {
 		return spans
 	}
-	spans = appendProtectedBase64Prefixes(spans, input, whole, minimum, strictContribution, matchContext, mayContribute, work, status)
+	if pathSegments, ok := httpURLPathBase64Segments(input, whole, minimum); ok {
+		for _, segment := range pathSegments {
+			spans = appendProtectedBase64Boundaries(
+				spans,
+				input,
+				segment,
+				minimum,
+				looksLikeEmbeddedBase64(input[segment.start:segment.end]),
+				strictContribution,
+				matchContext,
+				mayContribute,
+				embeddedContextMayContribute,
+				work,
+				status,
+			)
+			if protectedBase64EnumerationDone(spans, status) {
+				return spans
+			}
+		}
+
+		return spans
+	}
+	spans = appendProtectedBase64Prefixes(spans, input, whole, minimum, strictContribution, matchContext, mayContribute, embeddedContextMayContribute, work, status)
 	if protectedBase64EnumerationDone(spans, status) {
 		return spans
 	}
-	spans = appendProtectedBase64Suffixes(spans, input, whole, minimum, strictContribution, matchContext, mayContribute, work, status)
+	spans = appendProtectedBase64Suffixes(spans, input, whole, minimum, strictContribution, matchContext, mayContribute, embeddedContextMayContribute, work, status)
 	if protectedBase64EnumerationDone(spans, status) {
 		return spans
 	}
 
-	return appendProtectedBase64Interiors(spans, input, whole, minimum, strictContribution, matchContext, mayContribute, work, status)
+	return appendProtectedBase64Interiors(spans, input, whole, minimum, strictContribution, matchContext, mayContribute, embeddedContextMayContribute, work, status)
+}
+
+func httpURLPathBase64Segments(input string, whole encodedSpan, minimum int) ([]encodedSpan, bool) {
+	if whole.start < 0 || whole.start >= whole.end || whole.end > len(input) || !strings.ContainsRune(input[whole.start:whole.end], '/') {
+		return nil, false
+	}
+
+	lookbackStart := max(0, whole.start-maxDecodedCandidateLen)
+	prefix := input[lookbackStart:whole.start]
+	schemeStart := lastHTTPURLScheme(prefix)
+	if schemeStart < 0 {
+		return nil, false
+	}
+	schemeStart += lookbackStart
+	between := input[schemeStart:whole.start]
+	if strings.ContainsAny(between, "\t\n\r \"'<>[]{}") || strings.ContainsAny(between, "?#") {
+		return nil, false
+	}
+
+	segments := make([]encodedSpan, 0, 3)
+	segmentStart := whole.start
+	for position := whole.start; position < whole.end; position++ {
+		if input[position] != '/' {
+			continue
+		}
+		if position-segmentStart >= minimum {
+			segments = append(segments, encodedSpan{start: segmentStart, end: position})
+		}
+		segmentStart = position + 1
+	}
+	if whole.end-segmentStart >= minimum {
+		segments = append(segments, encodedSpan{start: segmentStart, end: whole.end})
+	}
+
+	return segments, true
+}
+
+func lastHTTPURLScheme(input string) int {
+	for start := len(input) - len("http://"); start >= 0; start-- {
+		remaining := input[start:]
+		if len(remaining) >= len("https://") && strings.EqualFold(remaining[:len("https://")], "https://") {
+			return start
+		}
+		if strings.EqualFold(remaining[:len("http://")], "http://") {
+			return start
+		}
+	}
+
+	return -1
 }
 
 func appendProtectedBase64Prefixes(
@@ -110,11 +163,12 @@ func appendProtectedBase64Prefixes(
 	strictContribution bool,
 	matchContext bool,
 	mayContribute func(string) bool,
+	embeddedContextMayContribute EmbeddedContextMatcher,
 	work *protectedDecodeWork,
 	status *DecodeStatus,
 ) []encodedSpan {
 	for end := whole.end - 1; end-whole.start >= minimum && len(spans) <= maxDecodeScans; end-- {
-		spans, _ = appendProtectedBase64Span(spans, input, encodedSpan{start: whole.start, end: end}, strictContribution, matchContext, mayContribute, work, status)
+		spans, _ = appendEmbeddedProtectedBase64Span(spans, input, encodedSpan{start: whole.start, end: end}, strictContribution, matchContext, mayContribute, embeddedContextMayContribute, work, status)
 		if !decodeWorkComplete(status) {
 			return spans
 		}
@@ -131,11 +185,12 @@ func appendProtectedBase64Suffixes(
 	strictContribution bool,
 	matchContext bool,
 	mayContribute func(string) bool,
+	embeddedContextMayContribute EmbeddedContextMatcher,
 	work *protectedDecodeWork,
 	status *DecodeStatus,
 ) []encodedSpan {
 	for start := whole.start + 1; whole.end-start >= minimum && len(spans) <= maxDecodeScans; start++ {
-		spans, _ = appendProtectedBase64Span(spans, input, encodedSpan{start: start, end: whole.end}, strictContribution, matchContext, mayContribute, work, status)
+		spans, _ = appendEmbeddedProtectedBase64Span(spans, input, encodedSpan{start: start, end: whole.end}, strictContribution, matchContext, mayContribute, embeddedContextMayContribute, work, status)
 		if !decodeWorkComplete(status) {
 			return spans
 		}
@@ -152,12 +207,13 @@ func appendProtectedBase64Interiors(
 	strictContribution bool,
 	matchContext bool,
 	mayContribute func(string) bool,
+	embeddedContextMayContribute EmbeddedContextMatcher,
 	work *protectedDecodeWork,
 	status *DecodeStatus,
 ) []encodedSpan {
 	for start := whole.start + 1; whole.end-start >= minimum+1 && len(spans) <= maxDecodeScans; start++ {
 		for end := whole.end - 1; end-start >= minimum && len(spans) <= maxDecodeScans; end-- {
-			spans, _ = appendProtectedBase64Span(spans, input, encodedSpan{start: start, end: end}, strictContribution, matchContext, mayContribute, work, status)
+			spans, _ = appendEmbeddedProtectedBase64Span(spans, input, encodedSpan{start: start, end: end}, strictContribution, matchContext, mayContribute, embeddedContextMayContribute, work, status)
 			if !decodeWorkComplete(status) {
 				return spans
 			}
@@ -181,11 +237,8 @@ func appendProtectedBase64Span(
 	work *protectedDecodeWork,
 	status *DecodeStatus,
 ) ([]encodedSpan, bool) {
-	if (span.end-span.start)%4 == 1 || !consumeProtectedDecodeWork(work, status, span.end-span.start) {
-		return spans, false
-	}
-	decoded, err := DecodeBase64Candidate(input[span.start:span.end])
-	if err != nil || !IsReadableText(decoded) {
+	decoded, readable := decodeProtectedBase64Span(input, span, work, status)
+	if !readable {
 		return spans, false
 	}
 	var (
@@ -194,9 +247,9 @@ func appendProtectedBase64Span(
 		nestedStatus DecodeStatus
 	)
 	if strictContribution {
-		contributes, nested, nestedStatus = matchingDecodedContributionDetails(string(decoded), mayContribute)
+		contributes, nested, nestedStatus = matchingDecodedContributionDetails(decoded, mayContribute)
 	} else {
-		contributes, nestedStatus = protectedDecodedContribution(string(decoded), mayContribute)
+		contributes, nestedStatus = protectedDecodedContribution(decoded, mayContribute)
 	}
 	mergeDecodeStatus(status, nestedStatus)
 	if !contributes && matchContext {
@@ -204,9 +257,9 @@ func appendProtectedBase64Span(
 		if !consumeProtectedContextWork(work, status, contextBytes) {
 			return spans, true
 		}
-		contextual := replaceDecodedSpan(input, span, string(decoded))
+		contextual := replaceDecodedSpan(input, span, decoded)
 		if strictContribution {
-			contributes, nestedStatus = matchingContextualDecodedContribution(input, span, string(decoded), nested, mayContribute)
+			contributes, nestedStatus = matchingContextualDecodedContribution(input, span, decoded, nested, mayContribute)
 		} else {
 			contributes, nestedStatus = protectedDecodedContribution(contextual, mayContribute)
 		}
@@ -225,6 +278,63 @@ func appendProtectedBase64Span(
 	}
 
 	return spans, true
+}
+
+func appendEmbeddedProtectedBase64Span(
+	spans []encodedSpan,
+	input string,
+	span encodedSpan,
+	strictContribution bool,
+	matchContext bool,
+	mayContribute func(string) bool,
+	embeddedContextMayContribute EmbeddedContextMatcher,
+	work *protectedDecodeWork,
+	status *DecodeStatus,
+) ([]encodedSpan, bool) {
+	if embeddedContextMayContribute == nil {
+		return appendProtectedBase64Span(spans, input, span, strictContribution, matchContext, mayContribute, work, status)
+	}
+
+	decoded, readable := decodeProtectedBase64Span(input, span, work, status)
+	if !readable {
+		return spans, false
+	}
+	_, nested, nestedStatus := matchingDecodedContributionDetails(decoded, mayContribute)
+	mergeDecodeStatus(status, nestedStatus)
+	if !decodeWorkComplete(status) {
+		return spans, true
+	}
+	contributes := embeddedContextMayContribute(input, span.start, span.end, decoded)
+	if !contributes {
+		contributes = slices.ContainsFunc(nested.Candidates, func(candidate string) bool {
+			return embeddedContextMayContribute(input, span.start, span.end, candidate)
+		})
+	}
+	if !contributes {
+		return spans, true
+	}
+	if len(spans) == 0 || spans[len(spans)-1] != span {
+		spans = append(spans, span)
+	}
+
+	return spans, true
+}
+
+func decodeProtectedBase64Span(
+	input string,
+	span encodedSpan,
+	work *protectedDecodeWork,
+	status *DecodeStatus,
+) (string, bool) {
+	if (span.end-span.start)%4 == 1 || !consumeProtectedDecodeWork(work, status, span.end-span.start) {
+		return "", false
+	}
+	decoded, err := DecodeBase64Candidate(input[span.start:span.end])
+	if err != nil || !IsReadableText(decoded) {
+		return "", false
+	}
+
+	return string(decoded), true
 }
 
 func protectedHexSpans(input string, mayContribute func(string) bool, work *protectedDecodeWork, status *DecodeStatus) []encodedSpan {

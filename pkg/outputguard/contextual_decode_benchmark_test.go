@@ -45,3 +45,22 @@ func BenchmarkOutputGuardProtectedOversizeContext(b *testing.B) {
 		_ = bound.Check(text)
 	}
 }
+
+func BenchmarkOutputGuardStructuredCitationsWithEncodedMetadata(b *testing.B) {
+	bound, err := NewGuard().Bind([]string{strings.Repeat("private marker instruction token ", 12)})
+	if err != nil {
+		b.Fatalf("Bind() error = %v", err)
+	}
+	encoded := base64.StdEncoding.EncodeToString([]byte("readable citation metadata"))
+	text := structuredCitationOutput(encoded, 4)
+	if evaluation := bound.Check(text); evaluation.Decision != DecisionAllow {
+		b.Fatalf("Check() evaluation = %+v, want allow", evaluation)
+	}
+
+	b.ReportAllocs()
+	b.SetBytes(int64(len(text)))
+	b.ResetTimer()
+	for range b.N {
+		_ = bound.Check(text)
+	}
+}

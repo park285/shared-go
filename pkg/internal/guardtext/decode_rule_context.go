@@ -55,10 +55,16 @@ func decodeCandidatesWithContextForRules(
 			current.text,
 			decodeContextOptions{filterCandidates: true, boundOversizedStandard: true},
 			mayContribute,
+			nil,
 			oversizedWouldBlock,
 			&decoder.protectedWork,
 			&decoder.scans,
 			&decoder.result.Status,
+			func(candidate decodedContextCandidate) {
+				if decoder.observeRuleExpansion(current, candidate) {
+					standardCandidate = true
+				}
+			},
 			func(candidate string) {
 				standardCandidate = true
 				decoder.admit(current, candidate)

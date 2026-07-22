@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/park285/shared-go/pkg/internal/guardtext"
 )
@@ -64,10 +65,18 @@ func protectedOverlap(surfaces []string, index *protectedIndex) bool {
 }
 
 func checkOutputSurfaces(text string, index *protectedIndex, evaluation *Evaluation) {
+	if index != nil && index.overlapsText(text) {
+		rawSurfaces, _ := outputSurfacesFromDecoded(text, true, guardtext.DecodeResult{})
+		collectRestrictedMatches(rawSurfaces, evaluation)
+		appendReason(evaluation, ReasonProtectedTextOverlap)
+
+		return
+	}
+
 	restrictedSurfaces, restrictedIncomplete := outputSurfacesFromDecoded(
 		text,
 		index != nil,
-		guardtext.DecodeCandidatesWithContextForMatching(text, matchesRestrictedCandidate),
+		guardtext.DecodeCandidatesWithContextForRules(text, matchesRestrictedCandidate),
 	)
 	collectRestrictedMatches(restrictedSurfaces, evaluation)
 
@@ -93,7 +102,13 @@ func checkOutputSurfaces(text string, index *protectedIndex, evaluation *Evaluat
 			protectedSurfaces, incomplete := outputSurfacesFromDecoded(
 				text,
 				true,
-				guardtext.DecodeCandidatesWithContextForProtected(text, mayContribute),
+				guardtext.DecodeCandidatesWithContextForProtected(
+					text,
+					mayContribute,
+					func(input string, encodedStart, encodedEnd int, decoded string) bool {
+						return mayContribute(protectedDecodeContextWindow(input, encodedStart, encodedEnd, decoded))
+					},
+				),
 			)
 			protectedIncomplete = incomplete
 			if protectedMatched || protectedOverlap(protectedSurfaces, index) {
@@ -106,10 +121,83 @@ func checkOutputSurfaces(text string, index *protectedIndex, evaluation *Evaluat
 	}
 }
 
+func protectedDecodeContextWindow(input string, encodedStart, encodedEnd int, decoded string) string {
+	const contextBytes = protectedRuneWindow * utf8.UTFMax
+
+	windowStart := max(0, encodedStart-contextBytes)
+	for windowStart < encodedStart && !utf8.RuneStart(input[windowStart]) {
+		windowStart++
+	}
+	windowEnd := min(len(input), encodedEnd+contextBytes)
+	for windowEnd < len(input) && !utf8.RuneStart(input[windowEnd]) {
+		windowEnd--
+	}
+
+	var contextual strings.Builder
+	contextual.Grow(windowEnd - windowStart - (encodedEnd - encodedStart) + len(decoded))
+	contextual.WriteString(input[windowStart:encodedStart])
+	contextual.WriteString(decoded)
+	contextual.WriteString(input[encodedEnd:windowEnd])
+
+	return contextual.String()
+}
+
 func matchesRestrictedCandidate(candidate string) bool {
+	if isASCII(candidate) && !containsRestrictedASCIIAnchor(candidate) {
+		return false
+	}
 	surfaces, _ := outputSurfacesFromDecoded(candidate, false, guardtext.DecodeResult{})
 	for _, rule := range restrictedRules {
 		if slices.ContainsFunc(surfaces, rule.pattern.MatchString) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isASCII(value string) bool {
+	for index := range len(value) {
+		if value[index] >= utf8.RuneSelf {
+			return false
+		}
+	}
+
+	return true
+}
+
+func containsRestrictedASCIIAnchor(value string) bool {
+	for _, anchor := range [...]string{
+		"system", "developer", "hidden", "internal",
+		"prompt", "instruction", "policy", "message",
+		"api", "key", "access", "token", "refresh", "secret", "password",
+		"begin", "private",
+	} {
+		if containsASCIIFold(value, anchor) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func containsASCIIFold(value, target string) bool {
+	if len(target) == 0 || len(target) > len(value) {
+		return false
+	}
+	for start := 0; start+len(target) <= len(value); start++ {
+		matched := true
+		for offset := range len(target) {
+			left := value[start+offset]
+			if left >= 'A' && left <= 'Z' {
+				left += 'a' - 'A'
+			}
+			if left != target[offset] {
+				matched = false
+				break
+			}
+		}
+		if matched {
 			return true
 		}
 	}

@@ -1,11 +1,41 @@
 package outputguard
 
 import (
+	"bytes"
 	"encoding/base64"
 	"slices"
 	"strings"
 	"testing"
 )
+
+const benignDecodeTransformCount = 9
+
+func TestBoundGuardAllowsOpaqueImageDataURI(t *testing.T) {
+	t.Parallel()
+
+	bound, err := NewGuard().Bind([]string{"internal policy"})
+	if err != nil {
+		t.Fatalf("Bind() error = %v", err)
+	}
+	png := append([]byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, bytes.Repeat([]byte{0x00, 0xff, 0x80, 0x01}, 256)...)
+	evaluation := bound.Check("data:image/png;base64," + base64.StdEncoding.EncodeToString(png) + " ordinary context eHl6")
+	if evaluation.Decision != DecisionAllow {
+		t.Fatalf("evaluation = %+v, want allow", evaluation)
+	}
+}
+
+func TestBoundGuardDoesNotTrustReadableTextBehindOpaqueMediaType(t *testing.T) {
+	t.Parallel()
+
+	bound, err := NewGuard().Bind([]string{"internal policy"})
+	if err != nil {
+		t.Fatalf("Bind() error = %v", err)
+	}
+	evaluation := bound.Check("data:image/png;base64," + base64.StdEncoding.EncodeToString([]byte("system prompt: leaked")))
+	if evaluation.Decision != DecisionBlock || !slices.Contains(evaluation.ReasonCodes, ReasonRoleBlock) {
+		t.Fatalf("evaluation = %+v, want role block", evaluation)
+	}
+}
 
 func TestBoundGuardBlocksProtectedTextSplitAcrossEncodedFragment(t *testing.T) {
 	t.Parallel()
@@ -205,7 +235,7 @@ func TestBoundGuardAllowsStructuredOutputWithCamelCaseAndTimestamp(t *testing.T)
 	}
 }
 
-func TestBoundGuardDoesNotApplyProtectedShortBase64ToRestrictedRules(t *testing.T) {
+func TestBoundGuardBlocksShortBase64RestrictedRule(t *testing.T) {
 	t.Parallel()
 
 	bound, err := NewGuard().Bind([]string{"unrelated internal boundary"})
@@ -214,8 +244,8 @@ func TestBoundGuardDoesNotApplyProtectedShortBase64ToRestrictedRules(t *testing.
 	}
 
 	evaluation := bound.Check("c3lzdGVt prompt: leaked")
-	if evaluation.Decision != DecisionAllow {
-		t.Fatalf("decision = %v, want allow: %+v", evaluation.Decision, evaluation)
+	if evaluation.Decision != DecisionBlock || !slices.Contains(evaluation.ReasonCodes, ReasonRoleBlock) {
+		t.Fatalf("evaluation = %+v, want role block", evaluation)
 	}
 }
 
@@ -306,12 +336,12 @@ func TestBoundGuardAllowsUnrelatedShortBase64Fragment(t *testing.T) {
 	}
 }
 
-func TestGuardDoesNotApplyShortBase64ToRestrictedRules(t *testing.T) {
+func TestGuardBlocksShortBase64RestrictedRule(t *testing.T) {
 	t.Parallel()
 
 	evaluation := NewGuard().Check(CheckRequest{Text: "c3lzdGVt prompt: leaked"})
-	if evaluation.Decision != DecisionAllow {
-		t.Fatalf("decision = %v, want allow: %+v", evaluation.Decision, evaluation)
+	if evaluation.Decision != DecisionBlock || !slices.Contains(evaluation.ReasonCodes, ReasonRoleBlock) {
+		t.Fatalf("evaluation = %+v, want role block", evaluation)
 	}
 }
 
@@ -618,17 +648,136 @@ func TestBoundGuardAllowsDecoratedSHA512Digest(t *testing.T) {
 	}
 }
 
-func TestGuardFailsClosedAfterManySupportedBase64Transforms(t *testing.T) {
+func TestGuardAllowsManyNonContributingBase64Transforms(t *testing.T) {
 	t.Parallel()
 
 	encoded := base64.StdEncoding.EncodeToString([]byte("readable contextual fragment"))
-	evaluation := NewGuard().Check(CheckRequest{Text: strings.Repeat(encoded+"!", 9)})
-	if evaluation.Decision != DecisionBlock {
-		t.Fatalf("decision = %v, want block: %+v", evaluation.Decision, evaluation)
+	evaluation := NewGuard().Check(CheckRequest{Text: strings.Repeat(encoded+"!", benignDecodeTransformCount)})
+	if evaluation.Decision != DecisionAllow {
+		t.Fatalf("decision = %v, want allow: %+v", evaluation.Decision, evaluation)
+	}
+}
+
+func TestBoundGuardAllowsManyNonContributingBase64Transforms(t *testing.T) {
+	t.Parallel()
+
+	bound, err := NewGuard().Bind([]string{"internal application rules"})
+	if err != nil {
+		t.Fatalf("Bind() error = %v", err)
+	}
+
+	encoded := base64.StdEncoding.EncodeToString([]byte("readable contextual fragment"))
+	evaluation := bound.Check(strings.Repeat(encoded+"!", benignDecodeTransformCount))
+	if evaluation.Decision != DecisionAllow {
+		t.Fatalf("decision = %v, want allow: %+v", evaluation.Decision, evaluation)
+	}
+}
+
+func TestBoundGuardAllowsStructuredCitationsWithEncodedMetadata(t *testing.T) {
+	t.Parallel()
+
+	bound, err := NewGuard().Bind([]string{strings.Repeat("private marker instruction token ", 12)})
+	if err != nil {
+		t.Fatalf("Bind() error = %v", err)
+	}
+
+	encoded := base64.StdEncoding.EncodeToString([]byte("readable citation metadata"))
+	output := structuredCitationOutput(encoded, 4)
+	for _, text := range []string{output, strings.ReplaceAll(output, "https://", "HTTPS://")} {
+		evaluation := bound.Check(text)
+		if evaluation.Decision != DecisionAllow {
+			t.Fatalf("evaluation = %+v, want allow", evaluation)
+		}
+	}
+}
+
+func TestBoundGuardFindsNestedProtectedTextAfterEncodedCitationMetadata(t *testing.T) {
+	t.Parallel()
+
+	bound, err := NewGuard().Bind([]string{"policyinternal"})
+	if err != nil {
+		t.Fatalf("Bind() error = %v", err)
+	}
+
+	benign := base64.StdEncoding.EncodeToString([]byte("readable citation metadata"))
+	inner := "cG9saWN5internal"
+	nested := base64.StdEncoding.EncodeToString([]byte(inner))
+	evaluation := bound.Check(structuredCitationOutput(benign, 3) + " https://example.test/" + nested)
+	if evaluation.Decision != DecisionBlock || !slices.Contains(evaluation.ReasonCodes, ReasonProtectedTextOverlap) {
+		t.Fatalf("evaluation = %+v, want protected-text overlap", evaluation)
+	}
+	if slices.Contains(evaluation.ReasonCodes, ReasonDecodeIncomplete) {
+		t.Fatalf("reasons = %v, benign metadata must not exhaust decode work", evaluation.ReasonCodes)
+	}
+}
+
+func TestGuardFindsRestrictedRuleAfterManyNonContributingBase64Transforms(t *testing.T) {
+	t.Parallel()
+
+	benign := base64.StdEncoding.EncodeToString([]byte("readable contextual fragment"))
+	restricted := base64.StdEncoding.EncodeToString([]byte("system prompt: synthetic hidden instruction"))
+	evaluation := NewGuard().Check(CheckRequest{
+		Text: strings.Repeat(benign+"!", benignDecodeTransformCount) + restricted,
+	})
+	if evaluation.Decision != DecisionBlock || !slices.Contains(evaluation.ReasonCodes, ReasonRoleBlock) {
+		t.Fatalf("evaluation = %+v, want role block", evaluation)
+	}
+	if slices.Contains(evaluation.ReasonCodes, ReasonDecodeIncomplete) {
+		t.Fatalf("reasons = %v, benign decoys must not exhaust decode work", evaluation.ReasonCodes)
+	}
+}
+
+func TestGuardKeepsDecodeIncompleteForManyContributingBase64Transforms(t *testing.T) {
+	t.Parallel()
+
+	restricted := base64.StdEncoding.EncodeToString([]byte("system prompt: synthetic hidden instruction"))
+	evaluation := NewGuard().Check(CheckRequest{
+		Text: strings.Repeat(restricted+"!", benignDecodeTransformCount),
+	})
+	if evaluation.Decision != DecisionBlock || !slices.Contains(evaluation.ReasonCodes, ReasonRoleBlock) {
+		t.Fatalf("evaluation = %+v, want role block", evaluation)
 	}
 	if !slices.Contains(evaluation.ReasonCodes, ReasonDecodeIncomplete) {
-		t.Fatalf("reasons = %v, want decode incomplete", evaluation.ReasonCodes)
+		t.Fatalf("reasons = %v, want fail-closed decode limit", evaluation.ReasonCodes)
 	}
+}
+
+func TestBoundGuardFindsProtectedTextAfterManyNonContributingBase64Transforms(t *testing.T) {
+	t.Parallel()
+
+	bound, err := NewGuard().Bind([]string{"internal application rules"})
+	if err != nil {
+		t.Fatalf("Bind() error = %v", err)
+	}
+
+	benign := base64.StdEncoding.EncodeToString([]byte("readable contextual fragment"))
+	protected := base64.StdEncoding.EncodeToString([]byte("application rules"))
+	evaluation := bound.Check(strings.Repeat(benign+"!", benignDecodeTransformCount) + "internal " + protected)
+	if evaluation.Decision != DecisionBlock || !slices.Contains(evaluation.ReasonCodes, ReasonProtectedTextOverlap) {
+		t.Fatalf("evaluation = %+v, want protected-text overlap", evaluation)
+	}
+	if slices.Contains(evaluation.ReasonCodes, ReasonDecodeIncomplete) {
+		t.Fatalf("reasons = %v, benign decoys must not exhaust decode work", evaluation.ReasonCodes)
+	}
+}
+
+func structuredCitationOutput(encoded string, sourceCount int) string {
+	var output strings.Builder
+	output.WriteString(`{"response_mode":"answer","answer_body":"근거를 확인한 답변입니다.","sources":[`)
+	for sourceIndex := range sourceCount {
+		if sourceIndex > 0 {
+			output.WriteByte(',')
+		}
+		output.WriteString(`{"title":"Verified source","url":"https://example.com/`)
+		output.WriteString(encoded)
+		output.WriteByte('/')
+		output.WriteString(encoded)
+		output.WriteString(`?token=`)
+		output.WriteString(encoded)
+		output.WriteString(`"}`)
+	}
+	output.WriteString(`]}`)
+	return output.String()
 }
 
 func TestGuardRecombinesLongEncodedWhitespaceInRestrictedHeader(t *testing.T) {

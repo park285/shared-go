@@ -50,7 +50,7 @@ func TestDecodeCandidatesWithContextRetainsStandaloneDecodedSurface(t *testing.T
 func TestDecodeCandidatesWithContextForProtectedExpandsShortBase64(t *testing.T) {
 	t.Parallel()
 
-	result := DecodeCandidatesWithContextForProtected("internal YXBwbGljYXRpb24= rules")
+	result := DecodeCandidatesWithContextForProtected("internal YXBwbGljYXRpb24= rules", nil, nil)
 	if !slices.Contains(result.Candidates, "internal application rules") {
 		t.Fatalf("result = %#v", result)
 	}
@@ -80,14 +80,42 @@ func TestFilteredContextDecodersCompleteBenignBoundaryLikeInputs(t *testing.T) {
 		`{"digest":"sha512-` + digest + `"}`,
 		`{"digest":"` + digest + `-artifact"}`,
 	} {
-		matching := DecodeCandidatesWithContextForMatching(input, func(string) bool { return false })
-		if !matching.Complete() {
-			t.Errorf("matching input %q: result = %#v, want complete", input, matching)
+		rules := DecodeCandidatesWithContextForRules(input, func(string) bool { return false })
+		if !rules.Complete() {
+			t.Errorf("rules input %q: result = %#v, want complete", input, rules)
 		}
-		protected := DecodeCandidatesWithContextForProtected(input, func(string) bool { return false })
+		protected := DecodeCandidatesWithContextForProtected(input, func(string) bool { return false }, nil)
 		if !protected.Complete() {
 			t.Errorf("protected input %q: result = %#v, want complete", input, protected)
 		}
+	}
+}
+
+func TestProtectedContextSkipsRepeatedNonContributingBase64Values(t *testing.T) {
+	t.Parallel()
+
+	encoded := base64.StdEncoding.EncodeToString([]byte("readable citation metadata"))
+	result := DecodeCandidatesWithContextForProtected(
+		strings.Repeat(encoded+" ", maxDecodeCandidates+4),
+		func(string) bool { return false },
+		nil,
+	)
+	if !result.Complete() || len(result.Candidates) != 0 {
+		t.Fatalf("result = %#v, want complete empty result", result)
+	}
+}
+
+func TestProtectedContextRetainsNestedAmbiguousBase64Boundary(t *testing.T) {
+	t.Parallel()
+
+	inner := "cG9saWN5internal"
+	result := DecodeCandidatesWithContextForProtected(
+		base64.StdEncoding.EncodeToString([]byte(inner)),
+		func(candidate string) bool { return strings.Contains(candidate, "policyinternal") },
+		nil,
+	)
+	if !result.Complete() || !slices.Contains(result.Candidates, inner) {
+		t.Fatalf("result = %#v, want nested protected candidate", result)
 	}
 }
 
@@ -100,7 +128,7 @@ func TestProtectedContextRejectsOversizeBeforeMatcherObservation(t *testing.T) {
 		maxObserved = max(maxObserved, len(candidate))
 
 		return true
-	})
+	}, nil)
 	if result.Status&DecodeByteLimit == 0 {
 		t.Fatalf("result = %#v, want byte limit", result)
 	}

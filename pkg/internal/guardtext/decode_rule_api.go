@@ -7,6 +7,7 @@ func DecodeCandidatesWithContextForRules(input string, mayContribute func(string
 	if mayContribute == nil {
 		return DecodeCandidatesWithContext(input)
 	}
+	input = projectOpaqueBase64ForRules(input)
 	originalPotential, needsNormalization := ruleDecodePreflight(input)
 	normalized := normalizedRuleDecodeInput(input, needsNormalization)
 	return decodeCandidatesWithContextForRules(input, normalized, mayContribute, nil, originalPotential)
@@ -23,6 +24,7 @@ func DecodeCandidatesWithContextForRuleOwner[T any](
 	if mayContribute == nil {
 		return DecodeCandidatesWithContext(input)
 	}
+	input = projectOpaqueBase64ForRules(input)
 	originalPotential, needsNormalization := ruleDecodePreflight(input)
 	if !originalPotential && !needsNormalization {
 		return DecodeResult{}

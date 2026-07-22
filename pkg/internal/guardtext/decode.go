@@ -46,11 +46,9 @@ type decodeQueueEntry struct {
 type encodedSpan struct{ start, end int }
 
 type protectedDecodeWork struct {
-	tries               int
-	bytes               int
-	contextBytes        int
-	supportedCandidates int
-	supportedBytes      int
+	tries        int
+	bytes        int
+	contextBytes int
 }
 
 type decodeFamily uint8
@@ -134,7 +132,8 @@ func classifyPotentialDecodeSurface(input string) (bool, bool) {
 		start := i
 		match := nextBase64Candidate(input, i)
 		i = match.next
-		if len(match.value) >= minBase64CandidateLen {
+		span := encodedSpan{start: start, end: match.next}
+		if len(match.value) >= minBase64CandidateLen && !isOpaqueBase64Envelope(input, span) {
 			return true, start == 0 && match.next == len(input)
 		}
 	}
@@ -196,8 +195,8 @@ func transformFamilies(input string) []transformFamily {
 func transformFamiliesWithShortContext(
 	input string,
 	includeShort bool,
-	filterLong bool,
 	mayContribute func(string) bool,
+	embeddedContextMayContribute EmbeddedContextMatcher,
 	work *protectedDecodeWork,
 	status *DecodeStatus,
 ) []transformFamily {
@@ -206,10 +205,8 @@ func transformFamiliesWithShortContext(
 	base64Spans := contextualBase64SpansAtLeast(input, base64Minimum)
 	hexSpans := hexSpansForPattern(input, hexPattern)
 	if includeShort {
-		base64Spans = protectedBase64Spans(input, mayContribute, work, status)
+		base64Spans = protectedBase64Spans(input, mayContribute, embeddedContextMayContribute, work, status)
 		hexSpans = protectedHexSpans(input, mayContribute, work, status)
-	} else if filterLong {
-		base64Spans = matchingBase64Spans(input, mayContribute, work, status)
 	}
 	families := []transformFamily{
 		{kind: decodeBase64, input: input, spans: base64Spans},

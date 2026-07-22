@@ -5,7 +5,21 @@
 
 ## 미출시
 
-변경 없음.
+### 수정
+
+- `outputguard`가 무해한 Base64 메타데이터와 HTTP URL path를 rule 기여 후보로 잘못
+  계산해 `decode_incomplete`로 차단하던 문제를 수정했습니다. 후보·byte·depth·scan 한도와
+  인코딩된 restricted rule 및 protected text의 fail-closed 검사는 유지됩니다.
+- `promptguard`가 대형 Factorio blueprint와 확인된 binary data URI를 rule decode 예산에
+  포함해 정상 prompt bundle을 `decode_incomplete`로 차단하던 문제를 수정했습니다. 읽을 수
+  있는 payload와 미확인 binary는 보수적으로 검사하며, 중첩 Base64·hex 우회는 기존 depth·scan
+  한도 안에서 계속 확장해 차단합니다.
+
+### 테스트
+
+- 반복된 citation 메타데이터, 대형 Factorio blueprint, binary data URI 정상 경로와 뒤쪽의
+  인코딩된 restricted/protected text 공격, 미확인 zlib, 중첩 transform, 실제 decode budget
+  소진 경로와 guard 성능 회귀를 검증합니다.
 
 ## v1.32.0 - 2026-07-20
 
