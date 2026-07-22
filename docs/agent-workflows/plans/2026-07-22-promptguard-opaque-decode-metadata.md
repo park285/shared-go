@@ -58,11 +58,11 @@
 - Update consumer: `../chat-bot-go-kakao/go.mod`, `go.sum`
 
 - [x] Run focused guardtext/promptguard/outputguard tests.
-- [ ] Add and run the ChatBotGo prompt bundle consumer tests against the released module.
+- [x] Add and run the ChatBotGo prompt bundle consumer tests against the released module.
 - [x] Run the final-state `make lint`, `make test`, `make test-race`, `make vulncheck`, `make guard-perf-gate`, and `make build` suite.
 - [x] Run `bash scripts/ci/release-gate.sh` before publishing `shared-go`.
-- [ ] Commit, push, tag a new `shared-go` release, then bump ChatBotGo without `replace` or vendoring.
-- [ ] Run ChatBotGo canonical build and pre-commit gate, push, redeploy `bot-chatbotgo`, and verify health/readiness/runtime plus filtered block metrics/logs.
+- [x] Commit, push, tag a new `shared-go` release, then bump ChatBotGo without `replace` or vendoring.
+- [x] Run ChatBotGo canonical build and pre-commit gate, push, redeploy `bot-chatbotgo`, and verify health/readiness/runtime plus filtered block metrics/logs.
 
 ### Stop rules
 
