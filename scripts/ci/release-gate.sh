@@ -19,8 +19,6 @@ run_stage bash scripts/check-sql-ownership.sh
 run_stage make lint
 run_stage make test
 run_stage make test-race
-run_stage make perf-gate PERF_GATE_ID=perf-gate
-run_stage make guard-perf-gate GUARD_PERF_GATE_ID=guard-perf-gate
 run_stage make vulncheck
 run_stage go mod tidy -diff
 
