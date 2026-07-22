@@ -53,9 +53,9 @@
 
 ### Task 4: Release and runtime proof
 
-- [ ] Run focused shared-go and ChatBotGo tests, lint, race, build, vulncheck, and canonical gates without performance benchmarks.
-- [ ] Run the disposable signed-H3 E2E with ordinary large encoded data, malicious encoded semantic text, benign structured output, and protected-output attacks.
-- [ ] Publish the next shared-go patch tag, bump ChatBotGo without `replace`, push force-free, redeploy through the helper, and verify revision plus `/health`, `/ready`, and `/ready/runtime`.
+- [x] Run focused shared-go and ChatBotGo tests, lint, race, build, vulncheck, and canonical gates without performance benchmarks.
+- [x] Run the disposable signed-H3 E2E with ordinary large encoded data, malicious encoded semantic text, benign structured output, and restricted-output attacks.
+- [x] Publish `v1.32.4`, bump ChatBotGo without `replace`, push force-free, redeploy through the helper, and verify revision plus `/health`, `/ready`, and `/ready/runtime`.
 
 ## Stop rules
 
