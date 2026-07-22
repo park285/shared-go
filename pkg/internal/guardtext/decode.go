@@ -132,8 +132,7 @@ func classifyPotentialDecodeSurface(input string) (bool, bool) {
 		start := i
 		match := nextBase64Candidate(input, i)
 		i = match.next
-		span := encodedSpan{start: start, end: match.next}
-		if len(match.value) >= minBase64CandidateLen && !isOpaqueBase64Envelope(input, span) {
+		if len(match.value) >= minBase64CandidateLen && !declaredNonTextDataPayload(input, start) {
 			return true, start == 0 && match.next == len(input)
 		}
 	}

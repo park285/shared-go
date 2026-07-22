@@ -7,10 +7,16 @@ func DecodeCandidatesWithContextForRules(input string, mayContribute func(string
 	if mayContribute == nil {
 		return DecodeCandidatesWithContext(input)
 	}
-	input = projectOpaqueBase64ForRules(input)
+	semantic := decodeSemanticRuleInput(input, mayContribute)
+	if semantic.status != 0 {
+		return DecodeResult{Status: semantic.status}
+	}
+	input = semantic.projected
 	originalPotential, needsNormalization := ruleDecodePreflight(input)
 	normalized := normalizedRuleDecodeInput(input, needsNormalization)
-	return decodeCandidatesWithContextForRules(input, normalized, mayContribute, nil, originalPotential)
+	decoded := decodeCandidatesWithContextForRules(input, normalized, mayContribute, nil, originalPotential)
+
+	return mergeSemanticCandidates(semantic.candidates, decoded)
 }
 
 // DecodeCandidatesWithContextForRuleOwner avoids allocating an owner-bound
@@ -24,10 +30,15 @@ func DecodeCandidatesWithContextForRuleOwner[T any](
 	if mayContribute == nil {
 		return DecodeCandidatesWithContext(input)
 	}
-	input = projectOpaqueBase64ForRules(input)
+	matcher := func(candidate string) bool { return mayContribute(owner, candidate) }
+	semantic := decodeSemanticRuleInput(input, matcher)
+	if semantic.status != 0 {
+		return DecodeResult{Status: semantic.status}
+	}
+	input = semantic.projected
 	originalPotential, needsNormalization := ruleDecodePreflight(input)
 	if !originalPotential && !needsNormalization {
-		return DecodeResult{}
+		return DecodeResult{Candidates: semantic.candidates}
 	}
 	normalized := normalizedRuleDecodeInput(input, needsNormalization)
 	var oversizedCallback func(string, string, []string) bool
@@ -36,13 +47,15 @@ func DecodeCandidatesWithContextForRuleOwner[T any](
 			return oversizedWouldBlock(owner, original, decoded, bounded)
 		}
 	}
-	return decodeCandidatesWithContextForRules(
+	decoded := decodeCandidatesWithContextForRules(
 		input,
 		normalized,
-		func(candidate string) bool { return mayContribute(owner, candidate) },
+		matcher,
 		oversizedCallback,
 		originalPotential,
 	)
+
+	return mergeSemanticCandidates(semantic.candidates, decoded)
 }
 
 func normalizedRuleDecodeInput(input string, needed bool) string {

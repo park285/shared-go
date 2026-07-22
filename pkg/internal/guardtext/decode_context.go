@@ -21,7 +21,13 @@ func DecodeCandidatesWithContextForProtected(
 	mayContribute func(string) bool,
 	embeddedContextMayContribute EmbeddedContextMatcher,
 ) DecodeResult {
-	return decodeCandidatesWithContext(input, true, mayContribute, embeddedContextMayContribute)
+	semantic := decodeSemanticRuleInput(input, mayContribute)
+	if semantic.status != 0 {
+		return DecodeResult{Status: semantic.status}
+	}
+	decoded := decodeCandidatesWithContext(semantic.projected, true, mayContribute, embeddedContextMayContribute)
+
+	return mergeSemanticCandidates(semantic.candidates, decoded)
 }
 
 // EmbeddedContextMatcher는 모호한 Base64 내부 경계를 디코딩한 값이 원래 문맥에서도 기여하는지 판정한다.

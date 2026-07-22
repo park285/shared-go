@@ -33,7 +33,7 @@ func filteredBase64Spans(
 		if len(match.value) < minimum {
 			continue
 		}
-		if isOpaqueBase64Envelope(input, encodedSpan{start: start, end: match.next}) {
+		if declaredNonTextDataPayload(input, start) {
 			continue
 		}
 		enumerateBoundaries := looksLikeEmbeddedBase64(match.value)

@@ -143,61 +143,9 @@ func protectedDecodeContextWindow(input string, encodedStart, encodedEnd int, de
 }
 
 func matchesRestrictedCandidate(candidate string) bool {
-	if isASCII(candidate) && !containsRestrictedASCIIAnchor(candidate) {
-		return false
-	}
 	surfaces, _ := outputSurfacesFromDecoded(candidate, false, guardtext.DecodeResult{})
 	for _, rule := range restrictedRules {
 		if slices.ContainsFunc(surfaces, rule.pattern.MatchString) {
-			return true
-		}
-	}
-
-	return false
-}
-
-func isASCII(value string) bool {
-	for index := range len(value) {
-		if value[index] >= utf8.RuneSelf {
-			return false
-		}
-	}
-
-	return true
-}
-
-func containsRestrictedASCIIAnchor(value string) bool {
-	for _, anchor := range [...]string{
-		"system", "developer", "hidden", "internal",
-		"prompt", "instruction", "policy", "message",
-		"api", "key", "access", "token", "refresh", "secret", "password",
-		"begin", "private",
-	} {
-		if containsASCIIFold(value, anchor) {
-			return true
-		}
-	}
-
-	return false
-}
-
-func containsASCIIFold(value, target string) bool {
-	if len(target) == 0 || len(target) > len(value) {
-		return false
-	}
-	for start := 0; start+len(target) <= len(value); start++ {
-		matched := true
-		for offset := range len(target) {
-			left := value[start+offset]
-			if left >= 'A' && left <= 'Z' {
-				left += 'a' - 'A'
-			}
-			if left != target[offset] {
-				matched = false
-				break
-			}
-		}
-		if matched {
 			return true
 		}
 	}

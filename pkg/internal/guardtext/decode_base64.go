@@ -20,7 +20,7 @@ func base64SpansAtLeast(input string, minimum int) []encodedSpan {
 		i = match.next
 		if len(match.value) >= minimum {
 			span := encodedSpan{start: start, end: match.next}
-			if !isOpaqueBase64Envelope(input, span) {
+			if !declaredNonTextDataPayload(input, span.start) {
 				spans = append(spans, span)
 			}
 		}
@@ -68,7 +68,7 @@ func appendContextualBase64Whole(
 	minimum int,
 	work *protectedDecodeWork,
 ) ([]encodedSpan, bool) {
-	if isOpaqueBase64Envelope(input, whole) {
+	if declaredNonTextDataPayload(input, whole.start) {
 		return spans, true
 	}
 	spans = append(spans, whole)
@@ -126,7 +126,7 @@ func ContainsSuspiciousBase64(input string) bool {
 		if len(match.value) < minBase64CandidateLen {
 			continue
 		}
-		if isOpaqueBase64Envelope(input, encodedSpan{start: start, end: match.next}) {
+		if declaredNonTextDataPayload(input, start) {
 			continue
 		}
 		decoded, err := DecodeBase64Candidate(match.value)

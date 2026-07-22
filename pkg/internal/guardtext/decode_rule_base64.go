@@ -42,7 +42,7 @@ func appendShortRuleBase64Whole(
 	work *protectedDecodeWork,
 	status *DecodeStatus,
 ) ([]encodedSpan, map[encodedSpan]struct{}) {
-	if isOpaqueBase64Envelope(input, whole) {
+	if declaredNonTextDataPayload(input, whole.start) {
 		return spans, seen
 	}
 	value := input[whole.start:whole.end]

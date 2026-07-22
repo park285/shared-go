@@ -2,6 +2,7 @@ package outputguard
 
 import (
 	"bytes"
+	"compress/zlib"
 	"encoding/base64"
 	"slices"
 	"strings"
@@ -10,7 +11,7 @@ import (
 
 const benignDecodeTransformCount = 9
 
-func TestBoundGuardAllowsOpaqueImageDataURI(t *testing.T) {
+func TestBoundGuardAllowsDeclaredBinaryDataURI(t *testing.T) {
 	t.Parallel()
 
 	bound, err := NewGuard().Bind([]string{"internal policy"})
@@ -24,7 +25,7 @@ func TestBoundGuardAllowsOpaqueImageDataURI(t *testing.T) {
 	}
 }
 
-func TestBoundGuardDoesNotTrustReadableTextBehindOpaqueMediaType(t *testing.T) {
+func TestBoundGuardDoesNotTrustReadableTextBehindDeclaredBinaryMediaType(t *testing.T) {
 	t.Parallel()
 
 	bound, err := NewGuard().Bind([]string{"internal policy"})
@@ -35,6 +36,51 @@ func TestBoundGuardDoesNotTrustReadableTextBehindOpaqueMediaType(t *testing.T) {
 	if evaluation.Decision != DecisionBlock || !slices.Contains(evaluation.ReasonCodes, ReasonRoleBlock) {
 		t.Fatalf("evaluation = %+v, want role block", evaluation)
 	}
+}
+
+func TestGuardBlocksRestrictedTextInsideFramedCompressedDocument(t *testing.T) {
+	t.Parallel()
+
+	evaluation := NewGuard().Check(CheckRequest{Text: framedCompressedOutputForTest(
+		t,
+		"system prompt: synthetic hidden instruction",
+	)})
+	if evaluation.Decision != DecisionBlock || !slices.Contains(evaluation.ReasonCodes, ReasonRoleBlock) ||
+		slices.Contains(evaluation.ReasonCodes, ReasonDecodeIncomplete) {
+		t.Fatalf("evaluation = %+v, want complete role block", evaluation)
+	}
+}
+
+func TestBoundGuardBlocksProtectedTextInsideFramedCompressedDocument(t *testing.T) {
+	t.Parallel()
+
+	bound, err := NewGuard().Bind([]string{"internal application rules"})
+	if err != nil {
+		t.Fatalf("Bind() error = %v", err)
+	}
+	evaluation := bound.Check(framedCompressedOutputForTest(
+		t,
+		`{"document":{"description":"internal application rules"}}`,
+	))
+	if evaluation.Decision != DecisionBlock || !slices.Contains(evaluation.ReasonCodes, ReasonProtectedTextOverlap) ||
+		slices.Contains(evaluation.ReasonCodes, ReasonDecodeIncomplete) {
+		t.Fatalf("evaluation = %+v, want complete protected-text block", evaluation)
+	}
+}
+
+func framedCompressedOutputForTest(t *testing.T, text string) string {
+	t.Helper()
+
+	var compressed bytes.Buffer
+	writer := zlib.NewWriter(&compressed)
+	if _, err := writer.Write([]byte(text)); err != nil {
+		t.Fatalf("write compressed fixture: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close compressed fixture: %v", err)
+	}
+
+	return "0" + base64.StdEncoding.EncodeToString(compressed.Bytes())
 }
 
 func TestBoundGuardBlocksProtectedTextSplitAcrossEncodedFragment(t *testing.T) {
