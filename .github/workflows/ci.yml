@@ -55,8 +55,8 @@ jobs:
       - name: golangci-lint
         run: make lint
 
+      - name: Deterministic guard allocation ceilings
+        run: go test -count=1 -run '^TestPromptGuardAllocationCeilings$' ./pkg/promptguard
+
       - name: go test race
         run: go test -race -count=1 ./...
-
-      - name: perf gate oracle
-        run: bash scripts/perf/check-bench-regression_test.sh

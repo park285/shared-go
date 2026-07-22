@@ -56,13 +56,15 @@ go get github.com/park285/shared-go@latest
 
 `UseEmbeddedDefaults=true`는 `pkg/promptguard/rulepacks`의 v3 baseline을 먼저 로드합니다. `RulepacksDir` 또는 `RulepackFS`를 함께 지정하면 v3 `kind: rules` overlay 하나만 추가할 수 있으며, policy 변경과 baseline rule ID 중복은 시작 단계에서 거부됩니다. `PolicyDigest()`는 engine version과 최종 유효 policy/rules의 결정론적 digest이며 사용자 입력을 포함하지 않습니다. Runtime override 없이 v3 policy 문서만 threshold를 소유합니다.
 
-## Benchmark gate와 baseline
+## Benchmark와 결정적 guard 검증
 
-`make perf-gate`와 `make guard-perf-gate`는 fail-closed bridge입니다. 각 target은 안정된 서로 다른 `--gate-id`로 candidate를 수집한 뒤 기존 baseline과 비교합니다. baseline이 없거나 읽을 수 없으면 exit 2로 실패하며, blocking entrypoint는 baseline을 생성·복사하지 않고 bootstrap 또는 legacy opt-out flag도 사용하지 않습니다.
+Go benchmark 함수는 명시적인 성능 조사와 프로파일링을 위해 유지합니다. 필요할 때 표준 Go 명령으로 직접 실행합니다.
 
-v2 evidence는 현재 Prepare 단계입니다. candidate manifest는 repository, selection gate, gate ID, policy, `harness_files`, collector command, Git 상태, host/environment 및 result digest를 함께 고정합니다. `check-v2`는 candidate와 baseline의 strict sidecar·provenance가 모두 호환될 때만 읽으며, write·fallback 경로가 없습니다. 일반 gate는 compatible v2 baseline이 provision될 때까지 이 fail-closed bridge를 유지합니다.
+```bash
+go test -run '^$' -bench . ./pkg/promptguard ./pkg/outputguard
+```
 
-baseline provision은 별도 승인된 작업입니다. approved `main`의 clean worktree를 고정 host에서 수집한 뒤에만 `bootstrap-baseline --approved-sha <40-hex-sha>`로 생성하거나 복원할 수 있습니다. candidate에서 baseline을 만들 수 없으며, 승인된 fixed-host evidence가 없으면 상태는 `BLOCKED_BASELINE`입니다.
+Blocking CI는 머신별 baseline이나 상대 wall-clock 비교를 사용하지 않습니다. Prompt/output guard의 의미론·적대적 입력·fail-closed 계약은 일반 테스트가 소유하며, 운영상 명시적으로 보호하던 prompt guard allocation 상한은 `testing.AllocsPerRun` 기반 결정적 테스트로 검증합니다. `ns/op`와 `B/op`는 수동 조사 지표이며 CI 합격 판정으로 사용하지 않습니다.
 
 Prompt guard는 v3 rulepack과 source/enforcement를 명시하는 `Check`만 지원합니다.
 
@@ -76,4 +78,4 @@ go test ./...
 go build ./...
 ```
 
-**CI 정책:** 본 리포지토리는 원격 깃허브 액션(GitHub Actions)이 실제 검증 주체입니다. `ci.yml`은 PR 및 `main` push마다 workflow secret 경계 검사, SQL ownership 검사, `gofmt`, `go vet`, `golangci-lint`, 경합 조건 검사를 포함한 테스트 슈트(`go test -race -count=1 ./...`), perf gate(벤치마크 회귀 검사)를 수행하며, `security.yml`은 `main` push·주간 스케줄·수동 dispatch 시 `govulncheck` 취약점 분석을 수행합니다.
+**CI 정책:** 본 리포지토리는 원격 깃허브 액션(GitHub Actions)이 실제 검증 주체입니다. `ci.yml`은 PR 및 `main` push마다 workflow secret 경계 검사, SQL ownership 검사, `gofmt`, `go vet`, `golangci-lint`, 경합 조건 검사를 포함한 테스트 슈트(`go test -race -count=1 ./...`)를 수행하며, `security.yml`은 `main` push·주간 스케줄·수동 dispatch 시 `govulncheck` 취약점 분석을 수행합니다.
