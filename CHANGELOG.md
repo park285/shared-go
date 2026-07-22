@@ -5,8 +5,18 @@
 
 ## 미출시
 
+### 보안
+
+- `golang.org/x/text`를 invalid input에서 infinite loop가 발생할 수 있는 `GO-2026-5970` 수정
+  버전 `v0.39.0`으로 갱신했습니다.
+
 ### 수정
 
+- `promptguard`의 전역 decode candidate budget을 실제 rule 판정에 기여하는 후보만 소비하도록
+  바꿔, benign Base64 context가 많은 prompt bundle이 무관한 후보 때문에 fail closed되던 오탐을
+  제거했습니다. 악성 nested·encoded prompt 탐지와 decode-depth fail-closed 계약은 유지합니다.
+- 대용량 표준 transform은 bounded window에서 평가하여 정상 입력 오탐을 줄이고, 영속 출력 제어와
+  위조 역할·중단형 출력 공격 규칙을 보강했습니다. regex literal branch prefilter는 유지합니다.
 - `promptguard`가 Cargo manifest처럼 Base64·hex 후보가 많은 정상 기술 설정을 검사할 때
   후보마다 전체 입력 문맥 예산을 중복 차감하여 `decode_incomplete`로 차단하던 문제를
   수정했습니다. rule literal 경계를 완성할 수 있는 후보만 owner 문맥 검사로 승격하며,
@@ -26,6 +36,12 @@
 - 반복된 citation 메타데이터, 대형 Factorio blueprint, binary data URI 정상 경로와 뒤쪽의
   인코딩된 restricted/protected text 공격, 미확인 zlib, 중첩 transform, 실제 decode budget
   소진 경로와 guard 성능 회귀를 검증합니다.
+
+### CI
+
+- machine-local baseline과 상대 성능 비교에 의존하던 benchmark gate를 폐기했습니다. 빌드,
+  lint, race test, vulnerability scan과 deterministic allocation 상한은 기존 저장소 gate에서
+  계속 검증합니다.
 
 ## v1.32.0 - 2026-07-20
 
