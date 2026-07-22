@@ -6,6 +6,7 @@ func decodeCandidatesWithContextForRules(
 	input string,
 	normalized string,
 	mayContribute func(string) bool,
+	embeddedContextMayContribute EmbeddedContextMatcher,
 	oversizedWouldBlock func(string, string, []string) bool,
 	originalPotential bool,
 ) DecodeResult {
@@ -30,13 +31,7 @@ func decodeCandidatesWithContextForRules(
 		return DecodeResult{}
 	}
 
-	decoder := contextDecoder{
-		result:              DecodeResult{Candidates: make([]string, 0, maxDecodeCandidates)},
-		queue:               make([]decodeQueueEntry, 0, len(roots)+maxDecodeCandidates),
-		visited:             make(map[string]struct{}, len(roots)+maxDecodeCandidates),
-		mayContribute:       mayContribute,
-		oversizedWouldBlock: oversizedWouldBlock,
-	}
+	decoder := newRuleContextDecoder(roots, mayContribute, embeddedContextMayContribute, oversizedWouldBlock)
 	for _, root := range roots {
 		if _, exists := decoder.visited[root]; exists {
 			continue
@@ -55,7 +50,7 @@ func decodeCandidatesWithContextForRules(
 			current.text,
 			decodeContextOptions{filterCandidates: true, boundOversizedStandard: true},
 			mayContribute,
-			nil,
+			embeddedContextMayContribute,
 			oversizedWouldBlock,
 			&decoder.protectedWork,
 			&decoder.scans,
@@ -85,6 +80,7 @@ func decodeCandidatesWithContextForRules(
 		decodeShortRuleSurfaces(
 			current.text,
 			mayContribute,
+			embeddedContextMayContribute,
 			&decoder.protectedWork,
 			&decoder.scans,
 			&decoder.result.Status,
@@ -93,6 +89,22 @@ func decodeCandidatesWithContextForRules(
 	}
 
 	return decoder.result
+}
+
+func newRuleContextDecoder(
+	roots []string,
+	mayContribute func(string) bool,
+	embeddedContextMayContribute EmbeddedContextMatcher,
+	oversizedWouldBlock func(string, string, []string) bool,
+) contextDecoder {
+	return contextDecoder{
+		result:                       DecodeResult{Candidates: make([]string, 0, maxDecodeCandidates)},
+		queue:                        make([]decodeQueueEntry, 0, len(roots)+maxDecodeCandidates),
+		visited:                      make(map[string]struct{}, len(roots)+maxDecodeCandidates),
+		mayContribute:                mayContribute,
+		embeddedContextMayContribute: embeddedContextMayContribute,
+		oversizedWouldBlock:          oversizedWouldBlock,
+	}
 }
 
 func decodeSingleShortRuleContext(input string, mayContribute func(string) bool) (DecodeResult, bool) {
@@ -223,13 +235,14 @@ func hasPlausibleShortRuleDecodeSurface(input string) bool {
 func decodeShortRuleSurfaces(
 	input string,
 	mayContribute func(string) bool,
+	embeddedContextMayContribute EmbeddedContextMatcher,
 	work *protectedDecodeWork,
 	scans *int,
 	status *DecodeStatus,
 	admitContextual func(encodedSpan, string),
 ) {
-	base64Spans := shortRuleBase64Spans(input, mayContribute, work, status)
-	hexSpans := matchingShortHexSpans(input, mayContribute, work, status)
+	base64Spans := shortRuleBase64Spans(input, mayContribute, embeddedContextMayContribute, work, status)
+	hexSpans := matchingShortHexSpans(input, mayContribute, embeddedContextMayContribute, work, status)
 	families := []transformFamily{
 		{kind: decodeBase64, input: input, spans: base64Spans},
 		{kind: decodeHex, input: input, spans: hexSpans},

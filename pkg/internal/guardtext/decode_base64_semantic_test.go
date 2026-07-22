@@ -117,6 +117,23 @@ func TestSemanticBase64ProjectionLeavesUnknownBinaryConservative(t *testing.T) {
 	}
 }
 
+func TestCompressedBase64PrefixPreflight(t *testing.T) {
+	t.Parallel()
+
+	if !hasCompressedBase64Prefix(compressedTextForTest(t, "ordinary compressed text")) {
+		t.Fatal("zlib payload was not recognized")
+	}
+	for _, value := range []string{
+		base64.StdEncoding.EncodeToString([]byte("ordinary readable text")),
+		base64.StdEncoding.EncodeToString([]byte{0x01, 0x02, 0x03, 0x04}),
+		"not-base64",
+	} {
+		if hasCompressedBase64Prefix(value) {
+			t.Fatalf("hasCompressedBase64Prefix(%q) = true, want false", value)
+		}
+	}
+}
+
 func containsCandidateText(candidates []string, target string) bool {
 	for _, candidate := range candidates {
 		if strings.Contains(candidate, target) {

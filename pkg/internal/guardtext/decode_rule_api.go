@@ -1,5 +1,17 @@
 package guardtext
 
+// HasPotentialRuleDecodeSurface는 rule decode가 필요한 변환 문법의 존재 여부를 빠르게 판정한다.
+func HasPotentialRuleDecodeSurface(input string) bool {
+	potential, needsNormalization := ruleDecodePreflight(input)
+	if potential {
+		return true
+	}
+
+	normalized := normalizedRuleDecodeInput(input, needsNormalization)
+
+	return normalized != "" && (hasPotentialDecodeSurface(normalized) || hasPlausibleShortRuleDecodeSurface(normalized))
+}
+
 // DecodeCandidatesWithContextForRules expands standard transforms and short
 // Base64/hex fragments that can contribute to a compiled rule. All paths share
 // the existing decode budgets and retain fail-closed status reporting.
@@ -14,7 +26,10 @@ func DecodeCandidatesWithContextForRules(input string, mayContribute func(string
 	input = semantic.projected
 	originalPotential, needsNormalization := ruleDecodePreflight(input)
 	normalized := normalizedRuleDecodeInput(input, needsNormalization)
-	decoded := decodeCandidatesWithContextForRules(input, normalized, mayContribute, nil, originalPotential)
+	decoded := decodeCandidatesWithContextForRules(input, normalized, mayContribute, nil, nil, originalPotential)
+	if len(semantic.candidates) == 0 {
+		return decoded
+	}
 
 	return mergeSemanticCandidates(semantic.candidates, decoded)
 }
@@ -25,6 +40,7 @@ func DecodeCandidatesWithContextForRuleOwner[T any](
 	input string,
 	owner T,
 	mayContribute func(T, string) bool,
+	contextMayContribute func(T, string, int, int, string) bool,
 	oversizedWouldBlock func(T, string, string, []string) bool,
 ) DecodeResult {
 	if mayContribute == nil {
@@ -41,6 +57,12 @@ func DecodeCandidatesWithContextForRuleOwner[T any](
 		return DecodeResult{Candidates: semantic.candidates}
 	}
 	normalized := normalizedRuleDecodeInput(input, needsNormalization)
+	var contextMatcher EmbeddedContextMatcher
+	if contextMayContribute != nil {
+		contextMatcher = func(input string, start, end int, decoded string) bool {
+			return contextMayContribute(owner, input, start, end, decoded)
+		}
+	}
 	var oversizedCallback func(string, string, []string) bool
 	if (len(input) > maxDecodedCandidateLen || len(normalized) > maxDecodedCandidateLen) && oversizedWouldBlock != nil {
 		oversizedCallback = func(original, decoded string, bounded []string) bool {
@@ -51,9 +73,13 @@ func DecodeCandidatesWithContextForRuleOwner[T any](
 		input,
 		normalized,
 		matcher,
+		contextMatcher,
 		oversizedCallback,
 		originalPotential,
 	)
+	if len(semantic.candidates) == 0 {
+		return decoded
+	}
 
 	return mergeSemanticCandidates(semantic.candidates, decoded)
 }

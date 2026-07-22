@@ -3,6 +3,7 @@ package guardtext
 func shortRuleBase64Spans(
 	input string,
 	mayContribute func(string) bool,
+	embeddedContextMayContribute EmbeddedContextMatcher,
 	work *protectedDecodeWork,
 	status *DecodeStatus,
 ) []encodedSpan {
@@ -20,14 +21,14 @@ func shortRuleBase64Spans(
 		whole := encodedSpan{start: start, end: match.next}
 		if pathSegments, ok := httpURLPathBase64Segments(input, whole, 4); ok {
 			for _, segment := range pathSegments {
-				spans, seen = appendShortRuleBase64Whole(spans, seen, input, segment, mayContribute, work, status)
+				spans, seen = appendShortRuleBase64Whole(spans, seen, input, segment, mayContribute, embeddedContextMayContribute, work, status)
 				if !decodeWorkComplete(status) {
 					break
 				}
 			}
 			continue
 		}
-		spans, seen = appendShortRuleBase64Whole(spans, seen, input, whole, mayContribute, work, status)
+		spans, seen = appendShortRuleBase64Whole(spans, seen, input, whole, mayContribute, embeddedContextMayContribute, work, status)
 	}
 
 	return spans
@@ -39,6 +40,7 @@ func appendShortRuleBase64Whole(
 	input string,
 	whole encodedSpan,
 	mayContribute func(string) bool,
+	embeddedContextMayContribute EmbeddedContextMatcher,
 	work *protectedDecodeWork,
 	status *DecodeStatus,
 ) ([]encodedSpan, map[encodedSpan]struct{}) {
@@ -48,13 +50,15 @@ func appendShortRuleBase64Whole(
 	value := input[whole.start:whole.end]
 	var wholeReadable bool
 	if len(value) <= maxShortBase64CandidateLen {
-		spans, wholeReadable = appendProtectedBase64Span(
+		spans, wholeReadable = appendEmbeddedProtectedBase64Span(
 			spans,
 			input,
 			whole,
 			true,
 			true,
+			embeddedDirectOrContext,
 			mayContribute,
+			embeddedContextMayContribute,
 			work,
 			status,
 		)
@@ -78,7 +82,7 @@ func appendShortRuleBase64Whole(
 			if span == whole {
 				continue
 			}
-			spans = appendMatchingShortBase64Span(spans, seen, input, span, mayContribute, work, status)
+			spans = appendMatchingShortBase64Span(spans, seen, input, span, mayContribute, embeddedContextMayContribute, work, status)
 			if !decodeWorkComplete(status) {
 				break
 			}
@@ -107,6 +111,7 @@ func appendMatchingShortBase64Span(
 	input string,
 	span encodedSpan,
 	mayContribute func(string) bool,
+	embeddedContextMayContribute EmbeddedContextMatcher,
 	work *protectedDecodeWork,
 	status *DecodeStatus,
 ) []encodedSpan {
@@ -115,13 +120,15 @@ func appendMatchingShortBase64Span(
 	}
 	seen[span] = struct{}{}
 
-	updated, _ := appendProtectedBase64Span(
+	updated, _ := appendEmbeddedProtectedBase64Span(
 		spans,
 		input,
 		span,
 		true,
 		true,
+		embeddedDirectOrContext,
 		mayContribute,
+		embeddedContextMayContribute,
 		work,
 		status,
 	)

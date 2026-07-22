@@ -5,6 +5,13 @@ import (
 	"strings"
 )
 
+type embeddedContributionMode uint8
+
+const (
+	embeddedContextOnly embeddedContributionMode = iota
+	embeddedDirectOrContext
+)
+
 func protectedBase64Spans(
 	input string,
 	mayContribute func(string) bool,
@@ -168,7 +175,7 @@ func appendProtectedBase64Prefixes(
 	status *DecodeStatus,
 ) []encodedSpan {
 	for end := whole.end - 1; end-whole.start >= minimum && len(spans) <= maxDecodeScans; end-- {
-		spans, _ = appendEmbeddedProtectedBase64Span(spans, input, encodedSpan{start: whole.start, end: end}, strictContribution, matchContext, mayContribute, embeddedContextMayContribute, work, status)
+		spans, _ = appendEmbeddedProtectedBase64Span(spans, input, encodedSpan{start: whole.start, end: end}, strictContribution, matchContext, embeddedContextOnly, mayContribute, embeddedContextMayContribute, work, status)
 		if !decodeWorkComplete(status) {
 			return spans
 		}
@@ -190,7 +197,7 @@ func appendProtectedBase64Suffixes(
 	status *DecodeStatus,
 ) []encodedSpan {
 	for start := whole.start + 1; whole.end-start >= minimum && len(spans) <= maxDecodeScans; start++ {
-		spans, _ = appendEmbeddedProtectedBase64Span(spans, input, encodedSpan{start: start, end: whole.end}, strictContribution, matchContext, mayContribute, embeddedContextMayContribute, work, status)
+		spans, _ = appendEmbeddedProtectedBase64Span(spans, input, encodedSpan{start: start, end: whole.end}, strictContribution, matchContext, embeddedContextOnly, mayContribute, embeddedContextMayContribute, work, status)
 		if !decodeWorkComplete(status) {
 			return spans
 		}
@@ -213,7 +220,7 @@ func appendProtectedBase64Interiors(
 ) []encodedSpan {
 	for start := whole.start + 1; whole.end-start >= minimum+1 && len(spans) <= maxDecodeScans; start++ {
 		for end := whole.end - 1; end-start >= minimum && len(spans) <= maxDecodeScans; end-- {
-			spans, _ = appendEmbeddedProtectedBase64Span(spans, input, encodedSpan{start: start, end: end}, strictContribution, matchContext, mayContribute, embeddedContextMayContribute, work, status)
+			spans, _ = appendEmbeddedProtectedBase64Span(spans, input, encodedSpan{start: start, end: end}, strictContribution, matchContext, embeddedContextOnly, mayContribute, embeddedContextMayContribute, work, status)
 			if !decodeWorkComplete(status) {
 				return spans
 			}
@@ -286,6 +293,7 @@ func appendEmbeddedProtectedBase64Span(
 	span encodedSpan,
 	strictContribution bool,
 	matchContext bool,
+	mode embeddedContributionMode,
 	mayContribute func(string) bool,
 	embeddedContextMayContribute EmbeddedContextMatcher,
 	work *protectedDecodeWork,
@@ -299,16 +307,14 @@ func appendEmbeddedProtectedBase64Span(
 	if !readable {
 		return spans, false
 	}
-	_, nested, nestedStatus := matchingDecodedContributionDetails(decoded, mayContribute)
+	direct, nested, nestedStatus := matchingDecodedContributionDetails(decoded, mayContribute)
 	mergeDecodeStatus(status, nestedStatus)
 	if !decodeWorkComplete(status) {
 		return spans, true
 	}
-	contributes := embeddedContextMayContribute(input, span.start, span.end, decoded)
+	contributes := mode == embeddedDirectOrContext && direct
 	if !contributes {
-		contributes = slices.ContainsFunc(nested.Candidates, func(candidate string) bool {
-			return embeddedContextMayContribute(input, span.start, span.end, candidate)
-		})
+		contributes = embeddedContextContributes(input, span, decoded, nested, embeddedContextMayContribute)
 	}
 	if !contributes {
 		return spans, true
@@ -318,6 +324,22 @@ func appendEmbeddedProtectedBase64Span(
 	}
 
 	return spans, true
+}
+
+func embeddedContextContributes(
+	input string,
+	span encodedSpan,
+	decoded string,
+	nested DecodeResult,
+	matcher EmbeddedContextMatcher,
+) bool {
+	if matcher(input, span.start, span.end, decoded) {
+		return true
+	}
+
+	return slices.ContainsFunc(nested.Candidates, func(candidate string) bool {
+		return matcher(input, span.start, span.end, candidate)
+	})
 }
 
 func decodeProtectedBase64Span(

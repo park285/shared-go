@@ -7,6 +7,10 @@
 
 ### 수정
 
+- `promptguard`가 Cargo manifest처럼 Base64·hex 후보가 많은 정상 기술 설정을 검사할 때
+  후보마다 전체 입력 문맥 예산을 중복 차감하여 `decode_incomplete`로 차단하던 문제를
+  수정했습니다. rule literal 경계를 완성할 수 있는 후보만 owner 문맥 검사로 승격하며,
+  평문과 Base64·hex 중간 조각을 합친 injection 우회는 계속 차단합니다.
 - `outputguard`가 무해한 Base64 메타데이터와 HTTP URL path를 rule 기여 후보로 잘못
   계산해 `decode_incomplete`로 차단하던 문제를 수정했습니다. 후보·byte·depth·scan 한도와
   인코딩된 restricted rule 및 protected text의 fail-closed 검사는 유지됩니다.
@@ -17,6 +21,8 @@
 
 ### 테스트
 
+- 실제 Cargo workspace manifest 정상 입력과 같은 입력 뒤의 encoded injection, Base64·hex로
+  단어 중간만 숨긴 injection을 회귀 검증합니다.
 - 반복된 citation 메타데이터, 대형 Factorio blueprint, binary data URI 정상 경로와 뒤쪽의
   인코딩된 restricted/protected text 공격, 미확인 zlib, 중첩 transform, 실제 decode budget
   소진 경로와 guard 성능 회귀를 검증합니다.

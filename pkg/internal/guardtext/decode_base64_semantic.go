@@ -54,7 +54,7 @@ func mergeSemanticCandidates(semantic []string, decoded DecodeResult) DecodeResu
 }
 
 func decodeSemanticRuleInput(input string, mayContribute func(string) bool) semanticDecodeResult {
-	result := semanticDecodeResult{projected: input, candidates: make([]string, 0, maxDecodeCandidates)}
+	result := semanticDecodeResult{projected: input}
 	var spans []encodedSpan
 
 	for position := 0; position < len(input) && len(spans) <= maxDecodeScans; {
@@ -148,6 +148,9 @@ func decodeSemanticBase64(input string, span encodedSpan) (string, DecodeStatus,
 
 func decodeCompressedSemanticText(value string) (string, DecodeStatus, bool) {
 	for offset := 0; offset < 4 && offset < len(value); offset++ {
+		if !hasCompressedBase64Prefix(value[offset:]) {
+			continue
+		}
 		decoded, err := DecodeBase64Candidate(value[offset:])
 		if err != nil {
 			continue
@@ -170,6 +173,27 @@ func decodeCompressedSemanticText(value string) (string, DecodeStatus, bool) {
 	}
 
 	return "", 0, false
+}
+
+func hasCompressedBase64Prefix(value string) bool {
+	prefixBytes := min(len(value), 8)
+	prefixBytes -= prefixBytes % 4
+	if prefixBytes < 4 {
+		return false
+	}
+
+	var storage [6]byte
+	decoded, err := decodeBase64CandidateInto(storage[:], value[:prefixBytes])
+	if err != nil || len(decoded) < 2 {
+		return false
+	}
+
+	if decoded[0] == 0x1f && decoded[1] == 0x8b {
+		return true
+	}
+	cmf, flg := decoded[0], decoded[1]
+
+	return cmf&0x0f == 8 && cmf>>4 <= 7 && (uint16(cmf)<<8|uint16(flg))%31 == 0
 }
 
 func newCompressedReader(data []byte) (io.ReadCloser, bool) {
