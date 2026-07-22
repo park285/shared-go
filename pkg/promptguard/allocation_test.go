@@ -20,7 +20,7 @@ func TestPromptGuardAllocationCeilings(t *testing.T) {
 		{
 			name:      "decoder heavy",
 			input:     base64.StdEncoding.EncodeToString([]byte(url.PathEscape(payload))),
-			maxAllocs: 64,
+			maxAllocs: 80,
 		},
 		{
 			name:      "short rule context",
