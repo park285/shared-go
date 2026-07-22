@@ -74,7 +74,7 @@ func decodeCandidatesWithContextForRules(
 				if !decoder.ruleCandidateAdmissionReady(current, candidate) {
 					return
 				}
-				if decoder.admitRuleCandidate(current, candidate) {
+				if decoder.admitRuleContextualCandidate(current, span, decoded) {
 					standardCandidate = true
 				}
 			},
@@ -98,7 +98,7 @@ func decodeCandidatesWithContextForRules(
 				if !decoder.ruleCandidateAdmissionReady(current, candidate) {
 					return
 				}
-				decoder.admitRuleCandidate(current, candidate)
+				decoder.admitRuleContextualCandidate(current, span, decoded)
 			},
 		)
 	}
