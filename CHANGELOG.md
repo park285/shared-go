@@ -5,6 +5,11 @@
 
 ## 미출시
 
+### 제거 (호환성 변경)
+
+- v1.32.0에서 지원 중단을 예고한 소비자 0건의 `retry.ComputeBackoffDelay`를 제거했습니다.
+  `backoff.ComputeExponentialBackoff`를 사용하십시오.
+
 ### 테스트
 
 - 순수 이중 Base64로만 감싼 injection이 decode 예산 안에서 복원되어 모든 enforcement에서
