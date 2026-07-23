@@ -12,6 +12,10 @@
 
 ### 수정
 
+- `promptguard`가 표준 Base64·hex 치환 경계를 가로질러 완성되는 짧은 decode surface를 rule
+  기여가 확인될 때만 expansion-only queue에 보존해, fully decoded rule literal이 치환 경계
+  뒤에서만 나타나는 injection 우회를 차단합니다. 공개 API와 decode budget·fail-closed 계약은
+  유지합니다.
 - `promptguard`의 전역 decode candidate budget을 실제 rule 판정에 기여하는 후보만 소비하도록
   바꿔, benign Base64 context가 많은 prompt bundle이 무관한 후보 때문에 fail closed되던 오탐을
   제거했습니다. 악성 nested·encoded prompt 탐지와 decode-depth fail-closed 계약은 유지합니다.
