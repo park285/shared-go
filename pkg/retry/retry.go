@@ -19,11 +19,6 @@ type RetryOptions struct {
 	Sleep         func(ctx context.Context, d time.Duration) bool
 }
 
-// Deprecated: backoff.ComputeExponentialBackoff를 사용하십시오. 다음 minor에서 제거됩니다.
-func ComputeBackoffDelay(attempt int, base, jitter time.Duration) time.Duration {
-	return backoff.ComputeExponentialBackoff(attempt, base, 0, jitter)
-}
-
 func Sleep(ctx context.Context, duration time.Duration) bool {
 	return sleepWithContext(ctx, duration)
 }
