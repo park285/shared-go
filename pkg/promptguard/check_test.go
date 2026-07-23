@@ -73,14 +73,19 @@ func TestCheckEmitsDecodeIncompleteRuleOnMissAndCacheHit(t *testing.T) {
 	if firstErr != nil || secondErr != nil {
 		t.Fatalf("observe errors = (%v, %v)", firstErr, secondErr)
 	}
-	if !first.DecodeIncomplete || !second.DecodeIncomplete || first.Decision != DecisionBlock || second.Decision != DecisionBlock {
+	if !first.DecodeIncomplete || !second.DecodeIncomplete || first.Decision != DecisionReview || second.Decision != DecisionReview {
 		t.Fatalf("evaluations = (%#v, %#v)", first, second)
+	}
+	if len(first.DecodeLimits) == 0 || len(second.DecodeLimits) == 0 {
+		t.Fatalf("decode limits = (%v, %v), want non-empty", first.DecodeLimits, second.DecodeLimits)
 	}
 	if len(events) != 2 {
 		t.Fatalf("events = %d, want 2", len(events))
 	}
 	for i, wantSource := range []Source{SourceUserPrompt, SourcePromptBundle} {
-		if events[i].Source != wantSource || events[i].CacheHit != (i == 1) || !events[i].DecodeIncomplete || !slices.Contains(events[i].RuleIDs, ruleDecodeIncomplete) {
+		if events[i].Source != wantSource || events[i].CacheHit != (i == 1) || !events[i].DecodeIncomplete ||
+			!slices.Contains(events[i].RuleIDs, ruleDecodeIncomplete) ||
+			!slices.Contains(events[i].RuleIDs, ruleDecodeIncomplete+":"+first.DecodeLimits[0]) {
 			t.Fatalf("event[%d] = %#v", i, events[i])
 		}
 	}
