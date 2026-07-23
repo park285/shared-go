@@ -33,6 +33,11 @@ jobs:
       - name: Workflow secret boundary
         run: bash scripts/ci/check-workflow-secrets.sh
 
+      - name: Workflow CI ownership contract
+        run: |
+          python3 scripts/ci/check-workflow-ci-owner.py
+          python3 scripts/ci/check-workflow-ci-owner_test.py
+
       - name: SQL ownership
         run: bash scripts/check-sql-ownership.sh
 
