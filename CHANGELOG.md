@@ -5,6 +5,13 @@
 
 ## 미출시
 
+### 테스트
+
+- 순수 이중 Base64로만 감싼 injection이 decode 예산 안에서 복원되어 모든 enforcement에서
+  Block으로 거부되는 것을 회귀 검증합니다.
+
+## v1.33.0 - 2026-07-23
+
 ### 보안
 
 - `promptguard`의 `decode_incomplete`(decode 예산 부족)는 더 이상 무조건 hard block하지
@@ -12,6 +19,11 @@
   소비처는 통과하고 Persistent 소비처(세션 메모리 등)에서만 fail-closed로 거부됩니다. 어느
   한도가 걸렸는지 `Evaluation.DecodeLimits`와 `decode_incomplete:<limit>` rule 라벨로
   노출합니다.
+
+## v1.32.6 - 2026-07-23
+
+### 보안
+
 - `golang.org/x/text`를 invalid input에서 infinite loop가 발생할 수 있는 `GO-2026-5970` 수정
   버전 `v0.39.0`으로 갱신했습니다.
 
@@ -26,10 +38,31 @@
   제거했습니다. 악성 nested·encoded prompt 탐지와 decode-depth fail-closed 계약은 유지합니다.
 - 대용량 표준 transform은 bounded window에서 평가하여 정상 입력 오탐을 줄이고, 영속 출력 제어와
   위조 역할·중단형 출력 공격 규칙을 보강했습니다. regex literal branch prefilter는 유지합니다.
+
+### CI
+
+- machine-local baseline과 상대 성능 비교에 의존하던 benchmark gate를 폐기했습니다. 빌드,
+  lint, race test, vulnerability scan과 deterministic allocation 상한은 기존 저장소 gate에서
+  계속 검증합니다.
+
+## v1.32.5 - 2026-07-22
+
+### 수정
+
 - `promptguard`가 Cargo manifest처럼 Base64·hex 후보가 많은 정상 기술 설정을 검사할 때
   후보마다 전체 입력 문맥 예산을 중복 차감하여 `decode_incomplete`로 차단하던 문제를
   수정했습니다. rule literal 경계를 완성할 수 있는 후보만 owner 문맥 검사로 승격하며,
   평문과 Base64·hex 중간 조각을 합친 injection 우회는 계속 차단합니다.
+
+### 테스트
+
+- 실제 Cargo workspace manifest 정상 입력과 같은 입력 뒤의 encoded injection, Base64·hex로
+  단어 중간만 숨긴 injection을 회귀 검증합니다.
+
+## v1.32.3 - 2026-07-22
+
+### 수정
+
 - `outputguard`가 무해한 Base64 메타데이터와 HTTP URL path를 rule 기여 후보로 잘못
   계산해 `decode_incomplete`로 차단하던 문제를 수정했습니다. 후보·byte·depth·scan 한도와
   인코딩된 restricted rule 및 protected text의 fail-closed 검사는 유지됩니다.
@@ -40,17 +73,9 @@
 
 ### 테스트
 
-- 실제 Cargo workspace manifest 정상 입력과 같은 입력 뒤의 encoded injection, Base64·hex로
-  단어 중간만 숨긴 injection을 회귀 검증합니다.
 - 반복된 citation 메타데이터, 대형 Factorio blueprint, binary data URI 정상 경로와 뒤쪽의
   인코딩된 restricted/protected text 공격, 미확인 zlib, 중첩 transform, 실제 decode budget
   소진 경로와 guard 성능 회귀를 검증합니다.
-
-### CI
-
-- machine-local baseline과 상대 성능 비교에 의존하던 benchmark gate를 폐기했습니다. 빌드,
-  lint, race test, vulnerability scan과 deterministic allocation 상한은 기존 저장소 gate에서
-  계속 검증합니다.
 
 ## v1.32.0 - 2026-07-20
 
