@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"golang.org/x/sync/singleflight"
+
+	"github.com/park285/shared-go/pkg/internal/guardtext"
 )
 
 const (
@@ -123,6 +125,9 @@ func blockedErrorFromEvaluation(evaluation Evaluation) *BlockedError {
 	}
 	if evaluation.DecodeIncomplete {
 		rules = append(rules, ruleDecodeIncomplete)
+		for _, limit := range evaluation.DecodeLimits {
+			rules = append(rules, ruleDecodeIncomplete+":"+limit)
+		}
 	}
 
 	return &BlockedError{
@@ -308,10 +313,30 @@ func (g *Guard) evaluateRaw(input string) Evaluation {
 	segments = append(segments, decoded...)
 	evaluation := g.evaluateSegments(policy, segments)
 	if status != 0 {
-		evaluation.Decision = DecisionBlock
 		evaluation.DecodeIncomplete = true
+		evaluation.DecodeLimits = decodeLimitLabels(status)
+		if evaluation.Decision == DecisionAllow {
+			evaluation.Decision = DecisionReview
+		}
 	}
 	return evaluation
+}
+
+func decodeLimitLabels(status guardtext.DecodeStatus) []string {
+	labels := make([]string, 0, 4)
+	if status&guardtext.DecodeCandidateLimit != 0 {
+		labels = append(labels, "candidates")
+	}
+	if status&guardtext.DecodeByteLimit != 0 {
+		labels = append(labels, "bytes")
+	}
+	if status&guardtext.DecodeDepthLimit != 0 {
+		labels = append(labels, "depth")
+	}
+	if status&guardtext.DecodeScanLimit != 0 {
+		labels = append(labels, "scans")
+	}
+	return labels
 }
 
 func (g *Guard) aggregateMayMatch(tail *aggregateTail, right textSegment) bool {
@@ -346,7 +371,14 @@ func (g *Guard) observeEvaluation(evaluation Evaluation, cacheHit bool, inputByt
 
 	if evaluation.Decision == DecisionReview && g.logger != nil {
 		families, truncatedFamilies := boundedLogValues(distinctPositiveFamilies(evaluation.Hits))
-		rules, truncatedRules := boundedLogValues(matchedRuleIDs(evaluation.Hits))
+		ruleList := matchedRuleIDs(evaluation.Hits)
+		if evaluation.DecodeIncomplete {
+			ruleList = append(ruleList, ruleDecodeIncomplete)
+			for _, limit := range evaluation.DecodeLimits {
+				ruleList = append(ruleList, ruleDecodeIncomplete+":"+limit)
+			}
+		}
+		rules, truncatedRules := boundedLogValues(ruleList)
 		attrs := []any{
 			slog.Float64("score", evaluation.Score),
 			slog.Float64("review_threshold", evaluation.ReviewThreshold),
@@ -374,6 +406,9 @@ func (g *Guard) observeEvaluation(evaluation Evaluation, cacheHit bool, inputByt
 		rules := matchedRuleIDs(evaluation.Hits)
 		if evaluation.DecodeIncomplete {
 			rules = append(rules, ruleDecodeIncomplete)
+			for _, limit := range evaluation.DecodeLimits {
+				rules = append(rules, ruleDecodeIncomplete+":"+limit)
+			}
 		}
 		slices.Sort(rules)
 		g.onEvaluation(EvaluationEvent{
@@ -446,6 +481,7 @@ func validDecision(decision Decision) bool {
 
 func cloneEvaluation(evaluation Evaluation) Evaluation {
 	evaluation.Hits = slices.Clone(evaluation.Hits)
+	evaluation.DecodeLimits = slices.Clone(evaluation.DecodeLimits)
 
 	return evaluation
 }

@@ -7,6 +7,11 @@
 
 ### 보안
 
+- `promptguard`의 `decode_incomplete`(decode 예산 부족)는 더 이상 무조건 hard block하지
+  않습니다. 예산 내 복호화된 표면에서 rule 매칭이 없으면 Review로만 표시되어, Interactive
+  소비처는 통과하고 Persistent 소비처(세션 메모리 등)에서만 fail-closed로 거부됩니다. 어느
+  한도가 걸렸는지 `Evaluation.DecodeLimits`와 `decode_incomplete:<limit>` rule 라벨로
+  노출합니다.
 - `golang.org/x/text`를 invalid input에서 infinite loop가 발생할 수 있는 `GO-2026-5970` 수정
   버전 `v0.39.0`으로 갱신했습니다.
 

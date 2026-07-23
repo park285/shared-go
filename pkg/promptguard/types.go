@@ -83,6 +83,7 @@ type Evaluation struct {
 	FallbackBlocked       bool     `json:"fallback_blocked,omitempty"`
 	SegmentBudgetExceeded bool     `json:"segment_budget_exceeded,omitempty"`
 	DecodeIncomplete      bool     `json:"decode_incomplete,omitempty"`
+	DecodeLimits          []string `json:"decode_limits,omitempty"`
 }
 
 type BlockedError struct {
