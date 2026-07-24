@@ -5,6 +5,13 @@
 
 ## 미출시
 
+### 추가
+
+- `pkg/httputil`에 범용 JSON 응답 writer `WriteJSON(w, status, v)`를 추가했습니다. HTML escape를
+  적용하지 않으며(`SetEscapeHTML(false)`), 기존 `WriteErrorJSON`은 이 함수를 경유하도록 정리해
+  응답 인코딩 로직을 단일 소스로 수렴했습니다. `WriteErrorJSON`의 출력·트림 동작은 동일합니다.
+  commonization P1.3의 "WriteJSON 계열" 승격 잔여분으로, twentyq-bot이 첫 소비자입니다.
+
 ### 변경 (호환성)
 
 - `pkg/db/pgxdb`의 `DefaultPoolConfig()`가 더 이상 `DB_POOL_MIN_CONNS`·`DB_POOL_MAX_CONNS`

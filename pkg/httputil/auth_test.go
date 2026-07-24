@@ -70,6 +70,48 @@ func TestAPIKeyFromRequest(t *testing.T) {
 	}
 }
 
+func TestWriteJSON(t *testing.T) {
+	t.Parallel()
+
+	rec := httptest.NewRecorder()
+	err := WriteJSON(rec, http.StatusCreated, map[string]string{"html": "<b>&</b>"})
+	if err != nil {
+		t.Fatalf("WriteJSON() error = %v", err)
+	}
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusCreated)
+	}
+	if got := rec.Header().Get(HeaderContentType); got != ContentTypeJSON {
+		t.Fatalf("Content-Type = %q, want %q", got, ContentTypeJSON)
+	}
+	body := strings.TrimSpace(rec.Body.String())
+	if body != `{"html":"<b>&</b>"}` {
+		t.Fatalf("body = %q, want unescaped HTML JSON", body)
+	}
+}
+
+func TestWriteErrorJSONTrimsAndUsesWriteJSON(t *testing.T) {
+	t.Parallel()
+
+	rec := httptest.NewRecorder()
+	if err := WriteErrorJSON(rec, http.StatusBadRequest, "  CODE  ", "  msg  "); err != nil {
+		t.Fatalf("WriteErrorJSON() error = %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+	if got := rec.Header().Get(HeaderContentType); got != ContentTypeJSON {
+		t.Fatalf("Content-Type = %q, want %q", got, ContentTypeJSON)
+	}
+	var payload ErrorResponse
+	if err := sharedjson.Unmarshal([]byte(strings.TrimSpace(rec.Body.String())), &payload); err != nil {
+		t.Fatalf("unmarshal error body: %v", err)
+	}
+	if payload.Error != "CODE" || payload.Message != "msg" {
+		t.Fatalf("payload = %+v, want trimmed CODE/msg", payload)
+	}
+}
+
 func TestAdminAuthMiddleware(t *testing.T) {
 	t.Parallel()
 
