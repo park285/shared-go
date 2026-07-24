@@ -175,22 +175,43 @@ func TestLibpqQuote_Escaping(t *testing.T) {
 	}
 }
 
-func TestDefaultPoolConfig_EnvOverrideAndClamp(t *testing.T) {
-	t.Setenv("DB_POOL_MIN_CONNS", "0")
-	t.Setenv("DB_POOL_MAX_CONNS", "500")
-	pc := DefaultPoolConfig()
-	if pc.MinConns != 1 {
-		t.Errorf("MinConns = %d, want clamp to 1", pc.MinConns)
-	}
-	if pc.MaxConns != 200 {
-		t.Errorf("MaxConns = %d, want clamp to 200", pc.MaxConns)
-	}
-	if pc.ConnMaxLifetime != time.Hour {
-		t.Errorf("ConnMaxLifetime = %v, want 1h", pc.ConnMaxLifetime)
+func TestDefaultPoolConfig_IgnoresEnvUsesStaticDefaults(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		setMin bool
+		setMax bool
+		minVal string
+		maxVal string
+	}{
+		{name: "unset"},
+		{name: "zero and over-cap", setMin: true, setMax: true, minVal: "0", maxVal: "500"},
+		{name: "normal values", setMin: true, setMax: true, minVal: "7", maxVal: "33"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.setMin {
+				t.Setenv("DB_POOL_MIN_CONNS", tc.minVal)
+			}
+			if tc.setMax {
+				t.Setenv("DB_POOL_MAX_CONNS", tc.maxVal)
+			}
+			pc := DefaultPoolConfig()
+			if pc.MinConns != 0 {
+				t.Errorf("MinConns = %d, want static 0 (env not read by library)", pc.MinConns)
+			}
+			if pc.MaxConns != 20 {
+				t.Errorf("MaxConns = %d, want static 20 (env not read by library)", pc.MaxConns)
+			}
+			if pc.ConnMaxLifetime != time.Hour {
+				t.Errorf("ConnMaxLifetime = %v, want 1h", pc.ConnMaxLifetime)
+			}
+			if pc.ConnMaxIdleTime != 30*time.Minute {
+				t.Errorf("ConnMaxIdleTime = %v, want 30m", pc.ConnMaxIdleTime)
+			}
+		})
 	}
 }
 
-func TestWithPoolDefaults_SharesSourceWithDefaultPoolConfig(t *testing.T) {
+func TestWithPoolDefaults_FillsUnsetFromStaticDefaultPoolConfig(t *testing.T) {
 	t.Setenv("DB_POOL_MIN_CONNS", "7")
 	t.Setenv("DB_POOL_MAX_CONNS", "33")
 
@@ -200,8 +221,8 @@ func TestWithPoolDefaults_SharesSourceWithDefaultPoolConfig(t *testing.T) {
 	if got.MinConns != def.MinConns || got.MaxConns != def.MaxConns {
 		t.Errorf("conns = %d/%d, want %d/%d (single source: DefaultPoolConfig)", got.MinConns, got.MaxConns, def.MinConns, def.MaxConns)
 	}
-	if got.MinConns != 7 || got.MaxConns != 33 {
-		t.Errorf("conns = %d/%d, want env-tuned 7/33", got.MinConns, got.MaxConns)
+	if got.MinConns != 0 || got.MaxConns != 20 {
+		t.Errorf("conns = %d/%d, want static 0/20 regardless of DB_POOL_* env", got.MinConns, got.MaxConns)
 	}
 	if got.ConnMaxLifetime != def.ConnMaxLifetime || got.ConnMaxIdleTime != def.ConnMaxIdleTime {
 		t.Errorf("lifetimes = %v/%v, want %v/%v", got.ConnMaxLifetime, got.ConnMaxIdleTime, def.ConnMaxLifetime, def.ConnMaxIdleTime)
@@ -221,6 +242,16 @@ func TestWithPoolDefaults_PreservesExplicitValues(t *testing.T) {
 	}
 	if got.ConnMaxLifetime != 2*time.Hour || got.ConnMaxLifetimeJitter != 90*time.Second || got.ConnMaxIdleTime != 5*time.Minute {
 		t.Errorf("lifetimes = %v/%v/%v, want explicit values preserved", got.ConnMaxLifetime, got.ConnMaxLifetimeJitter, got.ConnMaxIdleTime)
+	}
+}
+
+func TestWithPoolDefaults_PreservesExplicitMinConnsZero(t *testing.T) {
+	got := withPoolDefaults(PoolConfig{MinConns: 0, MaxConns: 8})
+	if got.MinConns != 0 {
+		t.Errorf("MinConns = %d, want explicit 0 preserved (operator intent, pgx no-min-idle)", got.MinConns)
+	}
+	if got.MaxConns != 8 {
+		t.Errorf("MaxConns = %d, want explicit 8 preserved", got.MaxConns)
 	}
 }
 

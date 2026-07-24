@@ -8,10 +8,13 @@
 // # 풀 기본값(fallback) 계약
 //
 // OpenPool·OpenPoolWithRetry는 opts.Pool에서 미설정(0 이하)인 필드를 DefaultPoolConfig()와
-// 동일한 단일 소스로 채운다: MinConns/MaxConns는 env(DB_POOL_MIN_CONNS·DB_POOL_MAX_CONNS,
-// 기본 5/20, 각 [1,100]·[1,200] clamp), ConnMaxLifetime=1h, ConnMaxIdleTime=30m이고,
-// ConnMaxLifetimeJitter는 유효 ConnMaxLifetime/5로 파생한다. 따라서 OpenPool(ctx,cfg,Options{})와
-// DefaultOptions() 경유가 동일한 풀 구성을 만든다.
+// 동일한 단일 소스로 채운다: 풀 필드에 대해서는 env를 읽지 않고 호출자가 준 값만 사용한다.
+// DefaultPoolConfig()는 정적 기본값 MinConns=0(pgx 기본, 풀 최소 크기 없음), MaxConns=20,
+// ConnMaxLifetime=1h, ConnMaxIdleTime=30m을 반환하고, ConnMaxLifetimeJitter는 유효
+// ConnMaxLifetime/5로 파생한다. MinConns 기본이 0이므로 소비자가 명시한 MinConns=0은
+// 기본값 대체 없이 그대로 pgx에 전달된다(MaxConns=0은 pgx에 유효하지 않아 20으로 대체된다).
+// DB_POOL_MIN_CONNS·DB_POOL_MAX_CONNS 등 풀 크기 env의 소유·검증·clamp는 소비자 책임이다.
+// 따라서 OpenPool(ctx,cfg,Options{})와 DefaultOptions() 경유가 동일한 풀 구성을 만든다.
 //
 // OpenPoolDSN은 다르다: pgxpool.ParseConfig가 DSN의 pool_* 파라미터를 파싱하며 미지정 필드에
 // pgx 자체 기본값(MaxConns=max(4,NumCPU), MinConns=0, ConnMaxLifetime=1h, ConnMaxIdleTime=30m,

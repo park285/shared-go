@@ -5,6 +5,21 @@
 
 ## 미출시
 
+### 변경 (호환성)
+
+- `pkg/db/pgxdb`의 `DefaultPoolConfig()`가 더 이상 `DB_POOL_MIN_CONNS`·`DB_POOL_MAX_CONNS`
+  env를 읽거나 `[1,100]`·`[1,200]`로 clamp하지 않습니다. 정적 기본값
+  `MinConns=0`(pgx 기본, 풀 최소 크기 없음), `MaxConns=20`, `ConnMaxLifetime=1h`,
+  `ConnMaxIdleTime=30m`을 반환합니다. env 미설정 기준 구 기본값은 `MinConns=5`였으므로,
+  `MinConns`를 지정하지 않던 호출자의 풀 최소 크기 기본이 5에서 0으로 바뀝니다.
+  `OpenPool`·`OpenPoolWithRetry`의 fallback은 여전히
+  이 단일 소스로 미설정 필드를 채우지만, 라이브러리는 풀 필드에 대해 env를 읽지 않고
+  호출자가 준 값만 사용합니다. 풀 크기 env의 소유·검증·clamp는 소비자 책임으로 수렴했습니다. `MinConns` 기본이
+  0이므로 소비자가 명시한 `MinConns=0`은 이제 기본값 대체 없이 그대로 pgx에 전달됩니다(이전에는
+  env 재독+clamp로 1이 되어 operator 의도를 덮었음). in-stack 소비자(hololive-bot,
+  chat-bot-go-kakao)는 항상 양수 `MinConns`/`MaxConns`를 넘기거나 `OpenPoolDSN` 경로를 쓰므로
+  실질 동작 변화가 없고, twentyq-bot은 `MinConns=0` 전달이 이제 존중됩니다.
+
 ### 제거 (호환성 변경)
 
 - v1.32.0에서 지원 중단을 예고한 소비자 0건의 `retry.ComputeBackoffDelay`를 제거했습니다.
@@ -14,6 +29,9 @@
 
 - 순수 이중 Base64로만 감싼 injection이 decode 예산 안에서 복원되어 모든 enforcement에서
   Block으로 거부되는 것을 회귀 검증합니다.
+- `pgxdb.DefaultPoolConfig`가 `DB_POOL_*` env를 무시하고 정적 기본값을 반환하는 것과,
+  `withPoolDefaults`가 명시 `MinConns=0`을 보존하는 것을 env 조합(unset/0/정상값/상한 초과)으로
+  회귀 검증합니다.
 
 ## v1.33.0 - 2026-07-23
 
