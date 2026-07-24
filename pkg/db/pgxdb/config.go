@@ -229,21 +229,13 @@ type PoolConfig struct {
 
 func DefaultPoolConfig() PoolConfig {
 	return PoolConfig{
-		MinConns:        clamp(envutil.Int("DB_POOL_MIN_CONNS", 5), 1, 100),
-		MaxConns:        clamp(envutil.Int("DB_POOL_MAX_CONNS", 20), 1, 200),
+		// MinConns 0은 pgx 기본값이다. withPoolDefaults의 <=0 sentinel이 소비자가 명시한
+		// 0(풀 최소 크기 없음)을 다시 기본값으로 덮어쓰지 않으려면 여기서도 0이어야 한다.
+		MinConns:        0,
+		MaxConns:        20,
 		ConnMaxLifetime: time.Hour,
 		ConnMaxIdleTime: 30 * time.Minute,
 	}
-}
-
-func clamp(value, minVal, maxVal int) int {
-	if value < minVal {
-		return minVal
-	}
-	if value > maxVal {
-		return maxVal
-	}
-	return value
 }
 
 type RetryConfig struct {
