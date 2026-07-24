@@ -31,6 +31,12 @@
 
 - v1.32.0에서 지원 중단을 예고한 소비자 0건의 `retry.ComputeBackoffDelay`를 제거했습니다.
   `backoff.ComputeExponentialBackoff`를 사용하십시오.
+- 스택 소비자 0건인 exported 심볼을 lockstep 정책에 따라 정리했습니다. `pkg/json`의
+  `MarshalEscapeHTML`(및 내부 `htmlEscapingAPI`), 그리고 sonic 오류 타입 별칭
+  `SyntaxError`/`UnmarshalTypeError`를 제거했습니다. HTML escape 응답이 필요한 소비처는
+  `pkg/httputil.WriteJSON`/`WriteErrorJSON`이 이미 `SetEscapeHTML(false)` 정책을 소유합니다.
+- `pkg/llm/openaipreset`의 소비자 0건 `(*Client).RunInto`를 제거했습니다. 단일 프롬프트
+  decode-into 경로는 `GenerateJSONInto`(layered prompt) 또는 `GenerateJSON`(text)로 대체됩니다.
 
 ### 테스트
 

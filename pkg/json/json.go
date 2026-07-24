@@ -5,16 +5,9 @@ import (
 	"io"
 
 	"github.com/bytedance/sonic"
-	"github.com/bytedance/sonic/decoder"
 )
 
-type (
-	// sonic은 전용 오류 타입을 반환하므로 별칭으로 노출해 표준 라이브러리 호환 지점을 유지한다.
-	SyntaxError        = decoder.SyntaxError
-	UnmarshalTypeError = decoder.MismatchTypeError
-
-	Encoder = sonic.Encoder
-)
+type Encoder = sonic.Encoder
 
 // RawMessage는 지연 디코딩을 위한 raw JSON 바이트를 보관합니다.
 type RawMessage []byte
@@ -38,24 +31,13 @@ func (m *RawMessage) UnmarshalJSON(data []byte) error {
 
 // CopyString: 디코드 string이 입력 버퍼를 alias하지 않게 복사 (버퍼 재사용 시 corruption 방지).
 // ValidateString: 표준 라이브러리처럼 unescaped 제어문자(U+0000~U+001F)를 거부.
-var (
-	api = sonic.Config{
-		CopyString:     true,
-		ValidateString: true,
-	}.Froze()
-	htmlEscapingAPI = sonic.Config{
-		CopyString:     true,
-		ValidateString: true,
-		EscapeHTML:     true,
-	}.Froze()
-)
+var api = sonic.Config{
+	CopyString:     true,
+	ValidateString: true,
+}.Froze()
 
 func Marshal(v any) ([]byte, error) {
 	return api.Marshal(v)
-}
-
-func MarshalEscapeHTML(v any) ([]byte, error) {
-	return htmlEscapingAPI.Marshal(v)
 }
 
 func Unmarshal(data []byte, v any) error {
