@@ -51,13 +51,18 @@ func APIKeyFromRequest(r *http.Request) string {
 	return ""
 }
 
-// WriteErrorJSON은 표준 관리 HTTP JSON 에러 응답을 쓴다.
-func WriteErrorJSON(w http.ResponseWriter, status int, code, message string) error {
-	w.Header().Set("Content-Type", ContentTypeJSON)
+// WriteJSON은 값을 JSON으로 인코딩해 HTTP 응답 본문으로 쓴다. HTML escape는 적용하지 않는다.
+func WriteJSON(w http.ResponseWriter, status int, v any) error {
+	w.Header().Set(HeaderContentType, ContentTypeJSON)
 	w.WriteHeader(status)
 	enc := sharedjson.NewEncoder(w)
 	enc.SetEscapeHTML(false)
-	return enc.Encode(ErrorResponse{
+	return enc.Encode(v)
+}
+
+// WriteErrorJSON은 표준 관리 HTTP JSON 에러 응답을 쓴다.
+func WriteErrorJSON(w http.ResponseWriter, status int, code, message string) error {
+	return WriteJSON(w, status, ErrorResponse{
 		Error:   strings.TrimSpace(code),
 		Message: strings.TrimSpace(message),
 	})

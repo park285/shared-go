@@ -5,6 +5,13 @@
 
 ## 미출시
 
+### 추가
+
+- `pkg/httputil`에 범용 JSON 응답 writer `WriteJSON(w, status, v)`를 추가했습니다. HTML escape를
+  적용하지 않으며(`SetEscapeHTML(false)`), 기존 `WriteErrorJSON`은 이 함수를 경유하도록 정리해
+  응답 인코딩 로직을 단일 소스로 수렴했습니다. `WriteErrorJSON`의 출력·트림 동작은 동일합니다.
+  commonization P1.3의 "WriteJSON 계열" 승격 잔여분으로, twentyq-bot이 첫 소비자입니다.
+
 ### 변경 (호환성)
 
 - `pkg/db/pgxdb`의 `DefaultPoolConfig()`가 더 이상 `DB_POOL_MIN_CONNS`·`DB_POOL_MAX_CONNS`
@@ -24,6 +31,12 @@
 
 - v1.32.0에서 지원 중단을 예고한 소비자 0건의 `retry.ComputeBackoffDelay`를 제거했습니다.
   `backoff.ComputeExponentialBackoff`를 사용하십시오.
+- 스택 소비자 0건인 exported 심볼을 lockstep 정책에 따라 정리했습니다. `pkg/json`의
+  `MarshalEscapeHTML`(및 내부 `htmlEscapingAPI`), 그리고 sonic 오류 타입 별칭
+  `SyntaxError`/`UnmarshalTypeError`를 제거했습니다. HTML escape 응답이 필요한 소비처는
+  `pkg/httputil.WriteJSON`/`WriteErrorJSON`이 이미 `SetEscapeHTML(false)` 정책을 소유합니다.
+- `pkg/llm/openaipreset`의 소비자 0건 `(*Client).RunInto`를 제거했습니다. 단일 프롬프트
+  decode-into 경로는 `GenerateJSONInto`(layered prompt) 또는 `GenerateJSON`(text)로 대체됩니다.
 
 ### 테스트
 

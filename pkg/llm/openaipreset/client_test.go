@@ -775,57 +775,6 @@ func TestGenerateJSONFallbackDisabledByDefault(t *testing.T) {
 	}
 }
 
-func TestRunInto(t *testing.T) {
-	var payload map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := sharedjson.NewDecoder(r.Body).Decode(&payload); err != nil {
-			t.Fatalf("decode request: %v", err)
-		}
-		writeJSON(t, w, responsesBody)
-	}))
-	defer server.Close()
-
-	client, err := openaipreset.New(server.URL, "test-key", "gpt-5.5")
-	if err != nil {
-		t.Fatalf("New error = %v", err)
-	}
-
-	var out struct {
-		Answer string `json:"answer"`
-	}
-	if err := client.RunInto(t.Context(), "twentyq_verify_guess.judge", "user prompt", map[string]any{"type": "object"}, &out); err != nil {
-		t.Fatalf("RunInto error = %v", err)
-	}
-	if out.Answer != "yes" {
-		t.Fatalf("out.Answer = %q, want yes", out.Answer)
-	}
-	if got := payload["instructions"]; got != "" {
-		t.Fatalf("payload instructions = %#v, want empty string", got)
-	}
-	if got := payload["input"]; got != "user prompt" {
-		t.Fatalf("payload input = %#v, want string user prompt", got)
-	}
-	assertSchemaName(t, payload, "twentyq_verify_guess_judge")
-}
-
-func TestRunIntoNilOutput(t *testing.T) {
-	client, err := openaipreset.New("https://example.invalid", "test-key", "gpt-5.5")
-	if err != nil {
-		t.Fatalf("New error = %v", err)
-	}
-
-	var typedNilPointer *struct{}
-	var typedNilMap map[string]any
-	var typedNilInterface jsonUnmarshaler = (*nilJSONOutput)(nil)
-
-	for _, out := range []any{nil, typedNilPointer, typedNilMap, typedNilInterface} {
-		err := client.RunInto(t.Context(), "task", "prompt", map[string]any{"type": "object"}, out)
-		if err == nil || err.Error() != "openaipreset: output target is nil" {
-			t.Fatalf("RunInto nil output error = %v, want openaipreset: output target is nil", err)
-		}
-	}
-}
-
 func TestNewRejectsEmptyModel(t *testing.T) {
 	if _, err := openaipreset.New("https://example.invalid", "test-key", "   "); err == nil {
 		t.Fatal("New empty model error = nil, want error")

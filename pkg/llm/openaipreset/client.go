@@ -231,20 +231,6 @@ func isNilOutputTarget(out any) bool {
 	}
 }
 
-func (c *Client) RunInto(ctx context.Context, task, prompt string, schema map[string]any, out any) error {
-	if c == nil {
-		return errClientNil
-	}
-	if isNilOutputTarget(out) {
-		return errors.New("openaipreset: output target is nil")
-	}
-	resp, err := c.generate(ctx, task, "", "", "", prompt, schema)
-	if err != nil {
-		return err
-	}
-	return decodeJSONInto(task, resp.Text, out)
-}
-
 func (c *Client) generate(
 	ctx context.Context,
 	taskName, systemPrompt, invariantPrompt, developerPrompt, userPrompt string,
