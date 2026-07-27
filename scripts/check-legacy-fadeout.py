@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -15,6 +16,37 @@ DENY_TOKENS = (
     "normalizeLegacySession",
     "build_legacy_semantic_message_id",
     "legacy_state_repointed",
+    "ActiveThreadID",
+    "SessionModel",
+    "CommandSessionModel",
+    "drawStateScopes",
+    "appendUniqueDrawStateKeys",
+    "appendLegacySession",
+    "PaidWorkKey",
+    "legacySearches",
+    "SessionTemperature",
+    "notifiedDataSourceLegacyString",
+    "UpdateLegacyNotifiedData",
+    "LegacyDeliveryPath",
+    "LegacyStatus",
+    "LegacyPathActive",
+    "legacy_delivery_path",
+    "legacy_status",
+    "legacy_path_active",
+    "legacy_alarm_queue",
+    "CalendarImageRendererContext",
+    "RenderCalendarImage(",
+    "settings.Load(",
+)
+
+RETIRED_SQL_STRUCTURES = (
+    (
+        "legacy_session CTE",
+        re.compile(
+            r"(?:\bWITH(?:[ \t\r\n]+RECURSIVE)?|,)[ \t\r\n]+legacy_session[ \t\r\n]+AS[ \t\r\n]*\(",
+            re.IGNORECASE | re.MULTILINE,
+        ),
+    ),
 )
 
 SCAN_SUFFIXES = {
@@ -35,27 +67,37 @@ SKIP_DIRS = {
     ".git",
     ".gradle",
     ".idea",
+    ".tools",
     ".venv",
     "build",
     "dist",
     "docs",
     "node_modules",
     "target",
-    "testdata",
     "vendor",
 }
+
+# Append-only migrations are immutable production history. Unlike the old
+# blanket test/tests/testdata exclusion, these are the only source-like paths
+# allowed to retain retired spellings.
+IMMUTABLE_HISTORY_PREFIXES = (
+    "scripts/migrations/",
+    "hololive/hololive-api/scripts/migrations/",
+)
 
 SKIP_FILENAMES = {
     "check-legacy-fadeout.py",
     "legacy_fadeout_check.py",
+    "legacy_fadeout_check_test.py",
 }
 
 
 def should_scan(path: Path, root: Path) -> bool:
     rel_parts = path.relative_to(root).parts
+    rel = path.relative_to(root).as_posix()
     if any(part in SKIP_DIRS for part in rel_parts[:-1]):
         return False
-    if any(part in {"test", "tests", "__tests__"} for part in rel_parts[:-1]):
+    if any(rel.startswith(prefix) for prefix in IMMUTABLE_HISTORY_PREFIXES):
         return False
     if path.name in SKIP_FILENAMES:
         return False
@@ -66,15 +108,23 @@ def should_scan(path: Path, root: Path) -> bool:
 
 def scan_file(path: Path, root: Path) -> list[tuple[str, int, str]]:
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
+        content = path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
         return []
+    lines = content.splitlines()
     findings = []
     rel = path.relative_to(root).as_posix()
     for lineno, line in enumerate(lines, 1):
         for token in DENY_TOKENS:
             if token in line:
                 findings.append((rel, lineno, token))
+    if path.suffix == ".sql":
+        sql_without_literals = re.sub(r"'(?:''|[^'])*'", "''", content)
+        sql_without_comments = re.sub(r"--[^\n]*", "", sql_without_literals)
+        for label, pattern in RETIRED_SQL_STRUCTURES:
+            for match in pattern.finditer(sql_without_comments):
+                lineno = sql_without_comments.count("\n", 0, match.start()) + 1
+                findings.append((rel, lineno, label))
     return findings
 
 
