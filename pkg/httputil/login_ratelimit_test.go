@@ -1,6 +1,9 @@
 package httputil
 
 import (
+	"fmt"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -89,6 +92,103 @@ func TestLoginFailureRateLimiter(t *testing.T) {
 	allowed, retry := limiter.IsAllowed("203.0.113.1")
 	if !allowed || retry != 0 {
 		t.Fatalf("after lockout allowed=%t retry=%s, want true/0", allowed, retry)
+	}
+}
+
+func TestLoginFailureRateLimiterIsAllowedReservesCapacity(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.July, 28, 10, 0, 0, 0, time.UTC)
+	limiter := NewLoginFailureRateLimiter(LoginFailureRateLimiterOptions{
+		MaxIdentities: 1,
+		Window:        time.Minute,
+		Now:           func() time.Time { return now },
+	})
+
+	if allowed, _ := limiter.IsAllowed("first"); !allowed {
+		t.Fatal("IsAllowed(first) = false")
+	}
+	if allowed, retry := limiter.IsAllowed("second"); allowed || retry <= 0 {
+		t.Fatalf("IsAllowed(second) = (%t, %s), want false with retry", allowed, retry)
+	}
+
+	limiter.RecordSuccess("first")
+	if allowed, retry := limiter.IsAllowed("second"); !allowed || retry != 0 {
+		t.Fatalf("IsAllowed(second after release) = (%t, %s), want true/0", allowed, retry)
+	}
+}
+
+func TestLoginFailureRateLimiterRecordFailureHonorsCapacity(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.July, 28, 10, 0, 0, 0, time.UTC)
+	limiter := NewLoginFailureRateLimiter(LoginFailureRateLimiterOptions{
+		MaxIdentities: 1,
+		Window:        time.Minute,
+		Now:           func() time.Time { return now },
+	})
+
+	if got := limiter.RecordFailure("first"); got != 1 {
+		t.Fatalf("RecordFailure(first) = %d, want 1", got)
+	}
+	if got := limiter.RecordFailure("second"); got != 0 {
+		t.Fatalf("RecordFailure(second at capacity) = %d, want 0", got)
+	}
+
+	limiter.mu.Lock()
+	_, hasFirst := limiter.attempts["first"]
+	_, hasSecond := limiter.attempts["second"]
+	limiter.mu.Unlock()
+	if !hasFirst || hasSecond {
+		t.Fatalf("attempts after capacity rejection = first:%t second:%t", hasFirst, hasSecond)
+	}
+}
+
+func TestLoginFailureRateLimiterReservationExpiresAtWindowBoundary(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.July, 28, 10, 0, 0, 0, time.UTC)
+	limiter := NewLoginFailureRateLimiter(LoginFailureRateLimiterOptions{
+		MaxIdentities: 1,
+		Window:        time.Minute,
+		Now:           func() time.Time { return now },
+	})
+
+	if allowed, _ := limiter.IsAllowed("first"); !allowed {
+		t.Fatal("IsAllowed(first) = false")
+	}
+	now = now.Add(time.Minute)
+	if allowed, retry := limiter.IsAllowed("second"); !allowed || retry != 0 {
+		t.Fatalf("IsAllowed(second at exact boundary) = (%t, %s), want true/0", allowed, retry)
+	}
+}
+
+func TestLoginFailureRateLimiterConcurrentReservationsHonorCapacity(t *testing.T) {
+	t.Parallel()
+
+	const (
+		capacity = 8
+		callers  = 64
+	)
+	limiter := NewLoginFailureRateLimiter(LoginFailureRateLimiterOptions{MaxIdentities: capacity})
+	start := make(chan struct{})
+	var allowed atomic.Int64
+	var wg sync.WaitGroup
+	for i := range callers {
+		wg.Add(1)
+		go func(identity string) {
+			defer wg.Done()
+			<-start
+			if ok, _ := limiter.IsAllowed(identity); ok {
+				allowed.Add(1)
+			}
+		}(fmt.Sprintf("identity-%02d", i))
+	}
+	close(start)
+	wg.Wait()
+
+	if got := allowed.Load(); got != capacity {
+		t.Fatalf("allowed reservations = %d, want %d", got, capacity)
 	}
 }
 

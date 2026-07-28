@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -233,9 +234,88 @@ func TestFixedWindowRateLimiterTTLAndEviction(t *testing.T) {
 		t.Fatal("Allow(first after eviction) = false")
 	}
 
-	now = now.Add(2 * time.Minute)
+	now = now.Add(time.Hour)
 	if !limiter.Allow("first") {
 		t.Fatal("Allow(first after ttl) = false")
+	}
+}
+
+func TestFixedWindowRateLimiterClampsEntryTTLToWindow(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.July, 28, 10, 0, 0, 0, time.UTC)
+	limiter := NewFixedWindowRateLimiter(1, time.Hour, FixedWindowOptions{
+		EntryTTL: time.Second,
+		Now:      func() time.Time { return now },
+	})
+
+	if !limiter.Allow("session") {
+		t.Fatal("first Allow(session) = false")
+	}
+	now = now.Add(time.Second)
+	if limiter.Allow("session") {
+		t.Fatal("Allow(session) after configured short ttl = true, want quota preserved")
+	}
+	now = now.Add(time.Hour - time.Second)
+	if !limiter.Allow("session") {
+		t.Fatal("Allow(session) at window boundary = false")
+	}
+}
+
+func TestFixedWindowRateLimiterEvictsLeastRecentlySeenInConstantOrder(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.July, 28, 10, 0, 0, 0, time.UTC)
+	limiter := NewFixedWindowRateLimiter(2, time.Hour, FixedWindowOptions{
+		MaxIdentities: 2,
+		EntryTTL:      time.Hour,
+		Now:           func() time.Time { return now },
+	})
+
+	if !limiter.Allow("first") || !limiter.Allow("second") {
+		t.Fatal("initial identities were not admitted")
+	}
+	if !limiter.Allow("first") {
+		t.Fatal("touching first identity failed")
+	}
+	if !limiter.Allow("third") {
+		t.Fatal("third identity was not admitted after eviction")
+	}
+
+	limiter.mu.Lock()
+	_, hasFirst := limiter.entries["first"]
+	_, hasSecond := limiter.entries["second"]
+	_, hasThird := limiter.entries["third"]
+	limiter.mu.Unlock()
+	if !hasFirst || hasSecond || !hasThird {
+		t.Fatalf("entries after LRU eviction = first:%t second:%t third:%t", hasFirst, hasSecond, hasThird)
+	}
+}
+
+func TestFixedWindowRateLimiterConcurrentHotIdentity(t *testing.T) {
+	t.Parallel()
+
+	const requests = 128
+	limiter := NewFixedWindowRateLimiter(requests, time.Minute, FixedWindowOptions{})
+	results := make(chan bool, requests)
+	var wg sync.WaitGroup
+	for range requests {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			results <- limiter.Allow("shared")
+		}()
+	}
+	wg.Wait()
+	close(results)
+
+	for allowed := range results {
+		if !allowed {
+			t.Fatal("one of the in-window requests was rejected")
+		}
+	}
+	if limiter.Allow("shared") {
+		t.Fatal("request beyond concurrent quota was allowed")
 	}
 }
 
@@ -277,8 +357,8 @@ func TestFixedWindowRateLimiterZeroOptionsApplySafeDefaults(t *testing.T) {
 		t.Fatal("Allow(session) = false")
 	}
 	now = now.Add(defaultFixedWindowEntryTTL)
-	if !ttlLimiter.Allow("session") {
-		t.Fatal("Allow(session after default ttl) = false")
+	if ttlLimiter.Allow("session") {
+		t.Fatal("Allow(session after clamped default ttl) = true, want quota preserved until window")
 	}
 }
 

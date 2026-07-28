@@ -7,29 +7,33 @@ import (
 	"time"
 )
 
-// LoginFailureRateLimiterOptions는 로그인 실패 lockout limiter 설정이다.
+const defaultLoginFailureMaxIdentities = 10000
+
+// LoginFailureRateLimiterOptions는 로그인 실패 lockout limiter 설정이다. MaxIdentities의 zero value는 10,000이며, 상한에 도달하면 새 identity를 거부한다.
 type LoginFailureRateLimiterOptions struct {
 	MaxAttempts     int
 	Window          time.Duration
 	Lockout         time.Duration
 	CleanupInterval time.Duration
+	MaxIdentities   int
 	Now             func() time.Time
 }
 
 // LoginFailureRateLimiter는 로그인 실패 횟수 기반 lockout limiter다.
 type LoginFailureRateLimiter struct {
-	mu          sync.Mutex
-	attempts    map[string]loginAttemptInfo
-	maxAttempts int
-	window      time.Duration
-	lockout     time.Duration
-	cleanup     time.Duration
-	now         func() time.Time
-	stop        chan struct{}
-	done        chan struct{}
-	started     atomic.Bool
-	startOnce   sync.Once
-	stopOnce    sync.Once
+	mu            sync.Mutex
+	attempts      map[string]loginAttemptInfo
+	maxAttempts   int
+	window        time.Duration
+	lockout       time.Duration
+	cleanup       time.Duration
+	maxIdentities int
+	now           func() time.Time
+	stop          chan struct{}
+	done          chan struct{}
+	started       atomic.Bool
+	startOnce     sync.Once
+	stopOnce      sync.Once
 }
 
 type loginAttemptInfo struct {
@@ -52,18 +56,22 @@ func NewLoginFailureRateLimiter(opts LoginFailureRateLimiterOptions) *LoginFailu
 	if opts.CleanupInterval <= 0 {
 		opts.CleanupInterval = time.Minute
 	}
+	if opts.MaxIdentities <= 0 {
+		opts.MaxIdentities = defaultLoginFailureMaxIdentities
+	}
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
 	return &LoginFailureRateLimiter{
-		attempts:    make(map[string]loginAttemptInfo),
-		maxAttempts: opts.MaxAttempts,
-		window:      opts.Window,
-		lockout:     opts.Lockout,
-		cleanup:     opts.CleanupInterval,
-		now:         opts.Now,
-		stop:        make(chan struct{}),
-		done:        make(chan struct{}),
+		attempts:      make(map[string]loginAttemptInfo),
+		maxAttempts:   opts.MaxAttempts,
+		window:        opts.Window,
+		lockout:       opts.Lockout,
+		cleanup:       opts.CleanupInterval,
+		maxIdentities: opts.MaxIdentities,
+		now:           opts.Now,
+		stop:          make(chan struct{}),
+		done:          make(chan struct{}),
 	}
 }
 
@@ -113,17 +121,24 @@ func (l *LoginFailureRateLimiter) IsAllowed(identity string) (bool, time.Duratio
 	now := l.now()
 	info, ok := l.attempts[identity]
 	if !ok {
+		if len(l.attempts) >= l.maxIdentities {
+			l.cleanupStaleLocked(now)
+			if len(l.attempts) >= l.maxIdentities {
+				return false, l.cleanup
+			}
+		}
+		l.attempts[identity] = loginAttemptInfo{firstAttempt: now}
 		return true, 0
 	}
 	if !info.lockedUntil.IsZero() {
 		if now.Before(info.lockedUntil) {
 			return false, info.lockedUntil.Sub(now)
 		}
-		delete(l.attempts, identity)
+		l.attempts[identity] = loginAttemptInfo{firstAttempt: now}
 		return true, 0
 	}
-	if now.Sub(info.firstAttempt) > l.window {
-		delete(l.attempts, identity)
+	if now.Sub(info.firstAttempt) >= l.window {
+		l.attempts[identity] = loginAttemptInfo{firstAttempt: now}
 		return true, 0
 	}
 	return info.count < l.maxAttempts, 0
@@ -143,8 +158,18 @@ func (l *LoginFailureRateLimiter) RecordFailure(identity string) int {
 	defer l.mu.Unlock()
 
 	now := l.now()
-	info := l.attempts[identity]
-	if info.firstAttempt.IsZero() || now.Sub(info.firstAttempt) > l.window {
+	info, ok := l.attempts[identity]
+	if !ok {
+		if len(l.attempts) >= l.maxIdentities {
+			l.cleanupStaleLocked(now)
+			if len(l.attempts) >= l.maxIdentities {
+				return 0
+			}
+		}
+		info = loginAttemptInfo{firstAttempt: now}
+	} else if info.firstAttempt.IsZero() ||
+		(!info.lockedUntil.IsZero() && !now.Before(info.lockedUntil)) ||
+		now.Sub(info.firstAttempt) >= l.window {
 		info = loginAttemptInfo{firstAttempt: now}
 	}
 	info.count++
@@ -187,14 +212,18 @@ func (l *LoginFailureRateLimiter) cleanupLoop() {
 func (l *LoginFailureRateLimiter) cleanupStale(now time.Time) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	l.cleanupStaleLocked(now)
+}
+
+func (l *LoginFailureRateLimiter) cleanupStaleLocked(now time.Time) {
 	for identity, info := range l.attempts {
 		if !info.lockedUntil.IsZero() {
-			if now.After(info.lockedUntil) {
+			if !now.Before(info.lockedUntil) {
 				delete(l.attempts, identity)
 			}
 			continue
 		}
-		if now.Sub(info.firstAttempt) > l.window {
+		if now.Sub(info.firstAttempt) >= l.window {
 			delete(l.attempts, identity)
 		}
 	}

@@ -1,6 +1,7 @@
 package httputil
 
 import (
+	"container/list"
 	"crypto/sha256"
 	"encoding/hex"
 	"net"
@@ -40,7 +41,7 @@ type IdentityFunc func(*http.Request) string
 // RateLimitRejectFunc는 rate-limit 초과 응답을 쓴다.
 type RateLimitRejectFunc func(http.ResponseWriter, *http.Request, string)
 
-// FixedWindowOptions는 fixed-window limiter 선택 동작을 지정한다. MaxIdentities와 EntryTTL의 zero value는 안전 기본값을 사용한다.
+// FixedWindowOptions는 fixed-window limiter 선택 동작을 지정한다. MaxIdentities와 EntryTTL의 zero value는 안전 기본값을 사용하며, EntryTTL은 window보다 짧아지지 않는다.
 type FixedWindowOptions struct {
 	MaxIdentities int
 	EntryTTL      time.Duration
@@ -55,13 +56,16 @@ type FixedWindowRateLimiter struct {
 	maxIdentities int
 	entryTTL      time.Duration
 	now           func() time.Time
-	entries       map[string]fixedWindowEntry
+	entries       map[string]*fixedWindowEntry
+	lru           list.List
 }
 
 type fixedWindowEntry struct {
+	identity    string
 	windowStart time.Time
 	lastSeen    time.Time
 	count       int
+	element     *list.Element
 }
 
 // RateLimitMiddlewareConfig는 fixed-window HTTP middleware 설정이다.
@@ -179,13 +183,16 @@ func NewFixedWindowRateLimiter(limit int, window time.Duration, opts FixedWindow
 	if entryTTL <= 0 {
 		entryTTL = defaultFixedWindowEntryTTL
 	}
+	if entryTTL < window {
+		entryTTL = window
+	}
 	return &FixedWindowRateLimiter{
 		limit:         limit,
 		window:        window,
 		maxIdentities: maxIdentities,
 		entryTTL:      entryTTL,
 		now:           now,
-		entries:       make(map[string]fixedWindowEntry),
+		entries:       make(map[string]*fixedWindowEntry),
 	}
 }
 
@@ -205,7 +212,15 @@ func (l *FixedWindowRateLimiter) Allow(identity string) bool {
 	now := l.now()
 	l.pruneExpired(now)
 
-	entry := l.entries[identity]
+	entry, ok := l.entries[identity]
+	if !ok {
+		l.evictIfNeeded()
+		entry = &fixedWindowEntry{identity: identity}
+		entry.element = l.lru.PushBack(entry)
+		l.entries[identity] = entry
+	} else {
+		l.lru.MoveToBack(entry.element)
+	}
 	if entry.windowStart.IsZero() || now.Sub(entry.windowStart) >= l.window {
 		entry.windowStart = now
 		entry.count = 0
@@ -213,13 +228,10 @@ func (l *FixedWindowRateLimiter) Allow(identity string) bool {
 	entry.lastSeen = now
 
 	if entry.count >= l.limit {
-		l.entries[identity] = entry
 		return false
 	}
 
 	entry.count++
-	l.entries[identity] = entry
-	l.evictIfNeeded(identity)
 	return true
 }
 
@@ -261,32 +273,35 @@ func (l *FixedWindowRateLimiter) pruneExpired(now time.Time) {
 	if l.entryTTL <= 0 {
 		return
 	}
-	for identity, entry := range l.entries {
-		if now.Sub(entry.lastSeen) >= l.entryTTL {
-			delete(l.entries, identity)
+	for element := l.lru.Front(); element != nil; element = l.lru.Front() {
+		entry := fixedWindowEntryForElement(element)
+		if now.Sub(entry.lastSeen) < l.entryTTL {
+			return
 		}
+		l.removeEntry(entry)
 	}
 }
 
-func (l *FixedWindowRateLimiter) evictIfNeeded(currentIdentity string) {
-	if l.maxIdentities <= 0 || len(l.entries) <= l.maxIdentities {
+func (l *FixedWindowRateLimiter) evictIfNeeded() {
+	if l.maxIdentities <= 0 || len(l.entries) < l.maxIdentities {
 		return
 	}
+	if element := l.lru.Front(); element != nil {
+		l.removeEntry(fixedWindowEntryForElement(element))
+	}
+}
 
-	var oldestIdentity string
-	var oldestSeen time.Time
-	for identity, entry := range l.entries {
-		if identity == currentIdentity {
-			continue
-		}
-		if oldestIdentity == "" || entry.lastSeen.Before(oldestSeen) {
-			oldestIdentity = identity
-			oldestSeen = entry.lastSeen
-		}
+func fixedWindowEntryForElement(element *list.Element) *fixedWindowEntry {
+	entry, ok := element.Value.(*fixedWindowEntry)
+	if !ok {
+		panic("httputil: invalid fixed-window LRU entry")
 	}
-	if oldestIdentity != "" {
-		delete(l.entries, oldestIdentity)
-	}
+	return entry
+}
+
+func (l *FixedWindowRateLimiter) removeEntry(entry *fixedWindowEntry) {
+	delete(l.entries, entry.identity)
+	l.lru.Remove(entry.element)
 }
 
 func forwardedClientIP(r *http.Request, opts ClientIPOptions) string {
