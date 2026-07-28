@@ -38,6 +38,9 @@ jobs:
           python3 scripts/ci/check-workflow-ci-owner.py
           python3 scripts/ci/check-workflow-ci-owner_test.py
 
+      - name: Release provenance contract
+        run: bash scripts/ci/check-release-provenance.sh
+
       - name: SQL ownership
         run: bash scripts/check-sql-ownership.sh
 
