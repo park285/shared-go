@@ -19,7 +19,8 @@ commit="$(git -C "$repo" rev-parse HEAD)"
 
 (
   cd "$repo"
-  bash "$root/scripts/ci/prepare-release-bundle.sh" owner/release-fixture v1.2.3 "$commit" dist
+  env -u GITHUB_REF -u GITHUB_SHA \
+    bash "$root/scripts/ci/prepare-release-bundle.sh" owner/release-fixture v1.2.3 "$commit" dist
   printf '{"spdxVersion":"SPDX-2.3","SPDXID":"SPDXRef-DOCUMENT"}\n' \
     >dist/release-fixture-v1.2.3.spdx.json
   bash "$root/scripts/ci/finalize-release-bundle.sh" dist owner/release-fixture v1.2.3 "$commit"
