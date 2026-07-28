@@ -5,6 +5,14 @@
 
 ## 미출시
 
+## v1.36.2 - 2026-07-28
+
+### 유지보수
+
+- `openai-go/v3`를 `v3.46.0`, `quic-go`를 `v0.61.0`, `go-isatty`를 `v0.0.24`로 갱신하고
+  관련 전이 dependency를 최신 compatible revision으로 정렬합니다.
+- local/repository security gate의 `govulncheck`를 `v1.6.0`으로 갱신합니다.
+
 ## v1.36.1 - 2026-07-28
 
 ### 성능
