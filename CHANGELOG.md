@@ -5,6 +5,14 @@
 
 ## 미출시
 
+## v1.36.1 - 2026-07-28
+
+### 성능
+
+- `httputil.LoginFailureRateLimiter`가 identity 상한에 도달한 뒤 새로운 identity마다 전체
+  map을 순회하지 않도록 최소 만료 시각을 추적합니다. 만료 전 포화 요청은 `O(1)`로
+  fail-closed 거부하고, 실제 만료 경계에서만 정리하여 기존 capacity 회수 의미를 유지합니다.
+
 ## v1.36.0 - 2026-07-28
 
 ### 보안
