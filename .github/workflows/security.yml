@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GOVULNCHECK_VERSION: v1.4.0
+  GOVULNCHECK_VERSION: v1.6.0
 
 jobs:
   dependency-security:
