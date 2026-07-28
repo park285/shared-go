@@ -72,6 +72,30 @@ func TestRun_ReturnsExitCodeOneWhenLoadConfigFails(t *testing.T) {
 	}
 }
 
+func TestRun_RedactsLoadConfigErrorBeforeLoggerExists(t *testing.T) {
+	t.Parallel()
+
+	const canary = "load-config-secret"
+	var stderr bytes.Buffer
+	exitCode := Run(Options[*testConfig, *testRuntime]{
+		Initialize: func(string) {},
+		LoadConfig: func() (*testConfig, error) {
+			return nil, errors.New("password: " + canary)
+		},
+		Stderr: &stderr,
+	})
+
+	if exitCode != 1 {
+		t.Fatalf("Run() exitCode = %d, want 1", exitCode)
+	}
+	if strings.Contains(stderr.String(), canary) {
+		t.Fatalf("bootstrap stderr leaked config credential: %q", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "***REDACTED***") {
+		t.Fatalf("bootstrap stderr = %q, want redaction marker", stderr.String())
+	}
+}
+
 func TestRun_ReturnsExitCodeOneWhenLoggerInitFails(t *testing.T) {
 	t.Parallel()
 
@@ -102,6 +126,31 @@ func TestRun_ReturnsExitCodeOneWhenLoggerInitFails(t *testing.T) {
 	}
 	if got := stderr.String(); !strings.Contains(got, "Failed to initialize logger: logger boom") {
 		t.Fatalf("stderr = %q, want logger init failure message", got)
+	}
+}
+
+func TestRun_RedactsLoggerInitializationError(t *testing.T) {
+	t.Parallel()
+
+	const canary = "logger-init-secret"
+	var stderr bytes.Buffer
+	exitCode := Run(Options[*testConfig, *testRuntime]{
+		Initialize: func(string) {},
+		LoadConfig: func() (*testConfig, error) { return &testConfig{}, nil },
+		NewLogger: func(*testConfig) (*slog.Logger, error) {
+			return nil, errors.New("postgres://user:" + canary + "@db.example/app")
+		},
+		Stderr: &stderr,
+	})
+
+	if exitCode != 1 {
+		t.Fatalf("Run() exitCode = %d, want 1", exitCode)
+	}
+	if strings.Contains(stderr.String(), canary) {
+		t.Fatalf("bootstrap stderr leaked logger credential: %q", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "***REDACTED***") {
+		t.Fatalf("bootstrap stderr = %q, want redaction marker", stderr.String())
 	}
 }
 
@@ -220,6 +269,33 @@ func TestRun_ReturnsExitCodeOneWhenBuildRuntimeFails(t *testing.T) {
 
 	if exitCode != 1 {
 		t.Fatalf("Run() exitCode = %d, want 1", exitCode)
+	}
+}
+
+func TestRun_RedactsBuildRuntimeErrorObject(t *testing.T) {
+	t.Parallel()
+
+	const canary = "build-runtime-secret"
+	var logs bytes.Buffer
+	exitCode := Run(Options[*testConfig, *testRuntime]{
+		Initialize: func(string) {},
+		LoadConfig: func() (*testConfig, error) { return &testConfig{}, nil },
+		NewLogger: func(*testConfig) (*slog.Logger, error) {
+			return sharedlogging.NewTestLoggerWithOutput(&logs), nil
+		},
+		BuildRuntime: func(context.Context, *testConfig, *slog.Logger) (*testRuntime, error) {
+			return nil, errors.New("API_TOKEN=" + canary)
+		},
+	})
+
+	if exitCode != 1 {
+		t.Fatalf("Run() exitCode = %d, want 1", exitCode)
+	}
+	if strings.Contains(logs.String(), canary) {
+		t.Fatalf("bootstrap log leaked runtime credential: %q", logs.String())
+	}
+	if !strings.Contains(logs.String(), "***REDACTED***") {
+		t.Fatalf("bootstrap log = %q, want redaction marker", logs.String())
 	}
 }
 

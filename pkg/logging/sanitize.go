@@ -28,14 +28,19 @@ import (
 )
 
 var (
-	bearerTokenRegex = regexp.MustCompile(`(?i)\b(bearer\s+)[A-Za-z0-9._~+/=-]+`)
-	querySecretRegex = regexp.MustCompile(`(?i)([?&;](?:key|api_key|apikey|token|password|pwd|passwd|client_secret|secret|private_key|secret_key)=)[^&\s]+`)
+	bearerTokenRegex   = regexp.MustCompile(`(?i)\b(bearer\s+)[A-Za-z0-9._~+/=-]+`)
+	querySecretRegex   = regexp.MustCompile(`(?i)([?&;](?:key|api_key|apikey|token|password|pwd|passwd|client_secret|secret|private_key|secret_key)=)[^&\s]+`)
+	credentialURLRegex = regexp.MustCompile(`(?i)\b([a-z][a-z0-9+.-]*://)[^/@\s]+@`)
 )
 
 const (
 	tokenAPIKey        = "api_key"
 	tokenAPIKeyCompact = "apikey"
+	tokenPasswd        = "passwd"
+	tokenPassword      = "password"
 	tokenPrivateKey    = "private_key"
+	tokenPwd           = "pwd"
+	tokenSecret        = "secret"
 	tokenSecretKey     = "secret_key"
 )
 
@@ -43,8 +48,8 @@ const (
 // 정규식 실행 전 싼 substring pre-check 게이트에 쓰인다. 정규식이 매치하는
 // 입력은 반드시 이 토큰 중 하나를 case-insensitive로 포함하므로 게이트는 안전하다.
 var querySecretTokens = []string{
-	"key", tokenAPIKey, tokenAPIKeyCompact, "token", "password", "pwd", "passwd",
-	"client_secret", "secret", tokenPrivateKey, tokenSecretKey,
+	"key", tokenAPIKey, tokenAPIKeyCompact, "token", tokenPassword, tokenPwd, tokenPasswd,
+	"client_secret", tokenSecret, tokenPrivateKey, tokenSecretKey,
 }
 
 var sensitiveExactKeys = map[string]struct{}{
@@ -52,10 +57,10 @@ var sensitiveExactKeys = map[string]struct{}{
 	"bot_token":        {},
 	"access_token":     {},
 	"refresh_token":    {},
-	"password":         {},
-	"pwd":              {},
-	"passwd":           {},
-	"secret":           {},
+	tokenPassword:      {},
+	tokenPwd:           {},
+	tokenPasswd:        {},
+	tokenSecret:        {},
 	"client_secret":    {},
 	tokenAPIKey:        {},
 	tokenAPIKeyCompact: {},
@@ -117,13 +122,104 @@ func hasNonASCII(s string) bool {
 }
 
 func redactSecrets(s string) string {
+	return RedactDiagnostic(s)
+}
+
+func mightContainCredentialURL(s string) bool {
+	return strings.Contains(s, "://") && strings.Contains(s, "@")
+}
+
+// RedactDiagnostic은 로그나 stderr에 출력할 진단 문자열에서 credential을 마스킹한다.
+func RedactDiagnostic(s string) string {
 	if mightContainBearer(s) {
 		s = bearerTokenRegex.ReplaceAllString(s, "${1}***REDACTED***")
 	}
 	if mightContainQuerySecret(s) {
 		s = querySecretRegex.ReplaceAllString(s, "${1}***REDACTED***")
 	}
-	return s
+	if mightContainCredentialURL(s) {
+		s = credentialURLRegex.ReplaceAllString(s, "${1}***REDACTED***@")
+	}
+	return redactSecretAssignments(s)
+}
+
+func redactSecretAssignments(s string) string {
+	var redacted strings.Builder
+	lastWritten := 0
+	for separator := 0; separator < len(s); separator++ {
+		if s[separator] != ':' && s[separator] != '=' {
+			continue
+		}
+		key := assignmentKeyBefore(s, separator)
+		if !isSensitiveKey(key) {
+			continue
+		}
+		valueStart, valueEnd := assignmentValueAfter(s, separator+1)
+		if valueStart == valueEnd {
+			continue
+		}
+		if redacted.Cap() == 0 {
+			redacted.Grow(len(s))
+		}
+		redacted.WriteString(s[lastWritten:valueStart])
+		redacted.WriteString("***REDACTED***")
+		lastWritten = valueEnd
+		separator = valueEnd - 1
+	}
+	if redacted.Cap() == 0 {
+		return s
+	}
+	redacted.WriteString(s[lastWritten:])
+	return redacted.String()
+}
+
+func assignmentKeyBefore(s string, separator int) string {
+	end := separator
+	for end > 0 && (s[end-1] == ' ' || s[end-1] == '\t') {
+		end--
+	}
+	if end > 0 && s[end-1] == '"' {
+		end--
+	}
+	start := end
+	for start > 0 && isAssignmentKeyByte(s[start-1]) {
+		start--
+	}
+	return s[start:end]
+}
+
+func assignmentValueAfter(s string, start int) (int, int) {
+	for start < len(s) && (s[start] == ' ' || s[start] == '\t') {
+		start++
+	}
+	if start == len(s) {
+		return start, start
+	}
+	if s[start] == '"' || s[start] == '\'' {
+		quote := s[start]
+		for end := start + 1; end < len(s); end++ {
+			if s[end] == '\\' && end+1 < len(s) {
+				end++
+				continue
+			}
+			if s[end] == quote {
+				return start, end + 1
+			}
+		}
+		return start, len(s)
+	}
+	end := start
+	for end < len(s) && !strings.ContainsRune(" \t\r\n,;&", rune(s[end])) {
+		end++
+	}
+	return start, end
+}
+
+func isAssignmentKeyByte(value byte) bool {
+	return value >= 'a' && value <= 'z' ||
+		value >= 'A' && value <= 'Z' ||
+		value >= '0' && value <= '9' ||
+		value == '_' || value == '-' || value == '.'
 }
 
 func (h *sanitizeHandler) Enabled(ctx context.Context, level slog.Level) bool {
@@ -182,6 +278,14 @@ func sanitizeAttr(attr slog.Attr) slog.Attr {
 func sanitizeAttrChanged(attr slog.Attr) (slog.Attr, bool) {
 	changed := attr.Value.Kind() == slog.KindLogValuer
 	attr.Value = attr.Value.Resolve()
+	if attr.Value.Kind() == slog.KindAny {
+		if err, ok := attr.Value.Any().(error); ok {
+			if isSensitiveKey(attr.Key) {
+				return slog.String(attr.Key, "***REDACTED***"), true
+			}
+			return slog.String(attr.Key, RedactDiagnostic(err.Error())), true
+		}
+	}
 
 	if attr.Value.Kind() == slog.KindGroup {
 		groupAttrs := attr.Value.Group()

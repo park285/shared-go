@@ -1,6 +1,8 @@
 package envutil
 
 import (
+	"errors"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -17,14 +19,61 @@ func TestIntE(t *testing.T) {
 	if err == nil || got != 0 {
 		t.Fatalf("IntE(invalid) = (%d, %v), want (0, error)", got, err)
 	}
-	if !strings.Contains(err.Error(), `invalid int env TEST_INT_E="invalid"`) {
+	if !strings.Contains(err.Error(), `invalid int env TEST_INT_E (invalid syntax)`) {
 		t.Fatalf("IntE(invalid) error = %q", err)
+	}
+	if !errors.Is(err, strconv.ErrSyntax) {
+		t.Fatalf("IntE(invalid) error = %v, want strconv.ErrSyntax", err)
 	}
 
 	t.Setenv("TEST_INT_E", " ")
 	got, err = IntE("TEST_INT_E", 7)
 	if err != nil || got != 7 {
 		t.Fatalf("IntE(blank) = (%d, %v), want (7, nil)", got, err)
+	}
+}
+
+func TestStrictParseErrorsDoNotContainRawValues(t *testing.T) {
+	const canary = "sk_test_FAKESecret1234567890"
+	tests := []struct {
+		name string
+		key  string
+		call func(string) error
+	}{
+		{name: "int", key: "TEST_SECRET_INT", call: func(key string) error { _, err := IntE(key, 0); return err }},
+		{name: "int64 any", key: "TEST_SECRET_INT64", call: func(key string) error { _, err := Int64AnyE([]string{key}, 0); return err }},
+		{name: "float", key: "TEST_SECRET_FLOAT", call: func(key string) error { _, err := FloatE(key, 0); return err }},
+		{name: "bool any", key: "TEST_SECRET_BOOL", call: func(key string) error { _, err := BoolAnyE([]string{key}, false); return err }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(tt.key, canary)
+			err := tt.call(tt.key)
+			if err == nil {
+				t.Fatal("strict parser error = nil")
+			}
+			if strings.Contains(err.Error(), canary) {
+				t.Fatalf("strict parser leaked raw value: %q", err)
+			}
+			if !strings.Contains(err.Error(), tt.key) {
+				t.Fatalf("strict parser error = %q, want key", err)
+			}
+			if !errors.Is(err, strconv.ErrSyntax) {
+				t.Fatalf("strict parser error = %v, want syntax classification", err)
+			}
+		})
+	}
+}
+
+func TestStrictParseErrorsPreserveRangeClassification(t *testing.T) {
+	t.Setenv("TEST_INT_RANGE", "999999999999999999999999999999")
+	_, err := IntE("TEST_INT_RANGE", 0)
+	if err == nil || !errors.Is(err, strconv.ErrRange) {
+		t.Fatalf("IntE(range) error = %v, want strconv.ErrRange", err)
+	}
+	if strings.Contains(err.Error(), "999999999999999999999999999999") {
+		t.Fatalf("IntE(range) leaked raw value: %q", err)
 	}
 }
 

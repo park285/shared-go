@@ -57,7 +57,10 @@ func Run[Config any, Runtime runtime](opts Options[Config, Runtime]) int {
 
 	rt, err := opts.BuildRuntime(buildCtx, config, logger)
 	if err != nil {
-		logger.Error(fallback(opts.BuildErrorMessage, "Failed to build runtime"), slog.Any("error", err))
+		logger.Error(
+			sharedlogging.RedactDiagnostic(fallback(opts.BuildErrorMessage, "Failed to build runtime")),
+			slog.String("error", sharedlogging.RedactDiagnostic(err.Error())),
+		)
 		return 1
 	}
 	defer rt.Close()
@@ -90,7 +93,12 @@ func runtimeStderr(stderr io.Writer) io.Writer {
 }
 
 func printBootstrapError(stderr io.Writer, message string, err error) int {
-	if _, writeErr := fmt.Fprintf(stderr, "%s: %v\n", message, err); writeErr != nil {
+	safeMessage := sharedlogging.RedactDiagnostic(message)
+	safeError := "unknown error"
+	if err != nil {
+		safeError = sharedlogging.RedactDiagnostic(err.Error())
+	}
+	if _, writeErr := fmt.Fprintf(stderr, "%s: %s\n", safeMessage, safeError); writeErr != nil {
 		return 1
 	}
 	return 1

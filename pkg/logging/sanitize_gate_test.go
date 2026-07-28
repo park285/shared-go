@@ -64,8 +64,7 @@ func TestRedactSecrets_UnicodeFoldTrap(t *testing.T) {
 		"prefixſ ?password=PLAINPW", // non-ASCII 있으나 ASCII token도 매칭됨
 	}
 	for _, in := range cases {
-		want := bearerTokenRegex.ReplaceAllString(in, "${1}***REDACTED***")
-		want = querySecretRegex.ReplaceAllString(want, "${1}***REDACTED***")
+		want := redactDiagnosticWithoutGates(in)
 		if got := redactSecrets(in); got != want {
 			t.Errorf("redactSecrets(%q) = %q, want %q (gate must be superset of regex)", in, got, want)
 		}
@@ -76,13 +75,13 @@ func FuzzRedactSecrets_GateIsSuperset(f *testing.F) {
 	seeds := []string{
 		"", "?token=v", "?paſsword=v", "?toKen=v", "Bearer x.y",
 		"plain text", "ſſſ", "?api_Key=ſ", "key=ſ", "?secret=ſecret",
+		"API_TOKEN=x", "password: raw", `{"api_key":"x"}`,
 	}
 	for _, s := range seeds {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, in string) {
-		want := bearerTokenRegex.ReplaceAllString(in, "${1}***REDACTED***")
-		want = querySecretRegex.ReplaceAllString(want, "${1}***REDACTED***")
+		want := redactDiagnosticWithoutGates(in)
 		if got := redactSecrets(in); got != want {
 			t.Fatalf("gate diverged from regex: redactSecrets(%q) = %q, want %q", in, got, want)
 		}
@@ -91,11 +90,17 @@ func FuzzRedactSecrets_GateIsSuperset(f *testing.F) {
 
 func TestRedactSecrets_MatchesDirectRegex(t *testing.T) {
 	in := "url=https://x.test?token=secret123&Bearer foo.bar"
-	want := bearerTokenRegex.ReplaceAllString(in, "${1}***REDACTED***")
-	want = querySecretRegex.ReplaceAllString(want, "${1}***REDACTED***")
+	want := redactDiagnosticWithoutGates(in)
 	if got := redactSecrets(in); got != want {
 		t.Fatalf("redactSecrets(%q) = %q, want %q", in, got, want)
 	}
+}
+
+func redactDiagnosticWithoutGates(in string) string {
+	out := bearerTokenRegex.ReplaceAllString(in, "${1}***REDACTED***")
+	out = querySecretRegex.ReplaceAllString(out, "${1}***REDACTED***")
+	out = credentialURLRegex.ReplaceAllString(out, "${1}***REDACTED***@")
+	return redactSecretAssignments(out)
 }
 
 func TestQuerySecret_SemicolonSeparator(t *testing.T) {

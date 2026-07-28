@@ -78,7 +78,7 @@ func IntE(key string, def int) (int, error) {
 	}
 	parsed, err := strconv.Atoi(value)
 	if err != nil {
-		return 0, fmt.Errorf("invalid int env %s=%q: %w", key, value, err)
+		return 0, strictParseError(key, "int", err)
 	}
 	return parsed, nil
 }
@@ -90,7 +90,7 @@ func Int64E(key string, def int64) (int64, error) {
 	}
 	parsed, err := strconv.ParseInt(value, 10, 64)
 	if err != nil {
-		return 0, fmt.Errorf("invalid int64 env %s=%q: %w", key, value, err)
+		return 0, strictParseError(key, "int64", err)
 	}
 	return parsed, nil
 }
@@ -139,7 +139,7 @@ func FloatE(key string, def float64) (float64, error) {
 	}
 	parsed, err := strconv.ParseFloat(value, 64)
 	if err != nil {
-		return 0, fmt.Errorf("invalid float64 env %s=%q: %w", key, value, err)
+		return 0, strictParseError(key, "float64", err)
 	}
 	return parsed, nil
 }
@@ -174,7 +174,7 @@ func IntAnyE(keys []string, def int) (int, error) {
 	}
 	parsed, err := strconv.Atoi(value)
 	if err != nil {
-		return 0, fmt.Errorf("invalid int env %s=%q: %w", key, value, err)
+		return 0, strictParseError(key, "int", err)
 	}
 	return parsed, nil
 }
@@ -186,7 +186,7 @@ func Int64AnyE(keys []string, def int64) (int64, error) {
 	}
 	parsed, err := strconv.ParseInt(value, 10, 64)
 	if err != nil {
-		return 0, fmt.Errorf("invalid int64 env %s=%q: %w", key, value, err)
+		return 0, strictParseError(key, "int64", err)
 	}
 	return parsed, nil
 }
@@ -216,8 +216,16 @@ func parseBoolE(key, value string) (bool, error) {
 	case "0", boolFalse, "no", "n":
 		return false, nil
 	default:
-		return false, fmt.Errorf("invalid bool env %s=%q", key, value)
+		return false, strictParseError(key, "bool", strconv.ErrSyntax)
 	}
+}
+
+func strictParseError(key, kind string, err error) error {
+	cause := strconv.ErrSyntax
+	if errors.Is(err, strconv.ErrRange) {
+		cause = strconv.ErrRange
+	}
+	return fmt.Errorf("invalid %s env %s (%w)", kind, key, cause)
 }
 
 func List(key string) []string {
