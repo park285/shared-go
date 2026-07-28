@@ -5,12 +5,44 @@
 
 ## 미출시
 
+## v1.36.0 - 2026-07-28
+
+### 보안
+
+- `httputil.FixedWindowRateLimiter`가 configured window보다 짧은 entry TTL로 quota를 조기
+  초기화하지 않도록 TTL을 window 이상으로 고정했습니다. LRU admission/eviction 의미는 유지하면서
+  전체 map을 매 요청마다 순회하던 prune/eviction을 ordered bookkeeping으로 교체했습니다.
+- `httputil.LoginFailureRateLimiter`에 기본 10,000개의 identity 상한을 추가했습니다. 새 identity는
+  `IsAllowed`에서 원자적으로 slot을 예약하며, 직접 `RecordFailure`를 호출하는 경로도 같은 상한을
+  적용합니다.
+- strict `envutil` parse error에서 raw 환경 변수 값을 제거하고 syntax/range 분류만 보존했습니다.
+  공용 logging과 runtime bootstrap은 bearer/query/userinfo/secret assignment가 포함된 진단 오류를
+  stderr 또는 structured error attr에 쓰기 전에 마스킹합니다.
+
+### 변경
+
+- `healthprobe.RunMain`의 다중 target 검사를 하나의 4초 overall context 아래 병렬 실행하도록 바꿨습니다.
+  기존 exported fetch/check 함수 signature와 target SSRF/redirect 검사는 유지됩니다.
+
+## v1.35.0 - 2026-07-24
+
 ### 추가
 
 - `pkg/httputil`에 범용 JSON 응답 writer `WriteJSON(w, status, v)`를 추가했습니다. HTML escape를
   적용하지 않으며(`SetEscapeHTML(false)`), 기존 `WriteErrorJSON`은 이 함수를 경유하도록 정리해
   응답 인코딩 로직을 단일 소스로 수렴했습니다. `WriteErrorJSON`의 출력·트림 동작은 동일합니다.
   commonization P1.3의 "WriteJSON 계열" 승격 잔여분으로, twentyq-bot이 첫 소비자입니다.
+
+### 제거 (호환성 변경)
+
+- 스택 소비자 0건인 exported 심볼을 lockstep 정책에 따라 정리했습니다. `pkg/json`의
+  `MarshalEscapeHTML`(및 내부 `htmlEscapingAPI`), 그리고 sonic 오류 타입 별칭
+  `SyntaxError`/`UnmarshalTypeError`를 제거했습니다. HTML escape 응답이 필요한 소비처는
+  `pkg/httputil.WriteJSON`/`WriteErrorJSON`이 이미 `SetEscapeHTML(false)` 정책을 소유합니다.
+- `pkg/llm/openaipreset`의 소비자 0건 `(*Client).RunInto`를 제거했습니다. 단일 프롬프트
+  decode-into 경로는 `GenerateJSONInto`(layered prompt) 또는 `GenerateJSON`(text)로 대체됩니다.
+
+## v1.34.0 - 2026-07-24
 
 ### 변경 (호환성)
 
@@ -31,12 +63,6 @@
 
 - v1.32.0에서 지원 중단을 예고한 소비자 0건의 `retry.ComputeBackoffDelay`를 제거했습니다.
   `backoff.ComputeExponentialBackoff`를 사용하십시오.
-- 스택 소비자 0건인 exported 심볼을 lockstep 정책에 따라 정리했습니다. `pkg/json`의
-  `MarshalEscapeHTML`(및 내부 `htmlEscapingAPI`), 그리고 sonic 오류 타입 별칭
-  `SyntaxError`/`UnmarshalTypeError`를 제거했습니다. HTML escape 응답이 필요한 소비처는
-  `pkg/httputil.WriteJSON`/`WriteErrorJSON`이 이미 `SetEscapeHTML(false)` 정책을 소유합니다.
-- `pkg/llm/openaipreset`의 소비자 0건 `(*Client).RunInto`를 제거했습니다. 단일 프롬프트
-  decode-into 경로는 `GenerateJSONInto`(layered prompt) 또는 `GenerateJSON`(text)로 대체됩니다.
 
 ### 테스트
 
