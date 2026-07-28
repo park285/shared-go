@@ -2,11 +2,13 @@ package healthprobe
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRunMainSmoke(t *testing.T) {
@@ -111,5 +113,95 @@ func TestRunMainExitCodesWithCheckSeam(t *testing.T) {
 				t.Fatalf("check calls = %d, want 1", checkCalls)
 			}
 		})
+	}
+}
+
+func TestRunChecksStartsTargetsConcurrently(t *testing.T) {
+	t.Parallel()
+
+	targets := []string{"one", "two", "three"}
+	started := make(chan string, len(targets))
+	release := make(chan struct{})
+	done := make(chan int, 1)
+	go func() {
+		done <- runChecks(context.Background(), targets, nil, &bytes.Buffer{}, func(_ context.Context, target string, _ map[string]string) ([]byte, error) {
+			started <- target
+			<-release
+			return nil, nil
+		})
+	}()
+
+	seen := make(map[string]bool, len(targets))
+	for range targets {
+		select {
+		case target := <-started:
+			seen[target] = true
+		case <-time.After(time.Second):
+			t.Fatal("not all health targets started before release")
+		}
+	}
+	close(release)
+	if code := <-done; code != 0 {
+		t.Fatalf("runChecks() = %d, want 0", code)
+	}
+	for _, target := range targets {
+		if !seen[target] {
+			t.Fatalf("target %q did not start", target)
+		}
+	}
+}
+
+func TestRunChecksCancelsPeersAfterFailure(t *testing.T) {
+	t.Parallel()
+
+	peerStarted := make(chan struct{})
+	peerCanceled := make(chan struct{})
+	var stderr bytes.Buffer
+	code := runChecks(context.Background(), []string{"fail", "peer"}, nil, &stderr, func(ctx context.Context, target string, _ map[string]string) ([]byte, error) {
+		if target == "peer" {
+			close(peerStarted)
+			<-ctx.Done()
+			close(peerCanceled)
+			return nil, ctx.Err()
+		}
+		<-peerStarted
+		return nil, errors.New("probe failed")
+	})
+
+	if code != 1 {
+		t.Fatalf("runChecks() = %d, want 1", code)
+	}
+	select {
+	case <-peerCanceled:
+	default:
+		t.Fatal("peer fetch was not canceled before runChecks returned")
+	}
+	if !strings.Contains(stderr.String(), "probe failed") {
+		t.Fatalf("stderr = %q, want primary failure", stderr.String())
+	}
+}
+
+func TestRunChecksHonorsParentCancellation(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	started := make(chan struct{})
+	done := make(chan int, 1)
+	var stderr bytes.Buffer
+	go func() {
+		done <- runChecks(ctx, []string{"peer"}, nil, &stderr, func(ctx context.Context, _ string, _ map[string]string) ([]byte, error) {
+			close(started)
+			<-ctx.Done()
+			return nil, ctx.Err()
+		})
+	}()
+
+	<-started
+	cancel()
+	if code := <-done; code != 1 {
+		t.Fatalf("runChecks() = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), context.Canceled.Error()) {
+		t.Fatalf("stderr = %q, want context cancellation", stderr.String())
 	}
 }

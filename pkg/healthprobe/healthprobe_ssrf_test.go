@@ -26,7 +26,7 @@ func TestFetchURL_DNSRebinding_6ccdf328(t *testing.T) {
 	defer func() { lookupIPAddr = orig }()
 
 	opts := FetchOptions{}
-	if _, err := fetchURL(server.URL, nil, opts); !errors.Is(err, ErrPrivateNetwork) {
+	if _, err := fetchURL(context.Background(), server.URL, nil, opts); !errors.Is(err, ErrPrivateNetwork) {
 		t.Fatalf("rebinding fetch error = %v, want ErrPrivateNetwork (dial-time guard must reject loopback)", err)
 	}
 }
@@ -40,7 +40,7 @@ func TestSG04HealthprobeRejectsLoopbackByDefault_02aae1e0(t *testing.T) {
 	defer server.Close()
 
 	opts := FetchOptions{}
-	if _, err := fetchURL(server.URL, nil, opts); !errors.Is(err, ErrPrivateNetwork) {
+	if _, err := fetchURL(context.Background(), server.URL, nil, opts); !errors.Is(err, ErrPrivateNetwork) {
 		t.Fatalf("fetchURL(loopback, zero-value FetchOptions{}) error = %v, want ErrPrivateNetwork", err)
 	}
 }
@@ -53,11 +53,11 @@ func TestSG04FetchURLWithOptionsSecureByDefault_dd8840c(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if _, err := fetchURL(server.URL, nil, FetchOptions{}); !errors.Is(err, ErrPrivateNetwork) {
+	if _, err := fetchURL(context.Background(), server.URL, nil, FetchOptions{}); !errors.Is(err, ErrPrivateNetwork) {
 		t.Fatalf("fetchURL(loopback, FetchOptions{}) error = %v, want ErrPrivateNetwork (zero value must block private networks)", err)
 	}
 
-	body, err := fetchURL(server.URL, nil, FetchOptions{AllowPrivateNetworks: true})
+	body, err := fetchURL(context.Background(), server.URL, nil, FetchOptions{AllowPrivateNetworks: true})
 	if err != nil {
 		t.Fatalf("fetchURL(loopback, AllowPrivateNetworks=true) error = %v, want nil", err)
 	}
@@ -80,7 +80,7 @@ func TestSG04DefaultAPIBlocksLoopback_02aae1e0(t *testing.T) {
 	if err := CheckURL(server.URL); !errors.Is(err, ErrPrivateNetwork) {
 		t.Fatalf("CheckURL(loopback) error = %v, want ErrPrivateNetwork (secure-by-default)", err)
 	}
-	if _, err := fetchURL(server.URL, map[string]string{"X-K": "v"}, defaultFetchOptions()); !errors.Is(err, ErrPrivateNetwork) {
+	if _, err := fetchURL(context.Background(), server.URL, map[string]string{"X-K": "v"}, defaultFetchOptions()); !errors.Is(err, ErrPrivateNetwork) {
 		t.Fatalf("fetchURL(loopback, with headers) error = %v, want ErrPrivateNetwork (secure-by-default)", err)
 	}
 }
@@ -127,7 +127,7 @@ func TestSG04HealthprobeRejectsLinkLocalMetadata_02aae1e0(t *testing.T) {
 	t.Parallel()
 
 	opts := FetchOptions{}
-	if _, err := fetchURL("http://169.254.169.254/latest/meta-data/", nil, opts); !errors.Is(err, ErrPrivateNetwork) {
+	if _, err := fetchURL(context.Background(), "http://169.254.169.254/latest/meta-data/", nil, opts); !errors.Is(err, ErrPrivateNetwork) {
 		t.Fatalf("fetchURL(link-local) error = %v, want ErrPrivateNetwork", err)
 	}
 }
@@ -194,7 +194,7 @@ func TestSG04HealthprobeRejectsHostNotInAllowlist_02aae1e0(t *testing.T) {
 	defer server.Close()
 
 	opts := FetchOptions{AllowedHosts: []string{"only.example.com"}}
-	if _, err := fetchURL(server.URL, nil, opts); !errors.Is(err, ErrHostNotAllowed) {
+	if _, err := fetchURL(context.Background(), server.URL, nil, opts); !errors.Is(err, ErrHostNotAllowed) {
 		t.Fatalf("fetchURL(non-allowlisted) error = %v, want ErrHostNotAllowed", err)
 	}
 }
@@ -208,7 +208,7 @@ func TestSG04HealthprobeAllowsConfiguredHost_02aae1e0(t *testing.T) {
 	defer server.Close()
 
 	opts := FetchOptions{AllowedHosts: []string{"127.0.0.1"}, AllowPrivateNetworks: true}
-	body, err := fetchURL(server.URL, nil, opts)
+	body, err := fetchURL(context.Background(), server.URL, nil, opts)
 	if err != nil {
 		t.Fatalf("fetchURL(allowlisted 127.0.0.1) error = %v, want nil", err)
 	}
@@ -283,7 +283,7 @@ func TestSG04HealthprobeBodyLimit_12bf48a7(t *testing.T) {
 	defer server.Close()
 
 	opts := FetchOptions{MaxBodyBytes: 256, FollowRedirects: true, AllowPrivateNetworks: true}
-	if _, err := fetchURL(server.URL, nil, opts); !errors.Is(err, ErrBodyTooLarge) {
+	if _, err := fetchURL(context.Background(), server.URL, nil, opts); !errors.Is(err, ErrBodyTooLarge) {
 		t.Fatalf("fetchURL(1KiB body, 256 cap) error = %v, want ErrBodyTooLarge", err)
 	}
 
@@ -291,7 +291,7 @@ func TestSG04HealthprobeBodyLimit_12bf48a7(t *testing.T) {
 		_, _ = w.Write(make([]byte, 200))
 	}))
 	defer small.Close()
-	if _, err := fetchURL(small.URL, nil, opts); err != nil {
+	if _, err := fetchURL(context.Background(), small.URL, nil, opts); err != nil {
 		t.Fatalf("fetchURL(200B body, 256 cap) error = %v, want nil", err)
 	}
 }

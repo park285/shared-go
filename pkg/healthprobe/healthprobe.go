@@ -62,7 +62,7 @@ func CheckURL(rawURL string) error {
 }
 
 func FetchURL(rawURL string) ([]byte, error) {
-	return fetchURL(rawURL, nil, defaultFetchOptions())
+	return fetchURL(context.Background(), rawURL, nil, defaultFetchOptions())
 }
 
 func CheckURLInternal(rawURL string) error {
@@ -71,20 +71,23 @@ func CheckURLInternal(rawURL string) error {
 }
 
 func FetchURLInternal(rawURL string) ([]byte, error) {
-	return fetchURL(rawURL, nil, internalFetchOptions())
+	return fetchURL(context.Background(), rawURL, nil, internalFetchOptions())
 }
 
 func FetchURLWithHeadersInternal(rawURL string, headers map[string]string) ([]byte, error) {
-	return fetchURL(rawURL, headers, internalFetchOptions())
+	return fetchURL(context.Background(), rawURL, headers, internalFetchOptions())
 }
 
-func fetchURL(rawURL string, headers map[string]string, opts FetchOptions) ([]byte, error) {
+func fetchURL(parent context.Context, rawURL string, headers map[string]string, opts FetchOptions) ([]byte, error) {
 	parsed, err := parseURL(rawURL)
 	if err != nil {
 		return nil, fmt.Errorf("validate url: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parent, requestTimeout)
 	defer cancel()
 
 	if authErr := authorizeTarget(ctx, parsed, opts); authErr != nil {

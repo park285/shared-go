@@ -6,13 +6,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
 func TestRunMainChecksMultipleURLs(t *testing.T) {
-	calls := 0
+	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		calls++
+		calls.Add(1)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -22,8 +23,8 @@ func TestRunMainChecksMultipleURLs(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("RunMain() = %d, want 0; stderr=%q", code, errOut.String())
 	}
-	if calls != 2 {
-		t.Fatalf("requests = %d, want 2", calls)
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("requests = %d, want 2", got)
 	}
 }
 
