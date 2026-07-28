@@ -45,3 +45,25 @@ func BenchmarkFixedWindowAllowUniqueAtCapacity(b *testing.B) {
 		limiter.Allow(fmt.Sprintf("churn-%08d", i))
 	}
 }
+
+func BenchmarkLoginFailureIsAllowedSaturatedMiss(b *testing.B) {
+	for _, cardinality := range []int{1, 10000} {
+		b.Run(fmt.Sprintf("identities-%d", cardinality), func(b *testing.B) {
+			now := time.Date(2026, time.July, 28, 10, 0, 0, 0, time.UTC)
+			limiter := NewLoginFailureRateLimiter(LoginFailureRateLimiterOptions{
+				MaxIdentities: cardinality,
+				Window:        time.Hour,
+				Now:           func() time.Time { return now },
+			})
+			for i := range cardinality {
+				limiter.IsAllowed(fmt.Sprintf("prefill-%05d", i))
+			}
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				limiter.IsAllowed("unseen-at-capacity")
+			}
+		})
+	}
+}

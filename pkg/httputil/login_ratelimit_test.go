@@ -163,6 +163,40 @@ func TestLoginFailureRateLimiterReservationExpiresAtWindowBoundary(t *testing.T)
 	}
 }
 
+func TestLoginFailureRateLimiterSaturatedMissKeepsExpiryFrontier(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.July, 28, 10, 0, 0, 0, time.UTC)
+	limiter := NewLoginFailureRateLimiter(LoginFailureRateLimiterOptions{
+		MaxIdentities: 128,
+		Window:        time.Minute,
+		Now:           func() time.Time { return now },
+	})
+	for i := range limiter.maxIdentities {
+		if allowed, _ := limiter.IsAllowed(fmt.Sprintf("reserved-%03d", i)); !allowed {
+			t.Fatalf("IsAllowed(reserved-%03d) = false", i)
+		}
+	}
+
+	wantExpiry := now.Add(time.Minute)
+	for i := range 1024 {
+		if allowed, retry := limiter.IsAllowed(fmt.Sprintf("spray-%04d", i)); allowed || retry <= 0 {
+			t.Fatalf("IsAllowed(spray-%04d) = (%t, %s), want false with retry", i, allowed, retry)
+		}
+	}
+
+	limiter.mu.Lock()
+	entryCount := len(limiter.attempts)
+	gotExpiry := limiter.nextExpiry
+	limiter.mu.Unlock()
+	if entryCount != limiter.maxIdentities {
+		t.Fatalf("entry count = %d, want %d", entryCount, limiter.maxIdentities)
+	}
+	if !gotExpiry.Equal(wantExpiry) {
+		t.Fatalf("next expiry = %s, want %s", gotExpiry, wantExpiry)
+	}
+}
+
 func TestLoginFailureRateLimiterConcurrentReservationsHonorCapacity(t *testing.T) {
 	t.Parallel()
 
