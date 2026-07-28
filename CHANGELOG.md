@@ -5,6 +5,23 @@
 
 ## 미출시
 
+## v1.37.0 - 2026-07-28
+
+### 보안
+
+- 2021년 이후 갱신되지 않은 `mtibben/confusables`의 Unicode 13.0 table을 제거하고,
+  Unicode 17.0 UTS #39 `confusables.txt`를 versioned URL과 SHA-256으로 검증해 생성한
+  repository-owned table로 교체합니다. Unicode 15/17 `UnicodeData.txt`도 함께 pin해 canonical
+  decomposition 20개와 combining class 46개의 차이를 toolchain-independent overlay로 생성합니다.
+  기존 NFD → mapping → NFD skeleton 계약은 유지하면서 6,565개 최신 mapping을 적용합니다.
+
+### 유지보수
+
+- prompt rulepack YAML owner를 `gopkg.in/yaml.v3 v3.0.1`에서 유지되는 canonical module인
+  `go.yaml.in/yaml/v3 v3.0.5`로 이전합니다. 공개 API와 rulepack schema는 변경하지 않습니다.
+- Unicode source checksum과 generated table drift를 release gate에서 검증하고 Unicode License V3
+  고지를 `THIRD_PARTY_NOTICES.md`에 포함합니다.
+
 ## v1.36.2 - 2026-07-28
 
 ### 유지보수

@@ -22,6 +22,34 @@ func TestNormalizeViewsPreservesLegacyBehavior(t *testing.T) {
 	}
 }
 
+func TestComposeJamoSequencesGolden(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		input string
+		want  string
+	}{
+		{input: "ㅎㅏㄴㄱㅡㄹ", want: "한글"},
+		{input: "ㄱㅏㅂㅇㅗㅅ", want: "갑옷"},
+		{input: "ㄱㅏㅂㅂㅜ", want: "가뿌"},
+		{input: "ㄱ", want: "ㄱ"},
+		{input: "ㄱㅎ", want: "ㄱㅎ"},
+		{input: "안녕ㄱ테스트", want: "안녕ㄱ테스트"},
+	} {
+		if got := ComposeJamoSequences(tc.input); got != tc.want {
+			t.Errorf("ComposeJamoSequences(%q) = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+}
+
+func TestNormalizeUsesUnicode17ConfusableMapping(t *testing.T) {
+	t.Parallel()
+
+	if got := Normalize("þaypal"); got != "paypal" {
+		t.Fatalf("Normalize(%q) = %q, want %q", "þaypal", got, "paypal")
+	}
+}
+
 func TestNormalizeFastPathASCIIAllowlistMatchesPredicate(t *testing.T) {
 	t.Parallel()
 

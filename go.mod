@@ -8,7 +8,6 @@ require (
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/lmittmann/tint v1.2.0
 	github.com/mattn/go-isatty v0.0.24
-	github.com/mtibben/confusables v0.0.0-20210201002637-9d1b0723b659
 	github.com/openai/openai-go/v3 v3.46.0
 	github.com/quic-go/quic-go v0.61.0
 	github.com/stretchr/testify v1.11.1
@@ -18,11 +17,11 @@ require (
 	go.opentelemetry.io/otel/sdk v1.44.0
 	go.opentelemetry.io/otel/trace v1.44.0
 	go.uber.org/automaxprocs v1.6.0
+	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/sync v0.22.0
 	golang.org/x/text v0.40.0
 	google.golang.org/grpc v1.82.1
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
-	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -72,4 +71,5 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20260727163830-6c54dddc4772 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260727163830-6c54dddc4772 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

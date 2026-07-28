@@ -6,7 +6,6 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/mtibben/confusables"
 	"github.com/ymw0407/jamo/pkg/jamo"
 	"golang.org/x/text/unicode/norm"
 )
@@ -175,7 +174,7 @@ func normalizeWithKoreanPreserved(text string) string {
 			return
 		}
 
-		skeleton := confusables.Skeleton(skeletonMGuard.Replace(run))
+		skeleton := confusableSkeleton(skeletonMGuard.Replace(run))
 		result.WriteString(skeletonMRestore.Replace(norm.NFKC.String(skeleton)))
 		nonKoreanBuffer.Reset()
 	}
@@ -493,7 +492,7 @@ func isNormalizeFastPathRune(r rune) bool {
 
 	value := string(r)
 
-	return confusables.Skeleton(value) == value && norm.NFKC.String(value) == value
+	return confusableSkeleton(value) == value && norm.NFKC.String(value) == value
 }
 
 func canSkipNonKoreanNormalize(text string) bool {
