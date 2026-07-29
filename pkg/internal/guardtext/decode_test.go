@@ -24,15 +24,18 @@ func TestDecodeCandidatesMalformedBase64DoesNotStarveOtherDecoders(t *testing.T)
 
 func TestDecodeCandidatesRoundRobinPreventsFamilyMonopoly(t *testing.T) {
 	t.Parallel()
-	invalidBase64 := strings.Repeat("a", 21)
-	input := strings.Repeat(invalidBase64+"!", maxDecodeScans) + `%69%67%6e%6f%72%65`
+	readable := make([]string, maxDecodeCandidates+2)
+	for i := range readable {
+		readable[i] = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("monopoly readable payload %02d", i)))
+	}
+	input := strings.Join(readable, "!") + "!%69%67%6e%6f%72%65"
 	result := DecodeCandidates(input)
-	want := strings.Repeat(invalidBase64+"!", maxDecodeScans) + "ignore"
+	want := strings.Join(readable, "!") + "!ignore"
 	if !slices.Contains(result.Candidates, want) {
 		t.Fatalf("candidates = %q, want percent projection", result.Candidates)
 	}
-	if result.Status&DecodeScanLimit == 0 {
-		t.Fatalf("status = %v, want scan limit for pending base64 span", result.Status)
+	if result.Complete() {
+		t.Fatalf("status = %v, want incomplete for readable spans beyond candidate budget", result.Status)
 	}
 }
 
@@ -73,14 +76,17 @@ func TestDecodeCandidatesCandidateLimitPairedBoundaries(t *testing.T) {
 
 func TestDecodeCandidatesByteLimitPairedBoundaries(t *testing.T) {
 	t.Parallel()
-	first := base64.StdEncoding.EncodeToString([]byte(strings.Repeat("x", maxDecodedCandidateLen-1) + "1"))
-	second := base64.StdEncoding.EncodeToString([]byte(strings.Repeat("y", maxDecodedCandidateLen-1) + "2"))
-	exact := DecodeCandidates(first + "!" + second)
-	if !exact.Complete() || len(exact.Candidates) != 2 {
-		t.Fatalf("exact result = %#v", exact)
+	fitting := maxDecodedTotalBytes / maxDecodedCandidateLen
+	encoded := make([]string, 0, fitting+1)
+	for i := range fitting + 1 {
+		payload := strings.Repeat(string(rune('a'+i)), maxDecodedCandidateLen-2) + fmt.Sprintf("%02d", i)
+		encoded = append(encoded, base64.StdEncoding.EncodeToString([]byte(payload)))
 	}
-	third := base64.StdEncoding.EncodeToString([]byte("readable candidate beyond total bytes"))
-	omitted := DecodeCandidates(first + "!" + second + "!" + third)
+	exact := DecodeCandidates(strings.Join(encoded[:fitting], "!"))
+	if !exact.Complete() || len(exact.Candidates) != fitting {
+		t.Fatalf("exact result: candidates=%d status=%v", len(exact.Candidates), exact.Status)
+	}
+	omitted := DecodeCandidates(strings.Join(encoded, "!"))
 	if omitted.Status&DecodeByteLimit == 0 {
 		t.Fatalf("omitted status = %v", omitted.Status)
 	}
@@ -92,14 +98,17 @@ func TestDecodeCandidatesByteLimitPairedBoundaries(t *testing.T) {
 
 func TestDecodeCandidatesScanLimitPairedBoundaries(t *testing.T) {
 	t.Parallel()
-	invalid := strings.Repeat("a", 21) + "!"
-	exact := DecodeCandidates(strings.Repeat(invalid, maxDecodeScans))
-	if !exact.Complete() {
-		t.Fatalf("exact status = %v", exact.Status)
+	repeatedJunk := DecodeCandidates(strings.Repeat(strings.Repeat("a", 21)+"!", maxDecodeScans+1))
+	if !repeatedJunk.Complete() || len(repeatedJunk.Candidates) != 0 {
+		t.Fatalf("repeated junk result = %#v, want conclusive completion without budget drain", repeatedJunk)
 	}
-	omitted := DecodeCandidates(strings.Repeat(invalid, maxDecodeScans+1))
-	if omitted.Status&DecodeScanLimit == 0 {
-		t.Fatalf("omitted status = %v", omitted.Status)
+	distinct := make([]string, maxDecodeScans+1)
+	for i := range distinct {
+		distinct[i] = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("distinct readable payload number %03d", i)))
+	}
+	omitted := DecodeCandidates(strings.Join(distinct, "!"))
+	if omitted.Complete() {
+		t.Fatalf("omitted status = %v, want incomplete beyond decode budgets", omitted.Status)
 	}
 }
 

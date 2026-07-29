@@ -6,13 +6,17 @@ import (
 )
 
 const (
-	maxDecodeCandidates      = 8
-	minBase64CandidateLen    = 20
-	maxDecodedCandidateLen   = 8 << 10
-	maxDecodedTotalBytes     = 16 << 10
-	maxDecodeDepth           = 2
-	maxDecodeScans           = 64
-	maxProtectedDecodeTries  = 4096
+	maxDecodeCandidates    = 24
+	minBase64CandidateLen  = 20
+	maxDecodedCandidateLen = 8 << 10
+	maxDecodedTotalBytes   = 64 << 10
+	maxDecodeDepth         = 2
+	maxDecodeScans         = 256
+	// 열거·기여 검사 시도 예산. junk 기각이 무과금으로 바뀐 뒤에는 고유 suspect의
+	// 경계 열거(스팬 길이 제곱)만 이 예산을 쓰므로, 25KB급 정상 답변의 열거 총량
+	// (~수만)을 여유 있게 덮되 대량 고유-junk 스터핑은 소진→fail-closed로 남긴다.
+	// 소진 시 CPU 상한 ≈ 시도당 짧은 base64 디코드 1회 × 262144 ≈ 수백 ms.
+	maxProtectedDecodeTries  = 1 << 18
 	maxProtectedDecodeBytes  = 4 << 20
 	maxProtectedContextBytes = 16 << 20
 	maxHTMLEntityNameBytes   = 31
@@ -194,18 +198,22 @@ func transformFamilies(input string) []transformFamily {
 func transformFamiliesWithShortContext(
 	input string,
 	includeShort bool,
+	seenWholes *spanContextSeen,
 	mayContribute func(string) bool,
 	embeddedContextMayContribute EmbeddedContextMatcher,
 	work *protectedDecodeWork,
 	status *DecodeStatus,
 ) []transformFamily {
-	base64Minimum := minBase64CandidateLen
-	hexPattern := hexPayloadPattern
-	base64Spans := contextualBase64SpansAtLeast(input, base64Minimum)
-	hexSpans := hexSpansForPattern(input, hexPattern)
-	if includeShort {
-		base64Spans = protectedBase64Spans(input, mayContribute, embeddedContextMayContribute, work, status)
+	hexSpans := hexSpansForPattern(input, hexPayloadPattern)
+	var base64Spans []encodedSpan
+	switch {
+	case includeShort:
+		base64Spans = protectedBase64Spans(input, seenWholes, mayContribute, embeddedContextMayContribute, work, status)
 		hexSpans = protectedHexSpans(input, mayContribute, work, status)
+	case mayContribute != nil:
+		base64Spans = ruleBase64Spans(input, seenWholes, mayContribute, embeddedContextMayContribute, work, status)
+	default:
+		base64Spans = contextualBase64SpansAtLeast(input, minBase64CandidateLen)
 	}
 	families := []transformFamily{
 		{kind: decodeBase64, input: input, spans: base64Spans},

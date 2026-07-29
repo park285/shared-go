@@ -17,12 +17,12 @@ func matchingShortHexSpans(
 		if decodedHexByteCount(input[span.start:span.end]) >= 4 {
 			continue
 		}
-		if !consumeProtectedDecodeWork(work, status, span.end-span.start) {
-			break
-		}
 		decoded, err := decodeHexPayload(input[span.start:span.end])
 		if err != nil || !IsReadableText(decoded) {
 			continue
+		}
+		if !consumeProtectedDecodeWork(work, status, span.end-span.start) {
+			break
 		}
 		contributes, nested, nestedStatus := matchingDecodedContributionDetails(string(decoded), mayContribute)
 		mergeDecodeStatus(status, nestedStatus)
