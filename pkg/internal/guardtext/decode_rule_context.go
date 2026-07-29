@@ -205,7 +205,7 @@ func shortRuleCandidateContribution(
 		return "", false, DecodeByteLimit
 	}
 	if !contributes {
-		contributes, status = matchingContextualDecodedContribution(input, span, decoded, nested, mayContribute)
+		contributes, status = matchingContextualDecodedContribution(input, span, decoded, nested, mayContribute, work)
 	}
 	if status != 0 || !contributes {
 		return contextual, false, status
