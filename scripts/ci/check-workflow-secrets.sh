@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 스택 공용 단일 정본 — 5개 레포(hololive-bot, chat-bot-go-kakao, twentyq-bot,
 # iris-client-go, shared-go)에 바이트 동일 사본으로 배포되고, iris-stack 메타레포의
-# tools/check-ci-consistency.sh 가 사본 동일성을 강제한다. 한 곳만 고치지 말 것.
+# tools/checks/check-ci-consistency.sh 가 사본 동일성을 강제한다. 한 곳만 고치지 말 것.
 #
 # 프로필: scripts/ci/workflow-gate-profile 의 app 또는 lib 명시 선언.
 # PR heavy 검사(go test 전체/race 포함)는 app 전용 — lib 레포는 PR fast gate 가
