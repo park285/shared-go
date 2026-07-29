@@ -58,6 +58,8 @@ func decodeCandidatesWithContext(
 		visited:                      make(map[string]struct{}, len(roots)+maxDecodeCandidates),
 		includeShort:                 includeShort,
 		embeddedContextMayContribute: embeddedContextMayContribute,
+		seenWholes:                   newSpanContextSeen(input),
+		roots:                        roots,
 	}
 	decoder.mayContribute = mayContribute
 	for _, root := range roots {
@@ -95,6 +97,8 @@ type contextDecoder struct {
 	embeddedContextMayContribute EmbeddedContextMatcher
 	oversizedWouldBlock          func(string, string, []string) bool
 	protectedWork                protectedDecodeWork
+	seenWholes                   *spanContextSeen
+	roots                        []string
 }
 
 type decodeContextOptions struct {
@@ -114,7 +118,7 @@ func (d *contextDecoder) expandNext() {
 		includeShort:           d.includeShort,
 		boundOversizedStandard: d.includeShort,
 	}
-	decodeContextSurfaces(current.text, options, d.mayContribute, d.embeddedContextMayContribute, d.oversizedWouldBlock, &d.protectedWork, &d.scans, &d.result.Status, nil, func(candidate string) {
+	decodeContextSurfaces(current.text, options, d.seenWholes, d.mayContribute, d.embeddedContextMayContribute, d.oversizedWouldBlock, &d.protectedWork, &d.scans, &d.result.Status, nil, func(candidate string) {
 		d.admit(current, candidate)
 	}, func(span encodedSpan, decoded string) {
 		d.admitContextual(current, span, decoded)
@@ -150,8 +154,17 @@ func (d *contextDecoder) admit(current decodeQueueEntry, candidate string) {
 	d.queue = append(d.queue, decodeQueueEntry{text: candidate, depth: current.depth + 1})
 }
 
+// 규칙·protected 매칭은 splice 경계 국소이되 구분자 run이 projection에서 접히므로,
+// 승격 후보는 collapse-인식 경계 윈도우 splice로 충분하다. 반복 본문에서는 동일
+// 윈도우가 visited dedup으로 접혀 후보 한도를 위치 변형이 소진하지 않는다. 전체
+// splice를 승격하면 큰 정상 답변에서 크기·후보 한도가 소진되어 fail-closed 오차단이 된다.
 func (d *contextDecoder) admitContextual(current decodeQueueEntry, span encodedSpan, decoded string) {
-	candidateBytes := len(current.text) - (span.end - span.start) + len(decoded)
+	contextual, bounded := contextualAdmissionCandidate(current.text, span, decoded)
+	if !bounded {
+		d.result.Status |= DecodeByteLimit
+		return
+	}
+	candidateBytes := len(contextual)
 	if candidateBytes > maxDecodedCandidateLen || d.total+candidateBytes > maxDecodedTotalBytes {
 		d.result.Status |= DecodeByteLimit
 		return
@@ -164,12 +177,13 @@ func (d *contextDecoder) admitContextual(current decodeQueueEntry, span encodedS
 		d.result.Status |= DecodeCandidateLimit
 		return
 	}
-	d.admit(current, replaceDecodedSpan(current.text, span, decoded))
+	d.admit(current, contextual)
 }
 
 func decodeContextSurfaces(
 	input string,
 	options decodeContextOptions,
+	seenWholes *spanContextSeen,
 	mayContribute func(string) bool,
 	embeddedContextMayContribute EmbeddedContextMatcher,
 	oversizedWouldBlock func(string, string, []string) bool,
@@ -180,7 +194,7 @@ func decodeContextSurfaces(
 	admit func(string),
 	admitContextual func(encodedSpan, string),
 ) {
-	families := transformFamiliesWithShortContext(input, options.includeShort, mayContribute, embeddedContextMayContribute, work, status)
+	families := transformFamiliesWithShortContext(input, options.includeShort, seenWholes, mayContribute, embeddedContextMayContribute, work, status)
 	if !decodeWorkComplete(status) {
 		return
 	}
@@ -297,7 +311,7 @@ func classifyCandidateContribution(
 		candidate.contextMayContribute = true
 	} else if hasSurroundingContext && options.filterCandidates && !candidate.decodedMayContribute {
 		if embeddedContextMayContribute != nil {
-			classifyEmbeddedContextCandidate(input, candidate, nested, embeddedContextMayContribute, status)
+			classifyEmbeddedContextCandidate(input, candidate, nested, embeddedContextMayContribute)
 
 			return
 		}
@@ -305,24 +319,28 @@ func classifyCandidateContribution(
 		if !consumeProtectedContextWork(work, status, contextBytes) {
 			return
 		}
-		candidate.contextual = replaceDecodedSpan(input, candidate.span, candidate.decoded)
+		var bounded bool
+		candidate.contextual, bounded = contextualAdmissionCandidate(input, candidate.span, candidate.decoded)
+		if !bounded {
+			*status |= DecodeByteLimit
+
+			return
+		}
 		candidate.contextMayContribute, nestedStatus = matchingContextualDecodedContribution(input, candidate.span, candidate.decoded, nested, mayContribute)
 		mergeDecodeStatus(status, nestedStatus)
-		if candidate.contextMayContribute && contextBytes > maxDecodedCandidateLen {
-			*status |= DecodeByteLimit
-		}
 	} else if hasSurroundingContext && candidate.decodedMayContribute {
 		contextBytes := len(input) - (candidate.span.end - candidate.span.start) + len(candidate.decoded)
-		if contextBytes > maxDecodedCandidateLen {
+		if !consumeProtectedContextWork(work, status, contextBytes) {
+			return
+		}
+		var bounded bool
+		candidate.contextual, bounded = contextualAdmissionCandidate(input, candidate.span, candidate.decoded)
+		if !bounded {
 			*status |= DecodeByteLimit
 
 			return
 		}
-		if !consumeProtectedContextWork(work, status, contextBytes) {
-			return
-		}
-		candidate.contextual = replaceDecodedSpan(input, candidate.span, candidate.decoded)
-		candidate.contextMayContribute, nestedStatus = protectedDecodedContribution(candidate.contextual, mayContribute)
+		candidate.contextMayContribute, nestedStatus = contextualWindowContribution(candidate.contextual, mayContribute)
 		mergeDecodeStatus(status, nestedStatus)
 	}
 }
@@ -332,19 +350,18 @@ func classifyEmbeddedContextCandidate(
 	candidate *decodedContextCandidate,
 	nested DecodeResult,
 	matcher EmbeddedContextMatcher,
-	status *DecodeStatus,
 ) {
 	candidate.contextMayContribute = embeddedContextContributes(input, candidate.span, candidate.decoded, nested, matcher)
 	if !candidate.contextMayContribute {
 		return
 	}
-	contextBytes := len(input) - (candidate.span.end - candidate.span.start) + len(candidate.decoded)
-	if contextBytes > maxDecodedCandidateLen {
-		*status |= DecodeByteLimit
+	contextual, bounded := contextualAdmissionCandidate(input, candidate.span, candidate.decoded)
+	if !bounded {
+		candidate.contextMayContribute = false
 
 		return
 	}
-	candidate.contextual = replaceDecodedSpan(input, candidate.span, candidate.decoded)
+	candidate.contextual = contextual
 }
 
 func (c decodedContextCandidate) hasContext() bool {

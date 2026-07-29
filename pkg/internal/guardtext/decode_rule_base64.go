@@ -2,6 +2,7 @@ package guardtext
 
 func shortRuleBase64Spans(
 	input string,
+	seenWholes *spanContextSeen,
 	mayContribute func(string) bool,
 	embeddedContextMayContribute EmbeddedContextMatcher,
 	work *protectedDecodeWork,
@@ -19,6 +20,9 @@ func shortRuleBase64Spans(
 		}
 
 		whole := encodedSpan{start: start, end: match.next}
+		if seenWholes.duplicate(input, whole) {
+			continue
+		}
 		if pathSegments, ok := httpURLPathBase64Segments(input, whole, 4); ok {
 			for _, segment := range pathSegments {
 				spans, seen = appendShortRuleBase64Whole(spans, seen, input, segment, mayContribute, embeddedContextMayContribute, work, status)
@@ -54,6 +58,7 @@ func appendShortRuleBase64Whole(
 			spans,
 			input,
 			whole,
+			chargeReadableOnly,
 			true,
 			true,
 			embeddedDirectOrContext,
@@ -98,11 +103,15 @@ func readableBase64Span(
 	work *protectedDecodeWork,
 	status *DecodeStatus,
 ) bool {
-	if (span.end-span.start)%4 == 1 || !consumeProtectedDecodeWork(work, status, span.end-span.start) {
+	if (span.end-span.start)%4 == 1 {
 		return false
 	}
 	decoded, err := DecodeBase64Candidate(input[span.start:span.end])
-	return err == nil && IsReadableText(decoded)
+	if err != nil || !IsReadableText(decoded) {
+		return false
+	}
+
+	return consumeProtectedDecodeWork(work, status, span.end-span.start)
 }
 
 func appendMatchingShortBase64Span(
@@ -124,6 +133,7 @@ func appendMatchingShortBase64Span(
 		spans,
 		input,
 		span,
+		chargePerAttempt,
 		true,
 		true,
 		embeddedDirectOrContext,

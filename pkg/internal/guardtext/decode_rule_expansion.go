@@ -1,5 +1,7 @@
 package guardtext
 
+import "strings"
+
 func (d *contextDecoder) deferRuleExpansion(current decodeQueueEntry, candidate string) bool {
 	if candidate == current.text {
 		return false
@@ -47,6 +49,14 @@ func (d *contextDecoder) observeRuleExpansion(current decodeQueueEntry, candidat
 		contextual = replaceDecodedSpan(current.text, candidate.span, candidate.decoded)
 	}
 	if hasPlausibleShortRuleDecodeSurface(candidate.decoded) {
+		// depth≥1에서 root 원문에 그대로 있는 토큰의 미검증 plausible 확장 요구는
+		// root 레벨 확장이 이미 책임지므로 status 없이 생략한다. 그대로 두면 이음새
+		// 근처 이웃 재관찰이 depth 한도에 닿아 정상 반복 본문이 fail-closed 차단된다.
+		// 디코드로 새로 드러난 토큰은 root에 없어 기존 fail-closed가 그대로 남는다.
+		if current.depth >= 1 && d.rootContainsValue(current.text[candidate.span.start:candidate.span.end]) {
+			return false
+		}
+
 		return d.deferRuleExpansion(current, contextual)
 	}
 
@@ -147,4 +157,14 @@ func encodedSpanCrossesReplacementBoundary(span, replacement encodedSpan) bool {
 
 func encodedSpansOverlap(left, right encodedSpan) bool {
 	return left.start < right.end && right.start < left.end
+}
+
+func (d *contextDecoder) rootContainsValue(value string) bool {
+	for _, root := range d.roots {
+		if strings.Contains(root, value) {
+			return true
+		}
+	}
+
+	return false
 }

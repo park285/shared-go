@@ -49,6 +49,7 @@ func decodeCandidatesWithContextForRules(
 		decodeContextSurfaces(
 			current.text,
 			decodeContextOptions{filterCandidates: true, boundOversizedStandard: true},
+			decoder.seenWholes,
 			mayContribute,
 			embeddedContextMayContribute,
 			oversizedWouldBlock,
@@ -79,6 +80,7 @@ func decodeCandidatesWithContextForRules(
 
 		decodeShortRuleSurfaces(
 			current.text,
+			decoder.seenWholes,
 			mayContribute,
 			embeddedContextMayContribute,
 			&decoder.protectedWork,
@@ -97,14 +99,22 @@ func newRuleContextDecoder(
 	embeddedContextMayContribute EmbeddedContextMatcher,
 	oversizedWouldBlock func(string, string, []string) bool,
 ) contextDecoder {
-	return contextDecoder{
+	decoder := contextDecoder{
 		result:                       DecodeResult{Candidates: make([]string, 0, maxDecodeCandidates)},
 		queue:                        make([]decodeQueueEntry, 0, len(roots)+maxDecodeCandidates),
 		visited:                      make(map[string]struct{}, len(roots)+maxDecodeCandidates),
 		mayContribute:                mayContribute,
 		embeddedContextMayContribute: embeddedContextMayContribute,
 		oversizedWouldBlock:          oversizedWouldBlock,
+		roots:                        roots,
 	}
+	for _, root := range roots {
+		if decoder.seenWholes = newSpanContextSeen(root); decoder.seenWholes != nil {
+			break
+		}
+	}
+
+	return decoder
 }
 
 func decodeSingleShortRuleContext(input string, mayContribute func(string) bool) (DecodeResult, bool) {
@@ -123,12 +133,6 @@ func decodeSingleShortRuleContext(input string, mayContribute func(string) bool)
 		if len(match.value) < 4 || len(match.value) > maxShortBase64CandidateLen {
 			continue
 		}
-		if !consumeProtectedDecodeWork(&work, &status, len(match.value)) {
-			return DecodeResult{Status: status}, true
-		}
-		if !consumeContextDecodeScan(&scans, &status) {
-			return DecodeResult{}, false
-		}
 
 		var storage [maxShortBase64CandidateLen]byte
 		decoded, err := decodeBase64CandidateInto(storage[:], match.value)
@@ -137,6 +141,12 @@ func decodeSingleShortRuleContext(input string, mayContribute func(string) bool)
 				return DecodeResult{}, false
 			}
 			continue
+		}
+		if !consumeProtectedDecodeWork(&work, &status, len(match.value)) {
+			return DecodeResult{Status: status}, true
+		}
+		if !consumeContextDecodeScan(&scans, &status) {
+			return DecodeResult{}, false
 		}
 
 		decodedText := string(decoded)
@@ -190,15 +200,15 @@ func shortRuleCandidateContribution(
 	if !consumeProtectedContextWork(work, &status, contextBytes) {
 		return "", false, status
 	}
-	contextual := replaceDecodedSpan(input, span, decoded)
+	contextual, bounded := contextualAdmissionCandidate(input, span, decoded)
+	if !bounded {
+		return "", false, DecodeByteLimit
+	}
 	if !contributes {
 		contributes, status = matchingContextualDecodedContribution(input, span, decoded, nested, mayContribute)
 	}
 	if status != 0 || !contributes {
 		return contextual, false, status
-	}
-	if contextBytes > maxDecodedCandidateLen {
-		return "", false, DecodeByteLimit
 	}
 	return contextual, true, 0
 }
@@ -234,6 +244,7 @@ func hasPlausibleShortRuleDecodeSurface(input string) bool {
 
 func decodeShortRuleSurfaces(
 	input string,
+	seenWholes *spanContextSeen,
 	mayContribute func(string) bool,
 	embeddedContextMayContribute EmbeddedContextMatcher,
 	work *protectedDecodeWork,
@@ -241,7 +252,7 @@ func decodeShortRuleSurfaces(
 	status *DecodeStatus,
 	admitContextual func(encodedSpan, string),
 ) {
-	base64Spans := shortRuleBase64Spans(input, mayContribute, embeddedContextMayContribute, work, status)
+	base64Spans := shortRuleBase64Spans(input, seenWholes, mayContribute, embeddedContextMayContribute, work, status)
 	hexSpans := matchingShortHexSpans(input, mayContribute, embeddedContextMayContribute, work, status)
 	families := []transformFamily{
 		{kind: decodeBase64, input: input, spans: base64Spans},
