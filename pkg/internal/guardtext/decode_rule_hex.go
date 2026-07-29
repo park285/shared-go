@@ -36,7 +36,7 @@ func matchingShortHexSpans(
 				if !consumeProtectedContextWork(work, status, contextBytes) {
 					break
 				}
-				contributes, nestedStatus = matchingContextualDecodedContribution(input, contextSpan, string(decoded), nested, mayContribute)
+				contributes, nestedStatus = matchingContextualDecodedContribution(input, contextSpan, string(decoded), nested, mayContribute, work)
 				mergeDecodeStatus(status, nestedStatus)
 			}
 			if contributes && contextBytes > maxDecodedCandidateLen {

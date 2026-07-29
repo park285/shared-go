@@ -3,6 +3,7 @@ package outputguard
 import (
 	"encoding/base64"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -36,6 +37,29 @@ func BenchmarkOutputGuardProtectedOversizeContext(b *testing.B) {
 	}
 	if evaluation := bound.Check(text); evaluation.Decision != DecisionBlock || !slices.Contains(evaluation.ReasonCodes, ReasonDecodeIncomplete) {
 		b.Fatalf("Check() evaluation = %+v, want pre-allocation byte-limit block", evaluation)
+	}
+
+	b.ReportAllocs()
+	b.SetBytes(int64(len(text)))
+	b.ResetTimer()
+	for range b.N {
+		_ = bound.Check(text)
+	}
+}
+
+func BenchmarkOutputGuardReadableFlood(b *testing.B) {
+	var builder strings.Builder
+	for index := range 400 {
+		builder.WriteString(base64.StdEncoding.EncodeToString([]byte("distinct readable payload " + strconv.Itoa(index))))
+		builder.WriteByte(' ')
+	}
+	text := builder.String()
+	bound, err := NewGuard().Bind([]string{longformSystemPrompt})
+	if err != nil {
+		b.Fatalf("Bind() error = %v", err)
+	}
+	if evaluation := bound.Check(text); evaluation.Decision != DecisionBlock || !slices.Contains(evaluation.ReasonCodes, ReasonDecodeIncomplete) {
+		b.Fatalf("Check() evaluation = %+v, want budget-exhausted incomplete decode", evaluation)
 	}
 
 	b.ReportAllocs()

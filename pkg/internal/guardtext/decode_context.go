@@ -326,7 +326,7 @@ func classifyCandidateContribution(
 
 			return
 		}
-		candidate.contextMayContribute, nestedStatus = matchingContextualDecodedContribution(input, candidate.span, candidate.decoded, nested, mayContribute)
+		candidate.contextMayContribute, nestedStatus = matchingContextualDecodedContribution(input, candidate.span, candidate.decoded, nested, mayContribute, work)
 		mergeDecodeStatus(status, nestedStatus)
 	} else if hasSurroundingContext && candidate.decodedMayContribute {
 		contextBytes := len(input) - (candidate.span.end - candidate.span.start) + len(candidate.decoded)

@@ -307,7 +307,7 @@ func appendProtectedBase64Span(
 			return spans, true
 		}
 		if strictContribution {
-			contributes, nestedStatus = matchingContextualDecodedContribution(input, span, decoded, nested, mayContribute)
+			contributes, nestedStatus = matchingContextualDecodedContribution(input, span, decoded, nested, mayContribute, work)
 		} else {
 			contributes, nestedStatus = contextualWindowContribution(contextualMatchSurface(input, span, decoded), mayContribute)
 		}
@@ -491,12 +491,16 @@ func matchingDecodedContributionDetails(decoded string, mayContribute func(strin
 // 규칙 regex 폭(≤~120자)은 윈도우(±256 rune)에 완전히 포함되므로 탐지 동치이고,
 // 전체 splice로 매칭하면 후보마다 입력 전체 크기의 regex 표면이 만들어져 고유
 // readable 토큰 폭탄에서 검사 비용이 입력 크기에 비례 폭증한다(측정 14s→2s대).
+// 첫 표면(decoded)은 호출부의 contextBytes 선과금이 담당하고, 후보 표면은 여기서
+// 생성 크기만큼 추가 과금한다 — 과금 없이는 full-splice 폴백에서 단일 선과금으로
+// 후보 수×입력 크기의 regex 표면이 실행되는 미과금 배수가 생긴다.
 func matchingContextualDecodedContribution(
 	input string,
 	span encodedSpan,
 	decoded string,
 	nested DecodeResult,
 	mayContribute func(string) bool,
+	work *protectedDecodeWork,
 ) (bool, DecodeStatus) {
 	if mayContribute == nil {
 		return true, 0
@@ -504,13 +508,18 @@ func matchingContextualDecodedContribution(
 	if mayContribute(contextualMatchSurface(input, span, decoded)) {
 		return true, 0
 	}
+	var status DecodeStatus
 	for _, candidate := range nested.Candidates {
-		if mayContribute(contextualMatchSurface(input, span, candidate)) {
-			return true, 0
+		surface := contextualMatchSurface(input, span, candidate)
+		if !consumeProtectedContextWork(work, &status, len(surface)) {
+			return false, status
+		}
+		if mayContribute(surface) {
+			return true, status
 		}
 	}
 
-	return false, 0
+	return false, status
 }
 
 // 윈도우가 raw 한도를 넘는 희귀 경로에서는 잘라내지 않고 전체 splice로 매칭한다.
