@@ -379,7 +379,7 @@
 
 - package `doc.go`에서 생성된 public-surface와 internal-helper 목록을 제거하고 package 개요와
   사용 예시는 유지했습니다.
-- `REFACTORING_PLAN_20260602.md`에 이 작업의 완료된 P1/P3 결정을 기록했습니다.
+- `docs/REFACTORING_PLAN_20260602.md`에 이 작업의 완료된 P1/P3 결정을 기록했습니다.
 
 ## v1.26.1 - 2026-07-03
 

@@ -1,6 +1,6 @@
 # shared-go 리팩토링 계획 (2026-06-02)
 
-> cross-cutting 마스터: `iris-stack/docs/REFACTORING_PLAN_20260602.md`
+> cross-cutting 마스터: `iris-stack/docs/archive/REFACTORING_PLAN_20260602.md`
 > 범위: `pkg/{logging,httputil,runtime/*,json,jsonutil,telemetry,backoff,workerpool,workerconfig,stringutil,ginjson,envutil}` (~3.5K LOC, v1.5.0)
 > 소비자: cbgk 69파일 + hololive-bot 295파일. **breaking change는 비싸므로 additive 우선.**
 
