@@ -5,6 +5,52 @@
 
 ## 미출시
 
+### 보안
+
+- `netguard.GuardedClient`가 표준 `*http.Transport` 경로에도 request 시점 scheme/host/port
+  검증을 적용하고, `resolveDialAddresses`가 dial 직전에 `AllowedHosts`/`AllowHost`를 강제합니다.
+  기존에는 `GuardedClient`와 `GuardedTransport`의 dial 경로가 port와 IP만 검사해 host allowlist가
+  적용되지 않았습니다. dial을 통제할 수 없는 opaque `RoundTripper`에는 IP 정책을 보장하지 않음을
+  문서로 명시하고, `Policy.RequireGuardedDial`과 `DialGuardedRoundTripper` 계약,
+  `ErrUnguardedTransport`로 fail-closed 선택지를 추가합니다.
+- `netguard.RedirectPolicy`의 credential 유지 경계를 hostname 단위에서 normalized scheme +
+  hostname + effective port의 same-origin 단위로 좁힙니다. `ForwardHeaders=false`일 때
+  same-host/different-port와 HTTPS→HTTP downgrade redirect에서도 `Authorization` 등 기존 header를
+  제거합니다. 비교 기준은 직전 hop이 아니라 최초 요청(`via[0]`) origin입니다. `net/http`가 hop마다
+  최초 요청 header 사본을 복원하므로, 직전 hop과 비교하면 hop1에서 제거한 header가 hop2에서
+  복원되어 다시 새어 나갑니다.
+- `netguard`의 host 비교를 IDN-safe하게 맞춥니다. dial 계층은 punycode, request 계층은 unicode
+  host를 보므로 allowlist와 후보를 모두 punycode ASCII로 정규화해 비교합니다. 이전에는 unicode·
+  punycode 어느 형태로 allowlist를 적어도 한쪽 계층이 매치하지 못했습니다. 이를 위해
+  `golang.org/x/net`이 indirect에서 direct dependency로 승격됩니다(버전 변경 없음).
+- `netguard.Policy.RequireGuardedDial`이 어떤 조합에서도 검증을 약화시키지 않습니다.
+  `DialGuardedRoundTripper` 선언은 `RequireGuardedDial` 요구 충족만 의미하며, opaque RoundTripper
+  경로의 request 시점 `ValidateTarget`(resolve + IP 정책)은 선언 여부와 무관하게 항상 실행됩니다.
+- `netguard`의 request 거부 경로가 `RoundTripper` 계약대로 `req.Body`를 닫습니다.
+- `envutil.LoadDotenvFile` strict 모드의 TOCTOU를 제거합니다. `Lstat` 검사 후 별도 `os.Open`으로
+  다시 여는 대신 no-follow FD를 먼저 열고 fstat, `os.SameFile`, regular-file, mode를 검증한 뒤 그
+  FD에서 읽습니다. regular-file 검사가 없어 0600 FIFO가 startup을 무기한 막을 수 있던 문제도 함께
+  닫습니다(no-follow open에 `O_NONBLOCK` 추가). non-strict local dotenv 동작은 그대로입니다.
+- `logging` sanitize handler에 credential 정책과 분리된 privacy exact-key 정책을 추가합니다.
+  `room`, `room_id`, `chat_id`, `user_id`, `user_name`, `room_name`, `thread_id`,
+  `session_thread_id`, `sender`, `game_key`는 `Resolve()` 직후 모든 `slog.Kind`와 nested group에서
+  마스킹됩니다. `channel_id`, `video_id` 같은 공개 콘텐츠 ID를 지키기 위해 `*_id` 전면 마스킹은
+  쓰지 않습니다. `WithGroup`/`Group` 이름이 privacy key면(`WithGroup("sender")`) 그 아래 attr은
+  key와 무관하게 전부 마스킹되고, `slog.Any`의 `map[string]any`는 map key를 걸어 값을 마스킹합니다
+  (호출자 map은 변형하지 않고 hit일 때만 사본을 만듭니다).
+
+### 알려진 한계
+
+- privacy 마스킹은 attr key와 `map[string]any` key에만 적용됩니다. **struct 필드(reflection),
+  error/message 문자열에 보간된 식별자(`fmt.Errorf("user_id=%s", …)`), log message 본문은 이번
+  범위에서 마스킹되지 않습니다.** 이 경로는 callsite 정리와 정적 스윕이 소유합니다.
+  `map[string]string` 등 다른 map 타입도 아직 대상이 아닙니다.
+- `GuardedClient`가 반환하는 client의 `Transport`는 더 이상 `*http.Transport`로 타입 단언되지
+  않습니다(`CloseIdleConnections`는 위임합니다). 내부 transport 접근이 필요하면 정책 구성 시점에
+  직접 보관하십시오.
+- no-follow open을 지원하지 않는 플랫폼(`!unix`)에서 strict dotenv는 **의도적으로 항상 실패**합니다.
+  non-strict local dotenv 경로는 그대로 동작합니다.
+
 ## v1.37.0 - 2026-07-28
 
 ### 보안

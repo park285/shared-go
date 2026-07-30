@@ -256,6 +256,7 @@ func TestSanitizeHandler_MixedScenario(t *testing.T) {
 		slog.String("password", "super_secret_pass"),
 		slog.String("header", "Bearer abc123.def456.ghi789"),
 		slog.Int("user_id", 42),
+		slog.String("video_id", "dQw4w9WgXcQ"),
 		slog.Group("metadata",
 			slog.String("api_key", "ak_xyz"),
 			slog.String("ip", "192.168.1.1"),
@@ -272,8 +273,14 @@ func TestSanitizeHandler_MixedScenario(t *testing.T) {
 	if !strings.Contains(output, "Bearer ***REDACTED***") {
 		t.Errorf("Expected Bearer token to be masked, got: %s", output)
 	}
-	if !strings.Contains(output, "user_id=42") {
-		t.Errorf("Expected user_id to be preserved, got: %s", output)
+	if strings.Contains(output, "user_id=42") {
+		t.Errorf("Expected user_id to be masked, got: %s", output)
+	}
+	if !strings.Contains(output, "user_id=***REDACTED***") {
+		t.Errorf("Expected user_id placeholder, got: %s", output)
+	}
+	if !strings.Contains(output, "video_id=dQw4w9WgXcQ") {
+		t.Errorf("Expected public content id to be preserved, got: %s", output)
 	}
 	if strings.Contains(output, "ak_xyz") {
 		t.Errorf("Expected api_key in group to be masked, got: %s", output)
@@ -283,8 +290,8 @@ func TestSanitizeHandler_MixedScenario(t *testing.T) {
 	}
 
 	redactedCount := strings.Count(output, "***REDACTED***")
-	if redactedCount < 2 {
-		t.Errorf("Expected at least 2 redactions (password + api_key), got %d in: %s", redactedCount, output)
+	if redactedCount < 3 {
+		t.Errorf("Expected at least 3 redactions (password + api_key + user_id), got %d in: %s", redactedCount, output)
 	}
 }
 

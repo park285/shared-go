@@ -61,7 +61,7 @@ func LoadDotenv(opts DotenvOptions) error {
 	return nil
 }
 
-// LoadDotenvFile는 dotenv 파일을 로드하며 strict 모드에서 symlink와 world-accessible 파일을 거부한다.
+// LoadDotenvFile는 dotenv 파일을 로드하며 strict 모드에서 symlink, non-regular file, world-accessible 파일을 거부한다.
 func LoadDotenvFile(path string, required bool, strict bool) error {
 	path = strings.TrimSpace(path)
 	if path == "" {
@@ -81,16 +81,48 @@ func LoadDotenvFile(path string, required bool, strict bool) error {
 	if info.IsDir() {
 		return fmt.Errorf("dotenv path is directory path=%s", path)
 	}
-	if strict {
-		if info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("dotenv file must not be symlink path=%s", path)
-		}
-		if info.Mode().Perm()&0o007 != 0 {
-			return fmt.Errorf("dotenv file is world-accessible path=%s mode=%s", path, info.Mode().Perm().String())
-		}
+	if !strict {
+		return loadDotenvFile(path)
+	}
+	if err := checkStrictDotenvMode(path, info); err != nil {
+		return err
+	}
+	return loadStrictDotenvFile(path, info)
+}
+
+func checkStrictDotenvMode(path string, info os.FileInfo) error {
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("dotenv file must not be symlink path=%s", path)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("dotenv file must be regular file path=%s mode=%s", path, info.Mode().String())
+	}
+	if info.Mode().Perm()&0o007 != 0 {
+		return fmt.Errorf("dotenv file is world-accessible path=%s mode=%s", path, info.Mode().Perm().String())
+	}
+	return nil
+}
+
+func loadStrictDotenvFile(path string, info os.FileInfo) error {
+	file, err := openSecretFileNoFollow(path)
+	if err != nil {
+		return fmt.Errorf("open dotenv file %s: %w", path, err)
 	}
 
-	return loadDotenvFile(path)
+	openedInfo, statErr := file.Stat()
+	if statErr != nil {
+		_ = file.Close()
+		return fmt.Errorf("stat dotenv file failed path=%s: %w", path, statErr)
+	}
+	if err := checkStrictDotenvMode(path, openedInfo); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if !os.SameFile(info, openedInfo) {
+		_ = file.Close()
+		return fmt.Errorf("dotenv file changed while opening path=%s", path)
+	}
+	return scanDotenvFile(file, path)
 }
 
 func loadServiceDotenv(serviceName string) (bool, error) {
@@ -114,7 +146,10 @@ func loadDotenvFile(path string) error {
 	if err != nil {
 		return fmt.Errorf("open dotenv file %s: %w", path, err)
 	}
+	return scanDotenvFile(file, path)
+}
 
+func scanDotenvFile(file *os.File, path string) error {
 	scanner := bufio.NewScanner(file)
 	var scanErr error
 	for scanner.Scan() {
