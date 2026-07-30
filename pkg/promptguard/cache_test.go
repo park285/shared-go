@@ -1,7 +1,6 @@
 package promptguard
 
 import (
-	"sync"
 	"testing"
 	"time"
 )
@@ -9,14 +8,15 @@ import (
 func TestTTLCacheGetSetAndExpire(t *testing.T) {
 	t.Parallel()
 
-	cache := NewTTLCache[string, int](2, 20*time.Millisecond)
+	now := time.Date(2026, time.July, 12, 0, 0, 0, 0, time.UTC)
+	cache := newTTLCache[string, int](2, time.Minute, func() time.Time { return now })
 	cache.Set("a", 1)
 
 	if got, ok := cache.Get("a"); !ok || got != 1 {
 		t.Fatalf("Get() = (%v, %v), want (1, true)", got, ok)
 	}
 
-	time.Sleep(30 * time.Millisecond)
+	now = now.Add(2 * time.Minute)
 
 	if _, ok := cache.Get("a"); ok {
 		t.Fatal("Get() expired entry ok = true, want false")
@@ -59,29 +59,6 @@ func TestTTLCacheUpdateAtCapacityPreservesOtherEntry(t *testing.T) {
 		if got, ok := cache.Get("b"); !ok || got != 2 {
 			t.Fatalf("Get(b) = (%d, %v), want (2, true)", got, ok)
 		}
-	}
-}
-
-func TestTTLCacheExpirationUsesInjectedClock(t *testing.T) {
-	t.Parallel()
-
-	now := time.Date(2026, time.July, 12, 0, 0, 0, 0, time.UTC)
-	var mu sync.Mutex
-	clock := func() time.Time {
-		mu.Lock()
-		defer mu.Unlock()
-
-		return now
-	}
-	cache := newTTLCache[string, int](2, time.Minute, clock)
-	cache.Set("a", 1)
-
-	mu.Lock()
-	now = now.Add(2 * time.Minute)
-	mu.Unlock()
-
-	if _, ok := cache.Get("a"); ok {
-		t.Fatal("Get(a) ok = true after expiry, want false")
 	}
 }
 
