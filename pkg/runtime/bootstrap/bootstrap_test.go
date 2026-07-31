@@ -30,6 +30,10 @@ func (r *testRuntime) Close() {
 	r.closeCalls++
 }
 
+func newUnsanitizedTestLogger(buf *bytes.Buffer) *slog.Logger {
+	return slog.New(slog.NewTextHandler(buf, nil))
+}
+
 func TestRun_ReturnsExitCodeOneWhenLoadConfigFails(t *testing.T) {
 	t.Parallel()
 
@@ -281,7 +285,7 @@ func TestRun_RedactsBuildRuntimeErrorObject(t *testing.T) {
 		Initialize: func(string) {},
 		LoadConfig: func() (*testConfig, error) { return &testConfig{}, nil },
 		NewLogger: func(*testConfig) (*slog.Logger, error) {
-			return sharedlogging.NewTestLoggerWithOutput(&logs), nil
+			return newUnsanitizedTestLogger(&logs), nil
 		},
 		BuildRuntime: func(context.Context, *testConfig, *slog.Logger) (*testRuntime, error) {
 			return nil, errors.New("API_TOKEN=" + canary)

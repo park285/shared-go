@@ -172,7 +172,7 @@ func TestSanitizeHandler_NestedGroups(t *testing.T) {
 	}
 }
 
-func TestSanitizeHandler_NonStringValues(t *testing.T) {
+func TestSanitizeHandler_NonStringValuesMaskedByKey(t *testing.T) {
 	var buf bytes.Buffer
 	baseHandler := slog.NewTextHandler(&buf, nil)
 	sanitized := newSanitizeHandler(baseHandler)
@@ -182,20 +182,86 @@ func TestSanitizeHandler_NonStringValues(t *testing.T) {
 		slog.Int("token", 12345),
 		slog.Bool("password", true),
 		slog.Float64("secret", 3.14),
+		slog.Int("attempt", 42),
 	)
 	output := buf.String()
 
-	if strings.Contains(output, "***REDACTED***") {
-		t.Errorf("Non-string values should not be redacted, got: %s", output)
+	for _, leaked := range []string{"12345", "3.14"} {
+		if strings.Contains(output, leaked) {
+			t.Errorf("non-string value under a credential key leaked %q, got: %s", leaked, output)
+		}
 	}
-	if !strings.Contains(output, "12345") {
-		t.Errorf("Expected int value to be preserved, got: %s", output)
+	for _, key := range []string{"token", "password", "secret"} {
+		if !strings.Contains(output, key+"=***REDACTED***") {
+			t.Errorf("expected %s to be redacted, got: %s", key, output)
+		}
 	}
-	if !strings.Contains(output, "true") {
-		t.Errorf("Expected bool value to be preserved, got: %s", output)
+	if !strings.Contains(output, "attempt=42") {
+		t.Errorf("non-sensitive non-string value must be preserved, got: %s", output)
 	}
-	if !strings.Contains(output, "3.14") {
-		t.Errorf("Expected float value to be preserved, got: %s", output)
+}
+
+func credentialBranchOutput(t *testing.T, build func(*slog.Logger) *slog.Logger, attrs ...slog.Attr) string {
+	t.Helper()
+
+	var buf bytes.Buffer
+	logger := slog.New(newSanitizeHandler(slog.NewTextHandler(&buf, nil)))
+	if build != nil {
+		logger = build(logger)
+	}
+	logger.LogAttrs(t.Context(), slog.LevelInfo, "credential", attrs...)
+	return buf.String()
+}
+
+func TestSanitizeHandler_CredentialKeysMaskedAcrossValueBranches(t *testing.T) {
+	const secret = "SECRETVALUE"
+
+	cases := []struct {
+		name  string
+		build func(*slog.Logger) *slog.Logger
+		attrs []slog.Attr
+	}{
+		{
+			name:  "kind_string",
+			attrs: []slog.Attr{slog.String("access_token", secret)},
+		},
+		{
+			name:  "kind_any_map_with_privacy_key",
+			attrs: []slog.Attr{slog.Any("token", map[string]any{"raw": secret, "user_id": "u-1"})},
+		},
+		{
+			name:  "kind_any_map_without_privacy_key",
+			attrs: []slog.Attr{slog.Any("token", map[string]any{"raw": secret})},
+		},
+		{
+			name:  "kind_group_inline",
+			attrs: []slog.Attr{slog.Group("access_token", slog.String("raw", secret))},
+		},
+		{
+			name: "kind_group_via_with_attrs",
+			build: func(l *slog.Logger) *slog.Logger {
+				return l.With(slog.Group("bot_token", slog.String("raw", secret)))
+			},
+			attrs: []slog.Attr{slog.String("stage", "probe")},
+		},
+		{
+			name:  "with_group_named_credential_key",
+			build: func(l *slog.Logger) *slog.Logger { return l.WithGroup("access_token") },
+			attrs: []slog.Attr{slog.String("raw", secret)},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			output := credentialBranchOutput(t, tc.build, tc.attrs...)
+
+			if strings.Contains(output, secret) {
+				t.Fatalf("credential value survived masking: %s", output)
+			}
+			if !strings.Contains(output, redactedValue) {
+				t.Fatalf("no redaction marker in output: %s", output)
+			}
+		})
 	}
 }
 
@@ -256,6 +322,7 @@ func TestSanitizeHandler_MixedScenario(t *testing.T) {
 		slog.String("password", "super_secret_pass"),
 		slog.String("header", "Bearer abc123.def456.ghi789"),
 		slog.Int("user_id", 42),
+		slog.String("video_id", "dQw4w9WgXcQ"),
 		slog.Group("metadata",
 			slog.String("api_key", "ak_xyz"),
 			slog.String("ip", "192.168.1.1"),
@@ -272,8 +339,14 @@ func TestSanitizeHandler_MixedScenario(t *testing.T) {
 	if !strings.Contains(output, "Bearer ***REDACTED***") {
 		t.Errorf("Expected Bearer token to be masked, got: %s", output)
 	}
-	if !strings.Contains(output, "user_id=42") {
-		t.Errorf("Expected user_id to be preserved, got: %s", output)
+	if strings.Contains(output, "user_id=42") {
+		t.Errorf("Expected user_id to be masked, got: %s", output)
+	}
+	if !strings.Contains(output, "user_id=***REDACTED***") {
+		t.Errorf("Expected user_id placeholder, got: %s", output)
+	}
+	if !strings.Contains(output, "video_id=dQw4w9WgXcQ") {
+		t.Errorf("Expected public content id to be preserved, got: %s", output)
 	}
 	if strings.Contains(output, "ak_xyz") {
 		t.Errorf("Expected api_key in group to be masked, got: %s", output)
@@ -283,8 +356,8 @@ func TestSanitizeHandler_MixedScenario(t *testing.T) {
 	}
 
 	redactedCount := strings.Count(output, "***REDACTED***")
-	if redactedCount < 2 {
-		t.Errorf("Expected at least 2 redactions (password + api_key), got %d in: %s", redactedCount, output)
+	if redactedCount < 3 {
+		t.Errorf("Expected at least 3 redactions (password + api_key + user_id), got %d in: %s", redactedCount, output)
 	}
 }
 

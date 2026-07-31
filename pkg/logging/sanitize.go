@@ -23,6 +23,7 @@ package logging
 import (
 	"context"
 	"log/slog"
+	"maps"
 	"regexp"
 	"strings"
 )
@@ -34,6 +35,8 @@ var (
 )
 
 const (
+	redactedValue      = "***REDACTED***"
+	tokenUserID        = "user_id"
 	tokenAPIKey        = "api_key"
 	tokenAPIKeyCompact = "apikey"
 	tokenPasswd        = "passwd"
@@ -73,6 +76,20 @@ var sensitiveExactKeys = map[string]struct{}{
 	"database_url":     {},
 	"postgres_dsn":     {},
 	"connection_url":   {},
+}
+
+// 정확 일치만 사용한다. *_id suffix 규칙을 더하면 channel_id 같은 공개 콘텐츠 ID까지 가려진다.
+var privacyExactKeys = map[string]struct{}{
+	"room":              {},
+	"room_id":           {},
+	"room_name":         {},
+	"chat_id":           {},
+	tokenUserID:         {},
+	"user_name":         {},
+	"thread_id":         {},
+	"session_thread_id": {},
+	"sender":            {},
+	"game_key":          {},
 }
 
 func mightContainBearer(s string) bool {
@@ -162,7 +179,7 @@ func redactSecretAssignments(s string) string {
 			redacted.Grow(len(s))
 		}
 		redacted.WriteString(s[lastWritten:valueStart])
-		redacted.WriteString("***REDACTED***")
+		redacted.WriteString(redactedValue)
 		lastWritten = valueEnd
 		separator = valueEnd - 1
 	}
@@ -230,7 +247,7 @@ func (h *sanitizeHandler) Handle(ctx context.Context, record slog.Record) error 
 	msg := redactSecrets(record.Message)
 	changed := msg != record.Message
 
-	if !changed {
+	if !changed && !h.inMaskedGroup {
 		record.Attrs(func(attr slog.Attr) bool {
 			if _, attrChanged := sanitizeAttrChanged(attr); attrChanged {
 				changed = true
@@ -240,13 +257,13 @@ func (h *sanitizeHandler) Handle(ctx context.Context, record slog.Record) error 
 		})
 	}
 
-	if !changed {
+	if !changed && !h.inMaskedGroup {
 		return h.inner.Handle(ctx, record)
 	}
 
 	newRecord := slog.NewRecord(record.Time, record.Level, msg, record.PC)
 	record.Attrs(func(attr slog.Attr) bool {
-		newRecord.AddAttrs(sanitizeAttr(attr))
+		newRecord.AddAttrs(h.sanitizeOwnedAttr(attr))
 		return true
 	})
 	return h.inner.Handle(ctx, newRecord)
@@ -255,13 +272,25 @@ func (h *sanitizeHandler) Handle(ctx context.Context, record slog.Record) error 
 func (h *sanitizeHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	sanitized := make([]slog.Attr, 0, len(attrs))
 	for _, attr := range attrs {
-		sanitized = append(sanitized, sanitizeAttr(attr))
+		sanitized = append(sanitized, h.sanitizeOwnedAttr(attr))
 	}
-	return &sanitizeHandler{inner: h.inner.WithAttrs(sanitized)}
+	return &sanitizeHandler{inner: h.inner.WithAttrs(sanitized), inMaskedGroup: h.inMaskedGroup}
 }
 
+// 열린 group 이름이 privacy·credential key면 그 아래 attr은 key가 무엇이든 값이 그 식별자나
+// credential의 구성 요소다.
 func (h *sanitizeHandler) WithGroup(name string) slog.Handler {
-	return &sanitizeHandler{inner: h.inner.WithGroup(name)}
+	return &sanitizeHandler{
+		inner:         h.inner.WithGroup(name),
+		inMaskedGroup: h.inMaskedGroup || isPrivacyKey(name) || isSensitiveKey(name),
+	}
+}
+
+func (h *sanitizeHandler) sanitizeOwnedAttr(attr slog.Attr) slog.Attr {
+	if h.inMaskedGroup {
+		return slog.String(attr.Key, redactedValue)
+	}
+	return sanitizeAttr(attr)
 }
 
 func sanitizeAttr(attr slog.Attr) slog.Attr {
@@ -278,11 +307,18 @@ func sanitizeAttr(attr slog.Attr) slog.Attr {
 func sanitizeAttrChanged(attr slog.Attr) (slog.Attr, bool) {
 	changed := attr.Value.Kind() == slog.KindLogValuer
 	attr.Value = attr.Value.Resolve()
+	// key 기반 판정은 값을 읽지 않으므로 모든 값 분기(KindAny·KindGroup·KindString)보다 앞이어야
+	// 한다. 뒤에 두면 마스킹 여부가 값 타입이나 무관한 map 내용에 종속된다.
+	if isPrivacyKey(attr.Key) || isSensitiveKey(attr.Key) {
+		return slog.String(attr.Key, redactedValue), true
+	}
 	if attr.Value.Kind() == slog.KindAny {
-		if err, ok := attr.Value.Any().(error); ok {
-			if isSensitiveKey(attr.Key) {
-				return slog.String(attr.Key, "***REDACTED***"), true
+		if raw, ok := attr.Value.Any().(map[string]any); ok {
+			if masked, mapChanged := maskPrivacyMap(raw); mapChanged {
+				return slog.Any(attr.Key, masked), true
 			}
+		}
+		if err, ok := attr.Value.Any().(error); ok {
 			return slog.String(attr.Key, RedactDiagnostic(err.Error())), true
 		}
 	}
@@ -304,12 +340,8 @@ func sanitizeAttrChanged(attr slog.Attr) (slog.Attr, bool) {
 		return attr, changed
 	}
 
-	if isSensitiveKey(attr.Key) {
-		return slog.String(attr.Key, "***REDACTED***"), true
-	}
-
 	if isBroadValueKey(attr.Key) && isSecretLikeValue(attr.Value.String()) {
-		return slog.String(attr.Key, "***REDACTED***"), true
+		return slog.String(attr.Key, redactedValue), true
 	}
 
 	redacted := redactSecrets(attr.Value.String())
@@ -354,6 +386,27 @@ var broadValueKeys = map[string]struct{}{
 func isBroadValueKey(key string) bool {
 	_, ok := broadValueKeys[normalizeSensitiveKey(key)]
 	return ok
+}
+
+func isPrivacyKey(key string) bool {
+	_, ok := privacyExactKeys[normalizeSensitiveKey(key)]
+	return ok
+}
+
+// 호출자 map을 제자리에서 바꾸면 로깅이 호출자 상태를 변조하므로 hit일 때만 사본을 만든다.
+func maskPrivacyMap(raw map[string]any) (map[string]any, bool) {
+	var masked map[string]any
+	for key := range raw {
+		if !isPrivacyKey(key) {
+			continue
+		}
+		if masked == nil {
+			masked = make(map[string]any, len(raw))
+			maps.Copy(masked, raw)
+		}
+		masked[key] = redactedValue
+	}
+	return masked, masked != nil
 }
 
 var secretLikePrefixes = []string{

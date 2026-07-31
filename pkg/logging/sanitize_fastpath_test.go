@@ -27,7 +27,7 @@ func TestSanitizeHandler_FastPathPreservesCleanRecord(t *testing.T) {
 	r := slog.NewRecord(testTime(), slog.LevelInfo, "plain message no secrets", 0)
 	r.AddAttrs(
 		slog.String("username", "alice"),
-		slog.Int("user_id", 42),
+		slog.Int("attempt", 42),
 		slog.String("path", "/api/users"),
 	)
 	out := handleVia(t, r)
@@ -46,7 +46,7 @@ func TestSanitizeHandler_FastPathPreservesCleanRecord(t *testing.T) {
 		got[a.Key] = a.Value.String()
 		return true
 	})
-	if got["username"] != "alice" || got["user_id"] != "42" || got["path"] != "/api/users" {
+	if got["username"] != "alice" || got["attempt"] != "42" || got["path"] != "/api/users" {
 		t.Errorf("clean attrs altered: %#v", got)
 	}
 }

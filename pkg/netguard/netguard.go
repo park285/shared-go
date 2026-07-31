@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"golang.org/x/net/idna"
 )
 
 var (
@@ -21,6 +23,8 @@ var (
 	ErrTooManyRedirects = errors.New("netguard: too many redirects")
 	// ErrUnsupportedScheme는 URL scheme이 정책에서 허용되지 않을 때의 오류다.
 	ErrUnsupportedScheme = errors.New("netguard: unsupported URL scheme")
+	// ErrUnguardedTransport는 RequireGuardedDial이 dial 무보증 RoundTripper를 거부할 때의 오류다.
+	ErrUnguardedTransport = errors.New("netguard: transport does not guard its dial path")
 )
 
 var blockedAddressPrefixes = [...]netip.Prefix{
@@ -82,6 +86,15 @@ type Policy struct {
 	AllowedPorts []string
 	// Schemes는 허용할 URL scheme 목록이다.
 	Schemes []string
+	// RequireGuardedDial은 dial 무보증 RoundTripper를 GuardedClient에서 fail-closed로 거부한다.
+	RequireGuardedDial bool
+}
+
+// DialGuardedRoundTripper는 dial 시점 IP 정책을 보장할 수 없는 opaque RoundTripper가
+// 스스로 그 정책을 적용했다고 선언하는 계약이다.
+type DialGuardedRoundTripper interface {
+	http.RoundTripper
+	NetguardDialGuarded() bool
 }
 
 // RedirectConfig는 HTTP redirect 검증과 header 전달 정책이다.
@@ -92,7 +105,7 @@ type RedirectConfig struct {
 	MaxRedirects int
 	// DisableFollow는 redirect follow를 비활성화한다.
 	DisableFollow bool
-	// ForwardHeaders는 cross-host redirect에도 기존 header를 유지한다.
+	// ForwardHeaders는 cross-origin(scheme·host·port) redirect에도 기존 header를 유지한다.
 	ForwardHeaders bool
 	// CheckRedirect는 정책 검증 뒤 실행할 추가 redirect hook이다.
 	CheckRedirect func(req *http.Request, via []*http.Request) error
@@ -127,6 +140,29 @@ func NormalizeHost(host string) string {
 	return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
 }
 
+// dial 계층은 punycode, request 계층은 unicode host를 보므로 두 계층이 같은 형태를 비교하도록
+// allowlist와 후보를 모두 ASCII로 맞춘다. 변환 실패 시 unicode 그대로 두어 fail-closed로 남긴다.
+func normalizeHostASCII(host string) string {
+	normalized := NormalizeHost(host)
+	if isASCII(normalized) {
+		return normalized
+	}
+	ascii, err := idna.Lookup.ToASCII(normalized)
+	if err != nil {
+		return normalized
+	}
+	return strings.ToLower(ascii)
+}
+
+func isASCII(value string) bool {
+	for i := range len(value) {
+		if value[i] >= 0x80 {
+			return false
+		}
+	}
+	return true
+}
+
 // ValidateURL은 URL 문자열을 파싱하고 정책에 맞는지 검증한다.
 func (p Policy) ValidateURL(ctx context.Context, rawURL string) (*url.URL, error) {
 	trimmed := strings.TrimSpace(rawURL)
@@ -146,24 +182,11 @@ func (p Policy) ValidateURL(ctx context.Context, rawURL string) (*url.URL, error
 
 // ValidateTarget은 파싱된 URL 대상이 정책에 맞는지 검증한다.
 func (p Policy) ValidateTarget(ctx context.Context, target *url.URL) error {
-	if target == nil {
-		return errors.New("netguard: target URL is nil")
-	}
-	if err := p.validateScheme(target.Scheme); err != nil {
+	if err := p.validateRequestTarget(target); err != nil {
 		return err
 	}
 
-	host := NormalizeHost(target.Hostname())
-	if host == "" {
-		return errors.New("netguard: URL missing host")
-	}
-	if err := p.validateHost(host); err != nil {
-		return err
-	}
-	if err := p.validatePort(target); err != nil {
-		return err
-	}
-
+	host := normalizeHostASCII(target.Hostname())
 	ips, err := p.ResolveHost(ctx, host)
 	if err != nil {
 		return err
@@ -262,36 +285,78 @@ func GuardedTransport(base *http.Transport, p Policy) *http.Transport {
 }
 
 // GuardedClient는 http.Client transport에 Policy 검증을 적용한 복사본을 반환한다.
+// opaque RoundTripper 경로는 dial을 통제하지 못해 request 시점 resolve 결과만 검사하며,
+// 반환 client의 Transport는 더 이상 *http.Transport로 단언되지 않는다.
 func GuardedClient(client *http.Client, p Policy) *http.Client {
 	if client == nil {
 		client = &http.Client{}
 	}
 	cloned := *client
 	if cloned.Transport == nil {
-		cloned.Transport = GuardedTransport(nil, p)
+		cloned.Transport = guardedRoundTripper{base: GuardedTransport(nil, p), policy: p, dialGuarded: true}
 		return &cloned
 	}
 	if transport, ok := cloned.Transport.(*http.Transport); ok {
-		cloned.Transport = GuardedTransport(transport, p)
-	} else {
-		cloned.Transport = guardedRoundTripper{base: cloned.Transport, policy: p}
+		cloned.Transport = guardedRoundTripper{base: GuardedTransport(transport, p), policy: p, dialGuarded: true}
+		return &cloned
 	}
+
+	declaredDialGuarded := false
+	if capable, ok := cloned.Transport.(DialGuardedRoundTripper); ok {
+		declaredDialGuarded = capable.NetguardDialGuarded()
+	}
+	if !declaredDialGuarded && p.RequireGuardedDial {
+		cloned.Transport = unguardedRoundTripper{}
+		return &cloned
+	}
+	// 선언은 RequireGuardedDial 요구를 충족할 뿐이며 검증 강도를 낮추지 않는다.
+	cloned.Transport = guardedRoundTripper{base: cloned.Transport, policy: p}
 	return &cloned
 }
 
 type guardedRoundTripper struct {
-	base   http.RoundTripper
-	policy Policy
+	base        http.RoundTripper
+	policy      Policy
+	dialGuarded bool
 }
 
 func (g guardedRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req == nil || req.URL == nil {
+		closeRequestBody(req)
 		return nil, errors.New("netguard: request URL is nil")
 	}
+	if g.dialGuarded {
+		if err := g.policy.validateRequestTarget(req.URL); err != nil {
+			closeRequestBody(req)
+			return nil, err
+		}
+		return g.base.RoundTrip(req)
+	}
 	if err := g.policy.ValidateTarget(req.Context(), req.URL); err != nil {
+		closeRequestBody(req)
 		return nil, err
 	}
 	return g.base.RoundTrip(req)
+}
+
+// RoundTripper 계약상 거부 경로에서도 body를 닫아야 한다.
+func closeRequestBody(req *http.Request) {
+	if req != nil && req.Body != nil {
+		_ = req.Body.Close()
+	}
+}
+
+func (g guardedRoundTripper) CloseIdleConnections() {
+	if closer, ok := g.base.(interface{ CloseIdleConnections() }); ok {
+		closer.CloseIdleConnections()
+	}
+}
+
+type unguardedRoundTripper struct{}
+
+func (unguardedRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	closeRequestBody(req)
+	return nil, ErrUnguardedTransport
 }
 
 // RedirectPolicy는 redirect 대상도 Policy로 검증하는 CheckRedirect 함수다.
@@ -313,7 +378,9 @@ func RedirectPolicy(cfg RedirectConfig) func(req *http.Request, via []*http.Requ
 		if err := cfg.Policy.ValidateTarget(req.Context(), req.URL); err != nil {
 			return err
 		}
-		if !cfg.ForwardHeaders && len(via) > 0 && !sameHost(via[len(via)-1].URL, req.URL) {
+		// net/http는 hop마다 최초 요청 header 사본을 복원하므로 직전 hop이 아니라 최초 요청 origin과
+		// 비교해야 한다. 직전 hop과 비교하면 hop1에서 지운 header가 hop2에서 되살아난다.
+		if !cfg.ForwardHeaders && len(via) > 0 && !sameOrigin(via[0].URL, req.URL) {
 			stripHeaders(req)
 		}
 		if cfg.CheckRedirect != nil {
@@ -321,6 +388,24 @@ func RedirectPolicy(cfg RedirectConfig) func(req *http.Request, via []*http.Requ
 		}
 		return nil
 	}
+}
+
+func (p Policy) validateRequestTarget(target *url.URL) error {
+	if target == nil {
+		return errors.New("netguard: target URL is nil")
+	}
+	if err := p.validateScheme(target.Scheme); err != nil {
+		return err
+	}
+
+	host := NormalizeHost(target.Hostname())
+	if host == "" {
+		return errors.New("netguard: URL missing host")
+	}
+	if err := p.validateHost(host); err != nil {
+		return err
+	}
+	return p.validatePort(target)
 }
 
 func (p Policy) validateScheme(scheme string) error {
@@ -342,11 +427,12 @@ func (p Policy) validateScheme(scheme string) error {
 }
 
 func (p Policy) validateHost(host string) error {
-	if len(p.AllowedHosts) > 0 && !hostInList(host, p.AllowedHosts) {
-		return fmt.Errorf("%w: %s", ErrHostNotAllowed, host)
+	candidate := normalizeHostASCII(host)
+	if len(p.AllowedHosts) > 0 && !hostInList(candidate, p.AllowedHosts) {
+		return fmt.Errorf("%w: %s", ErrHostNotAllowed, candidate)
 	}
-	if p.AllowHost != nil && !p.AllowHost(host) {
-		return fmt.Errorf("%w: %s", ErrHostNotAllowed, host)
+	if p.AllowHost != nil && !p.AllowHost(candidate) {
+		return fmt.Errorf("%w: %s", ErrHostNotAllowed, candidate)
 	}
 	return nil
 }
@@ -374,6 +460,9 @@ func (p Policy) resolveDialAddresses(ctx context.Context, address string) ([]str
 	}
 	if portErr := p.validatePortString(port); portErr != nil {
 		return nil, portErr
+	}
+	if hostErr := p.validateHost(host); hostErr != nil {
+		return nil, hostErr
 	}
 
 	ips, err := p.ResolveHost(ctx, host)
@@ -412,9 +501,9 @@ func (p Policy) allowsIP(ip net.IP) bool {
 }
 
 func hostInList(host string, allowed []string) bool {
-	host = NormalizeHost(host)
+	host = normalizeHostASCII(host)
 	for _, candidate := range allowed {
-		if host == NormalizeHost(candidate) {
+		if host == normalizeHostASCII(candidate) {
 			return true
 		}
 	}
@@ -435,11 +524,17 @@ func effectivePort(target *url.URL) string {
 	}
 }
 
-func sameHost(a, b *url.URL) bool {
+func sameOrigin(a, b *url.URL) bool {
 	if a == nil || b == nil {
 		return false
 	}
-	return NormalizeHost(a.Hostname()) == NormalizeHost(b.Hostname())
+	if !strings.EqualFold(strings.TrimSpace(a.Scheme), strings.TrimSpace(b.Scheme)) {
+		return false
+	}
+	if normalizeHostASCII(a.Hostname()) != normalizeHostASCII(b.Hostname()) {
+		return false
+	}
+	return effectivePort(a) == effectivePort(b)
 }
 
 func stripHeaders(req *http.Request) {

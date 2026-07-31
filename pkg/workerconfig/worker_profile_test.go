@@ -2,6 +2,7 @@ package workerconfig
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -46,6 +47,9 @@ func TestDefaultIrisBotWebhookWorkerProfilePreservesCurrentCapacity(t *testing.T
 	if profile.Receive.MaxBodyBytes != 64<<10 {
 		t.Fatalf("Receive.MaxBodyBytes = %d, want 65536", profile.Receive.MaxBodyBytes)
 	}
+	if profile.Receive.DedupTTL != 16*time.Minute {
+		t.Fatalf("Receive.DedupTTL = %v, want 16m", profile.Receive.DedupTTL)
+	}
 	if profile.BotPool.Workers != 10 {
 		t.Fatalf("BotPool.Workers = %d, want 10", profile.BotPool.Workers)
 	}
@@ -77,7 +81,7 @@ func TestRuntimeDiagnosticsDecodesFieldConversions(t *testing.T) {
 			"enqueue_timeout_ms": 75,
 			"handler_timeout_ms": 30000,
 			"max_body_bytes": 131072,
-			"dedup_ttl_ms": 90000,
+			"dedup_ttl_ms": 960000,
 			"dedup_timeout_ms": 250
 		},
 		"validation": {
@@ -98,8 +102,8 @@ func TestRuntimeDiagnosticsDecodesFieldConversions(t *testing.T) {
 	if profile.Receive.EnqueueTimeout != 75*time.Millisecond {
 		t.Fatalf("Receive.EnqueueTimeout = %v, want 75ms", profile.Receive.EnqueueTimeout)
 	}
-	if profile.Receive.DedupTTL != 90*time.Second {
-		t.Fatalf("Receive.DedupTTL = %v, want 90s", profile.Receive.DedupTTL)
+	if profile.Receive.DedupTTL != 16*time.Minute {
+		t.Fatalf("Receive.DedupTTL = %v, want 16m", profile.Receive.DedupTTL)
 	}
 	if !strings.Contains(string(profile.CanonicalJSON()), `"lane_queue_capacity":96`) {
 		t.Fatalf("CanonicalJSON() = %s, want snake_case delivery fields", profile.CanonicalJSON())
@@ -129,7 +133,7 @@ func TestRuntimeDiagnosticsDefaultsBreakerFieldsIntoCanonicalProfile(t *testing.
 			"enqueue_timeout_ms": 50,
 			"handler_timeout_ms": 120000,
 			"max_body_bytes": 65536,
-			"dedup_ttl_ms": 60000,
+			"dedup_ttl_ms": 960000,
 			"dedup_timeout_ms": 200
 		},
 		"bot_pool": {
@@ -174,7 +178,7 @@ func TestCanonicalWorkerProfileV1Golden(t *testing.T) {
 		t.Fatalf("decodeRuntimeWorkerProfile() error = %v", err)
 	}
 
-	const wantHash = "48e6b84fe794daa2a349ebb77b6f9e8f1054e5bcfe336b7ab5fe2dbe1dcb8b1f"
+	const wantHash = "b69a100f0ac023758ab84c82fa8b21596d59f6c1f81e6c05ab93f2a08336f403"
 	if got := profile.ProfileHash(); got != wantHash {
 		t.Fatalf("ProfileHash() = %s, want %s; canonical=%s", got, wantHash, profile.CanonicalJSON())
 	}
@@ -200,7 +204,7 @@ func TestRuntimeDiagnosticsDecodesExplicitBotPool(t *testing.T) {
 			"enqueue_timeout_ms": 50,
 			"handler_timeout_ms": 120000,
 			"max_body_bytes": 65536,
-			"dedup_ttl_ms": 60000,
+			"dedup_ttl_ms": 960000,
 			"dedup_timeout_ms": 200
 		},
 		"bot_pool": {
@@ -246,7 +250,7 @@ func TestRuntimeDiagnosticsFallsBackToDefaultBotPoolWhenMissing(t *testing.T) {
 			"enqueue_timeout_ms": 50,
 			"handler_timeout_ms": 120000,
 			"max_body_bytes": 65536,
-			"dedup_ttl_ms": 60000,
+			"dedup_ttl_ms": 960000,
 			"dedup_timeout_ms": 200
 		},
 		"validation": {
@@ -285,7 +289,7 @@ func TestRuntimeDiagnosticsRejectsExplicitZeroBotPool(t *testing.T) {
 			"enqueue_timeout_ms": 50,
 			"handler_timeout_ms": 120000,
 			"max_body_bytes": 65536,
-			"dedup_ttl_ms": 60000,
+			"dedup_ttl_ms": 960000,
 			"dedup_timeout_ms": 200
 		},
 		"bot_pool": {
@@ -328,7 +332,7 @@ func TestRuntimeDiagnosticsRejectsNullBotPool(t *testing.T) {
 			"enqueue_timeout_ms": 50,
 			"handler_timeout_ms": 120000,
 			"max_body_bytes": 65536,
-			"dedup_ttl_ms": 60000,
+			"dedup_ttl_ms": 960000,
 			"dedup_timeout_ms": 200
 		},
 		"bot_pool": null,
@@ -415,5 +419,117 @@ func TestValidateRejectsEnabledBreakerWithoutCooldown(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "delivery.breaker_cooldown_ms must be > 0 when breaker_failure_threshold > 0") {
 		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+func TestValidateRequiresDedupTTLToOutliveDeliveryHorizon(t *testing.T) {
+	profile := defaultIrisBotWebhookWorkerProfile()
+	if got := maxDeliveryHorizon(profile.Delivery); got != 15*time.Minute {
+		t.Fatalf("maxDeliveryHorizon() = %v, want 15m", got)
+	}
+
+	profile.Receive.DedupTTL = maxDeliveryHorizon(profile.Delivery)
+	err := profile.Validate()
+	if err == nil {
+		t.Fatal("Validate() error = nil, want delivery horizon rejection")
+	}
+	if !strings.Contains(err.Error(), "receive.dedup_ttl_ms must be greater than the maximum delivery horizon") {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	profile.Receive.DedupTTL += time.Nanosecond
+	if err := profile.Validate(); err == nil {
+		t.Fatal("Validate() error = nil for a duration that truncates to the delivery horizon on the millisecond wire")
+	}
+
+	profile.Receive.DedupTTL = maxDeliveryHorizon(profile.Delivery) + time.Millisecond
+	if err := profile.Validate(); err != nil {
+		t.Fatalf("Validate() error above horizon = %v", err)
+	}
+
+	roundTripped, err := decodeWorkerProfileForTest(t, string(profile.CanonicalJSON()))
+	if err != nil {
+		t.Fatalf("decodeRuntimeWorkerProfile(CanonicalJSON()) error = %v", err)
+	}
+	if roundTripped.Receive.DedupTTL != profile.Receive.DedupTTL {
+		t.Fatalf("round-trip DedupTTL = %v, want %v", roundTripped.Receive.DedupTTL, profile.Receive.DedupTTL)
+	}
+}
+
+func TestValidateBoundsBreakerCooldownBeforeDeliveryHorizonArithmetic(t *testing.T) {
+	profile := defaultIrisBotWebhookWorkerProfile()
+	profile.Delivery.MaxAttempts = maxAttempts
+	profile.Delivery.BreakerCooldown = 3 * 365 * 24 * time.Hour
+	profile.Receive.DedupTTL = maxDuration
+
+	err := profile.Validate()
+	if err == nil {
+		t.Fatal("Validate() error = nil, want breaker cooldown bound rejection")
+	}
+	if !strings.Contains(err.Error(), "delivery.breaker_cooldown_ms must be <= 1h0m0s") {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+func TestRuntimeDiagnosticsRejectsRawDurationMillisecondsOverflow(t *testing.T) {
+	base, err := os.ReadFile("testdata/worker-profile-v1-legacy.json")
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+
+	const overflowMilliseconds = (1 << 58) + 1000
+	overflow := fmt.Sprintf("%d", overflowMilliseconds)
+	cases := []struct {
+		name   string
+		field  string
+		mutate func(string) string
+	}{
+		{name: "request timeout", field: "delivery.request_timeout_ms", mutate: replaceWorkerProfileField(`"request_timeout_ms": 125000`, `"request_timeout_ms": `+overflow)},
+		{name: "lane idle timeout", field: "delivery.lane_idle_timeout_ms", mutate: replaceWorkerProfileField(`"lane_idle_timeout_ms": 750`, `"lane_idle_timeout_ms": `+overflow)},
+		{name: "breaker cooldown", field: "delivery.breaker_cooldown_ms", mutate: replaceWorkerProfileField(`"lane_idle_timeout_ms": 750`, `"lane_idle_timeout_ms": 750, "breaker_failure_threshold": 5, "breaker_cooldown_ms": `+overflow)},
+		{name: "enqueue timeout", field: "receive.enqueue_timeout_ms", mutate: replaceWorkerProfileField(`"enqueue_timeout_ms": 50`, `"enqueue_timeout_ms": `+overflow)},
+		{name: "handler timeout", field: "receive.handler_timeout_ms", mutate: replaceWorkerProfileField(`"handler_timeout_ms": 120000`, `"handler_timeout_ms": `+overflow)},
+		{name: "dedup ttl", field: "receive.dedup_ttl_ms", mutate: replaceWorkerProfileField(`"dedup_ttl_ms": 960000`, `"dedup_ttl_ms": `+overflow)},
+		{name: "dedup timeout", field: "receive.dedup_timeout_ms", mutate: replaceWorkerProfileField(`"dedup_timeout_ms": 200`, `"dedup_timeout_ms": `+overflow)},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			_, err := decodeWorkerProfileForTest(t, testCase.mutate(string(base)))
+			if err == nil {
+				t.Fatal("decodeRuntimeWorkerProfile() error = nil, want raw millisecond overflow rejection")
+			}
+			want := testCase.field + " must be <= 1h0m0s"
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("decodeRuntimeWorkerProfile() error = %v, want %q", err, want)
+			}
+		})
+	}
+}
+
+func TestRuntimeDiagnosticsAggregatesRawDurationOverflow(t *testing.T) {
+	base, err := os.ReadFile("testdata/worker-profile-v1-legacy.json")
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+
+	const overflow = `288230376151712744`
+	payload := strings.Replace(string(base), `"request_timeout_ms": 125000`, `"request_timeout_ms": `+overflow, 1)
+	payload = strings.Replace(payload, `"dedup_timeout_ms": 200`, `"dedup_timeout_ms": `+overflow, 1)
+
+	_, err = decodeWorkerProfileForTest(t, payload)
+	if err == nil {
+		t.Fatal("decodeRuntimeWorkerProfile() error = nil, want aggregated overflow rejection")
+	}
+	for _, field := range []string{"delivery.request_timeout_ms", "receive.dedup_timeout_ms"} {
+		if !strings.Contains(err.Error(), field+" must be <= 1h0m0s") {
+			t.Fatalf("decodeRuntimeWorkerProfile() error = %v, want aggregated %s error", err, field)
+		}
+	}
+}
+
+func replaceWorkerProfileField(old, replacement string) func(string) string {
+	return func(payload string) string {
+		return strings.Replace(payload, old, replacement, 1)
 	}
 }

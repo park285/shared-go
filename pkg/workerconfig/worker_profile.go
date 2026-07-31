@@ -27,6 +27,7 @@ const (
 	defaultDeliveryMaxAttempts             = 6
 	defaultDeliveryRequestTimeout          = 125 * time.Second
 	defaultDeliveryLaneIdleTimeout         = 750 * time.Millisecond
+	deliveryRetryWaitCeiling               = 30 * time.Second
 	defaultDeliveryBreakerFailureThreshold = uint32(5)
 	defaultDeliveryBreakerCooldown         = 30 * time.Second
 
@@ -35,7 +36,7 @@ const (
 	defaultReceiveEnqueueTimeout = 50 * time.Millisecond
 	defaultReceiveHandlerTimeout = 120 * time.Second
 	defaultReceiveMaxBodyBytes   = 64 << 10
-	defaultReceiveDedupTTL       = 60 * time.Second
+	defaultReceiveDedupTTL       = 16 * time.Minute
 	defaultReceiveDedupTimeout   = 200 * time.Millisecond
 
 	defaultBotPoolWorkers   = 10
@@ -273,38 +274,76 @@ func (p IrisBotWebhookWorkerProfile) Validate() error {
 	problems = appendBoundedInt(problems, p.Validation.MinQueuePerEndpointMultiplier, "validation.min_queue_per_endpoint_multiplier", maxQueueMultiplier)
 
 	if len(problems) == 0 {
-		if p.Delivery.RequestTimeout > p.Receive.HandlerTimeout+deliveryRequestTimeoutOverhang {
-			problems = append(problems, "delivery.request_timeout_ms must be <= receive.handler_timeout_ms + 5000")
-		}
-		if p.Delivery.MaxPerEndpointInFlight > p.Delivery.MaxGlobalInFlight {
-			problems = append(problems, "delivery.max_per_endpoint_in_flight must be <= delivery.max_global_in_flight")
-		}
-		if p.Delivery.MaxGlobalInFlight > p.Delivery.LaneQueueCapacity {
-			problems = append(problems, "delivery.max_global_in_flight must be <= delivery.lane_queue_capacity")
-		}
-		if p.Validation.RequireReceiveCapacityForEndpointBurst {
-			minQueue := p.Delivery.MaxPerEndpointInFlight * p.Validation.MinQueuePerEndpointMultiplier
-			if p.Receive.QueueSize < minQueue {
-				problems = append(problems, "receive.queue_size must be >= delivery.max_per_endpoint_in_flight * validation.min_queue_per_endpoint_multiplier")
-			}
-			if p.Receive.Workers < ceilDiv(p.Delivery.MaxPerEndpointInFlight, 2) {
-				problems = append(problems, "receive.workers must be >= ceil(delivery.max_per_endpoint_in_flight / 2)")
-			}
-		}
-		if p.Delivery.MaxGlobalInFlight > p.Receive.Workers+p.Receive.QueueSize {
-			problems = append(problems, "delivery.max_global_in_flight must be <= receive.workers + receive.queue_size")
-		}
-		if p.Delivery.BreakerCooldown < 0 {
-			problems = append(problems, "delivery.breaker_cooldown_ms must be >= 0")
-		} else if p.Delivery.BreakerFailureThreshold > 0 && p.Delivery.BreakerCooldown == 0 {
-			problems = append(problems, "delivery.breaker_cooldown_ms must be > 0 when breaker_failure_threshold > 0")
-		}
+		problems = appendWorkerProfileRelationalProblems(problems, p)
 	}
 
 	if len(problems) > 0 {
 		return errors.New(strings.Join(problems, "; "))
 	}
 	return nil
+}
+
+func appendWorkerProfileRelationalProblems(problems []string, profile IrisBotWebhookWorkerProfile) []string {
+	if profile.Delivery.RequestTimeout > profile.Receive.HandlerTimeout+deliveryRequestTimeoutOverhang {
+		problems = append(problems, "delivery.request_timeout_ms must be <= receive.handler_timeout_ms + 5000")
+	}
+	if profile.Delivery.MaxPerEndpointInFlight > profile.Delivery.MaxGlobalInFlight {
+		problems = append(problems, "delivery.max_per_endpoint_in_flight must be <= delivery.max_global_in_flight")
+	}
+	if profile.Delivery.MaxGlobalInFlight > profile.Delivery.LaneQueueCapacity {
+		problems = append(problems, "delivery.max_global_in_flight must be <= delivery.lane_queue_capacity")
+	}
+	if profile.Validation.RequireReceiveCapacityForEndpointBurst {
+		minQueue := profile.Delivery.MaxPerEndpointInFlight * profile.Validation.MinQueuePerEndpointMultiplier
+		if profile.Receive.QueueSize < minQueue {
+			problems = append(problems, "receive.queue_size must be >= delivery.max_per_endpoint_in_flight * validation.min_queue_per_endpoint_multiplier")
+		}
+		if profile.Receive.Workers < ceilDiv(profile.Delivery.MaxPerEndpointInFlight, 2) {
+			problems = append(problems, "receive.workers must be >= ceil(delivery.max_per_endpoint_in_flight / 2)")
+		}
+	}
+	if profile.Delivery.MaxGlobalInFlight > profile.Receive.Workers+profile.Receive.QueueSize {
+		problems = append(problems, "delivery.max_global_in_flight must be <= receive.workers + receive.queue_size")
+	}
+
+	problems = appendBreakerCooldownProblems(problems, profile.Delivery)
+	if len(problems) == 0 {
+		problems = appendDedupHorizonProblem(problems, profile)
+	}
+
+	return problems
+}
+
+func appendBreakerCooldownProblems(problems []string, delivery irisWebhookDeliveryWorkerProfile) []string {
+	switch {
+	case delivery.BreakerCooldown < 0:
+		return append(problems, "delivery.breaker_cooldown_ms must be >= 0")
+	case delivery.BreakerCooldown > maxDuration:
+		return append(problems, fmt.Sprintf("delivery.breaker_cooldown_ms must be <= %s", maxDuration))
+	case delivery.BreakerCooldown%time.Millisecond != 0:
+		return append(problems, "delivery.breaker_cooldown_ms must use whole milliseconds")
+	case delivery.BreakerFailureThreshold > 0 && delivery.BreakerCooldown == 0:
+		return append(problems, "delivery.breaker_cooldown_ms must be > 0 when breaker_failure_threshold > 0")
+	default:
+		return problems
+	}
+}
+
+func appendDedupHorizonProblem(problems []string, profile IrisBotWebhookWorkerProfile) []string {
+	if profile.Receive.DedupTTL <= maxDeliveryHorizon(profile.Delivery) {
+		return append(problems, "receive.dedup_ttl_ms must be greater than the maximum delivery horizon")
+	}
+	return problems
+}
+
+func maxDeliveryHorizon(delivery irisWebhookDeliveryWorkerProfile) time.Duration {
+	waitCeiling := deliveryRetryWaitCeiling
+	if delivery.BreakerFailureThreshold > 0 && delivery.BreakerCooldown > waitCeiling {
+		waitCeiling = delivery.BreakerCooldown
+	}
+	attempts := int64(delivery.MaxAttempts)
+	nanoseconds := attempts*int64(delivery.RequestTimeout) + (attempts-1)*int64(waitCeiling)
+	return time.Duration(nanoseconds)
 }
 
 func (p IrisBotWebhookWorkerProfile) toWire() wireIrisBotWebhookWorkerProfile {
@@ -350,7 +389,7 @@ func fromWire(wire wireIrisBotWebhookWorkerProfile) IrisBotWebhookWorkerProfile 
 	}
 	breakerCooldown := defaultDeliveryBreakerCooldown
 	if wire.Delivery.BreakerCooldownMS.present {
-		breakerCooldown = time.Duration(wire.Delivery.BreakerCooldownMS.value) * time.Millisecond
+		breakerCooldown = boundedDurationFromMilliseconds(wire.Delivery.BreakerCooldownMS.value)
 	}
 	botPool := botPoolWorkerProfile{
 		Workers:   defaultBotPoolWorkers,
@@ -373,23 +412,36 @@ func fromWire(wire wireIrisBotWebhookWorkerProfile) IrisBotWebhookWorkerProfile 
 			MaxPerEndpointInFlight:  wire.Delivery.MaxPerEndpointInFlight,
 			MaxDrainPerTick:         wire.Delivery.MaxDrainPerTick,
 			MaxAttempts:             wire.Delivery.MaxAttempts,
-			RequestTimeout:          time.Duration(wire.Delivery.RequestTimeoutMS) * time.Millisecond,
-			LaneIdleTimeout:         time.Duration(wire.Delivery.LaneIdleTimeoutMS) * time.Millisecond,
+			RequestTimeout:          boundedDurationFromMilliseconds(wire.Delivery.RequestTimeoutMS),
+			LaneIdleTimeout:         boundedDurationFromMilliseconds(wire.Delivery.LaneIdleTimeoutMS),
 			BreakerFailureThreshold: breakerFailureThreshold,
 			BreakerCooldown:         breakerCooldown,
 		},
 		Receive: botWebhookReceiveWorkerProfile{
 			Workers:        wire.Receive.Workers,
 			QueueSize:      wire.Receive.QueueSize,
-			EnqueueTimeout: time.Duration(wire.Receive.EnqueueTimeoutMS) * time.Millisecond,
-			HandlerTimeout: time.Duration(wire.Receive.HandlerTimeoutMS) * time.Millisecond,
+			EnqueueTimeout: boundedDurationFromMilliseconds(wire.Receive.EnqueueTimeoutMS),
+			HandlerTimeout: boundedDurationFromMilliseconds(wire.Receive.HandlerTimeoutMS),
 			MaxBodyBytes:   wire.Receive.MaxBodyBytes,
-			DedupTTL:       time.Duration(wire.Receive.DedupTTLMS) * time.Millisecond,
-			DedupTimeout:   time.Duration(wire.Receive.DedupTimeoutMS) * time.Millisecond,
+			DedupTTL:       boundedDurationFromMilliseconds(wire.Receive.DedupTTLMS),
+			DedupTimeout:   boundedDurationFromMilliseconds(wire.Receive.DedupTimeoutMS),
 		},
 		BotPool:    botPool,
 		Validation: wire.Validation,
 	}
+}
+
+// boundedDurationFromMilliseconds는 raw integer가 time.Duration 곱셈에서 wrap되기 전에
+// 기존 Validate가 같은 field의 범위 오류로 집계할 수 있는 sentinel로 정규화한다.
+func boundedDurationFromMilliseconds(value int) time.Duration {
+	if value < 0 {
+		return -time.Millisecond
+	}
+	if value > int(maxDuration/time.Millisecond) {
+		return maxDuration + time.Millisecond
+	}
+
+	return time.Duration(value) * time.Millisecond
 }
 
 func appendBoundedInt(problems []string, value int, name string, maxValue int) []string {
@@ -408,6 +460,9 @@ func appendBoundedDuration(problems []string, value time.Duration, name string, 
 	}
 	if value > maxValue {
 		return append(problems, fmt.Sprintf("%s must be <= %s", name, maxValue))
+	}
+	if value%time.Millisecond != 0 {
+		return append(problems, name+" must use whole milliseconds")
 	}
 	return problems
 }

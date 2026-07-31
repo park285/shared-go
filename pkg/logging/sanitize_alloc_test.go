@@ -24,7 +24,7 @@ func TestSanitizeHandler_CleanRecordLowAlloc(t *testing.T) {
 		r := slog.NewRecord(testTime(), slog.LevelInfo, "plain message no secrets here", 0)
 		r.AddAttrs(
 			slog.String("username", "alice"),
-			slog.Int("user_id", 42),
+			slog.Int("attempt", 42),
 			slog.String("path", "/api/users"),
 			slog.String("status", "ok"),
 		)

@@ -30,11 +30,11 @@ func TestNewTestLogger(t *testing.T) {
 	logger.Error("error message", "error", "test error")
 }
 
-func TestNewTestLoggerWithOutput(t *testing.T) {
+func TestUnsanitizedTestLoggerWritesOutput(t *testing.T) {
 	var buf bytes.Buffer
-	logger := NewTestLoggerWithOutput(&buf)
+	logger := newUnsanitizedTestLogger(&buf)
 	if logger == nil {
-		t.Fatal("NewTestLoggerWithOutput returned nil")
+		t.Fatal("newUnsanitizedTestLogger returned nil")
 	}
 
 	logger.Info("test message", "key", "value")
@@ -46,6 +46,10 @@ func TestNewTestLoggerWithOutput(t *testing.T) {
 	if !strings.Contains(output, "key=value") {
 		t.Errorf("expected log output to contain 'key=value', got: %s", output)
 	}
+}
+
+func newUnsanitizedTestLogger(buf *bytes.Buffer) *slog.Logger {
+	return slog.New(slog.NewTextHandler(buf, nil))
 }
 
 func TestNewTestLoggerDiscardsOutput(t *testing.T) {
