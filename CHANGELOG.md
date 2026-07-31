@@ -5,6 +5,8 @@
 
 ## 미출시
 
+## v1.39.0 - 2026-08-01
+
 ### 호환성이 깨지는 변경
 
 - `logging.NewUnsanitizedLoggerForTests`와 호환 별칭 `logging.NewTestLoggerWithOutput`을 제거합니다.
@@ -157,6 +159,21 @@
   직접 보관하십시오.
 - no-follow open을 지원하지 않는 플랫폼(`!unix`)에서 strict dotenv는 **의도적으로 항상 실패**합니다.
   non-strict local dotenv 경로는 그대로 동작합니다.
+
+## v1.38.0 - 2026-07-29
+
+### 수정
+
+- output guard가 장문 기술 답변의 일부 base64 유사 구간을 `decode_incomplete`로 오탐해 전체 출력을
+  차단하던 문제를 해소했습니다. decode 후보의 문맥·확장 경계를 더 엄격하게 판정하고 장문 회귀
+  테스트를 추가했습니다.
+
+## v1.37.1 - 2026-07-29
+
+### 유지보수
+
+- tag 기반 release에서 local full gate, SBOM, checksum manifest, keyless attestation과 immutable
+  GitHub Release를 생성·검증하는 provenance 파이프라인을 추가했습니다.
 
 ## v1.37.0 - 2026-07-28
 
