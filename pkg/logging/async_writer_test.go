@@ -29,7 +29,7 @@ func TestAsyncDropWriterDoesNotBlockWhenTargetStalls(t *testing.T) {
 	t.Parallel()
 
 	target := &stallingWriter{started: make(chan struct{}), release: make(chan struct{})}
-	writer := newAsyncDropWriter(target, 4)
+	writer := newAsyncDropWriter(target, formatText, 4)
 
 	t.Cleanup(func() { close(target.release) })
 
@@ -65,7 +65,7 @@ func TestAsyncDropWriterDeliversAllLinesInOrderWhenTargetFast(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	writer := newAsyncDropWriter(&buf, 64)
+	writer := newAsyncDropWriter(&buf, formatText, 64)
 
 	var want strings.Builder
 

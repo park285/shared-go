@@ -281,7 +281,7 @@ func TestRun_RedactsBuildRuntimeErrorObject(t *testing.T) {
 		Initialize: func(string) {},
 		LoadConfig: func() (*testConfig, error) { return &testConfig{}, nil },
 		NewLogger: func(*testConfig) (*slog.Logger, error) {
-			return sharedlogging.NewTestLoggerWithOutput(&logs), nil
+			return sharedlogging.NewUnsanitizedLoggerForTests(&logs), nil
 		},
 		BuildRuntime: func(context.Context, *testConfig, *slog.Logger) (*testRuntime, error) {
 			return nil, errors.New("API_TOKEN=" + canary)

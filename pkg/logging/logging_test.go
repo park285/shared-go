@@ -30,11 +30,11 @@ func TestNewTestLogger(t *testing.T) {
 	logger.Error("error message", "error", "test error")
 }
 
-func TestNewTestLoggerWithOutput(t *testing.T) {
+func TestNewUnsanitizedLoggerForTests(t *testing.T) {
 	var buf bytes.Buffer
-	logger := NewTestLoggerWithOutput(&buf)
+	logger := NewUnsanitizedLoggerForTests(&buf)
 	if logger == nil {
-		t.Fatal("NewTestLoggerWithOutput returned nil")
+		t.Fatal("NewUnsanitizedLoggerForTests returned nil")
 	}
 
 	logger.Info("test message", "key", "value")

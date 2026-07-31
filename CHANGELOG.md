@@ -5,8 +5,66 @@
 
 ## 미출시
 
+### 호환성이 깨지는 변경
+
+- `logging.NewTestLoggerWithOutput`을 `logging.NewUnsanitizedLoggerForTests`로 이름을 바꿉니다.
+  **구 이름 별칭을 남기지 않으므로 호출부를 갱신해야 합니다.** 이 생성자는 sanitize handler를
+  거치지 않으며, 그 비정제 동작은 "호출부가 스스로 정제하는가"를 검증하는 테스트에
+  load-bearing이라 sanitize로 감쌀 수 없습니다. 이름으로 오용을 드러내는 쪽을 택했습니다.
+  프로덕션 호출부는 스택 전체에서 0건이고, 영향은 테스트 코드에 한정됩니다.
+  **소비자는 이 릴리스가 나오고 자기 `go.mod` pin을 올린 뒤에야 새 이름을 쓸 수 있습니다.**
+  원격 CI는 `GOWORK=off`로 돌아 workspace가 아니라 `go.mod` pin을 따르므로, pin bump보다 먼저
+  새 이름을 쓴 커밋은 소비자 저장소에서 빌드되지 않습니다.
+- credential key 마스킹이 값 타입에 종속되지 않습니다. `slog.Int64("token", …)`,
+  `slog.Bool("password", …)`, `slog.Any("authorization", …)`처럼 canonical key인데 값이 문자열이
+  아닌 attr이 그동안 마스킹을 빠져나갔습니다. key 기반 판정(`isSensitiveKey`)을 `KindAny`,
+  `KindGroup`, `KindString` **세 값 분기 전부보다 앞으로** 옮겨 privacy 판정과 같은 자리에
+  둡니다. 이전에는 `slog.Any("token", map[string]any{…})`의 마스킹 여부가 그 map이 privacy key를
+  포함하는지라는 무관한 조건에 종속됐고, `slog.Group("access_token", …)`는 아예 마스킹되지
+  않았습니다. 키 집합은 그대로입니다. **`has_token` 같은 boolean 플래그도 `*_token` 규칙에 걸려
+  이제 마스킹됩니다**(문자열 값이었다면 이전에도 마스킹되던 키입니다). privacy key
+  (`user_id`/`room_id` 등)는 이미 가드 앞에서 판정되고 있어 이번 변경의 영향이 없습니다.
+- 이름이 credential key인 group은 그 아래 attr을 key와 무관하게 전부 마스킹합니다.
+  `WithGroup("access_token")` 아래의 `raw`는 이전에 그대로 출력됐습니다. privacy key group에만
+  있던 규칙을 credential에도 적용해 두 정책을 대칭으로 맞춥니다.
+
+### 기능
+
+- `logging.Config`에 `Format`을 추가합니다. `logging.FormatText`(빈 값과 동일)와
+  `logging.FormatJSON`을 지원하며, 알 수 없는 값은 `EnableFileLogging*` 계열이 error로 거부합니다
+  — 새 부팅 실패 경로입니다. formatter 생성을 `newFormatHandler` 한 지점으로 모아 어떤 포맷을
+  고르든 sanitize 래핑이 구조적으로 유지되고, 이 불변식은 `pkg/logging` 비-test 소스에서
+  formatter 생성자 호출을 AST로 훑는 게이트 테스트가 강제합니다.
+- 타임스탬프 정밀도는 lane마다 다릅니다. json lane은 slog 기본값인 **나노초** 단위
+  RFC3339Nano(`2026-07-31T09:23:06.879728621+09:00`)이고, text lane은 tint `TimeFormat`이
+  RFC3339라 초 단위입니다.
+
 ### 보안
 
+- json lane의 `source.file`이 빌드 머신의 절대 경로 대신 `logging/format.go` 형태로 축약됩니다.
+  slog 기본값은 빌드 디렉터리 구조를 모든 record에 실었습니다. text lane(tint)은 이미 축약된
+  형태였습니다.
+- 비동기 stdout writer의 종료 손실 요약이 활성 포맷을 따릅니다. 이전에는 handler 바깥에서 raw
+  문자열을 stdout lane에 직접 써서, `Format: json` + `Options{AsyncStdout: true}` 조합에서 drop이
+  한 번이라도 발생한 프로세스가 종료 시 JSON 스트림 한가운데 파싱 불가 라인을 남겼습니다
+  (Promtail/Vector/Fluent Bit의 json parser가 깨집니다). 요약은 절단 건수도 함께 보고합니다.
+- 비동기 stdout writer의 라인 절단(64 KiB)이 record 경계를 보존합니다. 이전에는 말미의 개행까지
+  잘라내 절단된 조각이 다음 record와 한 줄로 이어붙었고, json lane에서는 2건이 함께 파싱 불가가
+  됐습니다. 이제 마지막 바이트를 개행으로 확정해 손상을 해당 record 1건으로 가둡니다. 절단
+  지점이 multi-byte rune 한가운데면 마지막 rune 경계까지 물러나므로, 남는 바이트는 항상 valid
+  UTF-8입니다(이전에는 `한` 반복 입력이 `…한\xed\x95`로 잘렸고, 여러 수집기가 invalid UTF-8을
+  JSON parse 오류보다 험하게 다룹니다).
+- 종료 요약의 `truncated`가 **실제로 stdout에 도달한** 절단 라인만 셉니다. 계상 지점이 큐 진입
+  시점이었고 `select`의 송신 피연산자는 `default`를 타도 평가되므로, 절단됐지만 큐가 가득 차
+  버려진 라인이 `dropped`와 `truncated` 양쪽에 계상됐습니다. 정체된 depth-1 큐에 oversize 20건을
+  넣으면 stdout에 도달한 절단 라인은 2건인데 요약은 `truncated=20`을 보고했고, 운영자가 존재하지
+  않는 손상 라인 18건을 찾게 됐습니다. 계상을 target 기록 성공 이후로 옮겨, 큐에 들어간 뒤
+  `target.Write`가 실패한 라인도 `dropped`에만 잡힙니다. 두 카운터의 합은 `Write` 호출 수를
+  넘지 않습니다.
+- `asyncDropWriter.Close`가 멱등입니다. `stop sync.Once`가 `close(done)`만 감쌌고 `stopped`는
+  닫힌 채 유지되므로, 두 번째 `Close`가 손실 요약을 다시 썼습니다. 동시 `Close`에서는 요약을 쓰는
+  goroutine들이 같은 target에 함께 들어가 `-race`가 검출하는 data race가 됩니다. 현재 스택의
+  소비자에서는 도달 불가 경로였으나 계약 결함이라 닫습니다.
 - `netguard.GuardedClient`가 표준 `*http.Transport` 경로에도 request 시점 scheme/host/port
   검증을 적용하고, `resolveDialAddresses`가 dial 직전에 `AllowedHosts`/`AllowHost`를 강제합니다.
   기존에는 `GuardedClient`와 `GuardedTransport`의 dial 경로가 port와 IP만 검사해 host allowlist가
@@ -39,8 +97,52 @@
   key와 무관하게 전부 마스킹되고, `slog.Any`의 `map[string]any`는 map key를 걸어 값을 마스킹합니다
   (호출자 map은 변형하지 않고 hit일 때만 사본을 만듭니다).
 
+### 성능
+
+- json lane의 `source.file` 축약이 `filepath.Join`(내부 `Clean`) 대신 substring slice를 씁니다.
+  `AddSource`가 켜진 json record마다 할당이 10개/714 B → 9개/690 B로 줄어듭니다. 빈 경로에 `""`를
+  돌려주는 것이 부수적으로 중요합니다 — `filepath` 판본은 `"."`를 만들어, `PC 0` record가 낳는
+  빈 `Source`를 slog이 생략하지 못하게 되살렸고 json 종료 요약에 `"source":{"file":"."}`가
+  실렸습니다(text lane은 tint가 `PC==0`을 건너뛰어 두 lane이 어긋났습니다).
+- sanitize handler의 **할당은 변경 전후 동일합니다**(`Clean` 0 alloc, `WideClean` 80 B/1 alloc,
+  `PrivacyMap` 1,008 B/6 alloc, `GroupNoSecret` 912 B/13 alloc). 처리 시간은 회귀합니다 — 변경
+  전후 test binary를 미리 컴파일해 16 라운드 교차 실행한 **최소값 기준 +0.3% ~ +11.7%**입니다
+  (`Clean` +11.7%, `WidePrivacy` +11.5%, `GroupNoSecret` +11.2%, `WideClean` +9.9%,
+  `GroupWithSecret` +4.6%, `PrivacyMap` +4.2%, `PrivacyGroup` +2.2%, `Sensitive` +1.8%,
+  `PrivacyKeys` +0.3%).
+- 위 회귀는 credential key 판정을 값 분기보다 앞으로 옮긴 대가입니다. `isSensitiveKey` 호출이
+  늘어나는 대상은 **모든 attr이 아니라** 값이 문자열이 아닌 attr, group 이름, `KindAny` attr입니다
+  (계측한 record당 호출 수: `Clean` 3→4, `WideClean` 6→7, `GroupNoSecret` 3→6, `PrivacyMap` 2→4).
+  `KindString` attr은 이전에도 같은 판정을 거쳤고 privacy key attr은 `isPrivacyKey`에서 먼저
+  반환되므로 호출이 늘지 않습니다(`PrivacyKeys` 3→3). 회귀는 `KindAny` map(`PrivacyMap` +4.2%)에
+  그치지 않고 counter·duration 같은 비-string scalar가 섞인 평범한 clean record에도 같은 폭으로
+  옵니다. `Clean` +11.7%와 `GroupNoSecret` +11.2%의 차이는 측정 노이즈 안이므로 둘 사이의 순서는
+  주장하지 않습니다 — 호출 수 증가만 보면 group(3→6)이 clean(3→4)보다 큽니다. 실측은 호출 1회당
+  비용(`BenchmarkIsSensitiveKey` 55~60 ns/op)으로 환산한 값보다 큽니다. 마스킹 정확성을 위해
+  감수한, 수정에 내재한 비용입니다.
+
 ### 알려진 한계
 
+- 알 수 없는 log level은 info로 무음 fallback하지만, 알 수 없는 log format은 error입니다. 이
+  비대칭은 의도적입니다 — 잘못된 level은 verbosity만 바꾸지만, 잘못된 format은 수집기가 스트림
+  전체를 읽지 못하게 만듭니다.
+- `slog.Any`에 담긴 **구조체**는 여전히 마스킹되지 않습니다(reflection 미대응).
+  `slog.Any("payload", struct{UserID, Token string}{…})`는 필드 값이 그대로 나갑니다. 단, 그
+  attr의 key 자체가 privacy/credential key면 attr 전체가 마스킹됩니다.
+- 절단된 record 자체는 여전히 파싱 불가입니다. 경계 보존과 rune 경계 보존은 **다음** record와
+  수집기의 UTF-8 처리를 지키는 것이지 절단된 record를 복구하지 않습니다. 절단 발생 사실은 종료
+  요약의 `truncated` 카운터로만 관측됩니다.
+- `truncated` 카운터는 target 기록이 성공한 뒤에 오릅니다. 따라서 stdout lane이 정체된 동안에는
+  이미 절단된 라인도 카운터에 아직 반영되지 않습니다. 종료 요약은 run goroutine이 큐를 모두
+  비운 뒤에 기록되므로, **마지막 `Write`가 `Close`보다 happens-before인 한** 요약 값 자체는
+  영향을 받지 않습니다. `Close`와 동시에 진행되는 `Write`는 run이 `drain`의 `default`를 탄 뒤
+  큐에 들어갈 수 있고, 그런 라인은 전달도 계상도 되지 않습니다 — 이번 변경 이전부터 있던 설계
+  내재 속성입니다.
+- formatter 게이트는 `pkg/logging` 트리의 비-test 소스만 훑습니다. 다른 패키지가 자체 slog
+  handler를 만드는 경로(예: `bootstrap.Options.NewLogger` 후크)는 이 게이트의 범위 밖입니다.
+  게이트는 호출식이 아니라 생성자 **참조**를 세므로 `f := slog.NewJSONHandler` 형태의 함수 값과
+  dot-import(`import . "log/slog"`)도 잡지만, 판정은 AST 수준이라 package 이름을 가리는 지역
+  식별자까지는 구분하지 못합니다.
 - privacy 마스킹은 attr key와 `map[string]any` key에만 적용됩니다. **struct 필드(reflection),
   error/message 문자열에 보간된 식별자(`fmt.Errorf("user_id=%s", …)`), log message 본문은 이번
   범위에서 마스킹되지 않습니다.** 이 경로는 callsite 정리와 정적 스윕이 소유합니다.

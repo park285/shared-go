@@ -247,7 +247,7 @@ func (h *sanitizeHandler) Handle(ctx context.Context, record slog.Record) error 
 	msg := redactSecrets(record.Message)
 	changed := msg != record.Message
 
-	if !changed && !h.inPrivacyGroup {
+	if !changed && !h.inMaskedGroup {
 		record.Attrs(func(attr slog.Attr) bool {
 			if _, attrChanged := sanitizeAttrChanged(attr); attrChanged {
 				changed = true
@@ -257,7 +257,7 @@ func (h *sanitizeHandler) Handle(ctx context.Context, record slog.Record) error 
 		})
 	}
 
-	if !changed && !h.inPrivacyGroup {
+	if !changed && !h.inMaskedGroup {
 		return h.inner.Handle(ctx, record)
 	}
 
@@ -274,19 +274,20 @@ func (h *sanitizeHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	for _, attr := range attrs {
 		sanitized = append(sanitized, h.sanitizeOwnedAttr(attr))
 	}
-	return &sanitizeHandler{inner: h.inner.WithAttrs(sanitized), inPrivacyGroup: h.inPrivacyGroup}
+	return &sanitizeHandler{inner: h.inner.WithAttrs(sanitized), inMaskedGroup: h.inMaskedGroup}
 }
 
-// 열린 group 이름이 privacy key면 그 아래 attr은 key가 무엇이든 값이 식별자에 종속된다.
+// 열린 group 이름이 privacy·credential key면 그 아래 attr은 key가 무엇이든 값이 그 식별자나
+// credential의 구성 요소다.
 func (h *sanitizeHandler) WithGroup(name string) slog.Handler {
 	return &sanitizeHandler{
-		inner:          h.inner.WithGroup(name),
-		inPrivacyGroup: h.inPrivacyGroup || isPrivacyKey(name),
+		inner:         h.inner.WithGroup(name),
+		inMaskedGroup: h.inMaskedGroup || isPrivacyKey(name) || isSensitiveKey(name),
 	}
 }
 
 func (h *sanitizeHandler) sanitizeOwnedAttr(attr slog.Attr) slog.Attr {
-	if h.inPrivacyGroup {
+	if h.inMaskedGroup {
 		return slog.String(attr.Key, redactedValue)
 	}
 	return sanitizeAttr(attr)
@@ -306,7 +307,9 @@ func sanitizeAttr(attr slog.Attr) slog.Attr {
 func sanitizeAttrChanged(attr slog.Attr) (slog.Attr, bool) {
 	changed := attr.Value.Kind() == slog.KindLogValuer
 	attr.Value = attr.Value.Resolve()
-	if isPrivacyKey(attr.Key) {
+	// key 기반 판정은 값을 읽지 않으므로 모든 값 분기(KindAny·KindGroup·KindString)보다 앞이어야
+	// 한다. 뒤에 두면 마스킹 여부가 값 타입이나 무관한 map 내용에 종속된다.
+	if isPrivacyKey(attr.Key) || isSensitiveKey(attr.Key) {
 		return slog.String(attr.Key, redactedValue), true
 	}
 	if attr.Value.Kind() == slog.KindAny {
@@ -316,9 +319,6 @@ func sanitizeAttrChanged(attr slog.Attr) (slog.Attr, bool) {
 			}
 		}
 		if err, ok := attr.Value.Any().(error); ok {
-			if isSensitiveKey(attr.Key) {
-				return slog.String(attr.Key, redactedValue), true
-			}
 			return slog.String(attr.Key, RedactDiagnostic(err.Error())), true
 		}
 	}
@@ -338,10 +338,6 @@ func sanitizeAttrChanged(attr slog.Attr) (slog.Attr, bool) {
 
 	if attr.Value.Kind() != slog.KindString {
 		return attr, changed
-	}
-
-	if isSensitiveKey(attr.Key) {
-		return slog.String(attr.Key, redactedValue), true
 	}
 
 	if isBroadValueKey(attr.Key) && isSecretLikeValue(attr.Value.String()) {

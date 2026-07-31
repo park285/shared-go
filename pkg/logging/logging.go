@@ -8,9 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
-	"github.com/lmittmann/tint"
 	"github.com/mattn/go-isatty"
 	"go.opentelemetry.io/otel/trace"
 	"gopkg.in/natefinch/lumberjack.v2"
@@ -19,7 +17,9 @@ import (
 )
 
 type Config struct {
-	Level      string
+	Level string
+	// Format이 빈 값이면 text다. 알 수 없는 값은 EnableFileLogging* 계열이 error로 거부한다.
+	Format     string
 	Dir        string
 	MaxSizeMB  int
 	MaxBackups int
@@ -41,19 +41,17 @@ func parseLevel(level string) slog.Level {
 }
 
 func NewLogger() *slog.Logger {
-	return slog.New(newSanitizeHandler(tint.NewTextHandler(os.Stdout, &tint.Options{
-		Level:      slog.LevelInfo,
-		TimeFormat: time.RFC3339,
-		AddSource:  true,
-		NoColor:    shouldDisableColor(os.Stdout),
-	})))
+	return slog.New(newFormatHandler(formatText, slog.LevelInfo, os.Stdout, shouldDisableColor(os.Stdout)))
 }
 
 func NewTestLogger() *slog.Logger {
 	return slog.New(slog.DiscardHandler)
 }
 
-func NewTestLoggerWithOutput(w io.Writer) *slog.Logger {
+// NewUnsanitizedLoggerForTests는 sanitize handler를 거치지 않는다. 이 비정제 동작은
+// 호출부가 스스로 정제하는지 검증하는 테스트(pkg/runtime/bootstrap)에 load-bearing이므로
+// newSanitizeHandler로 감싸면 그 테스트가 무의미해진다. 프로덕션에서 쓰면 안 된다.
+func NewUnsanitizedLoggerForTests(w io.Writer) *slog.Logger {
 	return slog.New(slog.NewTextHandler(w, nil))
 }
 
@@ -89,9 +87,13 @@ func EnableFileLoggingWithOptions(config Config, fileName string, opts Options) 
 
 func enableFileLoggingWithStdout(stdout io.Writer, config Config, fileName string, opts Options) (*slog.Logger, io.Closer, error) {
 	level := parseLevel(config.Level)
+	format, err := parseLogFormat(config.Format)
+	if err != nil {
+		return nil, nil, err
+	}
 	logDir := strings.TrimSpace(config.Dir)
 	if logDir == "" {
-		logger := slog.New(newConsoleHandler(level, stdout, opts.OTel))
+		logger := slog.New(newConsoleHandler(format, level, stdout, opts.OTel))
 		return logger, nil, nil
 	}
 	if config.MaxSizeMB <= 0 || config.MaxBackups <= 0 || config.MaxAgeDays <= 0 {
@@ -119,7 +121,7 @@ func enableFileLoggingWithStdout(stdout io.Writer, config Config, fileName strin
 	stdoutLane := stdout
 	closers := make(multiCloser, 0, 3)
 	if opts.AsyncStdout {
-		asyncStdout := newAsyncDropWriter(stdout, asyncStdoutQueueDepth)
+		asyncStdout := newAsyncDropWriter(stdout, format, asyncStdoutQueueDepth)
 		stdoutLane = asyncStdout
 		closers = append(closers, asyncStdout)
 	}
@@ -130,12 +132,7 @@ func enableFileLoggingWithStdout(stdout io.Writer, config Config, fileName strin
 
 	w := io.MultiWriter(stdoutLane, &archive.AwareWriter{Inner: logFile, Archiver: logArchiver})
 
-	var handler slog.Handler = newSanitizeHandler(tint.NewTextHandler(w, &tint.Options{
-		Level:      level,
-		TimeFormat: time.RFC3339,
-		AddSource:  true,
-		NoColor:    true,
-	}))
+	handler := newFormatHandler(format, level, w, true)
 	if opts.OTel {
 		handler = newOTelHandler(handler)
 	}
@@ -151,13 +148,8 @@ func enableFileLoggingWithStdout(stdout io.Writer, config Config, fileName strin
 	return logger, closers, nil
 }
 
-func newConsoleHandler(level slog.Level, w io.Writer, enableOTel bool) slog.Handler {
-	var handler slog.Handler = newSanitizeHandler(tint.NewTextHandler(w, &tint.Options{
-		Level:      level,
-		TimeFormat: time.RFC3339,
-		AddSource:  true,
-		NoColor:    shouldDisableColor(w),
-	}))
+func newConsoleHandler(format logFormat, level slog.Level, w io.Writer, enableOTel bool) slog.Handler {
+	handler := newFormatHandler(format, level, w, shouldDisableColor(w))
 	if enableOTel {
 		handler = newOTelHandler(handler)
 	}
