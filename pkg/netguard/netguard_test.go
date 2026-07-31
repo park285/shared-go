@@ -627,6 +627,53 @@ func TestPolicyRejectsDisallowedIDNHost(t *testing.T) {
 	}
 }
 
+func TestRedirectPolicyKeepsHeadersAcrossEquivalentIDNForms(t *testing.T) {
+	t.Parallel()
+
+	const (
+		unicodeHost  = "bücher.example"
+		punycodeHost = "xn--bcher-kva.example"
+	)
+
+	policy := Policy{
+		Resolver:     staticResolver{punycodeHost: {net.ParseIP("93.184.216.34")}},
+		AllowedHosts: []string{unicodeHost},
+	}
+	tests := []struct {
+		name string
+		from string
+		to   string
+	}{
+		{name: "unicode to punycode", from: "https://" + unicodeHost + "/start", to: "https://" + punycodeHost + "/next"},
+		{name: "punycode to unicode", from: "https://" + punycodeHost + "/start", to: "https://" + unicodeHost + "/next"},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			req := &http.Request{
+				URL: mustURL(t, testCase.to),
+				Header: http.Header{
+					"Authorization": []string{"Bearer token"},
+					"Cookie":        []string{"session=abc"},
+				},
+			}
+			via := []*http.Request{{URL: mustURL(t, testCase.from)}}
+
+			if err := RedirectPolicy(RedirectConfig{Policy: policy, MaxRedirects: 3})(req, via); err != nil {
+				t.Fatalf("RedirectPolicy() error = %v", err)
+			}
+			if got := req.Header.Get("Authorization"); got != "Bearer token" {
+				t.Fatalf("Authorization = %q, want preserved", got)
+			}
+			if got := req.Header.Get("Cookie"); got != "session=abc" {
+				t.Fatalf("Cookie = %q, want preserved", got)
+			}
+		})
+	}
+}
+
 func TestRedirectPolicyStripsHeadersRestoredOnLaterHop(t *testing.T) {
 	t.Parallel()
 

@@ -48,13 +48,6 @@ func NewTestLogger() *slog.Logger {
 	return slog.New(slog.DiscardHandler)
 }
 
-// NewUnsanitizedLoggerForTests는 sanitize handler를 거치지 않는다. 이 비정제 동작은
-// 호출부가 스스로 정제하는지 검증하는 테스트(pkg/runtime/bootstrap)에 load-bearing이므로
-// newSanitizeHandler로 감싸면 그 테스트가 무의미해진다. 프로덕션에서 쓰면 안 된다.
-func NewUnsanitizedLoggerForTests(w io.Writer) *slog.Logger {
-	return slog.New(slog.NewTextHandler(w, nil))
-}
-
 // Options는 파일 로깅의 선택 동작을 제어한다.
 type Options struct {
 	// AsyncStdout이 true면 stdout 사본 lane을 drop-on-full 비동기 writer로 감싸

@@ -17,7 +17,7 @@
     "enqueue_timeout_ms": 50,
     "handler_timeout_ms": 120000,
     "max_body_bytes": 65536,
-    "dedup_ttl_ms": 60000,
+    "dedup_ttl_ms": 960000,
     "dedup_timeout_ms": 200
   },
   "bot_pool": {

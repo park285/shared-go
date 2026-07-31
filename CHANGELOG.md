@@ -7,14 +7,10 @@
 
 ### 호환성이 깨지는 변경
 
-- `logging.NewTestLoggerWithOutput`을 `logging.NewUnsanitizedLoggerForTests`로 이름을 바꿉니다.
-  **구 이름 별칭을 남기지 않으므로 호출부를 갱신해야 합니다.** 이 생성자는 sanitize handler를
-  거치지 않으며, 그 비정제 동작은 "호출부가 스스로 정제하는가"를 검증하는 테스트에
-  load-bearing이라 sanitize로 감쌀 수 없습니다. 이름으로 오용을 드러내는 쪽을 택했습니다.
-  프로덕션 호출부는 스택 전체에서 0건이고, 영향은 테스트 코드에 한정됩니다.
-  **소비자는 이 릴리스가 나오고 자기 `go.mod` pin을 올린 뒤에야 새 이름을 쓸 수 있습니다.**
-  원격 CI는 `GOWORK=off`로 돌아 workspace가 아니라 `go.mod` pin을 따르므로, pin bump보다 먼저
-  새 이름을 쓴 커밋은 소비자 저장소에서 빌드되지 않습니다.
+- `logging.NewUnsanitizedLoggerForTests`와 호환 별칭 `logging.NewTestLoggerWithOutput`을 제거합니다.
+  두 생성자는 sanitize handler를 우회하므로 production package에서 제공하지 않고, 필요한 테스트가
+  각 `_test.go` 안에서 raw handler를 직접 구성합니다. 프로덕션 호출부는 스택 전체에서 0건이고,
+  영향은 테스트 코드에 한정됩니다.
 - credential key 마스킹이 값 타입에 종속되지 않습니다. `slog.Int64("token", …)`,
   `slog.Bool("password", …)`, `slog.Any("authorization", …)`처럼 canonical key인데 값이 문자열이
   아닌 attr이 그동안 마스킹을 빠져나갔습니다. key 기반 판정(`isSensitiveKey`)을 `KindAny`,
@@ -29,6 +25,15 @@
   있던 규칙을 credential에도 적용해 두 정책을 대칭으로 맞춥니다.
 
 ### 기능
+
+- worker profile의 기본 `receive.dedup_ttl_ms`를 `16m`으로 올리고, 수신 dedup TTL이
+  `delivery.max_attempts`, `delivery.request_timeout_ms`, retry wait ceiling, enabled breaker cooldown으로
+  유도한 최대 delivery horizon보다 엄격히 길도록 검증합니다. 기본 profile의 horizon은 `15m`입니다.
+  기존 profile에 `60s` 등 더 짧은 값을 명시한 소비자는 기동 전에 profile을 갱신해야 합니다.
+  duration은 wire 단위와 같은 whole millisecond만 허용해 `Validate`를 통과한 값이 canonical JSON에서
+  horizon 경계로 절삭되지 않게 하며, enabled breaker cooldown은 `1h`로 제한해 horizon 곱셈의
+  `time.Duration` overflow를 차단합니다. raw `*_ms` integer도 곱셈 전에 범위를 확인해 overflow가
+  작은 양수 duration으로 wrap되어 기존 aggregated validation을 우회하지 못하게 합니다.
 
 - `logging.Config`에 `Format`을 추가합니다. `logging.FormatText`(빈 값과 동일)와
   `logging.FormatJSON`을 지원하며, 알 수 없는 값은 `EnableFileLogging*` 계열이 error로 거부합니다

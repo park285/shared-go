@@ -23,7 +23,6 @@ var formatterConstructors = map[string]struct{}{
 var formatterCallAllowlist = map[string]string{
 	"format.go|newFormatHandler|log/slog.NewJSONHandler":                  "유일한 formatter 생성 지점 (json)",
 	"format.go|newFormatHandler|github.com/lmittmann/tint.NewTextHandler": "유일한 formatter 생성 지점 (text)",
-	"logging.go|NewUnsanitizedLoggerForTests|log/slog.NewTextHandler":     "비정제 test logger — 이름으로 오용을 드러낸다",
 }
 
 const (

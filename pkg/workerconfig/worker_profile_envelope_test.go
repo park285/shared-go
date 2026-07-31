@@ -30,7 +30,7 @@ func TestDecodeRuntimeWorkerProfileEnvelopeReturnsVerifiedIdentity(t *testing.T)
 func TestDecodeRuntimeWorkerProfileEnvelopeRejectsProducerHashMismatch(t *testing.T) {
 	diagnostics := strings.Replace(
 		validRuntimeDiagnostics(t),
-		"48e6b84fe794daa2a349ebb77b6f9e8f1054e5bcfe336b7ab5fe2dbe1dcb8b1f",
+		"b69a100f0ac023758ab84c82fa8b21596d59f6c1f81e6c05ab93f2a08336f403",
 		"5f4bb7659f48a6064e959f6985b0996d7f9cb9f9866d1c47bad98a416f6f6994",
 		1,
 	)
@@ -129,7 +129,7 @@ func validRuntimeDiagnostics(t *testing.T) string {
 			"profileEnabled": true,
 			"profileVersion": 1,
 			"profileId": "prod-standard-2026-05-26",
-			"profileHash": "48e6b84fe794daa2a349ebb77b6f9e8f1054e5bcfe336b7ab5fe2dbe1dcb8b1f",
+			"profileHash": "b69a100f0ac023758ab84c82fa8b21596d59f6c1f81e6c05ab93f2a08336f403",
 			"workerProfile": %s
 		}}}
 	}`, profile)

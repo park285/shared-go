@@ -531,7 +531,7 @@ func sameOrigin(a, b *url.URL) bool {
 	if !strings.EqualFold(strings.TrimSpace(a.Scheme), strings.TrimSpace(b.Scheme)) {
 		return false
 	}
-	if NormalizeHost(a.Hostname()) != NormalizeHost(b.Hostname()) {
+	if normalizeHostASCII(a.Hostname()) != normalizeHostASCII(b.Hostname()) {
 		return false
 	}
 	return effectivePort(a) == effectivePort(b)
