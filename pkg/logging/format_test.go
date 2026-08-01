@@ -7,10 +7,9 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"regexp"
+	"reflect"
 	"strings"
 	"testing"
-	"time"
 )
 
 const (
@@ -115,115 +114,86 @@ func captureStdout(t *testing.T, fn func()) string {
 }
 
 func TestParseLogFormat(t *testing.T) {
-	valid := map[string]logFormat{
-		"":         formatText,
-		"text":     formatText,
-		"TEXT":     formatText,
-		"  text  ": formatText,
-		"json":     formatJSON,
-		"JSON":     formatJSON,
-		" json ":   formatJSON,
-	}
-	for in, want := range valid {
-		got, err := parseLogFormat(in)
-		if err != nil {
+	for _, in := range []string{"", "json"} {
+		if err := parseLogFormat(in); err != nil {
 			t.Fatalf("parseLogFormat(%q) error = %v, want nil", in, err)
-		}
-		if got != want {
-			t.Fatalf("parseLogFormat(%q) = %v, want %v", in, got, want)
 		}
 	}
 
-	for _, in := range []string{"yaml", "logfmt", "tex", "json5", "text json"} {
-		if _, err := parseLogFormat(in); err == nil {
+	for _, in := range []string{"JSON", " json ", "text", "TEXT", "  text  ", "yaml", "logfmt", "tex", "json5", "text json"} {
+		if err := parseLogFormat(in); err == nil {
 			t.Errorf("parseLogFormat(%q) error = nil, want rejection", in)
+		} else if !strings.Contains(err.Error(), `only "json" is supported`) {
+			t.Errorf("parseLogFormat(%q) error = %q, want json-only contract", in, err)
 		}
 	}
 }
 
-func TestNewLogger_SanitizesAndKeepsTextFormat(t *testing.T) {
+func TestNewLogger_SanitizesAndKeepsJSONFormat(t *testing.T) {
 	out := captureStdout(t, func() { logFormatProbe(NewLogger()) })
 
 	assertProbeSanitized(t, "NewLogger", out)
-	if json.Valid([]byte(strings.TrimSpace(out))) {
-		t.Fatalf("NewLogger must stay tint text, got JSON-parsable output: %s", out)
-	}
-	if !strings.Contains(out, "user_id="+redactedValue) {
-		t.Fatalf("NewLogger output is not in tint key=value form: %s", out)
-	}
+	assertJSONProbe(t, "NewLogger", out)
 }
 
-func TestConsoleHandler_SanitizesInEveryFormat(t *testing.T) {
-	for _, format := range []string{FormatText, FormatJSON} {
-		t.Run(format, func(t *testing.T) {
-			var stdout bytes.Buffer
-			logger, closer, err := enableFileLoggingWithStdout(
-				&stdout,
-				Config{Level: "info", Format: format},
-				"console.log",
-				Options{},
-			)
-			if err != nil {
-				t.Fatalf("enableFileLoggingWithStdout() error = %v", err)
-			}
-			if closer != nil {
-				t.Fatalf("console-only config returned a closer, want nil")
-			}
-
-			logFormatProbe(logger)
-
-			label := "console/" + format
-			assertProbeSanitized(t, label, stdout.String())
-			if format == FormatJSON {
-				assertJSONProbe(t, label, stdout.String())
-			}
-		})
+func TestConsoleHandler_SanitizesJSON(t *testing.T) {
+	var stdout bytes.Buffer
+	logger, closer, err := enableFileLoggingWithStdout(
+		&stdout,
+		Config{Level: "info", Format: FormatJSON},
+		"console.log",
+		Options{},
+	)
+	if err != nil {
+		t.Fatalf("enableFileLoggingWithStdout() error = %v", err)
 	}
+	if closer != nil {
+		t.Fatalf("console-only config returned a closer, want nil")
+	}
+
+	logFormatProbe(logger)
+
+	assertProbeSanitized(t, "console/json", stdout.String())
+	assertJSONProbe(t, "console/json", stdout.String())
 }
 
-func TestFileHandler_SanitizesOnBothLanesInEveryFormat(t *testing.T) {
-	for _, format := range []string{FormatText, FormatJSON} {
-		t.Run(format, func(t *testing.T) {
-			logDir := t.TempDir()
-			var stdout bytes.Buffer
-			logger, closer, err := enableFileLoggingWithStdout(
-				&stdout,
-				Config{
-					Level:      "info",
-					Format:     format,
-					Dir:        logDir,
-					MaxSizeMB:  10,
-					MaxBackups: 5,
-					MaxAgeDays: 7,
-				},
-				"service.log",
-				Options{},
-			)
-			if err != nil {
-				t.Fatalf("enableFileLoggingWithStdout() error = %v", err)
-			}
-			t.Cleanup(func() {
-				if closer != nil {
-					_ = closer.Close()
-				}
-			})
+func TestFileHandler_SanitizesJSONOnBothLanes(t *testing.T) {
+	logDir := t.TempDir()
+	var stdout bytes.Buffer
+	logger, closer, err := enableFileLoggingWithStdout(
+		&stdout,
+		Config{
+			Level:      "info",
+			Format:     FormatJSON,
+			Dir:        logDir,
+			MaxSizeMB:  10,
+			MaxBackups: 5,
+			MaxAgeDays: 7,
+		},
+		"service.log",
+		Options{},
+	)
+	if err != nil {
+		t.Fatalf("enableFileLoggingWithStdout() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if closer != nil {
+			_ = closer.Close()
+		}
+	})
 
-			logFormatProbe(logger)
+	logFormatProbe(logger)
 
-			fileBytes, err := os.ReadFile(filepath.Join(logDir, "service.log"))
-			if err != nil {
-				t.Fatalf("read log file: %v", err)
-			}
+	fileBytes, err := os.ReadFile(filepath.Join(logDir, "service.log"))
+	if err != nil {
+		t.Fatalf("read log file: %v", err)
+	}
 
-			lanes := map[string]string{"stdout": stdout.String(), "file": string(fileBytes)}
-			for lane, out := range lanes {
-				label := "file/" + format + "/" + lane
-				assertProbeSanitized(t, label, out)
-				if format == FormatJSON {
-					assertJSONProbe(t, label, out)
-				}
-			}
-		})
+	lanes := map[string]string{"stdout": stdout.String(), "file": string(fileBytes)}
+	for lane, out := range lanes {
+		label := "file/json/" + lane
+		assertProbeSanitized(t, label, out)
+		assertJSONProbe(t, label, out)
 	}
 }
 
@@ -241,82 +211,32 @@ func formatProbeOutput(t *testing.T, config Config) string {
 	return stdout.String()
 }
 
-func stripLeadingTimestamps(out string) string {
-	lines := strings.Split(strings.TrimSpace(out), "\n")
-	stripped := make([]string, 0, len(lines))
-	for _, line := range lines {
-		_, rest, found := strings.Cut(line, " ")
-		if !found {
-			rest = line
-		}
-		stripped = append(stripped, rest)
-	}
-	return strings.Join(stripped, "\n")
-}
-
-func TestFormatZeroValue_MatchesExplicitText(t *testing.T) {
+func TestFormatZeroValue_MatchesExplicitJSON(t *testing.T) {
 	zero := formatProbeOutput(t, Config{Level: "info"})
-	explicit := formatProbeOutput(t, Config{Level: "info", Format: FormatText})
+	explicit := formatProbeOutput(t, Config{Level: "info", Format: FormatJSON})
 
-	if stripLeadingTimestamps(zero) != stripLeadingTimestamps(explicit) {
-		t.Fatalf("zero-value Format diverged from %q\nzero: %s\ntext: %s", FormatText, zero, explicit)
-	}
-	if !strings.Contains(zero, "user_id="+redactedValue) {
-		t.Fatalf("zero-value Format is not tint text: %s", zero)
-	}
-	if json.Valid([]byte(strings.TrimSpace(zero))) {
-		t.Fatalf("zero-value Format produced JSON, want tint text: %s", zero)
-	}
-
-	jsonOut := formatProbeOutput(t, Config{Level: "info", Format: FormatJSON})
-	if stripLeadingTimestamps(jsonOut) == stripLeadingTimestamps(zero) {
-		t.Fatalf("json format produced the same output as text: %s", jsonOut)
+	zeroRecord := probeJSONRecord(t, "zero-value Format", zero)
+	explicitRecord := probeJSONRecord(t, "explicit json Format", explicit)
+	delete(zeroRecord, slog.TimeKey)
+	delete(explicitRecord, slog.TimeKey)
+	if !reflect.DeepEqual(zeroRecord, explicitRecord) {
+		t.Fatalf("zero-value Format diverged from %q\nzero: %s\njson: %s", FormatJSON, zero, explicit)
 	}
 }
 
-func TestTextFormat_TintOptionsPinned(t *testing.T) {
-	const debugProbe = "text_debug_probe_must_be_filtered"
-
-	var stdout bytes.Buffer
-	logger, closer, err := enableFileLoggingWithStdout(
-		&stdout,
-		Config{Level: "info", Format: FormatText},
-		"probe.log",
-		Options{},
-	)
-	if err != nil {
-		t.Fatalf("enableFileLoggingWithStdout() error = %v", err)
+func TestEnableFileLogging_RejectsTextFormat(t *testing.T) {
+	config := Config{Level: "info", Format: "text"}
+	logger, closer, err := EnableFileLoggingWithOptions(config, "service.log", Options{})
+	if err == nil {
+		t.Fatal("EnableFileLoggingWithOptions() error = nil, want text rejection")
 	}
-	if closer != nil {
-		t.Cleanup(func() { _ = closer.Close() })
+	if logger != nil || closer != nil {
+		t.Fatalf("EnableFileLoggingWithOptions() = (%v, %v), want (nil, nil) on text rejection", logger, closer)
 	}
-
-	logger.Debug(debugProbe)
-	logFormatProbe(logger)
-
-	out := stdout.String()
-
-	if strings.Contains(out, debugProbe) {
-		t.Errorf("text handler ignored Config.Level: debug record emitted at info level: %s", out)
-	}
-
-	line, _, found := strings.Cut(strings.TrimSpace(out), "\n")
-	if !found {
-		line = strings.TrimSpace(out)
-	}
-	stamp, rest, found := strings.Cut(line, " ")
-	if !found {
-		t.Fatalf("text line has no timestamp field: %q", line)
-	}
-	if _, err := time.Parse(time.RFC3339, stamp); err != nil {
-		t.Errorf("text TimeFormat is not RFC3339: %q (%v)", stamp, err)
-	}
-	if !tintSourceRef.MatchString(rest) {
-		t.Errorf("text handler dropped AddSource: %q does not carry a logging/<file>:<line> reference", rest)
+	if !strings.Contains(err.Error(), `only "json" is supported`) {
+		t.Fatalf("error = %q, want json-only contract", err)
 	}
 }
-
-var tintSourceRef = regexp.MustCompile(`\blogging/[A-Za-z0-9_.-]+\.go:\d+`)
 
 func TestFormatHandlers_MaskSensitiveKeysRegardlessOfValueKind(t *testing.T) {
 	cases := []struct {
@@ -333,24 +253,19 @@ func TestFormatHandlers_MaskSensitiveKeysRegardlessOfValueKind(t *testing.T) {
 		{"credential_any_slice", slog.Any("authorization", []string{"RAWAUTHVAL"}), "RAWAUTHVAL"},
 	}
 
-	for _, format := range []struct {
-		label string
-		value logFormat
-	}{{"text", formatText}, {"json", formatJSON}} {
-		for _, tc := range cases {
-			t.Run(format.label+"/"+tc.name, func(t *testing.T) {
-				var buf bytes.Buffer
-				slog.New(newFormatHandler(format.value, slog.LevelInfo, &buf, true)).Info("probe", tc.attr)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			slog.New(newFormatHandler(slog.LevelInfo, &buf)).Info("probe", tc.attr)
 
-				out := buf.String()
-				if strings.Contains(out, tc.leak) {
-					t.Fatalf("%s value survived masking: %s", tc.name, strings.TrimSpace(out))
-				}
-				if !strings.Contains(out, redactedValue) {
-					t.Fatalf("%s produced no redaction marker: %s", tc.name, strings.TrimSpace(out))
-				}
-			})
-		}
+			out := buf.String()
+			if strings.Contains(out, tc.leak) {
+				t.Fatalf("%s value survived masking: %s", tc.name, strings.TrimSpace(out))
+			}
+			if !strings.Contains(out, redactedValue) {
+				t.Fatalf("%s produced no redaction marker: %s", tc.name, strings.TrimSpace(out))
+			}
+		})
 	}
 }
 
@@ -434,7 +349,7 @@ func TestNewLogger_LevelPinned(t *testing.T) {
 // JSON source.file이 빌드 머신 절대 경로면 디렉터리 구조가 모든 record에 실린다.
 func TestJSONFormat_ShortensSourcePath(t *testing.T) {
 	var buf bytes.Buffer
-	slog.New(newFormatHandler(formatJSON, slog.LevelInfo, &buf, true)).Info("format_probe_source")
+	slog.New(newFormatHandler(slog.LevelInfo, &buf)).Info("format_probe_source")
 
 	record := probeJSONRecord(t, "json/source", buf.String())
 	source, ok := record[slog.SourceKey].(map[string]any)

@@ -41,7 +41,7 @@ func TestAsyncDropWriter_CloseWritesDropSummary(t *testing.T) {
 	target := &syncBuffer{started: make(chan struct{}), release: make(chan struct{})}
 	releaseTarget := sync.OnceFunc(func() { close(target.release) })
 	t.Cleanup(releaseTarget)
-	w := newAsyncDropWriter(target, formatText, 1)
+	w := newAsyncDropWriter(target, 1)
 
 	w.Write([]byte("line-0\n"))
 	<-target.started
@@ -65,16 +65,15 @@ func TestAsyncDropWriter_CloseWritesDropSummary(t *testing.T) {
 	}
 }
 
-// 요약 라인이 활성 포맷을 따르지 않으면 json stdout 스트림에 파싱 불가 라인이 섞인다.
-func TestAsyncDropWriter_CloseSummaryFollowsJSONFormat(t *testing.T) {
+func TestAsyncDropWriter_CloseSummaryKeepsJSONFormat(t *testing.T) {
 	t.Parallel()
 
 	target := &syncBuffer{started: make(chan struct{}), release: make(chan struct{})}
 	releaseTarget := sync.OnceFunc(func() { close(target.release) })
 	t.Cleanup(releaseTarget)
-	w := newAsyncDropWriter(target, formatJSON, 1)
+	w := newAsyncDropWriter(target, 1)
 
-	logger := slog.New(newFormatHandler(formatJSON, slog.LevelInfo, w, true))
+	logger := slog.New(newFormatHandler(slog.LevelInfo, w))
 	logger.Info("first")
 	<-target.started
 	for range 8 {
@@ -114,9 +113,7 @@ func TestAsyncDropWriter_CloseSummaryFollowsJSONFormat(t *testing.T) {
 	}
 }
 
-// writer를 직접 만드는 테스트는 Config.Format을 writer로 넘기는 배선을 지나지 않는다.
-// 그 한 줄이 풀리면 json 구성이 다시 텍스트 요약을 json 스트림 한가운데 남긴다.
-func TestEnableFileLogging_AsyncSummaryFollowsConfiguredFormat(t *testing.T) {
+func TestEnableFileLogging_AsyncSummaryKeepsJSONFormat(t *testing.T) {
 	t.Parallel()
 
 	stdout := &syncBuffer{started: make(chan struct{}), release: make(chan struct{})}
@@ -173,7 +170,7 @@ func TestAsyncDropWriter_CloseIsIdempotent(t *testing.T) {
 	t.Parallel()
 
 	var target syncBuffer
-	w := newAsyncDropWriter(&target, formatText, 8)
+	w := newAsyncDropWriter(&target, 8)
 	w.maxLineBytes = 16
 
 	if _, err := w.Write(bytes.Repeat([]byte("A"), 1024)); err != nil {
@@ -197,7 +194,7 @@ func TestAsyncDropWriter_ConcurrentCloseDoesNotRaceOnTarget(t *testing.T) {
 	t.Parallel()
 
 	var target bytes.Buffer
-	w := newAsyncDropWriter(&target, formatJSON, 8)
+	w := newAsyncDropWriter(&target, 8)
 	w.maxLineBytes = 16
 
 	if _, err := w.Write(bytes.Repeat([]byte("A"), 1024)); err != nil {
@@ -231,7 +228,7 @@ func TestAsyncDropWriter_CloseNoSummaryWhenNoDrops(t *testing.T) {
 	t.Parallel()
 
 	var target syncBuffer
-	w := newAsyncDropWriter(&target, formatText, 64)
+	w := newAsyncDropWriter(&target, 64)
 
 	for i := range 10 {
 		w.Write([]byte(fmt.Sprintf("line-%d\n", i)))

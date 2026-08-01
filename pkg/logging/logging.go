@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mattn/go-isatty"
 	"go.opentelemetry.io/otel/trace"
 	"gopkg.in/natefinch/lumberjack.v2"
 
@@ -18,7 +17,7 @@ import (
 
 type Config struct {
 	Level string
-	// Format이 빈 값이면 text다. 알 수 없는 값은 EnableFileLogging* 계열이 error로 거부한다.
+	// Format이 빈 값이면 json이다. json 외 값은 EnableFileLogging* 계열이 error로 거부한다.
 	Format     string
 	Dir        string
 	MaxSizeMB  int
@@ -41,7 +40,7 @@ func parseLevel(level string) slog.Level {
 }
 
 func NewLogger() *slog.Logger {
-	return slog.New(newFormatHandler(formatText, slog.LevelInfo, os.Stdout, shouldDisableColor(os.Stdout)))
+	return slog.New(newFormatHandler(slog.LevelInfo, os.Stdout))
 }
 
 func NewTestLogger() *slog.Logger {
@@ -80,13 +79,12 @@ func EnableFileLoggingWithOptions(config Config, fileName string, opts Options) 
 
 func enableFileLoggingWithStdout(stdout io.Writer, config Config, fileName string, opts Options) (*slog.Logger, io.Closer, error) {
 	level := parseLevel(config.Level)
-	format, err := parseLogFormat(config.Format)
-	if err != nil {
+	if err := parseLogFormat(config.Format); err != nil {
 		return nil, nil, err
 	}
 	logDir := strings.TrimSpace(config.Dir)
 	if logDir == "" {
-		logger := slog.New(newConsoleHandler(format, level, stdout, opts.OTel))
+		logger := slog.New(newConsoleHandler(level, stdout, opts.OTel))
 		return logger, nil, nil
 	}
 	if config.MaxSizeMB <= 0 || config.MaxBackups <= 0 || config.MaxAgeDays <= 0 {
@@ -114,7 +112,7 @@ func enableFileLoggingWithStdout(stdout io.Writer, config Config, fileName strin
 	stdoutLane := stdout
 	closers := make(multiCloser, 0, 3)
 	if opts.AsyncStdout {
-		asyncStdout := newAsyncDropWriter(stdout, format, asyncStdoutQueueDepth)
+		asyncStdout := newAsyncDropWriter(stdout, asyncStdoutQueueDepth)
 		stdoutLane = asyncStdout
 		closers = append(closers, asyncStdout)
 	}
@@ -125,7 +123,7 @@ func enableFileLoggingWithStdout(stdout io.Writer, config Config, fileName strin
 
 	w := io.MultiWriter(stdoutLane, &archive.AwareWriter{Inner: logFile, Archiver: logArchiver})
 
-	handler := newFormatHandler(format, level, w, true)
+	handler := newFormatHandler(level, w)
 	if opts.OTel {
 		handler = newOTelHandler(handler)
 	}
@@ -141,26 +139,12 @@ func enableFileLoggingWithStdout(stdout io.Writer, config Config, fileName strin
 	return logger, closers, nil
 }
 
-func newConsoleHandler(format logFormat, level slog.Level, w io.Writer, enableOTel bool) slog.Handler {
-	handler := newFormatHandler(format, level, w, shouldDisableColor(w))
+func newConsoleHandler(level slog.Level, w io.Writer, enableOTel bool) slog.Handler {
+	handler := newFormatHandler(level, w)
 	if enableOTel {
 		handler = newOTelHandler(handler)
 	}
 	return handler
-}
-
-func shouldDisableColor(w io.Writer) bool {
-	file, ok := w.(*os.File)
-	if !ok {
-		return true
-	}
-
-	if os.Getenv("NO_COLOR") != "" {
-		return true
-	}
-
-	fd := file.Fd()
-	return !isatty.IsTerminal(fd) && !isatty.IsCygwinTerminal(fd)
 }
 
 type otelHandler struct {

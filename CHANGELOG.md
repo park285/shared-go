@@ -5,6 +5,23 @@
 
 ## 미출시
 
+### 호환성이 깨지는 변경
+
+- `feat(logging)!:` text formatter와 `logging.FormatText`를 제거합니다. `Config.Format`의 빈 값은
+  JSON을 선택하고, `"json"` 외 값은 `EnableFileLogging*` 계열이 명시적으로 거부합니다.
+  no-arg `NewLogger()`도 JSON handler를 사용합니다.
+
+### 수정
+
+- `logging` privacy exact-key 마스킹을 중첩 `map[string]any`까지 재귀 적용합니다. privacy key가
+  없는 경로는 사본을 만들지 않고, self-referential map은 depth 8에서 탐색을 멈춥니다.
+  `map[string]string`과 struct 필드는 계속 대상이 아닙니다.
+- worker profile의 최대 delivery horizon이 `1h` 이상이면 `receive.dedup_ttl_ms`에 불가능한 값을
+  요구하지 않고, 원인인 `delivery.max_attempts`/`delivery.request_timeout_ms` 조합과 계산된 horizon을
+  보고합니다. dedup TTL 부족 오류도 계산된 horizon과 필요한 최소 TTL을 포함합니다.
+- `obsmetrics`에 동일 metric family의 header를 한 번만 쓰는 `WriteCounterSeries`와
+  `WriteGaugeSeries`를 추가합니다. 기존 단일-series API는 호환 유지합니다.
+
 ## v1.39.0 - 2026-08-01
 
 ### 호환성이 깨지는 변경

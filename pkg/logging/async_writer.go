@@ -20,7 +20,6 @@ const (
 // 파일(lumberjack) lane은 동기 기록을 유지하므로 유실은 stdout 사본에 한정된다.
 type asyncDropWriter struct {
 	target       io.Writer
-	format       logFormat
 	queue        chan queuedLine
 	done         chan struct{}
 	stopped      chan struct{}
@@ -36,14 +35,13 @@ type queuedLine struct {
 	truncated bool
 }
 
-func newAsyncDropWriter(target io.Writer, format logFormat, depth int) *asyncDropWriter {
+func newAsyncDropWriter(target io.Writer, depth int) *asyncDropWriter {
 	if depth <= 0 {
 		depth = asyncStdoutQueueDepth
 	}
 
 	w := &asyncDropWriter{
 		target:       target,
-		format:       format,
 		queue:        make(chan queuedLine, depth),
 		done:         make(chan struct{}),
 		stopped:      make(chan struct{}),
@@ -157,9 +155,8 @@ func (w *asyncDropWriter) Close() error {
 	return nil
 }
 
-// 요약은 stdout lane의 활성 포맷을 따라야 한다. 평문으로 쓰면 json lane 한가운데 파싱 불가
-// 라인이 섞여 수집기의 json parser가 깨진다. run goroutine이 이미 종료했으므로 queue를 거치지
-// 않고 target에 직접 쓰는 일회용 handler를 만든다(파일 lane과 무관하게 stdout 사본만 남는다).
+// 요약도 JSON handler를 거쳐야 stdout 스트림의 파싱 계약을 보존한다. run goroutine이 이미
+// 종료했으므로 queue를 거치지 않고 target에 직접 쓰는 일회용 handler를 만든다.
 func (w *asyncDropWriter) writeLossSummary() {
 	dropped, truncated := w.dropped.Load(), w.truncated.Load()
 	if dropped == 0 && truncated == 0 {
@@ -174,7 +171,7 @@ func (w *asyncDropWriter) writeLossSummary() {
 
 	// Handle은 handler level을 재검사하지 않으므로 이 인자는 요약 방출 여부를 정하지 않는다.
 	//nolint:errcheck // best-effort 종료 진단, 기록 실패는 무시한다.
-	_ = newFormatHandler(w.format, record.Level, w.target, true).Handle(context.Background(), record)
+	_ = newFormatHandler(record.Level, w.target).Handle(context.Background(), record)
 }
 
 func (w *asyncDropWriter) droppedCount() uint64 {

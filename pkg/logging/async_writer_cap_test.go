@@ -13,7 +13,7 @@ func TestSG05AsyncWriterCapsPerLineBytes_38e7cbe7(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
-	writer := newAsyncDropWriter(&buf, formatText, 64)
+	writer := newAsyncDropWriter(&buf, 64)
 	writer.maxLineBytes = 32
 
 	oversize := bytes.Repeat([]byte("A"), 4096)
@@ -47,7 +47,7 @@ func TestAsyncDropWriterTruncationKeepsRecordBoundary(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
-	writer := newAsyncDropWriter(&buf, formatText, 64)
+	writer := newAsyncDropWriter(&buf, 64)
 	writer.maxLineBytes = 32
 
 	if _, err := writer.Write(append(bytes.Repeat([]byte("A"), 4096), '\n')); err != nil {
@@ -77,7 +77,7 @@ func TestAsyncDropWriterCloseReportsTruncationWithoutDrops(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
-	writer := newAsyncDropWriter(&buf, formatText, 64)
+	writer := newAsyncDropWriter(&buf, 64)
 	writer.maxLineBytes = 32
 
 	if _, err := writer.Write(bytes.Repeat([]byte("A"), 4096)); err != nil {
@@ -90,7 +90,7 @@ func TestAsyncDropWriterCloseReportsTruncationWithoutDrops(t *testing.T) {
 	if writer.droppedCount() != 0 {
 		t.Fatalf("droppedCount() = %d, want 0 (queue never overflowed)", writer.droppedCount())
 	}
-	if !strings.Contains(buf.String(), "truncated=1") {
+	if !strings.Contains(buf.String(), `"truncated":1`) {
 		t.Fatalf("close summary must report truncation, got: %q", buf.String())
 	}
 }
@@ -102,7 +102,7 @@ func TestAsyncDropWriterTruncationCountsOnlyDeliveredLines(t *testing.T) {
 	releaseTarget := sync.OnceFunc(func() { close(target.release) })
 	t.Cleanup(releaseTarget)
 
-	writer := newAsyncDropWriter(target, formatText, 1)
+	writer := newAsyncDropWriter(target, 1)
 	writer.maxLineBytes = 16
 
 	const writes = 20
@@ -147,7 +147,7 @@ func (failingWriter) Write([]byte) (int, error) {
 func TestAsyncDropWriterTruncationExcludesLinesTargetRejected(t *testing.T) {
 	t.Parallel()
 
-	writer := newAsyncDropWriter(failingWriter{}, formatText, 64)
+	writer := newAsyncDropWriter(failingWriter{}, 64)
 	writer.maxLineBytes = 16
 
 	const writes = 5
@@ -174,7 +174,7 @@ func TestAsyncDropWriterTruncationKeepsRuneBoundary(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
-	writer := newAsyncDropWriter(&buf, formatText, 64)
+	writer := newAsyncDropWriter(&buf, 64)
 	writer.maxLineBytes = 17
 
 	if _, err := writer.Write([]byte(strings.Repeat("한", 64))); err != nil {
@@ -201,7 +201,7 @@ func TestSG05AsyncWriterBoundsQueuedMemory_38e7cbe7(t *testing.T) {
 
 	target := &stallingWriter{started: make(chan struct{}), release: make(chan struct{})}
 	const depth = 8
-	writer := newAsyncDropWriter(target, formatText, depth)
+	writer := newAsyncDropWriter(target, depth)
 	writer.maxLineBytes = 16
 	releaseTarget := sync.OnceFunc(func() { close(target.release) })
 	t.Cleanup(releaseTarget)
