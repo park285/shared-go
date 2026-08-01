@@ -433,8 +433,9 @@ func TestValidateRequiresDedupTTLToOutliveDeliveryHorizon(t *testing.T) {
 	if err == nil {
 		t.Fatal("Validate() error = nil, want delivery horizon rejection")
 	}
-	if !strings.Contains(err.Error(), "receive.dedup_ttl_ms must be greater than the maximum delivery horizon") {
-		t.Fatalf("Validate() error = %v", err)
+	const want = "receive.dedup_ttl_ms must be greater than the maximum delivery horizon 15m0s (minimum 15m0.001s)"
+	if !strings.Contains(err.Error(), want) {
+		t.Fatalf("Validate() error = %v, want to contain %q", err, want)
 	}
 
 	profile.Receive.DedupTTL += time.Nanosecond
@@ -453,6 +454,60 @@ func TestValidateRequiresDedupTTLToOutliveDeliveryHorizon(t *testing.T) {
 	}
 	if roundTripped.Receive.DedupTTL != profile.Receive.DedupTTL {
 		t.Fatalf("round-trip DedupTTL = %v, want %v", roundTripped.Receive.DedupTTL, profile.Receive.DedupTTL)
+	}
+}
+
+func TestValidateRejectsUnrepresentableDeliveryHorizon(t *testing.T) {
+	profile := defaultIrisBotWebhookWorkerProfile()
+	profile.Delivery.MaxAttempts = 24
+	profile.Receive.DedupTTL = maxDuration
+
+	err := profile.Validate()
+	if err == nil {
+		t.Fatal("Validate() error = nil, want delivery horizon rejection")
+	}
+	const want = "delivery.max_attempts=24 and delivery.request_timeout_ms=125000 produce a maximum delivery horizon of 1h1m30s; reduce their combination so the horizon is < 1h0m0s"
+	if !strings.Contains(err.Error(), want) {
+		t.Fatalf("Validate() error = %q, want to contain %q", err, want)
+	}
+	if strings.Contains(err.Error(), "receive.dedup_ttl_ms") {
+		t.Fatalf("Validate() error = %q, must identify the delivery-side cause", err)
+	}
+}
+
+func TestValidateAttributesUnrepresentableHorizonToBreakerCooldown(t *testing.T) {
+	profile := defaultIrisBotWebhookWorkerProfile()
+	profile.Delivery.BreakerFailureThreshold = 3
+	profile.Delivery.BreakerCooldown = maxDuration
+	profile.Receive.DedupTTL = maxDuration
+
+	err := profile.Validate()
+	if err == nil {
+		t.Fatal("Validate() error = nil, want delivery horizon rejection")
+	}
+	const want = "delivery.max_attempts=6, delivery.request_timeout_ms=125000, and delivery.breaker_cooldown_ms=3600000 produce a maximum delivery horizon of 5h12m30s"
+	if !strings.Contains(err.Error(), want) {
+		t.Fatalf("Validate() error = %q, want to contain %q", err, want)
+	}
+}
+
+func TestValidateAggregatesUnrepresentableDeliveryHorizon(t *testing.T) {
+	profile := defaultIrisBotWebhookWorkerProfile()
+	profile.Delivery.MaxAttempts = 24
+	profile.Delivery.MaxGlobalInFlight = profile.Delivery.LaneQueueCapacity + 1
+	profile.Receive.DedupTTL = maxDuration
+
+	err := profile.Validate()
+	if err == nil {
+		t.Fatal("Validate() error = nil, want aggregated delivery errors")
+	}
+	for _, want := range []string{
+		"delivery.max_global_in_flight must be <= delivery.lane_queue_capacity",
+		"delivery.max_attempts=24 and delivery.request_timeout_ms=125000 produce a maximum delivery horizon of 1h1m30s",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("Validate() error = %q, want to contain %q", err, want)
+		}
 	}
 }
 

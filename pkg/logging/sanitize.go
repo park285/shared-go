@@ -393,18 +393,39 @@ func isPrivacyKey(key string) bool {
 	return ok
 }
 
+const maxPrivacyMapDepth = 8
+
 // 호출자 map을 제자리에서 바꾸면 로깅이 호출자 상태를 변조하므로 hit일 때만 사본을 만든다.
 func maskPrivacyMap(raw map[string]any) (map[string]any, bool) {
+	return maskPrivacyMapDepth(raw, 0)
+}
+
+func maskPrivacyMapDepth(raw map[string]any, depth int) (map[string]any, bool) {
 	var masked map[string]any
-	for key := range raw {
-		if !isPrivacyKey(key) {
+	for key, value := range raw {
+		if isPrivacyKey(key) {
+			if masked == nil {
+				masked = make(map[string]any, len(raw))
+				maps.Copy(masked, raw)
+			}
+			masked[key] = redactedValue
+			continue
+		}
+
+		nested, ok := value.(map[string]any)
+		// self-referential map도 유한 시간에 끝나도록 중첩 탐색을 제한한다.
+		if !ok || depth >= maxPrivacyMapDepth {
+			continue
+		}
+		nestedMasked, changed := maskPrivacyMapDepth(nested, depth+1)
+		if !changed {
 			continue
 		}
 		if masked == nil {
 			masked = make(map[string]any, len(raw))
 			maps.Copy(masked, raw)
 		}
-		masked[key] = redactedValue
+		masked[key] = nestedMasked
 	}
 	return masked, masked != nil
 }

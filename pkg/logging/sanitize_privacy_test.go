@@ -257,6 +257,78 @@ func TestSanitizeHandler_AnyMapWithoutPrivacyKeysUnchanged(t *testing.T) {
 	}
 }
 
+func TestSanitizeHandler_NestedAnyMapPrivacyKeysMasked(t *testing.T) {
+	nested := map[string]any{
+		"user_id":  kakaoSentinelID,
+		"video_id": "vid-1",
+	}
+	payload := map[string]any{
+		"public": "visible",
+		"nested": nested,
+	}
+	output := privacyOutput(t, slog.Any("payload", payload))
+
+	if strings.Contains(output, kakaoSentinelID) {
+		t.Fatalf("nested map[string]any privacy value leaked: %s", output)
+	}
+	if !strings.Contains(output, "vid-1") || !strings.Contains(output, "visible") {
+		t.Fatalf("nested map public values not preserved: %s", output)
+	}
+	if got := nested["user_id"]; got != kakaoSentinelID {
+		t.Fatalf("caller nested map was mutated: nested[user_id] = %v", got)
+	}
+}
+
+func TestMaskPrivacyMap_NestedCleanMapPreservesCopyOnHit(t *testing.T) {
+	nested := map[string]any{"video_id": "vid-1", "count": 3}
+	payload := map[string]any{"nested": nested}
+
+	masked, changed := maskPrivacyMap(payload)
+	if changed || masked != nil {
+		t.Fatalf("maskPrivacyMap() = (%v, %t), want (nil, false)", masked, changed)
+	}
+}
+
+func TestMaskPrivacyMap_DepthCapStopsSelfReference(t *testing.T) {
+	payload := map[string]any{"user_id": kakaoSentinelID}
+	payload["self"] = payload
+
+	masked, changed := maskPrivacyMap(payload)
+	if !changed {
+		t.Fatal("maskPrivacyMap() changed = false, want true")
+	}
+	if got := masked["user_id"]; got != redactedValue {
+		t.Fatalf("masked[user_id] = %v, want %s", got, redactedValue)
+	}
+	if got := payload["user_id"]; got != kakaoSentinelID {
+		t.Fatalf("caller map was mutated: payload[user_id] = %v", got)
+	}
+}
+
+func TestMaskPrivacyMap_DepthNinePrivacyKeyIsNotTraversed(t *testing.T) {
+	payload := map[string]any{"user_id": kakaoSentinelID}
+	for range maxPrivacyMapDepth + 1 {
+		payload = map[string]any{"nested": payload}
+	}
+
+	masked, changed := maskPrivacyMap(payload)
+	if changed || masked != nil {
+		t.Fatalf("maskPrivacyMap() = (%v, %t), want (nil, false)", masked, changed)
+	}
+	output := privacyOutput(t, slog.Any("payload", payload))
+	if !strings.Contains(output, kakaoSentinelID) {
+		t.Fatalf("depth-nine privacy value was not preserved: %s", output)
+	}
+}
+
+func TestSanitizeHandler_StringMapIsNotPrivacyMasked(t *testing.T) {
+	output := privacyOutput(t, slog.Any("payload", map[string]string{"user_id": kakaoSentinelID}))
+
+	if !strings.Contains(output, kakaoSentinelID) || strings.Contains(output, redactedValue) {
+		t.Fatalf("map[string]string scope changed: %s", output)
+	}
+}
+
 func TestIsPrivacyKey_RejectsBlanketIDSuffix(t *testing.T) {
 	blanket := []string{"channel_id", "video_id", "content_id", "request_id", "trace_id", "id", "correlation_id"}
 	for _, key := range blanket {

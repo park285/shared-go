@@ -306,7 +306,11 @@ func appendWorkerProfileRelationalProblems(problems []string, profile IrisBotWeb
 		problems = append(problems, "delivery.max_global_in_flight must be <= receive.workers + receive.queue_size")
 	}
 
+	breakerProblemStart := len(problems)
 	problems = appendBreakerCooldownProblems(problems, profile.Delivery)
+	if len(problems) == breakerProblemStart {
+		problems = appendDeliveryHorizonProblem(problems, profile.Delivery)
+	}
 	if len(problems) == 0 {
 		problems = appendDedupHorizonProblem(problems, profile)
 	}
@@ -329,9 +333,38 @@ func appendBreakerCooldownProblems(problems []string, delivery irisWebhookDelive
 	}
 }
 
+func appendDeliveryHorizonProblem(problems []string, delivery irisWebhookDeliveryWorkerProfile) []string {
+	horizon := maxDeliveryHorizon(delivery)
+	if horizon < maxDuration {
+		return problems
+	}
+	if delivery.BreakerFailureThreshold > 0 && delivery.BreakerCooldown > deliveryRetryWaitCeiling {
+		return append(problems, fmt.Sprintf(
+			"delivery.max_attempts=%d, delivery.request_timeout_ms=%d, and delivery.breaker_cooldown_ms=%d produce a maximum delivery horizon of %s; reduce their combination so the horizon is < %s",
+			delivery.MaxAttempts,
+			delivery.RequestTimeout/time.Millisecond,
+			delivery.BreakerCooldown/time.Millisecond,
+			horizon,
+			maxDuration,
+		))
+	}
+	return append(problems, fmt.Sprintf(
+		"delivery.max_attempts=%d and delivery.request_timeout_ms=%d produce a maximum delivery horizon of %s; reduce their combination so the horizon is < %s",
+		delivery.MaxAttempts,
+		delivery.RequestTimeout/time.Millisecond,
+		horizon,
+		maxDuration,
+	))
+}
+
 func appendDedupHorizonProblem(problems []string, profile IrisBotWebhookWorkerProfile) []string {
-	if profile.Receive.DedupTTL <= maxDeliveryHorizon(profile.Delivery) {
-		return append(problems, "receive.dedup_ttl_ms must be greater than the maximum delivery horizon")
+	horizon := maxDeliveryHorizon(profile.Delivery)
+	if profile.Receive.DedupTTL <= horizon {
+		return append(problems, fmt.Sprintf(
+			"receive.dedup_ttl_ms must be greater than the maximum delivery horizon %s (minimum %s)",
+			horizon,
+			horizon+time.Millisecond,
+		))
 	}
 	return problems
 }

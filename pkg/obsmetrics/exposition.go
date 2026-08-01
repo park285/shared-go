@@ -7,6 +7,18 @@ import (
 	"strings"
 )
 
+// CounterSeries는 counter metric family에 포함될 label-set과 값을 나타냅니다.
+type CounterSeries struct {
+	Labels Labels
+	Value  uint64
+}
+
+// GaugeSeries는 gauge metric family에 포함될 label-set과 직렬화된 정수/실수 값을 나타냅니다.
+type GaugeSeries struct {
+	Labels Labels
+	Value  string
+}
+
 // WriteCounter는 단일 counter 메트릭을 Prometheus 텍스트 포맷으로 씁니다.
 func WriteCounter(w io.Writer, name, help string, value uint64) bool {
 	return WriteCounterWithLabels(w, name, help, nil, value)
@@ -17,6 +29,19 @@ func WriteCounterWithLabels(w io.Writer, name, help string, labels Labels, value
 	return writeScalar(w, name, help, "counter", labels, strconv.FormatUint(value, 10))
 }
 
+// WriteCounterSeries는 family header를 한 번 쓰고 모든 counter series를 씁니다.
+func WriteCounterSeries(w io.Writer, name, help string, series []CounterSeries) bool {
+	if !writeMetricHeader(w, name, help, "counter") {
+		return false
+	}
+	for _, entry := range series {
+		if !writeMetricSample(w, name, labelsFromMap(entry.Labels), strconv.FormatUint(entry.Value, 10)) {
+			return false
+		}
+	}
+	return true
+}
+
 // WriteGauge는 단일 gauge 메트릭을 씁니다. value는 호출측이 직렬화한 문자열입니다(정수/실수 모두 수용).
 func WriteGauge(w io.Writer, name, help, value string) bool {
 	return WriteGaugeWithLabels(w, name, help, nil, value)
@@ -25,6 +50,19 @@ func WriteGauge(w io.Writer, name, help, value string) bool {
 // WriteGaugeWithLabels는 라벨이 있는 gauge 메트릭을 씁니다. value는 호출측이 직렬화한 문자열입니다.
 func WriteGaugeWithLabels(w io.Writer, name, help string, labels Labels, value string) bool {
 	return writeScalar(w, name, help, "gauge", labels, value)
+}
+
+// WriteGaugeSeries는 family header를 한 번 쓰고 모든 gauge series를 씁니다.
+func WriteGaugeSeries(w io.Writer, name, help string, series []GaugeSeries) bool {
+	if !writeMetricHeader(w, name, help, "gauge") {
+		return false
+	}
+	for _, entry := range series {
+		if !writeMetricSample(w, name, labelsFromMap(entry.Labels), entry.Value) {
+			return false
+		}
+	}
+	return true
 }
 
 func writeScalar(w io.Writer, name, help, metricType string, labels Labels, value string) bool {
