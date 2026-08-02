@@ -36,7 +36,7 @@ func TestIntE(t *testing.T) {
 }
 
 func TestStrictParseErrorsDoNotContainRawValues(t *testing.T) {
-	const canary = "sk_test_FAKESecret1234567890"
+	const canary = "raw-env-canary-do-not-echo-1234567890"
 	tests := []struct {
 		name string
 		key  string
@@ -223,7 +223,7 @@ func TestBoolExplicit(t *testing.T) {
 	})
 
 	t.Run("invalid does not leak value", func(t *testing.T) {
-		const canary = "sk_test_FAKESecret1234567890"
+		const canary = "raw-env-canary-do-not-echo-1234567890"
 		t.Setenv("TEST_BOOL_EXPLICIT", canary)
 		_, explicit, err := BoolExplicit("TEST_BOOL_EXPLICIT")
 		if err == nil {
@@ -254,7 +254,7 @@ func TestDurationE(t *testing.T) {
 		t.Fatalf("DurationE(blank) = (%v, %v), want (5s, nil)", got, err)
 	}
 
-	const canary = "sk_test_FAKESecret1234567890"
+	const canary = "raw-env-canary-do-not-echo-1234567890"
 	t.Setenv("TEST_DURATION_E", canary)
 	got, err = DurationE("TEST_DURATION_E", 5*time.Second)
 	if err == nil || got != 0 {

@@ -80,7 +80,7 @@ func TestClientRetryAttemptsAreOwnedByOption(t *testing.T) {
 func TestGenerateJSONIntoDecodeErrorPreservesCauseClass(t *testing.T) {
 	t.Parallel()
 
-	const secret = "Bearer sk-live-must-not-appear"
+	const secret = "Bearer provider-canary-must-not-appear"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(t, w, `{"id":"resp-1","object":"response","created_at":1,"status":"completed","model":"gpt-test","output":[{"id":"msg-1","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"`+secret+`","annotations":[]}]}]}`)
 	}))
@@ -97,7 +97,7 @@ func TestGenerateJSONIntoDecodeErrorPreservesCauseClass(t *testing.T) {
 	if err == nil {
 		t.Fatal("GenerateJSONInto() error = nil, want decode failure")
 	}
-	if strings.Contains(err.Error(), "sk-live") || strings.Contains(err.Error(), secret) {
+	if strings.Contains(err.Error(), "provider-canary") || strings.Contains(err.Error(), secret) {
 		t.Fatalf("decode error leaked provider output: %v", err)
 	}
 	if !strings.Contains(err.Error(), "decode decode-test json failed") {
