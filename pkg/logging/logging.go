@@ -8,6 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	"go.opentelemetry.io/otel/trace"
 	"gopkg.in/natefinch/lumberjack.v2"
@@ -73,6 +76,9 @@ func EnableFileLoggingWithOTel(config Config, fileName string, enableOTel bool) 
 
 // EnableFileLoggingWithOptions는 io.Closer를 함께 반환한다. Closer는 비동기 stdout lane의
 // 잔여 드레인과 lumberjack 파일 핸들 정리를 담당하며, 콘솔 전용 구성에서는 nil이다.
+//
+// lumberjack은 첫 로테이션에서 millRun 고루틴을 띄우지만 Close()는 파일 핸들만 닫고 그
+// 고루틴을 회수하지 않는다(라이브러리 한계). 프로세스당 1회만 호출하고 재초기화는 피하라.
 func EnableFileLoggingWithOptions(config Config, fileName string, opts Options) (*slog.Logger, io.Closer, error) {
 	return enableFileLoggingWithStdout(os.Stdout, config, fileName, opts)
 }
@@ -110,18 +116,22 @@ func enableFileLoggingWithStdout(stdout io.Writer, config Config, fileName strin
 	}
 
 	stdoutLane := stdout
-	closers := make(multiCloser, 0, 3)
+	closers := make(multiCloser, 0, 4)
 	if opts.AsyncStdout {
 		asyncStdout := newAsyncDropWriter(stdout, asyncStdoutQueueDepth)
 		stdoutLane = asyncStdout
 		closers = append(closers, asyncStdout)
 	}
-	closers = append(closers, logFile)
+
+	fileLane := &archive.AwareWriter{Inner: logFile, Archiver: logArchiver}
+	// 요약은 stdout lane 종료 뒤 파일에 남아야 하므로 logFile Close보다 앞서 실행된다.
+	stdoutGuard := &bestEffortWriter{target: stdoutLane, summary: fileLane}
+	closers = append(closers, stdoutGuard, logFile)
 	if logArchiver != nil {
 		closers = append(closers, logArchiver)
 	}
 
-	w := io.MultiWriter(stdoutLane, &archive.AwareWriter{Inner: logFile, Archiver: logArchiver})
+	w := io.MultiWriter(stdoutGuard, fileLane)
 
 	handler := newFormatHandler(level, w)
 	if opts.OTel {
@@ -137,6 +147,44 @@ func enableFileLoggingWithStdout(stdout io.Writer, config Config, fileName strin
 	)
 	logArchiver.Trigger()
 	return logger, closers, nil
+}
+
+// io.MultiWriter는 첫 writer가 실패하면 나머지를 건너뛴다. stdout이 EPIPE·ENOSPC로 죽었을 때
+// 그 뒤의 파일 lane까지 함께 멈추면 내구 기록이 사라지므로, stdout 사본의 실패는 삼키고
+// 유실 건수만 세어 Close에서 파일 lane으로 요약한다. 파일 lane은 감싸지 않아 실패가 전파된다.
+type bestEffortWriter struct {
+	target   io.Writer
+	summary  io.Writer
+	dropped  atomic.Uint64
+	reported sync.Once
+}
+
+func (w *bestEffortWriter) Write(p []byte) (int, error) {
+	if _, err := w.target.Write(p); err != nil {
+		w.dropped.Add(1)
+	}
+
+	return len(p), nil
+}
+
+func (w *bestEffortWriter) Close() error {
+	w.reported.Do(w.writeLossSummary)
+
+	return nil
+}
+
+// 요약을 stdout으로 되돌리면 이미 실패한 lane에 다시 쓰는 셈이라 파일 lane에만 남긴다.
+func (w *bestEffortWriter) writeLossSummary() {
+	dropped := w.dropped.Load()
+	if dropped == 0 || w.summary == nil {
+		return
+	}
+
+	record := slog.NewRecord(time.Now(), slog.LevelWarn, "stdout lane write failed", 0)
+	record.AddAttrs(slog.Uint64("dropped", dropped))
+	if err := newFormatHandler(record.Level, w.summary).Handle(context.Background(), record); err != nil {
+		return
+	}
 }
 
 func newConsoleHandler(level slog.Level, w io.Writer, enableOTel bool) slog.Handler {

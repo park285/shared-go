@@ -18,6 +18,7 @@ type config struct {
 	httpClient                   *http.Client
 	usageReporter                sharedllm.UsageReporter
 	logger                       *slog.Logger
+	maxRetries                   *int
 }
 
 type Option func(*config)
@@ -83,5 +84,13 @@ func WithLogger(logger *slog.Logger) Option {
 func WithAllowChatCompletionsFallback(enabled bool) Option {
 	return func(c *config) {
 		c.allowChatCompletionsFallback = enabled
+	}
+}
+
+// 미지정 시 sharedllm.DefaultOpenAIMaxRetries(2)가 적용되며, 소비자 자체 재시도와
+// 겹치면 총 시도가 (소비자 시도) × (1 + retries)로 곱연산된다. 음수는 0으로 절단된다.
+func WithMaxRetries(retries int) Option {
+	return func(c *config) {
+		c.maxRetries = &retries
 	}
 }

@@ -133,11 +133,10 @@ func (d *contextDecoder) admit(current decodeQueueEntry, candidate string) {
 		return
 	}
 	d.visited[candidate] = struct{}{}
-	data := []byte(candidate)
-	if len(data) == 0 || !IsReadableText(data) {
+	if !IsReadableString(candidate) {
 		return
 	}
-	if len(data) > maxDecodedCandidateLen || d.total+len(data) > maxDecodedTotalBytes {
+	if len(candidate) > maxDecodedCandidateLen || d.total+len(candidate) > maxDecodedTotalBytes {
 		d.result.Status |= DecodeByteLimit
 		return
 	}
@@ -150,7 +149,7 @@ func (d *contextDecoder) admit(current decodeQueueEntry, candidate string) {
 		return
 	}
 	d.result.Candidates = append(d.result.Candidates, candidate)
-	d.total += len(data)
+	d.total += len(candidate)
 	d.queue = append(d.queue, decodeQueueEntry{text: candidate, depth: current.depth + 1})
 }
 
@@ -262,7 +261,7 @@ func decodeContextCandidate(
 ) (decodedContextCandidate, bool) {
 	span := family.spans[family.next]
 	decoded, ok := family.attempt()
-	if !ok || !IsReadableText([]byte(decoded)) {
+	if !ok || !IsReadableString(decoded) {
 		return decodedContextCandidate{}, false
 	}
 	if family.kind == decodeHex {

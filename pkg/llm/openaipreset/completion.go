@@ -2,6 +2,7 @@ package openaipreset
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -9,7 +10,6 @@ import (
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/openai/openai-go/v3/shared"
 
-	json "github.com/park285/shared-go/pkg/json"
 	sharedllm "github.com/park285/shared-go/pkg/llm"
 	"github.com/park285/shared-go/pkg/llm/internal/openaidiag"
 )
@@ -54,7 +54,7 @@ func (c *Client) Complete(ctx context.Context, req CompletionRequest) (Completio
 	if err != nil {
 		return CompletionResponse{}, err
 	}
-	attrs := promptSummaryAttrs(requestedModel, completionPrompt(req.Messages))
+	attrs := promptSummaryAttrs(requestedModel, completionPromptLen(req.Messages))
 	return runRequest(ctx, c.logger, attrs, func() (CompletionResponse, error) {
 		resp, err := c.openai.Responses.New(ctx, params)
 		if err != nil {
@@ -71,19 +71,19 @@ func (c *Client) Complete(ctx context.Context, req CompletionRequest) (Completio
 	})
 }
 
-func completionPrompt(messages []Message) string {
-	var prompt strings.Builder
+func completionPromptLen(messages []Message) int {
+	total := 0
 	for i := range messages {
 		content := strings.TrimSpace(messages[i].Content)
 		if content == "" {
 			continue
 		}
-		if prompt.Len() > 0 {
-			prompt.WriteByte('\n')
+		if total > 0 {
+			total++
 		}
-		prompt.WriteString(content)
+		total += len(content)
 	}
-	return prompt.String()
+	return total
 }
 
 func (c *Client) completionParams(req CompletionRequest) (responses.ResponseNewParams, string, error) {
@@ -156,12 +156,12 @@ func completionInput(messages []Message) responses.ResponseInputParam {
 		if content == "" {
 			continue
 		}
-		out = append(out, responses.ResponseInputItemParamOfMessage(content, completionRole(message.Role)))
+		out = append(out, responses.ResponseInputItemParamOfMessage(content, CompletionRole(message.Role)))
 	}
 	return out
 }
 
-func completionRole(role string) responses.EasyInputMessageRole {
+func CompletionRole(role string) responses.EasyInputMessageRole {
 	switch strings.ToLower(strings.TrimSpace(role)) {
 	case "developer":
 		return responses.EasyInputMessageRoleDeveloper
@@ -200,7 +200,7 @@ func completionText(resp *responses.Response) string {
 	}
 
 	text := strings.TrimSpace(resp.OutputText())
-	if looksLikeToolCallEnvelope(text) {
+	if LooksLikeToolCallEnvelope(text) {
 		return ""
 	}
 	return text
@@ -216,7 +216,7 @@ func preferredMessageText(items []responses.ResponseOutputItemUnion) string {
 		}
 
 		text := messageContentText(item.Content)
-		if text == "" || looksLikeToolCallEnvelope(text) {
+		if text == "" || LooksLikeToolCallEnvelope(text) {
 			continue
 		}
 		if item.Phase == responses.ResponseOutputMessagePhaseFinalAnswer {
@@ -239,24 +239,61 @@ func messageContentText(content []responses.ResponseOutputMessageContentUnion) s
 	return strings.TrimSpace(builder.String())
 }
 
-func looksLikeToolCallEnvelope(text string) bool {
+// LooksLikeToolCallEnvelope는 최상위 키만 순차 스캔해 tool-call envelope를 판정한다.
+// 전체 파싱과 달리 키를 만난 시점에 종료하므로, envelope 뒤쪽이 잘려 있어도 true다
+// (tool-call 잔재를 사용자 텍스트로 흘리지 않는 쪽이 보수적).
+func LooksLikeToolCallEnvelope(text string) bool {
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" || trimmed[0] != '{' {
 		return false
 	}
 
-	var envelope map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(trimmed), &envelope); err != nil {
+	decoder := json.NewDecoder(strings.NewReader(trimmed))
+	if token, err := decoder.Token(); err != nil || token != json.Delim('{') {
 		return false
 	}
-
-	for _, key := range []string{"tool_calls", "function_call", "tool_call"} {
-		if _, ok := envelope[key]; ok {
+	for decoder.More() {
+		token, err := decoder.Token()
+		if err != nil {
+			return false
+		}
+		key, ok := token.(string)
+		if !ok {
+			return false
+		}
+		if key == "tool_calls" || key == "function_call" || key == "tool_call" {
 			return true
+		}
+		if err := skipJSONValue(decoder); err != nil {
+			return false
 		}
 	}
 
 	return false
+}
+
+func skipJSONValue(decoder *json.Decoder) error {
+	depth := 0
+	for {
+		token, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		delim, isDelim := token.(json.Delim)
+		switch {
+		case !isDelim:
+			if depth == 0 {
+				return nil
+			}
+		case delim == '{' || delim == '[':
+			depth++
+		default:
+			depth--
+			if depth == 0 {
+				return nil
+			}
+		}
+	}
 }
 
 func UsageFromResponseUsage(usage *responses.ResponseUsage) sharedllm.Usage {

@@ -427,8 +427,9 @@ func TestCheckStatus_DrainCapAndClose(t *testing.T) {
 	if !rc.closed {
 		t.Fatal("CheckStatus() did not close body when over drain cap")
 	}
-	if rc.readBytes > 4096+drainCap {
-		t.Fatalf("CheckStatus() drained %d bytes, want <= %d (bounded drain)", rc.readBytes, 4096+drainCap)
+	// drain은 상한 바이트 + EOF 확인용 1바이트까지만 읽는다.
+	if want := 4096 + drainCap + 1; rc.readBytes > want {
+		t.Fatalf("CheckStatus() drained %d bytes, want <= %d (bounded drain + EOF probe)", rc.readBytes, want)
 	}
 }
 

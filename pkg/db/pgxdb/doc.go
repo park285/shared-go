@@ -26,6 +26,18 @@
 // 기본값 대체 없이 그대로 pgx에 전달된다(MaxConns=0은 pgx에 유효하지 않아 20으로 대체된다).
 // DB_POOL_MIN_CONNS·DB_POOL_MAX_CONNS 등 풀 크기 env의 소유·검증·clamp는 소비자 책임이다.
 // 따라서 OpenPool(ctx,cfg,Options{})와 DefaultOptions() 경유가 동일한 풀 구성을 만든다.
+// MinConns가 MaxConns보다 크면 두 경로 모두 연결 전에 에러를 낸다(둘 다 0보다 클 때만 판정하므로
+// overlay의 "미설정=0" 의미는 유지된다).
+//
+// HealthCheckPeriod만은 예외로 0 이하일 때 DefaultPoolConfig()가 아니라 pgx가 채운 값
+// (ParseConfig 기본 1분, DSN의 pool_health_check_period가 있으면 그 값)에 위임한다.
+// pgxpool이 이 값으로 time.NewTicker를 만들어 0이면 panic하기 때문이다.
+//
+// # QueryExecMode 적용 경로
+//
+// Config.QueryExecMode는 DSN의 default_query_exec_mode 파라미터 한 곳으로만 적용된다.
+// pgx가 이 파라미터를 파싱해 ConnConfig.DefaultQueryExecMode를 채우고 RuntimeParams에서
+// 제거하므로, 값 검증은 Config.Validate가, 적용은 pgx가 담당한다. OpenPoolDSN도 같은 경로다.
 //
 // OpenPoolDSN은 다르다: pgxpool.ParseConfig가 DSN의 pool_* 파라미터를 파싱하며 미지정 필드에
 // pgx 자체 기본값(MaxConns=max(4,NumCPU), MinConns=0, ConnMaxLifetime=1h, ConnMaxIdleTime=30m,

@@ -7,8 +7,10 @@ import (
 	"log/slog"
 	"net/http"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
@@ -67,7 +69,10 @@ func New(baseURL, apiKey, model string, opts ...Option) (*Client, error) {
 		httpClient = defaultHTTPClient()
 	}
 
-	requestOpts := []option.RequestOption{option.WithAPIKey(strings.TrimSpace(apiKey))}
+	requestOpts := []option.RequestOption{
+		option.WithAPIKey(strings.TrimSpace(apiKey)),
+		option.WithMaxRetries(sharedllm.ResolveOpenAIMaxRetries(cfg.maxRetries)),
+	}
 	if normalizedBaseURL := strings.TrimRight(strings.TrimSpace(baseURL), "/"); normalizedBaseURL != "" {
 		requestOpts = append(requestOpts, option.WithBaseURL(normalizedBaseURL))
 	}
@@ -78,6 +83,7 @@ func New(baseURL, apiKey, model string, opts ...Option) (*Client, error) {
 		APIKey:                       apiKey,
 		HTTPClient:                   httpClient,
 		AllowChatCompletionsFallback: cfg.allowChatCompletionsFallback,
+		MaxRetries:                   cfg.maxRetries,
 	})
 	if err != nil {
 		return nil, err
@@ -173,7 +179,7 @@ func (c *Client) GenerateLayeredResponsesJSON(ctx context.Context, task string, 
 	if err != nil {
 		return "", err
 	}
-	attrs := promptSummaryAttrs(model, prompts.Invariant+"\n"+prompts.Developer+"\n"+prompts.User)
+	attrs := promptSummaryAttrs(model, joinedPromptLen(prompts.Invariant, prompts.Developer, prompts.User))
 	return runRequest(ctx, c.logger, attrs, func() (string, error) {
 		resp, err := c.openai.Responses.New(ctx, params)
 		if err != nil {
@@ -236,20 +242,7 @@ func (c *Client) generate(
 	taskName, systemPrompt, invariantPrompt, developerPrompt, userPrompt string,
 	schema map[string]any,
 ) (sharedllm.JSONResponse, error) {
-	prompt := systemPrompt + "\n" + userPrompt
-	hasInvariantPrompt := strings.TrimSpace(invariantPrompt) != ""
-	hasDeveloperPrompt := strings.TrimSpace(developerPrompt) != ""
-	if hasInvariantPrompt || hasDeveloperPrompt {
-		promptLayers := make([]string, 0, 3)
-		if hasInvariantPrompt {
-			promptLayers = append(promptLayers, invariantPrompt)
-		}
-		if hasDeveloperPrompt {
-			promptLayers = append(promptLayers, developerPrompt)
-		}
-		prompt = strings.Join(append(promptLayers, userPrompt), "\n")
-	}
-	attrs := promptSummaryAttrs(c.model, strings.TrimSpace(prompt))
+	attrs := promptSummaryAttrs(c.model, layeredPromptLen(systemPrompt, invariantPrompt, developerPrompt, userPrompt))
 	return runRequest(ctx, c.logger, attrs, func() (sharedllm.JSONResponse, error) {
 		return sharedllm.RunJSON(ctx, c.generator, sharedllm.JSONRequest{
 			TaskName:        taskName,
@@ -270,10 +263,21 @@ func (c *Client) generate(
 
 func decodeJSONInto(task, text string, out any) error {
 	if err := sharedjson.Unmarshal([]byte(text), out); err != nil {
-		return fmt.Errorf("decode %s json failed", strings.TrimSpace(task))
+		return fmt.Errorf("decode %s json failed: %w", strings.TrimSpace(task), &redactedCauseError{cause: err})
 	}
 	return nil
 }
+
+// sonic decode error 메시지는 실패 지점 주변 원문을 담으므로 렌더링하면 provider
+// 출력이 샌다(TestGenerateJSONIntoDecodeErrorOmitsProviderOutput). 원문은 Unwrap으로만
+// 전달해 errors.Is/As 대상 클래스를 보존하고, 메시지에는 타입만 남긴다.
+type redactedCauseError struct{ cause error }
+
+func (e *redactedCauseError) Error() string {
+	return sharedllm.RedactDiagnostic(openaidiag.ErrorClass(e.cause), sharedllm.DefaultDiagnosticLimit)
+}
+
+func (e *redactedCauseError) Unwrap() error { return e.cause }
 
 func runRequest[T any](ctx context.Context, logger *slog.Logger, attrs []slog.Attr, run func() (T, error)) (T, error) {
 	logging.Info(ctx, logger, "llm.request.started", "llm request started", attrs...)
@@ -289,12 +293,66 @@ func runRequest[T any](ctx context.Context, logger *slog.Logger, attrs []slog.At
 	return resp, nil
 }
 
-func promptSummaryAttrs(model, prompt string) []slog.Attr {
-	prompt = strings.TrimSpace(prompt)
-	attrs := []slog.Attr{
+func promptSummaryAttrs(model string, promptLen int) []slog.Attr {
+	return []slog.Attr{
 		slog.String("provider", providerLabel),
 		slog.String("model", model),
-		slog.Int("prompt_len", len(prompt)),
+		slog.Int("prompt_len", promptLen),
 	}
-	return attrs
+}
+
+func layeredPromptLen(systemPrompt, invariantPrompt, developerPrompt, userPrompt string) int {
+	hasInvariantPrompt := strings.TrimSpace(invariantPrompt) != ""
+	hasDeveloperPrompt := strings.TrimSpace(developerPrompt) != ""
+	switch {
+	case hasInvariantPrompt && hasDeveloperPrompt:
+		return joinedPromptLen(invariantPrompt, developerPrompt, userPrompt)
+	case hasInvariantPrompt:
+		return joinedPromptLen(invariantPrompt, userPrompt)
+	case hasDeveloperPrompt:
+		return joinedPromptLen(developerPrompt, userPrompt)
+	default:
+		return joinedPromptLen(systemPrompt, userPrompt)
+	}
+}
+
+// "\n"으로 이은 계층의 TrimSpace 길이를 연결 없이 센다. 구분자가 ASCII 공백이라
+// 계층 경계를 rune이 가로지르지 않으므로 계층별 trim 결과를 그대로 합산할 수 있다.
+func joinedPromptLen(parts ...string) int {
+	total := 0
+	for i, part := range parts {
+		if i > 0 {
+			total++
+		}
+		total += len(part)
+	}
+
+	lead := 0
+	for i, part := range parts {
+		if i > 0 {
+			lead++
+		}
+		trimmed := strings.TrimLeftFunc(part, unicode.IsSpace)
+		lead += len(part) - len(trimmed)
+		if trimmed != "" {
+			break
+		}
+	}
+	if lead >= total {
+		return 0
+	}
+
+	trail := 0
+	for i, part := range slices.Backward(parts) {
+		if i < len(parts)-1 {
+			trail++
+		}
+		trimmed := strings.TrimRightFunc(part, unicode.IsSpace)
+		trail += len(part) - len(trimmed)
+		if trimmed != "" {
+			break
+		}
+	}
+
+	return total - lead - trail
 }

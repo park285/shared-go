@@ -123,16 +123,21 @@ func TestRunReturnsWhenShutdownDoesNotStopListener(t *testing.T) {
 	}
 }
 
-func TestRunUsesUnboundedShutdownWhenTimeoutIsNotPositive(t *testing.T) {
+func TestRunUsesDefaultShutdownDeadlineWhenTimeoutIsNotPositive(t *testing.T) {
 	server := newBlockingServer(http.ErrServerClosed, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
+	startedAt := time.Now()
 	if err := Run(ctx, server, 0); err != nil {
 		t.Fatalf("Run() error = %v, want nil", err)
 	}
-	if _, ok := server.shutdownCtx.Deadline(); ok {
-		t.Fatal("Shutdown context has deadline for non-positive timeout")
+	deadline, ok := server.shutdownCtx.Deadline()
+	if !ok {
+		t.Fatal("Shutdown context has no deadline for non-positive timeout")
+	}
+	if budget := deadline.Sub(startedAt); budget <= 0 || budget > DefaultShutdownTimeout+time.Second {
+		t.Fatalf("Shutdown budget = %v, want bounded by DefaultShutdownTimeout", budget)
 	}
 }
 

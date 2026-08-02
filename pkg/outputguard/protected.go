@@ -80,7 +80,7 @@ const (
 func validateProtectedTexts(input []string) ([]string, bool, bool) {
 	protected := make([]string, 0, min(len(input), maxProtectedTexts))
 	totalBytes := 0
-	for _, text := range slices.Clone(input) {
+	for _, text := range input {
 		if len(text) > maxProtectedTextBytes {
 			return nil, false, true
 		}

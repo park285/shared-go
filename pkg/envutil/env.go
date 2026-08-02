@@ -14,6 +14,8 @@ const (
 	boolTrue  = "true"
 	boolFalse = "false"
 	boolYes   = "yes"
+	boolOn    = "on"
+	boolOff   = "off"
 )
 
 func warnParse(key, value, kind string, err error, def any) {
@@ -100,15 +102,12 @@ func Bool(key string, def bool) bool {
 	if value == "" {
 		return def
 	}
-	switch strings.ToLower(value) {
-	case "1", boolTrue, boolYes, "y", "on":
-		return true
-	case "0", boolFalse, "no", "n", "off":
-		return false
-	default:
+	parsed, ok := lookupBool(value)
+	if !ok {
 		warnParse(key, value, "bool", nil, def)
 		return def
 	}
+	return parsed
 }
 
 func BoolE(key string, def bool) (bool, error) {
@@ -144,6 +143,24 @@ func FloatE(key string, def float64) (float64, error) {
 	return parsed, nil
 }
 
+// BoolExplicit은 값과 함께 "명시적으로 설정되었는지"를 반환한다. 미설정과 공백-only는
+// 모두 explicit=false로 접어 unset과 동일하게 다룬다(String/Bool의 trim 규칙과 일치).
+func BoolExplicit(key string) (value bool, explicit bool, err error) {
+	raw, found := os.LookupEnv(key)
+	if !found {
+		return false, false, nil
+	}
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return false, false, nil
+	}
+	parsed, ok := lookupBool(trimmed)
+	if !ok {
+		return false, true, strictParseError(key, "bool", strconv.ErrSyntax)
+	}
+	return parsed, true, nil
+}
+
 func Duration(key string, def time.Duration) time.Duration {
 	value := strings.TrimSpace(os.Getenv(key))
 	if value == "" {
@@ -157,6 +174,18 @@ func Duration(key string, def time.Duration) time.Duration {
 	return parsed
 }
 
+func DurationE(key string, def time.Duration) (time.Duration, error) {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return def, nil
+	}
+	parsed, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, strictParseError(key, "duration", err)
+	}
+	return parsed, nil
+}
+
 func StringAny(keys ...string) string {
 	for _, key := range keys {
 		value := strings.TrimSpace(os.Getenv(key))
@@ -167,6 +196,8 @@ func StringAny(keys ...string) string {
 	return ""
 }
 
+// Deprecated: iris-stack 소비자가 없습니다. 단일 키는 IntE를 쓰고, 다중 키 폴백이
+// 필요하면 호출부에서 StringAny로 키를 고른 뒤 파싱하십시오.
 func IntAnyE(keys []string, def int) (int, error) {
 	key, value, ok := firstEnvValue(keys)
 	if !ok {
@@ -179,6 +210,8 @@ func IntAnyE(keys []string, def int) (int, error) {
 	return parsed, nil
 }
 
+// Deprecated: iris-stack 소비자가 없습니다. 단일 키는 Int64E를 쓰고, 다중 키 폴백이
+// 필요하면 호출부에서 StringAny로 키를 고른 뒤 파싱하십시오.
 func Int64AnyE(keys []string, def int64) (int64, error) {
 	key, value, ok := firstEnvValue(keys)
 	if !ok {
@@ -191,6 +224,8 @@ func Int64AnyE(keys []string, def int64) (int64, error) {
 	return parsed, nil
 }
 
+// Deprecated: iris-stack 소비자가 없습니다. 단일 키는 BoolE를 쓰고, 다중 키 폴백이
+// 필요하면 호출부에서 StringAny로 키를 고른 뒤 파싱하십시오.
 func BoolAnyE(keys []string, def bool) (bool, error) {
 	key, value, ok := firstEnvValue(keys)
 	if !ok {
@@ -209,15 +244,25 @@ func firstEnvValue(keys []string) (string, string, bool) {
 	return "", "", false
 }
 
-func parseBoolE(key, value string) (bool, error) {
+// lookupBool은 Bool/BoolE/BoolExplicit/dotenv 로더가 공유하는 유일한 bool 수용 집합이다.
+// strict 변형은 미수용 값에 대한 반환(기본값 vs 에러)만 다르고 수용 집합은 같다.
+func lookupBool(value string) (parsed bool, ok bool) {
 	switch strings.ToLower(value) {
-	case "1", boolTrue, boolYes, "y":
-		return true, nil
-	case "0", boolFalse, "no", "n":
-		return false, nil
+	case "1", boolTrue, boolYes, "y", boolOn:
+		return true, true
+	case "0", boolFalse, "no", "n", boolOff:
+		return false, true
 	default:
+		return false, false
+	}
+}
+
+func parseBoolE(key, value string) (bool, error) {
+	parsed, ok := lookupBool(value)
+	if !ok {
 		return false, strictParseError(key, "bool", strconv.ErrSyntax)
 	}
+	return parsed, nil
 }
 
 func strictParseError(key, kind string, err error) error {
@@ -229,10 +274,16 @@ func strictParseError(key, kind string, err error) error {
 }
 
 func List(key string) []string {
-	return ListWithFallback(key, "")
+	return listWithFallback(key, "")
 }
 
+// Deprecated: iris-stack 소비자가 없습니다. List를 쓰고 빈 결과에 대한 기본값은
+// 호출부에서 처리하십시오.
 func ListWithFallback(key, fallback string) []string {
+	return listWithFallback(key, fallback)
+}
+
+func listWithFallback(key, fallback string) []string {
 	raw := StringOrFile(key, fallback)
 	if raw == "" {
 		return nil

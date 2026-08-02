@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -82,8 +81,7 @@ func (c *JSONClient) DiscardBody(resp *http.Response) error {
 	if resp == nil || resp.Body == nil {
 		return nil
 	}
-	defer func() { _ = resp.Body.Close() }()
-	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+	if err := DrainAndClose(resp.Body, DefaultDrainLimit); err != nil {
 		return fmt.Errorf("discard body: %w", err)
 	}
 	return nil

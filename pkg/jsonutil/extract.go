@@ -1,6 +1,7 @@
 package jsonutil
 
 import (
+	"bytes"
 	"errors"
 	"regexp"
 	"strings"
@@ -35,11 +36,17 @@ func Extract(text string) ([]byte, error) {
 
 	text = strings.TrimSpace(text)
 
+	// scalar(42, "s", null)는 object/array만 추출하던 기존 계약 보존을 위해 fast-path에서 의도적으로 제외.
+	if len(text) > 0 && (text[0] == jsonObjectOpen || text[0] == jsonArrayOpen) {
+		if whole := []byte(text); json.Valid(whole) {
+			return whole, nil
+		}
+	}
+
 	// 1. 코드펜스 우선
 	if matches := fenceRe.FindStringSubmatch(text); len(matches) > 1 {
-		candidate := strings.TrimSpace(matches[1])
-		if json.Valid([]byte(candidate)) {
-			return []byte(candidate), nil
+		if candidate := []byte(strings.TrimSpace(matches[1])); json.Valid(candidate) {
+			return candidate, nil
 		}
 	}
 
@@ -73,7 +80,8 @@ func extractFirstJSON(text string) ([]byte, error) {
 		}
 		candidate := b[i : end+1]
 		if json.Valid(candidate) {
-			return candidate, nil
+			// candidate는 입력 전체 복사본(b)을 alias하므로 그대로 반환하면 입력 전체가 GC되지 않는다.
+			return bytes.Clone(candidate), nil
 		}
 	}
 	return nil, ErrNoJSONFound

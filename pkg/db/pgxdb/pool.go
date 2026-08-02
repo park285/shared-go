@@ -12,14 +12,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-var queryExecModes = map[string]pgx.QueryExecMode{
-	"cache_statement": pgx.QueryExecModeCacheStatement,
-	"cache_describe":  pgx.QueryExecModeCacheDescribe,
-	"describe_exec":   pgx.QueryExecModeDescribeExec,
-	"exec":            pgx.QueryExecModeExec,
-	"simple_protocol": pgx.QueryExecModeSimpleProtocol,
-}
-
 type Options struct {
 	Logger       *slog.Logger
 	Pool         PoolConfig
@@ -97,9 +89,6 @@ func buildConfigPool(cfg *Config, opts Options) (*pgxpool.Config, error) {
 		return nil, fmt.Errorf("pgxdb: parse config: %w", err)
 	}
 	poolCfg.ConnConfig.Password = cfg.Password
-	if err := applyQueryExecMode(poolCfg, cfg.QueryExecMode); err != nil {
-		return nil, err
-	}
 	if err := applyPoolConfig(poolCfg, withPoolDefaults(opts.Pool)); err != nil {
 		return nil, err
 	}
@@ -135,18 +124,6 @@ func newPoolAndPing(ctx context.Context, poolCfg *pgxpool.Config, opts Options) 
 	return pool, nil
 }
 
-func applyQueryExecMode(poolCfg *pgxpool.Config, queryExecMode string) error {
-	if queryExecMode == "" {
-		return nil
-	}
-	mode, ok := queryExecModes[normalizeQueryExecMode(queryExecMode)]
-	if !ok {
-		return fmt.Errorf("pgxdb: invalid query exec mode %q (allowed: cache_statement, cache_describe, describe_exec, exec, simple_protocol)", queryExecMode)
-	}
-	poolCfg.ConnConfig.DefaultQueryExecMode = mode
-	return nil
-}
-
 func applyPoolConfig(poolCfg *pgxpool.Config, pool PoolConfig) error {
 	if err := validateConnCounts(pool); err != nil {
 		return err
@@ -156,7 +133,15 @@ func applyPoolConfig(poolCfg *pgxpool.Config, pool PoolConfig) error {
 	poolCfg.MaxConnLifetime = pool.ConnMaxLifetime
 	poolCfg.MaxConnLifetimeJitter = pool.ConnMaxLifetimeJitter
 	poolCfg.MaxConnIdleTime = pool.ConnMaxIdleTime
+	applyHealthCheckPeriod(poolCfg, pool)
 	return nil
+}
+
+// 0 대입은 pgxpool의 time.NewTicker(0)를 panic시키므로, 미설정이면 ParseConfig가 채운 값을 남긴다.
+func applyHealthCheckPeriod(poolCfg *pgxpool.Config, pool PoolConfig) {
+	if pool.HealthCheckPeriod > 0 {
+		poolCfg.HealthCheckPeriod = pool.HealthCheckPeriod
+	}
 }
 
 func overlayPoolConfig(poolCfg *pgxpool.Config, pool PoolConfig) error {
@@ -173,6 +158,7 @@ func overlayPoolConfig(poolCfg *pgxpool.Config, pool PoolConfig) error {
 	if pool.ConnMaxIdleTime > 0 {
 		poolCfg.MaxConnIdleTime = pool.ConnMaxIdleTime
 	}
+	applyHealthCheckPeriod(poolCfg, pool)
 	return nil
 }
 
@@ -194,6 +180,10 @@ func overlayLifetime(poolCfg *pgxpool.Config, pool PoolConfig) {
 func validateConnCounts(pool PoolConfig) error {
 	if pool.MinConns < 0 || pool.MaxConns < 0 || pool.MinConns > math.MaxInt32 || pool.MaxConns > math.MaxInt32 {
 		return fmt.Errorf("pgxdb: pool connection count out of int32 range: min=%d max=%d", pool.MinConns, pool.MaxConns)
+	}
+	// overlay 경로에서 0은 "미설정"이므로 역전 검사는 둘 다 명시된 경우에만 성립한다.
+	if pool.MinConns > 0 && pool.MaxConns > 0 && pool.MinConns > pool.MaxConns {
+		return fmt.Errorf("pgxdb: pool min conns %d exceeds max conns %d", pool.MinConns, pool.MaxConns)
 	}
 	return nil
 }

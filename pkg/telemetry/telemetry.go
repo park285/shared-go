@@ -14,6 +14,8 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+
+	"github.com/park285/shared-go/pkg/logging"
 )
 
 type Config struct {
@@ -112,8 +114,14 @@ func installGlobalProvider(tp *sdktrace.TracerProvider) {
 
 type slogErrorHandler struct{}
 
+// exporter 에러 문구에는 OTLP endpoint URL이 그대로 실려 오고, 그 URL에 credential이 박혀
+// 있을 수 있다. 이 핸들러는 slog.Default()로 나가므로 sanitize handler가 설치돼 있다는
+// 보장이 없어, 여기서 직접 마스킹한다.
 func (slogErrorHandler) Handle(err error) {
-	slog.Warn("otel export error", "error", err.Error())
+	if err == nil {
+		return
+	}
+	slog.Warn("otel export error", "error", logging.RedactDiagnostic(err.Error()))
 }
 
 // 시그널 핸들러 defer의 이미 취소된 ctx가 와도 마지막 배치를 flush할 수 있도록

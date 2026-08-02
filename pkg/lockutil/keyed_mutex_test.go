@@ -51,6 +51,33 @@ func TestKeyedMutexAllowsDifferentShards(t *testing.T) {
 	}
 }
 
+func TestKeyedMutexSerializesDifferentKeysOnSameShard(t *testing.T) {
+	var mu KeyedMutex
+	const held = "sid-1"
+	other := keyOnSameShard(t, held)
+
+	mu.Lock(held)
+	acquired := make(chan struct{})
+	go func() {
+		mu.Lock(other)
+		close(acquired)
+		mu.Unlock(other)
+	}()
+
+	select {
+	case <-acquired:
+		t.Fatalf("Lock(%q) acquired while same-shard key %q was held", other, held)
+	case <-time.After(20 * time.Millisecond):
+	}
+	mu.Unlock(held)
+
+	select {
+	case <-acquired:
+	case <-time.After(time.Second):
+		t.Fatalf("Lock(%q) did not acquire after Unlock(%q)", other, held)
+	}
+}
+
 func TestKeyedMutexRaceSafety(t *testing.T) {
 	var (
 		mu       KeyedMutex
@@ -82,6 +109,19 @@ func TestKeyedMutexRaceSafety(t *testing.T) {
 	if want := goroutines * iterations; got != want {
 		t.Fatalf("guarded increments = %d, want %d", got, want)
 	}
+}
+
+func keyOnSameShard(t *testing.T, key string) string {
+	t.Helper()
+	shard := keyedMutexShard(key)
+	for index := range 4096 {
+		candidate := key + string(rune(index+1))
+		if keyedMutexShard(candidate) == shard {
+			return candidate
+		}
+	}
+	t.Fatal("could not find same shard")
+	return ""
 }
 
 func keyOnDifferentShard(t *testing.T, key string) string {

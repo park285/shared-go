@@ -101,6 +101,8 @@ func StringOrSecretFile(key, def string) (string, error) {
 	return def, nil
 }
 
+// Deprecated: iris-stack 소비자가 없습니다. 키별로 StringOrSecretFile을 호출하고
+// 폴백 순서는 호출부에서 정하십시오.
 func FirstStringOrSecretFile(keys []string, def string) (string, error) {
 	for _, key := range keys {
 		if value := strings.TrimSpace(os.Getenv(key)); value != "" {

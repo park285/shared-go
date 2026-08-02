@@ -12,8 +12,10 @@ import (
 	"github.com/park285/shared-go/pkg/runtime/automaxprocs"
 )
 
+// Run이 error를 반환하면 bootstrap.Run은 비-0 exit code로 종료해 supervisor(systemd/Docker)의
+// 재시작 정책이 동작하도록 합니다.
 type runtime interface {
-	Run()
+	Run() error
 	Close()
 }
 
@@ -31,6 +33,7 @@ type Options[Config any, Runtime runtime] struct {
 	BuildTimeout           time.Duration
 	BuildRuntime           func(ctx context.Context, config Config, logger *slog.Logger) (Runtime, error)
 	BuildErrorMessage      string
+	RunErrorMessage        string
 	Stderr                 io.Writer
 }
 
@@ -65,7 +68,13 @@ func Run[Config any, Runtime runtime](opts Options[Config, Runtime]) int {
 	}
 	defer rt.Close()
 
-	rt.Run()
+	if runErr := rt.Run(); runErr != nil {
+		logger.Error(
+			sharedlogging.RedactDiagnostic(fallback(opts.RunErrorMessage, "Runtime stopped with error")),
+			slog.String("error", sharedlogging.RedactDiagnostic(runErr.Error())),
+		)
+		return 1
+	}
 	return 0
 }
 

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -88,16 +89,132 @@ func TestOverlayPoolConfig_OverridesWhenSet(t *testing.T) {
 	}
 }
 
-func TestApplyQueryExecMode(t *testing.T) {
+// QueryExecMode는 DSN 파라미터 단일 경로로만 적용된다. pgx가 default_query_exec_mode 지원을
+// 끊으면 이 테스트가 먼저 실패해야 한다.
+func TestBuildConfigPool_AppliesQueryExecModeThroughDSNOnly(t *testing.T) {
+	clearRootCertEnv(t)
+
+	tests := []struct {
+		name string
+		mode string
+		want pgx.QueryExecMode
+	}{
+		{name: "unset falls back to pgx default", mode: "", want: pgx.QueryExecModeCacheStatement},
+		{name: "simple protocol", mode: "simple_protocol", want: pgx.QueryExecModeSimpleProtocol},
+		{name: "normalized case", mode: "  EXEC  ", want: pgx.QueryExecModeExec},
+		{name: "describe exec", mode: "describe_exec", want: pgx.QueryExecModeDescribeExec},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Config{Host: "127.0.0.1", Port: 5432, User: "u", Name: "db", SSLMode: "disable", QueryExecMode: tt.mode}
+			poolCfg, err := buildConfigPool(&cfg, Options{}.withDefaults())
+			if err != nil {
+				t.Fatalf("buildConfigPool error = %v", err)
+			}
+			if got := poolCfg.ConnConfig.DefaultQueryExecMode; got != tt.want {
+				t.Errorf("DefaultQueryExecMode = %v, want %v", got, tt.want)
+			}
+			if _, ok := poolCfg.ConnConfig.RuntimeParams["default_query_exec_mode"]; ok {
+				t.Error("default_query_exec_mode leaked into RuntimeParams (would be sent to the server)")
+			}
+		})
+	}
+}
+
+func TestBuildConfigPool_RejectsInvalidQueryExecMode(t *testing.T) {
+	clearRootCertEnv(t)
+	cfg := Config{Host: "127.0.0.1", Port: 5432, User: "u", Name: "db", SSLMode: "disable", QueryExecMode: "nope"}
+	if _, err := buildConfigPool(&cfg, Options{}.withDefaults()); err == nil {
+		t.Fatal("buildConfigPool with invalid query exec mode: expected error, got nil")
+	}
+}
+
+func TestApplyPoolConfig_HealthCheckPeriod(t *testing.T) {
+	t.Run("explicit value applied", func(t *testing.T) {
+		pc := mustParse(t, "postgres://u@127.0.0.1:5432/db?sslmode=disable")
+		if err := applyPoolConfig(pc, withPoolDefaults(PoolConfig{HealthCheckPeriod: 15 * time.Second})); err != nil {
+			t.Fatalf("applyPoolConfig error = %v", err)
+		}
+		if pc.HealthCheckPeriod != 15*time.Second {
+			t.Errorf("HealthCheckPeriod = %v, want 15s", pc.HealthCheckPeriod)
+		}
+	})
+
+	// 0을 그대로 대입하면 pgxpool이 time.NewTicker(0)로 panic한다.
+	t.Run("zero preserves parsed default", func(t *testing.T) {
+		pc := mustParse(t, "postgres://u@127.0.0.1:5432/db?sslmode=disable")
+		parsed := pc.HealthCheckPeriod
+		if parsed <= 0 {
+			t.Fatalf("precondition: parsed HealthCheckPeriod = %v, want positive pgx default", parsed)
+		}
+		if err := applyPoolConfig(pc, withPoolDefaults(PoolConfig{})); err != nil {
+			t.Fatalf("applyPoolConfig error = %v", err)
+		}
+		if pc.HealthCheckPeriod != parsed {
+			t.Errorf("HealthCheckPeriod = %v, want preserved %v", pc.HealthCheckPeriod, parsed)
+		}
+	})
+
+	t.Run("overlay honours dsn value when unset", func(t *testing.T) {
+		pc := mustParse(t, "postgres://u@127.0.0.1:5432/db?sslmode=disable&pool_health_check_period=42s")
+		if pc.HealthCheckPeriod != 42*time.Second {
+			t.Fatalf("precondition: parsed HealthCheckPeriod = %v, want 42s", pc.HealthCheckPeriod)
+		}
+		if err := overlayPoolConfig(pc, PoolConfig{MaxConns: 3}); err != nil {
+			t.Fatalf("overlayPoolConfig error = %v", err)
+		}
+		if pc.HealthCheckPeriod != 42*time.Second {
+			t.Errorf("HealthCheckPeriod = %v, want preserved 42s", pc.HealthCheckPeriod)
+		}
+		if err := overlayPoolConfig(pc, PoolConfig{MaxConns: 3, HealthCheckPeriod: 7 * time.Second}); err != nil {
+			t.Fatalf("overlayPoolConfig error = %v", err)
+		}
+		if pc.HealthCheckPeriod != 7*time.Second {
+			t.Errorf("HealthCheckPeriod = %v, want overridden 7s", pc.HealthCheckPeriod)
+		}
+	})
+}
+
+func TestValidateConnCounts_RejectsInvertedRange(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		pool    PoolConfig
+		wantErr bool
+	}{
+		{name: "min below max", pool: PoolConfig{MinConns: 2, MaxConns: 10}},
+		{name: "min equals max", pool: PoolConfig{MinConns: 10, MaxConns: 10}},
+		{name: "min unset with max set", pool: PoolConfig{MaxConns: 10}},
+		{name: "max unset means overlay keeps parsed value", pool: PoolConfig{MinConns: 30}},
+		{name: "both unset", pool: PoolConfig{}},
+		{name: "inverted", pool: PoolConfig{MinConns: 30, MaxConns: 10}, wantErr: true},
+		{name: "negative min", pool: PoolConfig{MinConns: -1, MaxConns: 10}, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := validateConnCounts(tt.pool)
+			if tt.wantErr != (err != nil) {
+				t.Fatalf("validateConnCounts(%+v) error = %v, wantErr = %v", tt.pool, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestApplyAndOverlayPoolConfig_PropagateInvertedRangeError(t *testing.T) {
+	t.Parallel()
+
+	inverted := PoolConfig{MinConns: 30, MaxConns: 10}
 	pc := mustParse(t, "postgres://u@127.0.0.1:5432/db?sslmode=disable")
-	if err := applyQueryExecMode(pc, ""); err != nil {
-		t.Fatalf("empty mode: unexpected error %v", err)
+	if err := applyPoolConfig(pc, inverted); err == nil {
+		t.Fatal("applyPoolConfig with inverted conn range: expected error, got nil")
 	}
-	if err := applyQueryExecMode(pc, "simple_protocol"); err != nil {
-		t.Fatalf("valid mode: unexpected error %v", err)
+	if err := overlayPoolConfig(pc, inverted); err == nil {
+		t.Fatal("overlayPoolConfig with inverted conn range: expected error, got nil")
 	}
-	if err := applyQueryExecMode(pc, "nope"); err == nil {
-		t.Fatal("invalid mode: expected error, got nil")
+	if pc.MinConns == 30 {
+		t.Error("rejected config must not be partially applied")
 	}
 }
 

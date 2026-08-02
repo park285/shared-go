@@ -7,13 +7,37 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 )
 
-// WriteRuntimeMetrics는 Go 런타임/프로세스 메트릭(go_*, process_*)을 텍스트 포맷으로 씁니다.
-func WriteRuntimeMetrics(w io.Writer) bool {
-	var ms runtime.MemStats
+// runtime.ReadMemStats는 stop-the-world라 scrape가 겹치면 그만큼 전체 정지가 반복된다.
+// 짧은 TTL 안에서는 직전 스냅샷을 재사용해 scraper 수와 무관하게 STW 빈도를 묶는다.
+const memStatsTTL = time.Second
 
-	runtime.ReadMemStats(&ms)
+var memStats struct {
+	mu       sync.Mutex
+	snapshot runtime.MemStats
+	readAt   time.Time
+}
+
+func cachedMemStats(now time.Time) runtime.MemStats {
+	memStats.mu.Lock()
+	defer memStats.mu.Unlock()
+
+	if !memStats.readAt.IsZero() && now.Sub(memStats.readAt) < memStatsTTL {
+		return memStats.snapshot
+	}
+	runtime.ReadMemStats(&memStats.snapshot)
+	memStats.readAt = now
+
+	return memStats.snapshot
+}
+
+// WriteRuntimeMetrics는 Go 런타임/프로세스 메트릭(go_*, process_*)을 텍스트 포맷으로 씁니다.
+// MemStats 계열 값은 최대 1초까지 캐시된 스냅샷일 수 있습니다.
+func WriteRuntimeMetrics(w io.Writer) bool {
+	ms := cachedMemStats(time.Now())
 
 	gauges := []struct {
 		name  string

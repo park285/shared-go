@@ -9,11 +9,10 @@ func (d *contextDecoder) deferRuleExpansion(current decodeQueueEntry, candidate 
 	if _, exists := d.visited[candidate]; exists {
 		return false
 	}
-	data := []byte(candidate)
-	if len(data) == 0 || !IsReadableText(data) {
+	if !IsReadableString(candidate) {
 		return false
 	}
-	if len(data) > maxDecodedCandidateLen {
+	if len(candidate) > maxDecodedCandidateLen {
 		d.result.Status |= DecodeByteLimit
 
 		return false

@@ -3,6 +3,8 @@ package httpserver
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 )
@@ -12,6 +14,22 @@ func TestShutdown_Success(t *testing.T) {
 
 	if err := Shutdown(context.Background(), server, "shutdown failed"); err != nil {
 		t.Fatalf("Shutdown() error = %v, want nil", err)
+	}
+}
+
+func TestShutdown_AbsorbsServerClosed(t *testing.T) {
+	server := newFakeServer(nil, http.ErrServerClosed)
+
+	if err := Shutdown(context.Background(), server, "shutdown failed"); err != nil {
+		t.Fatalf("Shutdown() error = %v, want nil for http.ErrServerClosed", err)
+	}
+}
+
+func TestShutdown_WrappedServerClosedIsAbsorbed(t *testing.T) {
+	server := newFakeServer(nil, fmt.Errorf("listener: %w", http.ErrServerClosed))
+
+	if err := Shutdown(context.Background(), server, "shutdown failed"); err != nil {
+		t.Fatalf("Shutdown() error = %v, want nil for wrapped http.ErrServerClosed", err)
 	}
 }
 

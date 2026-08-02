@@ -2,9 +2,11 @@ package envutil
 
 import (
 	"errors"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestIntE(t *testing.T) {
@@ -118,6 +120,10 @@ func TestBoolE(t *testing.T) {
 		{value: "0", want: false},
 		{value: "no", want: false},
 		{value: "n", want: false},
+		{value: "on", want: true},
+		{value: "off", want: false},
+		{value: "ON", want: true},
+		{value: " off ", want: false},
 	} {
 		t.Run(tt.value, func(t *testing.T) {
 			t.Setenv("TEST_BOOL_E", tt.value)
@@ -128,10 +134,140 @@ func TestBoolE(t *testing.T) {
 		})
 	}
 
-	t.Setenv("TEST_BOOL_E", "on")
+	t.Setenv("TEST_BOOL_E", "maybe")
 	got, err := BoolE("TEST_BOOL_E", true)
 	if err == nil || got {
-		t.Fatalf("BoolE(on) = (%v, %v), want (false, error)", got, err)
+		t.Fatalf("BoolE(maybe) = (%v, %v), want (false, error)", got, err)
+	}
+}
+
+func TestBoolAcceptanceSetIsShared(t *testing.T) {
+	accepted := map[string]bool{
+		"1": true, "true": true, "TRUE": true, "yes": true, "y": true, "on": true, "ON": true,
+		"0": false, "false": false, "False": false, "no": false, "n": false, "off": false, "OFF": false,
+	}
+
+	for value, want := range accepted {
+		t.Run("accept_"+value, func(t *testing.T) {
+			t.Setenv("TEST_BOOL_TABLE", value)
+
+			if got := Bool("TEST_BOOL_TABLE", !want); got != want {
+				t.Errorf("Bool(%q) = %v, want %v", value, got, want)
+			}
+			got, err := BoolE("TEST_BOOL_TABLE", !want)
+			if err != nil || got != want {
+				t.Errorf("BoolE(%q) = (%v, %v), want (%v, nil)", value, got, err, want)
+			}
+			gotAny, err := BoolAnyE([]string{"TEST_BOOL_TABLE"}, !want)
+			if err != nil || gotAny != want {
+				t.Errorf("BoolAnyE(%q) = (%v, %v), want (%v, nil)", value, gotAny, err, want)
+			}
+			gotExplicit, explicit, err := BoolExplicit("TEST_BOOL_TABLE")
+			if err != nil || !explicit || gotExplicit != want {
+				t.Errorf("BoolExplicit(%q) = (%v, %v, %v), want (%v, true, nil)", value, gotExplicit, explicit, err, want)
+			}
+			if got := dotenvBool("TEST_BOOL_TABLE", !want); got != want {
+				t.Errorf("dotenvBool(%q) = %v, want %v", value, got, want)
+			}
+		})
+	}
+
+	for _, value := range []string{"maybe", "2", "t", "f", "enabled"} {
+		t.Run("reject_"+value, func(t *testing.T) {
+			t.Setenv("TEST_BOOL_TABLE", value)
+
+			if got := Bool("TEST_BOOL_TABLE", true); !got {
+				t.Errorf("Bool(%q) = %v, want default true", value, got)
+			}
+			if _, err := BoolE("TEST_BOOL_TABLE", true); err == nil {
+				t.Errorf("BoolE(%q) error = nil, want error", value)
+			}
+			if _, err := BoolAnyE([]string{"TEST_BOOL_TABLE"}, true); err == nil {
+				t.Errorf("BoolAnyE(%q) error = nil, want error", value)
+			}
+			if _, _, err := BoolExplicit("TEST_BOOL_TABLE"); err == nil {
+				t.Errorf("BoolExplicit(%q) error = nil, want error", value)
+			}
+			if got := dotenvBool("TEST_BOOL_TABLE", true); !got {
+				t.Errorf("dotenvBool(%q) = %v, want default true", value, got)
+			}
+		})
+	}
+}
+
+func TestBoolExplicit(t *testing.T) {
+	t.Run("unset", func(t *testing.T) {
+		if err := os.Unsetenv("TEST_BOOL_EXPLICIT"); err != nil {
+			t.Fatalf("Unsetenv() error = %v", err)
+		}
+		value, explicit, err := BoolExplicit("TEST_BOOL_EXPLICIT")
+		if value || explicit || err != nil {
+			t.Fatalf("BoolExplicit(unset) = (%v, %v, %v), want (false, false, nil)", value, explicit, err)
+		}
+	})
+
+	t.Run("blank counts as unset", func(t *testing.T) {
+		t.Setenv("TEST_BOOL_EXPLICIT", "   ")
+		value, explicit, err := BoolExplicit("TEST_BOOL_EXPLICIT")
+		if value || explicit || err != nil {
+			t.Fatalf("BoolExplicit(blank) = (%v, %v, %v), want (false, false, nil)", value, explicit, err)
+		}
+	})
+
+	t.Run("explicit false", func(t *testing.T) {
+		t.Setenv("TEST_BOOL_EXPLICIT", "false")
+		value, explicit, err := BoolExplicit("TEST_BOOL_EXPLICIT")
+		if value || !explicit || err != nil {
+			t.Fatalf("BoolExplicit(false) = (%v, %v, %v), want (false, true, nil)", value, explicit, err)
+		}
+	})
+
+	t.Run("invalid does not leak value", func(t *testing.T) {
+		const canary = "sk_test_FAKESecret1234567890"
+		t.Setenv("TEST_BOOL_EXPLICIT", canary)
+		_, explicit, err := BoolExplicit("TEST_BOOL_EXPLICIT")
+		if err == nil {
+			t.Fatal("BoolExplicit(invalid) error = nil, want error")
+		}
+		if !explicit {
+			t.Error("BoolExplicit(invalid) explicit = false, want true")
+		}
+		if strings.Contains(err.Error(), canary) {
+			t.Fatalf("BoolExplicit(invalid) leaked raw value: %q", err)
+		}
+		if !errors.Is(err, strconv.ErrSyntax) {
+			t.Fatalf("BoolExplicit(invalid) error = %v, want strconv.ErrSyntax", err)
+		}
+	})
+}
+
+func TestDurationE(t *testing.T) {
+	t.Setenv("TEST_DURATION_E", " 1h30m ")
+	got, err := DurationE("TEST_DURATION_E", time.Second)
+	if err != nil || got != 90*time.Minute {
+		t.Fatalf("DurationE() = (%v, %v), want (90m, nil)", got, err)
+	}
+
+	t.Setenv("TEST_DURATION_E", " ")
+	got, err = DurationE("TEST_DURATION_E", 5*time.Second)
+	if err != nil || got != 5*time.Second {
+		t.Fatalf("DurationE(blank) = (%v, %v), want (5s, nil)", got, err)
+	}
+
+	const canary = "sk_test_FAKESecret1234567890"
+	t.Setenv("TEST_DURATION_E", canary)
+	got, err = DurationE("TEST_DURATION_E", 5*time.Second)
+	if err == nil || got != 0 {
+		t.Fatalf("DurationE(invalid) = (%v, %v), want (0, error)", got, err)
+	}
+	if strings.Contains(err.Error(), canary) {
+		t.Fatalf("DurationE(invalid) leaked raw value: %q", err)
+	}
+	if !strings.Contains(err.Error(), "TEST_DURATION_E") {
+		t.Fatalf("DurationE(invalid) error = %q, want key", err)
+	}
+	if !errors.Is(err, strconv.ErrSyntax) {
+		t.Fatalf("DurationE(invalid) error = %v, want strconv.ErrSyntax", err)
 	}
 }
 

@@ -144,6 +144,7 @@ func TestRun_NilShutdown(t *testing.T) {
 func TestRun_ZeroShutdownTimeout(t *testing.T) {
 	t.Parallel()
 
+	startedAt := time.Now()
 	err := Run(Options{
 		ShutdownTimeout: 0,
 		NotifySignals: func(...os.Signal) (<-chan os.Signal, func()) {
@@ -153,8 +154,13 @@ func TestRun_ZeroShutdownTimeout(t *testing.T) {
 			errCh <- nil
 		},
 		Shutdown: func(ctx context.Context) error {
-			if _, ok := ctx.Deadline(); ok {
-				t.Fatal("shutdown context should not have a deadline when timeout is zero")
+			deadline, ok := ctx.Deadline()
+			if !ok {
+				t.Fatal("shutdown context must carry the default deadline when timeout is zero")
+				return nil
+			}
+			if budget := deadline.Sub(startedAt); budget <= 0 || budget > DefaultShutdownTimeout+time.Second {
+				t.Fatalf("shutdown budget = %v, want bounded by DefaultShutdownTimeout", budget)
 			}
 			return nil
 		},

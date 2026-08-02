@@ -3,8 +3,9 @@ package ginjson
 import (
 	"net/http"
 
-	"github.com/bytedance/sonic"
 	"github.com/gin-gonic/gin"
+
+	"github.com/park285/shared-go/pkg/json"
 )
 
 type JSON struct {
@@ -15,7 +16,7 @@ var jsonContentType = []string{"application/json; charset=utf-8"}
 
 func (r JSON) Render(w http.ResponseWriter) error {
 	r.WriteContentType(w)
-	enc := sonic.ConfigDefault.NewEncoder(w)
+	enc := json.NewEncoder(w)
 	enc.SetEscapeHTML(true)
 	return enc.Encode(r.Data)
 }

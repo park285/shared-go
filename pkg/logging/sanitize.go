@@ -247,12 +247,21 @@ func (h *sanitizeHandler) Handle(ctx context.Context, record slog.Record) error 
 	msg := redactSecrets(record.Message)
 	changed := msg != record.Message
 
+	// 변경 감지 패스가 처음 바뀐 attr의 위치와 정제 결과를 남긴다. 그 앞의 attr들은
+	// changed=false로 판정됐으므로 정제해도 원본과 같은 값이라 재구축 때 원본을 그대로 쓴다.
+	firstChangedIndex := -1
+	var firstChangedAttr slog.Attr
 	if !changed && !h.inMaskedGroup {
+		index := 0
 		record.Attrs(func(attr slog.Attr) bool {
-			if _, attrChanged := sanitizeAttrChanged(attr); attrChanged {
+			out, attrChanged := sanitizeAttrChanged(attr)
+			if attrChanged {
 				changed = true
+				firstChangedIndex = index
+				firstChangedAttr = out
 				return false
 			}
+			index++
 			return true
 		})
 	}
@@ -262,8 +271,17 @@ func (h *sanitizeHandler) Handle(ctx context.Context, record slog.Record) error 
 	}
 
 	newRecord := slog.NewRecord(record.Time, record.Level, msg, record.PC)
+	index := 0
 	record.Attrs(func(attr slog.Attr) bool {
-		newRecord.AddAttrs(h.sanitizeOwnedAttr(attr))
+		switch {
+		case index < firstChangedIndex:
+			newRecord.AddAttrs(attr)
+		case index == firstChangedIndex:
+			newRecord.AddAttrs(firstChangedAttr)
+		default:
+			newRecord.AddAttrs(h.sanitizeOwnedAttr(attr))
+		}
+		index++
 		return true
 	})
 	return h.inner.Handle(ctx, newRecord)

@@ -60,8 +60,6 @@ func CheckStatus(resp *http.Response) error {
 		return nil
 	}
 	const maxBodyLen = 4096
-	// keep-alive 재사용을 위해 에러 경로에서도 남은 body를 상한까지 비우고 닫습니다.
-	const maxDrainLen = 256 * 1024
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyLen))
 	if err != nil {
 		_ = resp.Body.Close()
@@ -70,8 +68,8 @@ func CheckStatus(resp *http.Response) error {
 			Err:        fmt.Errorf("read body: %w", err),
 		}
 	}
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxDrainLen)) //nolint:errcheck // best-effort drain, 실패해도 아래 Close로 정리
-	_ = resp.Body.Close()
+	// keep-alive 재사용을 위해 에러 경로에서도 남은 body를 상한까지 비우고 닫습니다. 실패는 무시합니다.
+	_ = DrainAndClose(resp.Body, DefaultDrainLimit) //nolint:errcheck // best-effort drain, 실패해도 body는 닫힌다
 	return newAPIError(resp.StatusCode, strings.TrimSpace(string(body)))
 }
 

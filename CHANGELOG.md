@@ -3,6 +3,75 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## v1.42.0 - 2026-08-02
+
+### 호환성이 깨지는 변경
+
+- `runtime/bootstrap`: `Options`가 요구하는 runtime 계약을 `Run()`에서 `Run() error`로 바꿉니다.
+  runtime이 error를 반환하면 `bootstrap.Run`이 비-0 exit code로 종료해 supervisor(systemd/Docker)의
+  재시작 정책이 동작합니다. 기존에는 runtime 실패가 exit code 0으로 끝나 supervisor가 정상 종료로
+  오인했습니다. 스택 소비자 호출부는 같은 파동에서 전부 `Run() error`로 전환했습니다.
+
+### 추가
+
+- `httputil.ReadAllAndClose`/`DrainAndClose`/`DefaultDrainLimit`/`ErrNilBody`: close 소유권을 helper가
+  갖는 상한부 body 처리를 신설합니다. 상한 초과는 `ErrResponseBodyTooLarge`로 판별하고, read 실패와
+  close 실패는 `errors.Join`으로 함께 보존하며, keep-alive 재사용을 위해 잔여 스트림은
+  `DefaultDrainLimit`(256KiB)까지만 소비합니다.
+- `envutil.DurationE`·`envutil.BoolExplicit`: 설정 오류를 error로 받는 duration 파서와, 미설정/공백을
+  unset으로 접는 명시적 bool 파서를 추가합니다. bool 수용 문자열 표는 `Bool`/`BoolE`와 단일 표
+  (`lookupBool`)로 통합했습니다.
+- `pgxdb.PoolConfig.HealthCheckPeriod`: pool 상태 점검 주기를 노출합니다. 0 이하는 pgx 기본값(1분)을
+  유지합니다 — pgxpool은 이 값으로 `time.NewTicker`를 만들므로 0 대입은 panic입니다.
+- `workerpool`: finalizer 거부 사유에서 shutdown(`ManagedSubmitRejectedFinalizerClosed`)과 capacity
+  (`ManagedSubmitRejectedFinalizerCapacity`)를 분리하고, `ManagedFinalizerSnapshot.OverdueInFlight`
+  (FinalizeTimeout을 넘겨 아직 반환하지 않은 callback 수 — reservation 미회수라 지속되면 admission
+  고갈로 이어짐)를 추가합니다.
+- `openaipreset.LooksLikeToolCallEnvelope`·`openaipreset.CompletionRole`: 소비자가 재구현하던 tool-call
+  envelope 판정과 completion role 상수를 export합니다.
+- `obsmetrics`: cardinality/label 상한으로 버려진 series를 `<vec>_dropped_series_total` counter로
+  노출합니다. 캡에 걸린 series는 exposition에 나타나지 않으므로, 이 family 없이는 "값이 0"과
+  "메트릭이 잘렸음"을 구분할 수 없습니다.
+
+### 수정
+
+- `logging`: stdout lane이 EPIPE·ENOSPC로 실패하면 `io.MultiWriter`가 뒤따르는 파일 lane까지 건너뛰어
+  내구 기록이 유실되던 문제를 고칩니다. stdout 사본 실패는 삼키고 유실 건수만 세어 Close 시 파일
+  lane으로 요약합니다. 파일 lane 실패는 계속 전파됩니다.
+- `runtime/httpserver`: `Shutdown`이 이미 종료된 server의 `http.ErrServerClosed`를 정상 종료로 흡수하고,
+  deadline 없는 context에는 기본 deadline을 적용합니다.
+- `healthprobe`: body close 소유권을 `httputil.ReadAllAndClose`로 이관하고, guard가 없을 때 공유
+  `http.DefaultTransport`의 idle pool을 닫지 않도록 고칩니다. guard transport는
+  `CloseIdleConnections`를 cleanup으로 돌려줍니다.
+- `netguard`: 다중 A/AAAA 후보 dial에서 첫 후보가 context 예산을 모두 소진해 나머지 후보의 failover
+  기회가 사라지던 것을, 남은 예산을 남은 후보 수로 나누는 시도별 budget(하한 2초)으로 고칩니다.
+- `llm`/`openaipreset`: OpenAI SDK 클라이언트에 `option.WithMaxRetries`를 명시적으로 핀해 재시도
+  정책의 소유권을 설정 한 곳으로 고정합니다. JSON decode 실패 메시지는 provider 원문이 새지 않도록
+  타입 클래스만 남기고 원문은 `Unwrap`으로만 전달합니다(`errors.Is/As` 보존).
+- `pgxdb`: `QueryExecMode` 적용 경로를 DSN `default_query_exec_mode` 한 곳으로 단일화하고, overlay
+  경로에서 `MinConns > MaxConns` 역전을 둘 다 명시된 경우에만 검사합니다.
+- `jsonutil.Extract`: regex 캡처 반환값이 입력 전체 사본을 alias해 큰 입력의 GC를 막던 것을
+  `bytes.Clone`으로 끊습니다.
+- `promptguard`: singleflight 공유 반환값을 in-place로 변형하지 않는 불변식을 문서화하고, 소유권
+  경계(반환 직전) 한 곳에서만 clone하도록 중복 clone을 제거합니다.
+
+### 성능
+
+- `jsonutil.Extract`: 입력 전체가 object/array JSON인 경우 regex 없이 즉시 반환하는 fast-path를
+  추가합니다(대형 페이로드 기준 약 8배).
+- `obsmetrics`: label escaper를 재사용하고 canonical label 직렬화의 할당을 줄이며,
+  `runtime.ReadMemStats`(stop-the-world)를 1초 TTL 캐시로 묶어 다중 scraper에서도 STW 빈도를
+  고정합니다.
+- `logging`: sanitize 변경-감지 패스의 결과를 재구축에 재사용해, 변경 없는 선행 attr의 중복 정제를
+  제거합니다.
+- `guardtext`: base64 후보 디코드가 스팬마다 할당하던 목적지 buffer를 열거 1회당 1개로 재사용하고,
+  `IsReadableString`으로 `[]byte` 변환 복사를 제거합니다.
+
+### 사용 중단 예고
+
+- `envutil`: 스택 소비자가 0인 다중-키 폴백 계열(`IntAnyE` 등)을 Deprecated로 표기합니다. 제거는
+  README 호환성 정책에 따라 이후 minor에서 진행합니다.
+
 ## v1.41.0 - 2026-08-02
 
 ### 호환성이 깨지는 변경

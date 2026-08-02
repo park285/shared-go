@@ -6,7 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bytedance/sonic"
 	"github.com/gin-gonic/gin"
+
 	"github.com/park285/shared-go/pkg/ginjson"
 	sharedjson "github.com/park285/shared-go/pkg/json"
 )
@@ -69,6 +71,62 @@ func TestJSON_Render(t *testing.T) {
 
 	if out["count"] != 42 {
 		t.Errorf("JSON 값 불일치: got %d, want %d", out["count"], 42)
+	}
+}
+
+func TestJSON_Render_EscapeSemanticsMatchSonicDefault(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		data any
+	}{
+		{name: "html 특수문자", data: map[string]string{"k": `<script>alert("x")&</script>`}},
+		{name: "제어문자", data: map[string]string{"k": "a\x01b"}},
+		{name: "한글과 이모지", data: map[string]string{"k": "사용자 \U0001F600"}},
+		{name: "중첩 구조", data: map[string]any{"list": []any{1, "a<b", true, nil}}},
+		{name: "nil 데이터", data: nil},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			w := httptest.NewRecorder()
+			if err := (ginjson.JSON{Data: tc.data}).Render(w); err != nil {
+				t.Fatalf("Render 오류: %v", err)
+			}
+
+			var want strings.Builder
+			enc := sonic.ConfigDefault.NewEncoder(&want)
+			enc.SetEscapeHTML(true)
+			if err := enc.Encode(tc.data); err != nil {
+				t.Fatalf("기준 인코더 오류: %v", err)
+			}
+
+			if got := w.Body.String(); got != want.String() {
+				t.Fatalf("출력 불일치: got %q, want %q", got, want.String())
+			}
+		})
+	}
+}
+
+func TestJSON_Render_InvalidUTF8IsReplaced(t *testing.T) {
+	t.Parallel()
+
+	w := httptest.NewRecorder()
+	if err := (ginjson.JSON{Data: map[string]string{"k": "ok\xff\xfebad"}}).Render(w); err != nil {
+		t.Fatalf("Render 오류: %v", err)
+	}
+
+	body := strings.TrimSpace(w.Body.String())
+
+	var out map[string]string
+	if err := sharedjson.Unmarshal([]byte(body), &out); err != nil {
+		t.Fatalf("응답 바디가 유효한 JSON이 아님: %v (body=%q)", err, body)
+	}
+	if got, want := out["k"], "ok��bad"; got != want {
+		t.Fatalf("잘못된 UTF-8 치환 결과 불일치: got %q, want %q (body=%q)", got, want, body)
 	}
 }
 

@@ -8,6 +8,9 @@ import (
 	"time"
 )
 
+// DefaultShutdownTimeout은 Options.ShutdownTimeout이 0 이하일 때 적용하는 보수적 기본 종료 예산이다.
+const DefaultShutdownTimeout = 30 * time.Second
+
 type SignalNotifier func(signals ...os.Signal) (<-chan os.Signal, func())
 
 type Options struct {
@@ -118,10 +121,10 @@ func beforeShutdown(fn func()) {
 }
 
 func shutdownContext(timeout time.Duration) (context.Context, context.CancelFunc) {
-	if timeout > 0 {
-		return context.WithTimeout(context.Background(), timeout)
+	if timeout <= 0 {
+		timeout = DefaultShutdownTimeout
 	}
-	return context.Background(), func() {}
+	return context.WithTimeout(context.Background(), timeout)
 }
 
 func shutdown(fn func(ctx context.Context) error, ctx context.Context) error {

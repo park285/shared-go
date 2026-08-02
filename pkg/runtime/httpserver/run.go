@@ -8,6 +8,11 @@ import (
 	"time"
 )
 
+// DefaultShutdownTimeout 은 shutdownTimeout 이 0 이하일 때 적용하는 보수적 기본 종료 예산입니다.
+const DefaultShutdownTimeout = 30 * time.Second
+
+// Run 은 ctx 취소 시 server 를 종료합니다. shutdownTimeout 이 0 이하이면 무기한 대기 대신
+// DefaultShutdownTimeout 을 적용해 process 종료가 멈추지 않도록 합니다.
 func Run(ctx context.Context, server Server, shutdownTimeout time.Duration) error {
 	errCh := make(chan error, 1)
 	go func() {
@@ -35,7 +40,7 @@ func Run(ctx context.Context, server Server, shutdownTimeout time.Duration) erro
 func shutdownContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
 	parent := context.WithoutCancel(ctx)
 	if timeout <= 0 {
-		return context.WithCancel(parent)
+		timeout = DefaultShutdownTimeout
 	}
 	return context.WithTimeout(parent, timeout)
 }

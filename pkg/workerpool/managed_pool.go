@@ -34,19 +34,24 @@ const (
 
 // JobSpec은 queue admission 이후 dequeue 시점에 실행 budget을 만드는 작업 계약이다.
 type JobSpec struct {
+	// Context는 값(trace, logger 등)만 전달한다. pool이 취소 신호를 끊고 자체 budget을 붙이므로
+	// 이 context를 취소해도 Run이나 Finalize는 중단되지 않는다.
 	Context     context.Context
 	Kind        string
 	Timeout     time.Duration
 	MaxQueueAge time.Duration
 	Run         func(context.Context)
-	Finalize    func(context.Context, JobOutcome)
+	// Finalize의 FinalizeTimeout은 관측 전용이다. 초과해도 callback은 중단되지 않고
+	// reservation capacity는 callback이 실제로 반환할 때까지 회수되지 않는다.
+	Finalize func(context.Context, JobOutcome)
 }
 
 // ManagedConfig는 ManagedPool의 고정 worker, queue, finalizer scheduler budget을 설정한다.
 type ManagedConfig struct {
 	Workers   int
 	QueueSize int
-	// FinalizeTimeout은 callback 실제 시작 시점부터 적용한다.
+	// FinalizeTimeout은 callback 실제 시작 시점부터 적용하는 관측용 예산이다. 초과는 TimedOut과
+	// OverdueInFlight로 드러날 뿐이며 callback을 중단하거나 reservation을 회수하지 않는다.
 	FinalizeTimeout time.Duration
 	// FinalizeConcurrency는 동시에 실행할 수 있는 callback 수다.
 	FinalizeConcurrency int
@@ -64,6 +69,8 @@ const (
 	ManagedSubmitRejected                   ManagedSubmitReason = "rejected"
 	ManagedSubmitRejectedFinalizerScheduled ManagedSubmitReason = "rejected_finalizer_scheduled"
 	ManagedSubmitRejectedFinalizerCapacity  ManagedSubmitReason = "rejected_finalizer_capacity"
+	// ManagedSubmitRejectedFinalizerClosed는 capacity 부족이 아니라 shutdown으로 거부된 경우다.
+	ManagedSubmitRejectedFinalizerClosed ManagedSubmitReason = "rejected_finalizer_closed"
 )
 
 // ManagedSubmitResult는 admission과 pool의 Finalize callback ownership을 함께 제공한다.
@@ -89,7 +96,10 @@ type ManagedFinalizerSnapshot struct {
 	// 이미 시작된 callback의 실제 반환 완료는 뜻하지 않는다.
 	DispatchDrained bool
 	// Quiesced는 Close 이후 모든 callback이 실제로 반환하고 reservation이 해제됐음을 뜻한다.
-	Quiesced            bool
+	Quiesced bool
+	// OverdueInFlight는 FinalizeTimeout이 지났는데도 아직 반환하지 않은 callback 수다.
+	// 이 slot들의 reservation은 회수되지 않으므로 값이 지속되면 admission 고갈로 이어진다.
+	OverdueInFlight     int
 	Claimed             uint64
 	Started             uint64
 	Completed           uint64
@@ -254,10 +264,11 @@ func (p *ManagedPool) trySubmit(spec JobSpec, claimRejectedFinalizer bool) Manag
 		job.expiresAt = job.enqueuedAt.Add(spec.MaxQueueAge)
 	}
 	if spec.Finalize != nil {
-		job.finalizerReserved = p.finalizer.Reserve(spec.Kind)
-		if !job.finalizerReserved {
+		reserved, rejectReason := p.finalizer.Reserve(spec.Kind)
+		job.finalizerReserved = reserved
+		if !reserved {
 			p.finalizeJob(job, JobOutcomeRejected)
-			return ManagedSubmitResult{Reason: ManagedSubmitRejectedFinalizerCapacity}
+			return ManagedSubmitResult{Reason: rejectReason}
 		}
 	}
 	if spec.Run == nil {
@@ -538,18 +549,20 @@ func newManagedFinalizer(concurrency, queueSize int, timeout time.Duration, logg
 	return finalizer
 }
 
-func (f *managedFinalizer) Reserve(kind string) bool {
+func (f *managedFinalizer) Reserve(kind string) (bool, ManagedSubmitReason) {
 	f.mu.Lock()
 	if !f.closed && f.snapshot.Reservations < f.snapshot.QueueSize {
 		f.snapshot.Reservations++
 		f.pending++
 		f.mu.Unlock()
-		return true
+		return true, ManagedSubmitAccepted
 	}
 	reason := "closed"
+	rejectReason := ManagedSubmitRejectedFinalizerClosed
 	if !f.closed {
 		f.snapshot.Overloaded++
 		reason = "capacity"
+		rejectReason = ManagedSubmitRejectedFinalizerCapacity
 	}
 	f.snapshot.ReservationRejected++
 	f.mu.Unlock()
@@ -558,7 +571,7 @@ func (f *managedFinalizer) Reserve(kind string) bool {
 		slog.String("kind", kind),
 		slog.String("reason", reason),
 	)
-	return false
+	return false, rejectReason
 }
 
 func (f *managedFinalizer) Release(reserved bool) {
@@ -683,15 +696,18 @@ func (f *managedFinalizer) execute(task *managedFinalizerTask) {
 		case result := <-completed:
 			f.recordCompletion(task, result, start.deadline, false)
 		default:
-			f.recordTimeout(task)
+			f.recordTimeout(task, true)
 			f.recordCompletion(task, <-completed, start.deadline, true)
 		}
 	}
 }
 
-func (f *managedFinalizer) recordTimeout(task *managedFinalizerTask) {
+func (f *managedFinalizer) recordTimeout(task *managedFinalizerTask, stillRunning bool) {
 	f.mu.Lock()
 	f.snapshot.TimedOut++
+	if stillRunning {
+		f.snapshot.OverdueInFlight++
+	}
 	f.mu.Unlock()
 	f.logger.Warn(
 		"managed_worker_finalize_timed_out",
@@ -708,10 +724,13 @@ func (f *managedFinalizer) recordCompletion(
 ) {
 	completedLate := !result.completedAt.Before(deadline)
 	if completedLate && !timedOut {
-		f.recordTimeout(task)
+		f.recordTimeout(task, false)
 	}
 
 	f.mu.Lock()
+	if timedOut {
+		f.snapshot.OverdueInFlight--
+	}
 	f.snapshot.InFlight--
 	f.releaseReservationLocked()
 	if result.panicked != nil {

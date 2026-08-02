@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -26,6 +27,9 @@ var (
 	// ErrUnguardedTransport는 RequireGuardedDial이 dial 무보증 RoundTripper를 거부할 때의 오류다.
 	ErrUnguardedTransport = errors.New("netguard: transport does not guard its dial path")
 )
+
+// stdlib net.Dialer의 saneMinimum과 같은 값으로, 후보가 많을 때 시도별 예산이 무의미하게 작아지는 것을 막는다.
+const minDialAttemptTimeout = 2 * time.Second
 
 var blockedAddressPrefixes = [...]netip.Prefix{
 	netip.MustParsePrefix("0.0.0.0/8"),
@@ -88,6 +92,10 @@ type Policy struct {
 	Schemes []string
 	// RequireGuardedDial은 dial 무보증 RoundTripper를 GuardedClient에서 fail-closed로 거부한다.
 	RequireGuardedDial bool
+
+	// AllowedHosts를 ASCII 정규화한 사본이다. guard 생성 시 한 번 채우며, 비어 있으면
+	// 요청 시점에 AllowedHosts로부터 다시 계산해 값으로 만든 Policy도 같은 결과를 낸다.
+	normalizedAllowedHosts []string
 }
 
 // DialGuardedRoundTripper는 dial 시점 IP 정책을 보장할 수 없는 opaque RoundTripper가
@@ -237,14 +245,22 @@ func GuardedDialContext(
 		dialer := &net.Dialer{Timeout: p.Timeout}
 		base = dialer.DialContext
 	}
+	p = p.prepared()
 	return func(ctx context.Context, network, address string) (net.Conn, error) {
 		resolved, err := p.resolveDialAddresses(ctx, address)
 		if err != nil {
 			return nil, err
 		}
 		var dialErrs []error
-		for _, resolvedAddress := range resolved {
-			conn, err := base(ctx, network, resolvedAddress)
+		for index, resolvedAddress := range resolved {
+			attemptCtx, cancel, budgetErr := dialAttemptContext(ctx, len(resolved)-index)
+			if budgetErr != nil {
+				dialErrs = append(dialErrs, budgetErr)
+				break
+			}
+			conn, err := base(attemptCtx, network, resolvedAddress)
+			// net.Dialer/tls.Dialer 계약상 연결이 성립한 뒤의 context 취소는 conn에 영향이 없다.
+			cancel()
 			if err == nil {
 				return conn, nil
 			}
@@ -255,6 +271,26 @@ func GuardedDialContext(
 		}
 		return nil, errors.Join(dialErrs...)
 	}
+}
+
+// dialAttemptContext는 ctx에 남은 시간을 남은 후보 수로 나눠 첫 후보가 예산을 모두 쓰고
+// 나머지 후보의 failover 기회를 없애는 것을 막는다. 마지막 후보는 남은 예산을 그대로 쓴다.
+// ctx에 deadline이 없으면 base dialer의 자체 timeout이 그대로 적용된다.
+func dialAttemptContext(ctx context.Context, remaining int) (context.Context, context.CancelFunc, error) {
+	deadline, ok := ctx.Deadline()
+	if !ok || remaining <= 1 {
+		return ctx, func() {}, nil
+	}
+	budget := time.Until(deadline)
+	if budget <= 0 {
+		return nil, nil, fmt.Errorf("netguard: dial budget exhausted: %w", context.DeadlineExceeded)
+	}
+	timeout := budget / time.Duration(remaining)
+	if timeout < minDialAttemptTimeout {
+		timeout = min(budget, minDialAttemptTimeout)
+	}
+	attemptCtx, cancel := context.WithTimeout(ctx, timeout)
+	return attemptCtx, cancel, nil
 }
 
 // GuardedTransport는 http.Transport의 dial 경로에 Policy 검증을 적용한다.
@@ -268,6 +304,7 @@ func GuardedTransport(base *http.Transport, p Policy) *http.Transport {
 	} else {
 		base = base.Clone()
 	}
+	p = p.prepared()
 	base.Proxy = nil
 	//lint:ignore SA1019 deprecated DialTLS를 비워 소비자 제공 unguarded DialTLS 우회를 막는다.
 	base.DialTLS = nil //nolint:staticcheck // golangci-lint staticcheck도 같은 보안 우회 차단 예외를 인식시킨다.
@@ -291,6 +328,7 @@ func GuardedClient(client *http.Client, p Policy) *http.Client {
 	if client == nil {
 		client = &http.Client{}
 	}
+	p = p.prepared()
 	cloned := *client
 	if cloned.Transport == nil {
 		cloned.Transport = guardedRoundTripper{base: GuardedTransport(nil, p), policy: p, dialGuarded: true}
@@ -361,6 +399,7 @@ func (unguardedRoundTripper) RoundTrip(req *http.Request) (*http.Response, error
 
 // RedirectPolicy는 redirect 대상도 Policy로 검증하는 CheckRedirect 함수다.
 func RedirectPolicy(cfg RedirectConfig) func(req *http.Request, via []*http.Request) error {
+	cfg.Policy = cfg.Policy.prepared()
 	return func(req *http.Request, via []*http.Request) error {
 		if cfg.DisableFollow {
 			return http.ErrUseLastResponse
@@ -428,7 +467,7 @@ func (p Policy) validateScheme(scheme string) error {
 
 func (p Policy) validateHost(host string) error {
 	candidate := normalizeHostASCII(host)
-	if len(p.AllowedHosts) > 0 && !hostInList(candidate, p.AllowedHosts) {
+	if len(p.AllowedHosts) > 0 && !slices.Contains(p.allowedHostsASCII(), candidate) {
 		return fmt.Errorf("%w: %s", ErrHostNotAllowed, candidate)
 	}
 	if p.AllowHost != nil && !p.AllowHost(candidate) {
@@ -500,14 +539,28 @@ func (p Policy) allowsIP(ip net.IP) bool {
 	return false
 }
 
-func hostInList(host string, allowed []string) bool {
-	host = normalizeHostASCII(host)
-	for _, candidate := range allowed {
-		if host == normalizeHostASCII(candidate) {
-			return true
-		}
+// prepared는 요청마다 반복되던 allowlist 정규화를 guard 생성 시점으로 한 번만 옮긴다.
+func (p Policy) prepared() Policy {
+	if len(p.AllowedHosts) == 0 || p.normalizedAllowedHosts != nil {
+		return p
 	}
-	return false
+	p.normalizedAllowedHosts = normalizeHostListASCII(p.AllowedHosts)
+	return p
+}
+
+func (p Policy) allowedHostsASCII() []string {
+	if p.normalizedAllowedHosts != nil {
+		return p.normalizedAllowedHosts
+	}
+	return normalizeHostListASCII(p.AllowedHosts)
+}
+
+func normalizeHostListASCII(hosts []string) []string {
+	normalized := make([]string, 0, len(hosts))
+	for _, host := range hosts {
+		normalized = append(normalized, normalizeHostASCII(host))
+	}
+	return normalized
 }
 
 func effectivePort(target *url.URL) string {

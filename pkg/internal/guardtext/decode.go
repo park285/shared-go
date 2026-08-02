@@ -15,9 +15,14 @@ const (
 	// 열거·기여 검사 시도 예산. junk 기각이 무과금으로 바뀐 뒤에는 고유 suspect의
 	// 경계 열거(스팬 길이 제곱)만 이 예산을 쓰므로, 25KB급 정상 답변의 열거 총량
 	// (~수만)을 여유 있게 덮되 대량 고유-junk 스터핑은 소진→fail-closed로 남긴다.
-	// 소진 시 CPU 상한 ≈ 시도당 짧은 base64 디코드 1회 × 262144 ≈ 수백 ms.
-	maxProtectedDecodeTries  = 1 << 18
-	maxProtectedDecodeBytes  = 4 << 20
+	maxProtectedDecodeTries = 1 << 18
+	maxProtectedDecodeBytes = 4 << 20
+	// 최악 CPU를 지배하는 것은 시도 횟수가 아니라 이 문맥 예산이다: 긴 구분자 run이
+	// 8KB 윈도우를 무력화하면 contextualMatchSurface가 입력 전체를 재조합해 규칙
+	// 정규식을 돌리므로 1회 과금이 곧 입력 길이가 된다. 1MB 적대 입력 실측 4.35s/op
+	// (BenchmarkOutputGuardContextualDecodeMaximumOutput).
+	// 낮추면 적대 입력보다 정상 입력이 먼저 끊긴다: 25KB 정상 장문이 이미 최대
+	// 1.29MB를 쓰고, 1<<20에서 TestBoundGuardAllowsLongTechnicalAnswers가 오차단된다.
 	maxProtectedContextBytes = 16 << 20
 	maxHTMLEntityNameBytes   = 31
 	maxLegacyHTMLEntityBytes = 6
@@ -96,11 +101,10 @@ func DecodeCandidates(input string) DecodeResult {
 				continue
 			}
 			visited[candidate] = struct{}{}
-			data := []byte(candidate)
-			if len(data) == 0 || !IsReadableText(data) {
+			if !IsReadableString(candidate) {
 				continue
 			}
-			if len(data) > maxDecodedCandidateLen || total+len(data) > maxDecodedTotalBytes {
+			if len(candidate) > maxDecodedCandidateLen || total+len(candidate) > maxDecodedTotalBytes {
 				result.Status |= DecodeByteLimit
 				continue
 			}
@@ -113,7 +117,7 @@ func DecodeCandidates(input string) DecodeResult {
 				continue
 			}
 			result.Candidates = append(result.Candidates, candidate)
-			total += len(data)
+			total += len(candidate)
 			candidateDepth := current.depth + 1
 			result.maxDepth = max(result.maxDepth, candidateDepth)
 			queue = append(queue, decodeQueueEntry{text: candidate, depth: candidateDepth})

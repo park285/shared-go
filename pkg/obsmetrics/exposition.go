@@ -160,12 +160,14 @@ func formatLabels(labels []labelPair) string {
 	return builder.String()
 }
 
+var labelValueEscaper = strings.NewReplacer(
+	`\`, `\\`,
+	"\n", `\n`,
+	`"`, `\"`,
+)
+
 func escapeLabelValue(value string) string {
-	return strings.NewReplacer(
-		`\`, `\\`,
-		"\n", `\n`,
-		`"`, `\"`,
-	).Replace(value)
+	return labelValueEscaper.Replace(value)
 }
 
 // SanitizeHelp는 HELP 텍스트의 개행을 제거해 exposition 포맷이 깨지지 않게 합니다.

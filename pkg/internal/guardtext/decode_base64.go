@@ -15,6 +15,7 @@ type base64Candidate struct {
 func base64SpansAtLeast(input string, minimum int) []encodedSpan {
 	var spans []encodedSpan
 	var seenValues map[string]struct{}
+	var scratch []byte
 	dedup := len(input) >= spanContextDedupMinInputBytes
 	for i := 0; i < len(input) && len(spans) <= maxDecodeScans; {
 		start := i
@@ -35,13 +36,25 @@ func base64SpansAtLeast(input string, minimum int) []encodedSpan {
 		// 판정을 마친(디코드 불가·비가독) 스팬의 기각은 예산 소진이 아니라 완결이다:
 		// 소비 단계에서도 동일하게 버려질 스팬을 목록에 남기면 scan 예산만 태워
 		// 무해한 해시·숫자열 장문이 decode_incomplete로 오차단된다.
-		decoded, err := DecodeBase64Candidate(match.value)
+		scratch = growBase64Scratch(scratch, len(match.value))
+		decoded, err := decodeBase64CandidateInto(scratch, match.value)
 		if err != nil || !IsReadableText(decoded) {
 			continue
 		}
 		spans = append(spans, encodedSpan{start: start, end: match.next})
 	}
 	return spans
+}
+
+// RawStdEncoding.DecodedLen이 네 후보 인코딩 중 항상 최대라 이 크기면 Decode가
+// 목적지 부족으로 넘치지 않는다. 스팬마다 재사용하므로 열거 1회당 할당도 1회다.
+func growBase64Scratch(scratch []byte, encodedLen int) []byte {
+	needed := base64.RawStdEncoding.DecodedLen(encodedLen)
+	if cap(scratch) >= needed {
+		return scratch[:needed]
+	}
+
+	return make([]byte, needed)
 }
 
 // spanContextSeen은 값이 같아도 주변 문맥이 다르면 문맥 의존 매칭(임베디드 문맥
@@ -268,6 +281,29 @@ func IsReadableText(data []byte) bool {
 			return false
 		}
 		data = data[size:]
+		total++
+		if unicode.IsPrint(r) || unicode.IsSpace(r) {
+			printable++
+		}
+	}
+
+	return total > 0 && printable*100 > total*90
+}
+
+// IsReadableText와 판정이 같되 []byte 변환 복사를 피한다.
+func IsReadableString(data string) bool {
+	if data == "" {
+		return false
+	}
+
+	printable := 0
+	total := 0
+	for index := 0; index < len(data); {
+		r, size := utf8.DecodeRuneInString(data[index:])
+		if r == utf8.RuneError && size == 1 {
+			return false
+		}
+		index += size
 		total++
 		if unicode.IsPrint(r) || unicode.IsSpace(r) {
 			printable++

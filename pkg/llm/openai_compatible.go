@@ -23,11 +23,28 @@ var (
 	ErrOpenAIRefusalOutput = openaidiag.ErrRefusalOutput
 )
 
+// openai-go SDK가 암묵 적용하던 재시도 횟수를 같은 값으로 명시 고정한 것이다.
+// 소비자가 자체 재시도를 겹치면 총 시도는 (소비자 시도) × (1 + MaxRetries)로 곱연산된다.
+const DefaultOpenAIMaxRetries = 2
+
 type OpenAICompatibleConfig struct {
 	BaseURL                      string
 	APIKey                       string
 	HTTPClient                   *http.Client
 	AllowChatCompletionsFallback bool
+	// nil이면 DefaultOpenAIMaxRetries, 0이면 재시도 없음.
+	MaxRetries *int
+}
+
+// option.WithMaxRetries는 음수에 panic하므로 0으로 절단한다.
+func ResolveOpenAIMaxRetries(configured *int) int {
+	if configured == nil {
+		return DefaultOpenAIMaxRetries
+	}
+	if *configured < 0 {
+		return 0
+	}
+	return *configured
 }
 
 type OpenAICompatibleJSONGenerator struct {
@@ -41,7 +58,10 @@ func NewOpenAICompatibleJSONGenerator(cfg OpenAICompatibleConfig) (*OpenAICompat
 		return nil, errors.New("llm: openai-compatible api key is empty")
 	}
 
-	opts := []option.RequestOption{option.WithAPIKey(apiKey)}
+	opts := []option.RequestOption{
+		option.WithAPIKey(apiKey),
+		option.WithMaxRetries(ResolveOpenAIMaxRetries(cfg.MaxRetries)),
+	}
 	if baseURL := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/"); baseURL != "" {
 		opts = append(opts, option.WithBaseURL(baseURL))
 	}

@@ -160,7 +160,6 @@ func (g *Guard) evaluate(input string, source Source) Evaluation {
 		return cloneEvaluation(evaluation)
 	}
 	if cached, ok := g.cache.Get(key); ok {
-		cached = cloneEvaluation(cached)
 		cached.Source = source
 		g.observeEvaluation(cached, true, len(input))
 
@@ -179,7 +178,7 @@ func (g *Guard) evaluate(input string, source Source) Evaluation {
 		result.Source = ""
 		g.cache.Set(key, cloneEvaluation(result))
 
-		return cloneEvaluation(result), nil
+		return result, nil
 	})
 	if err != nil {
 		evaluation := g.fallbackEvaluation(g.policy(), source, err.Error())
@@ -188,8 +187,9 @@ func (g *Guard) evaluate(input string, source Source) Evaluation {
 		return cloneEvaluation(evaluation)
 	}
 
+	// singleflight 반환값은 대기자 전원이 공유하므로 Hits를 in-place로 만지면 안 된다.
+	// Source는 구조체 복사본에만 쓰고, 호출자에게는 clone으로 소유권을 끊어 넘긴다.
 	if evaluation, ok := value.(Evaluation); ok {
-		evaluation = cloneEvaluation(evaluation)
 		evaluation.Source = source
 		g.observeEvaluation(evaluation, false, len(input))
 

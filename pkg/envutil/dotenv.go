@@ -62,6 +62,7 @@ func LoadDotenv(opts DotenvOptions) error {
 }
 
 // LoadDotenvFile는 dotenv 파일을 로드하며 strict 모드에서 symlink, non-regular file, world-accessible 파일을 거부한다.
+// 전체 줄 주석(#로 시작)만 인식하며 따옴표 없는 값의 inline #는 주석이 아니라 값의 일부로 남는다.
 func LoadDotenvFile(path string, required bool, strict bool) error {
 	path = strings.TrimSpace(path)
 	if path == "" {
@@ -216,16 +217,13 @@ func defaultPathDir(path string) string {
 }
 
 func dotenvBool(key string, def bool) bool {
-	value := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	value := strings.TrimSpace(os.Getenv(key))
 	if value == "" {
 		return def
 	}
-	switch value {
-	case "1", boolTrue, boolYes, "y", "on":
-		return true
-	case "0", boolFalse, "no", "n", "off":
-		return false
-	default:
+	parsed, ok := lookupBool(value)
+	if !ok {
 		return def
 	}
+	return parsed
 }

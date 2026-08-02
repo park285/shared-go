@@ -2,23 +2,16 @@ package dbmigrate
 
 import (
 	"embed"
-	"fmt"
 	"strings"
+
+	"github.com/park285/shared-go/pkg/sqlutil"
 )
 
 //go:embed queries/*.sql queries/*.sql.tpl
 var queryFS embed.FS
 
 func mustQuery(name string) string {
-	b, err := queryFS.ReadFile(name)
-	if err != nil {
-		panic(fmt.Sprintf("missing SQL asset %s: %v", name, err))
-	}
-	q := strings.TrimSpace(string(b))
-	if q == "" {
-		panic(fmt.Sprintf("empty SQL asset %s", name))
-	}
-	return q
+	return sqlutil.MustQuery(queryFS, name)
 }
 
 var (

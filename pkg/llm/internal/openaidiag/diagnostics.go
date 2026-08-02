@@ -90,11 +90,11 @@ func SafeError(err error) error {
 			code:       apiErr.Code,
 			param:      apiErr.Param,
 			apiType:    apiErr.Type,
-			errType:    errorType(apiErr),
+			errType:    ErrorClass(apiErr),
 		}
 	}
 
-	return safeProviderError{errType: errorType(err)}
+	return safeProviderError{errType: ErrorClass(err)}
 }
 
 func describeOutput(resp *responses.Response) string {
@@ -163,7 +163,9 @@ func outputItemRefusal(item *responses.ResponseOutputItemUnion) string {
 	return ""
 }
 
-func errorType(err error) string {
+// ErrorClass는 메시지 본문을 배제하고 원인 타입만 남긴다. provider·decoder 에러
+// 메시지에는 요청/응답 원문 조각이 섞여 들어오므로 진단에 그대로 실을 수 없다.
+func ErrorClass(err error) string {
 	if err == nil {
 		return ""
 	}

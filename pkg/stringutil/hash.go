@@ -12,7 +12,13 @@ func TruncatedHash(input string) string {
 	return hash(input)[:truncatedHashHexChars]
 }
 
+// Deprecated: iris-stack 소비자가 없습니다. 로그용 해시는 길이가 고정된
+// TruncatedLogHash를 사용하십시오.
 func HashForLog(input string) string {
+	return logHash(input)
+}
+
+func logHash(input string) string {
 	normalized := strings.Join(strings.Fields(strings.TrimSpace(input)), " ")
 	if normalized == "" {
 		return ""
@@ -21,7 +27,7 @@ func HashForLog(input string) string {
 }
 
 func TruncatedLogHash(input string) string {
-	value := HashForLog(input)
+	value := logHash(input)
 	if value == "" {
 		return ""
 	}

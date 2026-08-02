@@ -225,6 +225,9 @@ type PoolConfig struct {
 	ConnMaxLifetime       time.Duration
 	ConnMaxLifetimeJitter time.Duration
 	ConnMaxIdleTime       time.Duration
+	// HealthCheckPeriod가 0 이하면 pgx가 채운 값(ParseConfig 기본 1분)을 그대로 둔다.
+	// pgxpool은 이 값으로 time.NewTicker를 만들므로 0을 pgxpool.Config에 대입하면 panic한다.
+	HealthCheckPeriod time.Duration
 }
 
 func DefaultPoolConfig() PoolConfig {

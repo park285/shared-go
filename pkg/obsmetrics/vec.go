@@ -1,7 +1,6 @@
 package obsmetrics
 
 import (
-	"fmt"
 	"io"
 	"math"
 	"sort"
@@ -35,6 +34,12 @@ const (
 	// allocations performed while canonicalizing attacker-influenced labels.
 	DefaultMaxMetricLabelNameBytes  = 128
 	DefaultMaxMetricLabelValueBytes = 256
+)
+
+const (
+	canonicalLabelPairOverhead = 10
+	droppedSeriesSuffix        = "_dropped_series_total"
+	droppedSeriesHelp          = "Total series dropped because a cardinality or label limit was reached."
 )
 
 // VecOptions configures hard resource limits for a metric vector. Non-positive
@@ -226,7 +231,7 @@ func (v *CounterVec) WriteExposition(w io.Writer) bool {
 			return false
 		}
 	}
-	return true
+	return writeDroppedSeries(w, v.name, v.limiter.droppedSeries())
 }
 
 func (c *Counter) Inc() {
@@ -315,7 +320,7 @@ func (v *GaugeVec) WriteExposition(w io.Writer) bool {
 			return false
 		}
 	}
-	return true
+	return writeDroppedSeries(w, v.name, v.limiter.droppedSeries())
 }
 
 func (g *Gauge) Set(value float64) {
@@ -417,7 +422,17 @@ func (v *HistogramVec) WriteExposition(w io.Writer) bool {
 			return false
 		}
 	}
-	return true
+	return writeDroppedSeries(w, v.name, v.limiter.droppedSeries())
+}
+
+// 캡에 걸려 버려진 series는 exposition에 아예 나타나지 않으므로, 드롭 자체를 별도 family로
+// 내보내지 않으면 관측 측에서 "값이 0"과 "메트릭이 잘렸음"을 구분할 수 없다.
+func writeDroppedSeries(w io.Writer, name string, dropped uint64) bool {
+	droppedName := name + droppedSeriesSuffix
+	if !writeMetricHeader(w, droppedName, droppedSeriesHelp, "counter") {
+		return false
+	}
+	return writeMetricSample(w, droppedName, nil, strconv.FormatUint(dropped, 10))
 }
 
 func collectSeries[T any](series *sync.Map) []*seriesEntry[T] {
@@ -434,11 +449,31 @@ func collectSeries[T any](series *sync.Map) []*seriesEntry[T] {
 	return entries
 }
 
+// 길이 접두사는 name/value에 구분자가 섞여도 키가 겹치지 않게 하는 장치다. 형식을 바꾸면
+// 프로세스 재시작 없이도 기존 series와 새 series가 갈라지므로 유지해야 한다.
 func canonicalLabels(labels Labels) (string, []labelPair) {
 	pairs := labelsFromMap(labels)
-	var key strings.Builder
+	if len(pairs) == 0 {
+		return "", nil
+	}
+
+	size := 0
 	for _, pair := range pairs {
-		_, _ = fmt.Fprintf(&key, "%d:%s=%d:%s;", len(pair.name), pair.name, len(pair.value), pair.value)
+		size += len(pair.name) + len(pair.value) + canonicalLabelPairOverhead
+	}
+
+	var key strings.Builder
+	key.Grow(size)
+	var lenBuf [20]byte
+	for _, pair := range pairs {
+		key.Write(strconv.AppendInt(lenBuf[:0], int64(len(pair.name)), 10))
+		key.WriteByte(':')
+		key.WriteString(pair.name)
+		key.WriteByte('=')
+		key.Write(strconv.AppendInt(lenBuf[:0], int64(len(pair.value)), 10))
+		key.WriteByte(':')
+		key.WriteString(pair.value)
+		key.WriteByte(';')
 	}
 	return key.String(), pairs
 }

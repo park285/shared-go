@@ -4,6 +4,13 @@
 // 취소를 존중하는 ticker 루프를, CleanupCloser·Managed는 once 가드된 정리를, CloseStep·
 // RunCloseSteps는 순서 있는 종료 정리를 제공합니다.
 //
+// # Run의 종료 순서 계약
+//
+// Run은 stop 신호 이후 BeforeShutdown → runtime context cancel → Shutdown 순서로 진행합니다. 즉
+// Shutdown hook은 이미 취소된 runtime context 아래에서 실행되며, in-flight 작업이 스스로 멈춘 뒤가
+// 아니라 취소 직후에 시작됩니다. Shutdown ctx는 별도 context이고 ShutdownTimeout(0 이하면
+// DefaultShutdownTimeout)으로 bounded합니다.
+//
 // # 순서 있는 종료(RunCloseSteps) 계약
 //
 // RunCloseSteps의 다음 계약은 시그니처만으로는 드러나지 않습니다.

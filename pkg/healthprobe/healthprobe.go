@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/park285/shared-go/pkg/h3"
+	"github.com/park285/shared-go/pkg/httputil"
 	"github.com/park285/shared-go/pkg/netguard"
 )
 
@@ -116,6 +117,7 @@ func fetchURL(parent context.Context, rawURL string, headers map[string]string, 
 		return nil, fmt.Errorf("request %s: %w", rawURL, err)
 	}
 
+	// 실제 close는 readCappedBody가 수행하며, 이 defer는 중복 호출에 안전한 backstop이다.
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err := readCappedBody(resp.Body, opts.MaxBodyBytes)
@@ -153,10 +155,13 @@ func newClient(parsed *url.URL, opts FetchOptions) (*http.Client, func(), error)
 		Timeout:       requestTimeout,
 		CheckRedirect: redirectPolicy(opts),
 	}
-	if guard != nil {
-		client.Transport = guardedHTTPTransport(guard)
+	if guard == nil {
+		// 공유 http.DefaultTransport의 pool은 다른 소비자 것이므로 여기서 닫지 않는다.
+		return client, func() {}, nil
 	}
-	return client, func() {}, nil
+	transport := guardedHTTPTransport(guard)
+	client.Transport = transport
+	return client, transport.CloseIdleConnections, nil
 }
 
 func dialGuard(ip net.IP) error {
@@ -201,16 +206,17 @@ func redirectPolicy(opts FetchOptions) func(req *http.Request, via []*http.Reque
 	}
 }
 
-func readCappedBody(body io.Reader, maxBytes int64) ([]byte, error) {
+// body의 close 소유권은 httputil.ReadAllAndClose에 있다. 호출부는 따로 닫지 않는다.
+func readCappedBody(body io.ReadCloser, maxBytes int64) ([]byte, error) {
 	if maxBytes <= 0 {
 		maxBytes = DefaultMaxBodyBytes
 	}
-	data, err := io.ReadAll(io.LimitReader(body, maxBytes+1))
+	data, err := httputil.ReadAllAndClose(body, maxBytes)
+	if errors.Is(err, httputil.ErrResponseBodyTooLarge) {
+		return nil, ErrBodyTooLarge
+	}
 	if err != nil {
 		return nil, err
-	}
-	if int64(len(data)) > maxBytes {
-		return nil, ErrBodyTooLarge
 	}
 	return data, nil
 }

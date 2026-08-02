@@ -39,6 +39,9 @@ var internalServiceTransportProfile = TransportProfile{
 	MaxIdleConnsPerHost:   32,
 }
 
+// NewClient는 http.DefaultTransport를 그대로 공유하므로 connection pool(MaxIdleConnsPerHost=2)도
+// 프로세스 내 다른 소비자와 공유됩니다. 같은 host로 동시 요청이 많은 소비자는
+// NewInternalServiceClient 또는 NewExternalAPIClient를 사용해 전용 pool을 확보하십시오.
 func NewClient(timeout time.Duration) *http.Client {
 	return &http.Client{Timeout: timeout}
 }

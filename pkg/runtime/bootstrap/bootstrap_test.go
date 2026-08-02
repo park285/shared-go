@@ -20,10 +20,12 @@ type testConfig struct {
 type testRuntime struct {
 	runCalls   int
 	closeCalls int
+	runErr     error
 }
 
-func (r *testRuntime) Run() {
+func (r *testRuntime) Run() error {
 	r.runCalls++
+	return r.runErr
 }
 
 func (r *testRuntime) Close() {
@@ -213,6 +215,69 @@ func TestRun_BuildsRunsAndClosesRuntime(t *testing.T) {
 	}
 	if runtime.closeCalls != 1 {
 		t.Fatalf("runtime.Close() calls = %d, want 1", runtime.closeCalls)
+	}
+}
+
+func TestRun_ReturnsExitCodeOneWhenRuntimeRunFails(t *testing.T) {
+	t.Parallel()
+
+	rt := &testRuntime{runErr: errors.New("runtime boom")}
+	var logs bytes.Buffer
+
+	exitCode := Run(Options[*testConfig, *testRuntime]{
+		Version:    "v1",
+		Initialize: func(string) {},
+		LoadConfig: func() (*testConfig, error) { return &testConfig{}, nil },
+		NewLogger: func(*testConfig) (*slog.Logger, error) {
+			return newUnsanitizedTestLogger(&logs), nil
+		},
+		BuildRuntime: func(context.Context, *testConfig, *slog.Logger) (*testRuntime, error) {
+			return rt, nil
+		},
+		RunErrorMessage: "Test runtime stopped",
+		Stderr:          &bytes.Buffer{},
+	})
+
+	if exitCode != 1 {
+		t.Fatalf("Run() exitCode = %d, want 1", exitCode)
+	}
+	if rt.runCalls != 1 {
+		t.Fatalf("runtime.Run() calls = %d, want 1", rt.runCalls)
+	}
+	if rt.closeCalls != 1 {
+		t.Fatalf("runtime.Close() calls = %d, want 1 even when Run fails", rt.closeCalls)
+	}
+	if got := logs.String(); !strings.Contains(got, "Test runtime stopped") {
+		t.Fatalf("logs = %q, want run failure message", got)
+	}
+}
+
+func TestRun_RedactsRuntimeRunError(t *testing.T) {
+	t.Parallel()
+
+	const canary = "runtime-run-secret"
+	var logs bytes.Buffer
+
+	exitCode := Run(Options[*testConfig, *testRuntime]{
+		Initialize: func(string) {},
+		LoadConfig: func() (*testConfig, error) { return &testConfig{}, nil },
+		NewLogger: func(*testConfig) (*slog.Logger, error) {
+			return newUnsanitizedTestLogger(&logs), nil
+		},
+		BuildRuntime: func(context.Context, *testConfig, *slog.Logger) (*testRuntime, error) {
+			return &testRuntime{runErr: errors.New("API_TOKEN=" + canary)}, nil
+		},
+		Stderr: &bytes.Buffer{},
+	})
+
+	if exitCode != 1 {
+		t.Fatalf("Run() exitCode = %d, want 1", exitCode)
+	}
+	if strings.Contains(logs.String(), canary) {
+		t.Fatalf("bootstrap log leaked runtime credential: %q", logs.String())
+	}
+	if !strings.Contains(logs.String(), "***REDACTED***") {
+		t.Fatalf("bootstrap log = %q, want redaction marker", logs.String())
 	}
 }
 
