@@ -3,6 +3,36 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## v1.41.0 - 2026-08-02
+
+### 호환성이 깨지는 변경
+
+- 스택 내 소비자가 0인 exported API를 제거합니다. README 호환성 정책(보장 대상은
+  `hololive-bot`·`chat-bot-go-kakao`·`twentyq-bot` 세 소비자로 한정하며, 소비자가 0인 exported
+  API는 major 승격 없이 minor에서 제거 가능)에 근거한 minor 릴리스 제거입니다. 세 소비자
+  전수 확인 결과 아래 심볼의 참조는 0건이며, 외부 importer 호환성은 보장 대상이 아닙니다.
+  - `pgxdb.OpenPoolWithRetry`. 세 소비자는 `OpenPool`(hololive-bot·twentyq-bot) 또는
+    `OpenPoolDSN`(chat-bot-go-kakao)만 사용합니다. 연결 재시도 정책은 호출자가 소유합니다.
+  - `pgxdb.Options.DNSFallback`과 그 폴백 구현 `pgxdb.ShouldFallbackToLocalhost`. host가 정확히
+    `postgres`일 때의 localhost DNS 구제 경로였습니다.
+  - `workerpool.QueuedPool`, `workerpool.NewQueued`, `workerpool.NewQueuedWithLogger`,
+    `workerpool.QueuedConfig`. `ManagedPool`(`NewManaged`)이 실질 후계이며 유일한 스택 소비자인
+    chat-bot-go-kakao는 `NewManaged`만 사용합니다.
+- `pgxdb.RetryConfig`를 `pgxdb.PingConfig`로, `DefaultRetryConfig()`를 `DefaultPingConfig()`로,
+  `Options.Retry`를 `Options.Ping`으로 이름을 바꾸고 `MaxAttempts`·`BaseDelay`·`MaxDelay` 세 필드를
+  제거합니다. `OpenPoolWithRetry` 제거로 세 필드를 읽는 코드가 사라져, 남겨두면 설정해도 무시되는
+  필드가 됩니다. 이 패키지가 소유하는 값은 `PingTimeout` 하나뿐이므로 타입 이름을 내용에 맞췄습니다.
+  `PingTimeout`의 의미와 미설정 시 기본값 5초는 그대로이며 동작 변경은 없습니다. 유일한 스택
+  소비자인 hololive-bot은 `PingTimeout`만 설정하므로 호출부를 `Ping: pgxdb.PingConfig{…}`로 바꾸면
+  됩니다.
+
+### 문서
+
+- `pkg/db/pgxdb` package 문서에 `Config.SSLRootCert`와 `POSTGRES_SSLROOTCERT` env의 이중 경로
+  우선순위를 명시합니다: 구조체 필드가 우선이고, trim 후 빈 값일 때에만 env로 폴백하며, 둘 다
+  비면 `sslrootcert`를 DSN에서 생략해 pgx/libpq 기본 탐색 경로에 위임합니다. 이 폴백은 `Config`
+  경유 경로에만 적용되고 `OpenPoolDSN`은 DSN 원문을 그대로 사용합니다. 동작 변경은 없습니다.
+
 ## v1.40.0 - 2026-08-01
 
 ### 호환성이 깨지는 변경
