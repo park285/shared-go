@@ -2,19 +2,12 @@ package pgxdb
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"math"
-	"net"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-const loopbackHost = "127.0.0.1"
 
 func mustParse(t *testing.T, dsn string) *pgxpool.Config {
 	t.Helper()
@@ -23,6 +16,26 @@ func mustParse(t *testing.T, dsn string) *pgxpool.Config {
 		t.Fatalf("ParseConfig(%q) error = %v", dsn, err)
 	}
 	return cfg
+}
+
+func TestOptionsPingTimeout(t *testing.T) {
+	tests := []struct {
+		name string
+		opts Options
+		want time.Duration
+	}{
+		{"default options", DefaultOptions(), 5 * time.Second},
+		{"zero value", Options{}, 5 * time.Second},
+		{"explicit", Options{Ping: PingConfig{PingTimeout: 250 * time.Millisecond}}, 250 * time.Millisecond},
+		{"negative", Options{Ping: PingConfig{PingTimeout: -1}}, 5 * time.Second},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.opts.pingTimeout(); got != tt.want {
+				t.Errorf("pingTimeout() = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }
 
 func TestApplyPoolConfig_SetsAllFields(t *testing.T) {
@@ -88,29 +101,6 @@ func TestApplyQueryExecMode(t *testing.T) {
 	}
 }
 
-func TestShouldFallbackToLocalhost(t *testing.T) {
-	dnsErr := &net.DNSError{Name: "postgres", Err: "no such host", IsNotFound: true}
-	tests := []struct {
-		name string
-		err  error
-		host string
-		want bool
-	}{
-		{name: "nil error", err: nil, host: "postgres", want: false},
-		{name: "postgres dns error", err: dnsErr, host: "postgres", want: true},
-		{name: "localhost not eligible", err: dnsErr, host: "localhost", want: false},
-		{name: "other host not eligible", err: &net.DNSError{Name: "db.internal", Err: "no such host"}, host: "db.internal", want: false},
-		{name: "string form", err: errors.New("lookup postgres: no such host"), host: "postgres", want: true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := ShouldFallbackToLocalhost(tt.err, tt.host); got != tt.want {
-				t.Errorf("ShouldFallbackToLocalhost(%v, %q) = %v, want %v", tt.err, tt.host, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestOpenPool_RejectsInvalidConfig(t *testing.T) {
 	clearRootCertEnv(t)
 	_, err := OpenPool(context.Background(), Config{Host: "h"}, Options{})
@@ -143,154 +133,5 @@ func TestOpenPoolDSN_RejectsMissingSSLModeBeforeConnect(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "connect") || strings.Contains(err.Error(), "ping") {
 		t.Fatalf("OpenPoolDSN missing sslmode error = %v, want validation before connect", err)
-	}
-}
-
-func TestOpenPoolWithRetry_ExhaustsAttempts(t *testing.T) {
-	clearRootCertEnv(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	cfg := Config{Host: loopbackHost, Port: 59999, User: "u", Name: "db", SSLMode: "disable"}
-	opts := Options{Retry: RetryConfig{MaxAttempts: 2, BaseDelay: time.Millisecond, MaxDelay: 2 * time.Millisecond, PingTimeout: 300 * time.Millisecond}}
-
-	_, err := OpenPoolWithRetry(ctx, cfg, opts)
-	if err == nil {
-		t.Fatal("expected error connecting to closed port, got nil")
-	}
-	if !strings.Contains(err.Error(), "after retries") {
-		t.Errorf("error = %v, want retry-exhaustion wrapping", err)
-	}
-}
-
-func TestConnectRetryDelay_UsesHalfJitter(t *testing.T) {
-	tests := []struct {
-		name     string
-		computed time.Duration
-		maxDelay time.Duration
-		cap      time.Duration
-	}{
-		{name: "below cap", computed: 2 * time.Second, maxDelay: 30 * time.Second, cap: 2 * time.Second},
-		{name: "above cap", computed: 32 * time.Second, maxDelay: 30 * time.Second, cap: 30 * time.Second},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			for range 1000 {
-				got := connectRetryDelay(tt.computed, tt.maxDelay)
-				if got < tt.cap/2 || got >= tt.cap {
-					t.Fatalf("connectRetryDelay(%v, %v) = %v, want in [%v, %v)", tt.computed, tt.maxDelay, got, tt.cap/2, tt.cap)
-				}
-			}
-		})
-	}
-}
-
-func TestIsRetryableConnectError_Classification(t *testing.T) {
-	live := context.Background()
-	cancelled, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	tests := []struct {
-		name string
-		ctx  context.Context
-		err  error
-		want bool
-	}{
-		{name: "auth invalid_password 28P01", ctx: live, err: &pgconn.PgError{Code: sqlstateInvalidPassword}, want: false},
-		{name: "auth invalid_authorization 28000", ctx: live, err: &pgconn.PgError{Code: sqlstateInvalidAuthorization}, want: false},
-		{name: "wrapped auth 28P01", ctx: live, err: fmt.Errorf("pgxdb: ping: %w", &pgconn.PgError{Code: sqlstateInvalidPassword}), want: false},
-		{name: "db not exist 3D000 retryable", ctx: live, err: &pgconn.PgError{Code: "3D000"}, want: true},
-		{name: "connection refused retryable", ctx: live, err: &net.OpError{Op: "dial", Err: errors.New("connection refused")}, want: true},
-		{name: "generic error retryable", ctx: live, err: errors.New("temporary network glitch"), want: true},
-		{name: "cancelled context permanent", ctx: cancelled, err: &pgconn.PgError{Code: "3D000"}, want: false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := isRetryableConnectError(tt.ctx, tt.err); got != tt.want {
-				t.Errorf("isRetryableConnectError(%v) = %v, want %v", tt.err, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestOpenPoolWithRetry_ValidationFailsFast(t *testing.T) {
-	clearRootCertEnv(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	cfg := Config{Host: loopbackHost, Port: 59999, User: "u", Name: "db"}
-	opts := Options{Retry: RetryConfig{MaxAttempts: 5, BaseDelay: time.Hour, MaxDelay: time.Hour}}
-
-	start := time.Now()
-	_, err := OpenPoolWithRetry(ctx, cfg, opts)
-	elapsed := time.Since(start)
-
-	if err == nil {
-		t.Fatal("expected validation error, got nil")
-	}
-	if !strings.Contains(err.Error(), "sslmode") {
-		t.Errorf("error = %v, want sslmode validation error", err)
-	}
-	if strings.Contains(err.Error(), "after retries") || strings.Contains(err.Error(), "retry aborted") {
-		t.Errorf("error = %v, want pre-loop return without entering the retry loop", err)
-	}
-	if elapsed > time.Second {
-		t.Errorf("elapsed = %v, want fail-fast (BaseDelay=1h would dominate if the loop ran)", elapsed)
-	}
-}
-
-func TestOpenPoolWithRetry_ConnCountFailsFast(t *testing.T) {
-	clearRootCertEnv(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	cfg := Config{Host: loopbackHost, Port: 59999, User: "u", Name: "db", SSLMode: "disable"}
-	opts := Options{
-		Pool:  PoolConfig{MaxConns: math.MaxInt32 + 1},
-		Retry: RetryConfig{MaxAttempts: 5, BaseDelay: time.Hour, MaxDelay: time.Hour},
-	}
-
-	start := time.Now()
-	_, err := OpenPoolWithRetry(ctx, cfg, opts)
-	elapsed := time.Since(start)
-
-	if err == nil {
-		t.Fatal("expected int32-range validation error, got nil")
-	}
-	if !strings.Contains(err.Error(), "int32 range") {
-		t.Errorf("error = %v, want int32-range validation error", err)
-	}
-	if strings.Contains(err.Error(), "after retries") {
-		t.Errorf("error = %v, want pre-loop return", err)
-	}
-	if elapsed > time.Second {
-		t.Errorf("elapsed = %v, want fail-fast", elapsed)
-	}
-}
-
-func TestOpenPoolWithRetry_ContextCancelledFailsFast(t *testing.T) {
-	clearRootCertEnv(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	cfg := Config{Host: loopbackHost, Port: 59999, User: "u", Name: "db", SSLMode: "disable"}
-	opts := Options{Retry: RetryConfig{MaxAttempts: 5, BaseDelay: time.Hour, MaxDelay: time.Hour}}
-
-	start := time.Now()
-	_, err := OpenPoolWithRetry(ctx, cfg, opts)
-	elapsed := time.Since(start)
-
-	if err == nil {
-		t.Fatal("expected context error, got nil")
-	}
-	if !errors.Is(err, context.Canceled) {
-		t.Errorf("error = %v, want errors.Is(context.Canceled)", err)
-	}
-	if strings.Contains(err.Error(), "after retries") {
-		t.Errorf("error = %v, want permanent-path wrapping without 'after retries'", err)
-	}
-	if elapsed > time.Second {
-		t.Errorf("elapsed = %v, want fail-fast on cancelled context", elapsed)
 	}
 }

@@ -5,9 +5,20 @@
 // pgx parsing 전에 검사한다. 생략하면 pgx가 "prefer"로 조용히 대체해 호출자의 TLS
 // posture(verify-full·disable 등)를 바꿔버리므로 호출자가 posture를 명시해야 한다.
 //
+// # sslrootcert 이중 경로 계약
+//
+// Config.SSLRootCert와 POSTGRES_SSLROOTCERT env는 같은 DSN 파라미터(sslrootcert)를 채우는
+// 두 경로다. buildDSN은 구조체 필드를 먼저 보고, trim 후 빈 값일 때에만 env로 폴백한다.
+// 둘 다 비면 sslrootcert 자체를 DSN에서 생략해 pgx/libpq 기본 탐색
+// 경로(~/.postgresql/root.crt 등)에 위임한다.
+// 이 폴백은 Config 경유 경로(OpenPool)에만 적용된다: OpenPoolDSN은 호출자가 준 DSN 원문을
+// 그대로 쓰므로 sslrootcert도 그 DSN에 직접 써야 한다. verify-ca·verify-full posture에서 CA를
+// env로만 주는 배포는 env 이름 오타나 미주입이 곧 검증 실패로 이어지므로 양쪽 중 하나는
+// 반드시 실제 파일 경로를 가리켜야 한다.
+//
 // # 풀 기본값(fallback) 계약
 //
-// OpenPool·OpenPoolWithRetry는 opts.Pool에서 미설정(0 이하)인 필드를 DefaultPoolConfig()와
+// OpenPool은 opts.Pool에서 미설정(0 이하)인 필드를 DefaultPoolConfig()와
 // 동일한 단일 소스로 채운다: 풀 필드에 대해서는 env를 읽지 않고 호출자가 준 값만 사용한다.
 // DefaultPoolConfig()는 정적 기본값 MinConns=0(pgx 기본, 풀 최소 크기 없음), MaxConns=20,
 // ConnMaxLifetime=1h, ConnMaxIdleTime=30m을 반환하고, ConnMaxLifetimeJitter는 유효
@@ -23,23 +34,11 @@
 // 미지정 풀 파라미터는 pgx 기본값에 위임한다. shared-go 기본값을 원하면 opts.Pool에
 // DefaultPoolConfig()를 명시해 넘겨라.
 //
-// # OpenPoolWithRetry의 fail-fast
+// # 연결 재시도
 //
-// OpenPoolWithRetry는 재시도 루프 진입 전 cfg.Validate()와 풀 conn 수 범위를 선검증하므로 설정
-// 오류(sslmode 오타, int32 범위 밖 MaxConns 등)는 재시도 없이 즉시 반환한다. 루프 안에서는
-// 영구 에러를 재시도하지 않는다: 인증 실패(pgconn.PgError SQLSTATE 28000·28P01)와 context
-// 취소·만료는 즉시 중단한다. DB 미존재(3D000)·연결 거부·DNS 실패처럼 compose 기동 레이스에서
-// 회복 가능한 에러는 계속 재시도한다. ping 타임아웃(자식 context 만료)은 부모 context가 살아
-// 있으면 재시도 대상으로 남는다.
-//
-// # localhost 폴백(DNSFallback) 계약
-//
-// OpenPool은 opts.DNSFallback=true일 때만 127.0.0.1로 재연결을 시도한다. 다만 이 폴백은
-// cfg.Host가 정확히 "postgres"(대소문자 무시)이고 최초 연결 실패가 그 host에 대한 DNS
-// "no such host" 에러일 때에만 발동한다(errors.go의 ShouldFallbackToLocalhost·
-// isFallbackEligibleHost). ""·"127.0.0.1"·"localhost"나 그 외 임의 host — 오타 난 "postgress"
-// 같은 값 포함 — 는 DNSFallback=true여도 폴백 대상이 아니다. compose 서비스명 "postgres"를
-// 로컬에서 직접 실행할 때의 이름 해석 실패만 좁게 구제하려는 의도된 제약이다.
+// OpenPool·OpenPoolDSN은 재시도하지 않는다: 연결·ping 실패는 그대로 반환하므로 compose 기동
+// 레이스 등의 재시도 정책은 호출자가 소유한다. 이 패키지가 소유하는 값은
+// ping 타임아웃(Options.Ping.PingTimeout, 미설정 시 5초)뿐이다.
 //
 // shared-go에서 pgx에 의존하는 유일한 패키지다. pgx 무의존 database/sql 풀 튜닝은 pkg/db/sqldb.
 package pgxdb

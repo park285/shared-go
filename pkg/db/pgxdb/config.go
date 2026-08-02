@@ -238,18 +238,12 @@ func DefaultPoolConfig() PoolConfig {
 	}
 }
 
-type RetryConfig struct {
-	MaxAttempts int
-	BaseDelay   time.Duration
-	MaxDelay    time.Duration
+type PingConfig struct {
 	PingTimeout time.Duration
 }
 
-func DefaultRetryConfig() RetryConfig {
-	return RetryConfig{
-		MaxAttempts: 5,
-		BaseDelay:   2 * time.Second,
-		MaxDelay:    30 * time.Second,
+func DefaultPingConfig() PingConfig {
+	return PingConfig{
 		PingTimeout: 5 * time.Second,
 	}
 }

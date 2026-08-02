@@ -2,7 +2,6 @@ package pgxdb
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -15,7 +14,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 )
 
 var testDSN string
@@ -43,7 +41,7 @@ func quietLogger() *slog.Logger {
 }
 
 func quietOptions() Options {
-	return Options{Logger: quietLogger(), Pool: DefaultPoolConfig(), Retry: DefaultRetryConfig()}
+	return Options{Logger: quietLogger(), Pool: DefaultPoolConfig(), Ping: DefaultPingConfig()}
 }
 
 func dockerAvailable() bool {
@@ -101,7 +99,7 @@ func waitReady(dsn string) error {
 	var lastErr error
 	for time.Now().Before(deadline) {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		pool, err := OpenPoolDSN(ctx, dsn, Options{Logger: quietLogger(), Retry: RetryConfig{PingTimeout: time.Second}})
+		pool, err := OpenPoolDSN(ctx, dsn, Options{Logger: quietLogger(), Ping: PingConfig{PingTimeout: time.Second}})
 		cancel()
 		if err == nil {
 			pool.Close()
@@ -185,46 +183,6 @@ func TestIntegration_OpenPoolDSN(t *testing.T) {
 	}
 	defer pool.Close()
 	selectOne(t, ctx, pool)
-}
-
-func TestIntegration_OpenPoolWithRetry(t *testing.T) {
-	requireContainer(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	pool, err := OpenPoolWithRetry(ctx, testConfig(t), quietOptions())
-	if err != nil {
-		t.Fatalf("OpenPoolWithRetry: %v", err)
-	}
-	defer pool.Close()
-	selectOne(t, ctx, pool)
-}
-
-func TestIntegration_OpenPoolWithRetry_AuthFailsFast(t *testing.T) {
-	requireContainer(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	cfg := testConfig(t)
-	cfg.Password = "sharedgo-wrong-password-placeholder"
-	opts := Options{Logger: quietLogger(), Retry: RetryConfig{MaxAttempts: 5, BaseDelay: time.Hour, MaxDelay: time.Hour, PingTimeout: 3 * time.Second}}
-
-	start := time.Now()
-	_, err := OpenPoolWithRetry(ctx, cfg, opts)
-	elapsed := time.Since(start)
-
-	if err == nil {
-		t.Fatal("expected auth failure, got nil")
-	}
-	if pgErr, ok := errors.AsType[*pgconn.PgError](err); !ok || pgErr.Code != sqlstateInvalidPassword {
-		t.Errorf("error = %v, want pgconn.PgError SQLSTATE 28P01", err)
-	}
-	if strings.Contains(err.Error(), "after retries") {
-		t.Errorf("error = %v, want permanent-path wrapping (no 'after retries')", err)
-	}
-	if elapsed > 30*time.Second {
-		t.Fatalf("elapsed = %v, auth failure must fail fast, not consume the 1h BaseDelay", elapsed)
-	}
 }
 
 func TestIntegration_AfterConnect(t *testing.T) {
