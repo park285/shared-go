@@ -6,40 +6,63 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
 
 type blockingServer struct {
-	listenErr   error
-	shutdownErr error
-	listenDone  chan struct{}
-	stop        chan struct{}
-	stopOnce    sync.Once
-	shutdownCtx context.Context
+	listenErr      error
+	shutdownErr    error
+	closeErr       error
+	listenDone     chan struct{}
+	listenStopped  chan struct{}
+	stop           chan struct{}
+	stopOnce       sync.Once
+	shutdownCtx    context.Context
+	shutdownStops  bool
+	closeCalled    atomic.Bool
+	closeStarted   chan struct{}
+	closeStartOnce sync.Once
+	closeRelease   chan struct{}
 }
 
 func newBlockingServer(listenErr, shutdownErr error) *blockingServer {
 	return &blockingServer{
-		listenErr:   listenErr,
-		shutdownErr: shutdownErr,
-		listenDone:  make(chan struct{}),
-		stop:        make(chan struct{}),
+		listenErr:     listenErr,
+		shutdownErr:   shutdownErr,
+		listenDone:    make(chan struct{}),
+		listenStopped: make(chan struct{}),
+		stop:          make(chan struct{}),
+		shutdownStops: true,
 	}
 }
 
 func (s *blockingServer) ListenAndServe() error {
 	close(s.listenDone)
 	<-s.stop
+	close(s.listenStopped)
 	return s.listenErr
 }
 
 func (s *blockingServer) Shutdown(ctx context.Context) error {
 	s.shutdownCtx = ctx
-	if s.shutdownErr == nil {
+	if s.shutdownErr == nil && s.shutdownStops {
 		s.stopOnce.Do(func() { close(s.stop) })
 	}
 	return s.shutdownErr
+}
+
+func (s *blockingServer) Close() error {
+	s.closeCalled.Store(true)
+	if s.closeStarted != nil {
+		s.closeStartOnce.Do(func() { close(s.closeStarted) })
+	}
+	if s.closeRelease != nil {
+		<-s.closeRelease
+	}
+	s.stopOnce.Do(func() { close(s.stop) })
+	return s.closeErr
 }
 
 func TestRunStopsServerWhenContextEnds(t *testing.T) {
@@ -66,6 +89,9 @@ func TestRunStopsServerWhenContextEnds(t *testing.T) {
 	}
 	if server.shutdownCtx.Err() != context.Canceled {
 		t.Fatalf("Shutdown context error = %v, want canceled after Run returns", server.shutdownCtx.Err())
+	}
+	if server.closeCalled.Load() {
+		t.Fatal("Close() called after graceful shutdown completed")
 	}
 }
 
@@ -99,18 +125,21 @@ func TestRunReturnsShutdownError(t *testing.T) {
 	if !strings.Contains(err.Error(), "http server shutdown failed") {
 		t.Fatalf("Run() error = %q, want shutdown context", err)
 	}
+	if !server.closeCalled.Load() {
+		t.Fatal("Close() was not called after shutdown failure")
+	}
 }
 
 func TestRunReturnsWhenShutdownDoesNotStopListener(t *testing.T) {
 	server := newBlockingServer(http.ErrServerClosed, nil)
+	server.shutdownStops = false
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, server, 20*time.Millisecond)
+		done <- Run(ctx, server, 100*time.Millisecond)
 	}()
 
 	waitForBlockingListen(t, server)
-	server.stopOnce.Do(func() {})
 	cancel()
 
 	select {
@@ -120,6 +149,63 @@ func TestRunReturnsWhenShutdownDoesNotStopListener(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("Run() hung after shutdown timeout")
+	}
+	if !server.closeCalled.Load() {
+		t.Fatal("Close() was not called after graceful stop timeout")
+	}
+}
+
+func TestRunReturnsByHardDeadlineWhenForceCloseBlocks(t *testing.T) {
+	server := newBlockingServer(http.ErrServerClosed, nil)
+	server.shutdownStops = false
+	server.closeStarted = make(chan struct{})
+	server.closeRelease = make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(ctx, server, 100*time.Millisecond)
+	}()
+
+	waitForBlockingListen(t, server)
+	cancel()
+	select {
+	case <-server.closeStarted:
+	case <-time.After(time.Second):
+		t.Fatal("Close() was not called")
+	}
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("Run() error = %v, want context.DeadlineExceeded", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Run() exceeded hard shutdown deadline while Close() blocked")
+	}
+
+	close(server.closeRelease)
+	select {
+	case <-server.listenStopped:
+	case <-time.After(time.Second):
+		t.Fatal("ListenAndServe() did not stop after releasing Close()")
+	}
+}
+
+func TestRunJoinsForceCloseError(t *testing.T) {
+	wantShutdownErr := errors.New("shutdown failed")
+	wantCloseErr := errors.New("close failed")
+	server := newBlockingServer(http.ErrServerClosed, wantShutdownErr)
+	server.closeErr = wantCloseErr
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := Run(ctx, server, time.Second)
+	if !errors.Is(err, wantShutdownErr) {
+		t.Fatalf("Run() error = %v, want shutdown error %v", err, wantShutdownErr)
+	}
+	if !errors.Is(err, wantCloseErr) {
+		t.Fatalf("Run() error = %v, want force-close error %v", err, wantCloseErr)
 	}
 }
 
