@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
+	"strings"
+	"sync"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -45,6 +48,8 @@ type Config struct {
 
 type Provider struct {
 	tracerProvider *sdktrace.TracerProvider
+	shutdownOnce   sync.Once
+	shutdownErr    error
 }
 
 // config.Enabled가 false면 no-op Provider를 반환합니다.
@@ -52,20 +57,39 @@ func NewProvider(ctx context.Context, config Config) (*Provider, error) {
 	if !config.Enabled {
 		return &Provider{}, nil
 	}
+	validatedConfig, err := validateConfig(config)
+	if err != nil {
+		return nil, err
+	}
 
-	exporter, err := otlptracegrpc.New(ctx, buildOTLPExporterOptions(config)...)
+	exporter, err := otlptracegrpc.New(ctx, buildOTLPExporterOptions(validatedConfig)...)
 	if err != nil {
 		return nil, fmt.Errorf("create exporter: %w", err)
 	}
 
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithBatcher(exporter),
-		sdktrace.WithResource(buildResource(config)),
-		sdktrace.WithSampler(buildSampler(config)),
+		sdktrace.WithResource(buildResource(validatedConfig)),
+		sdktrace.WithSampler(buildSampler(validatedConfig)),
 	)
 	installGlobalProvider(tp)
 
 	return &Provider{tracerProvider: tp}, nil
+}
+
+func validateConfig(config Config) (Config, error) {
+	config.ServiceName = strings.TrimSpace(config.ServiceName)
+	config.OTLPEndpoint = strings.TrimSpace(config.OTLPEndpoint)
+	if config.ServiceName == "" {
+		return Config{}, fmt.Errorf("invalid telemetry config: ServiceName is required")
+	}
+	if config.OTLPEndpoint == "" {
+		return Config{}, fmt.Errorf("invalid telemetry config: OTLPEndpoint is required")
+	}
+	if math.IsNaN(config.SampleRate) || math.IsInf(config.SampleRate, 0) || config.SampleRate < 0 || config.SampleRate > 1 {
+		return Config{}, fmt.Errorf("invalid telemetry config: SampleRate must be between 0 and 1")
+	}
+	return config, nil
 }
 
 func buildResource(config Config) *resource.Resource {
@@ -103,12 +127,7 @@ func buildSampler(config Config) sdktrace.Sampler {
 
 func installGlobalProvider(tp *sdktrace.TracerProvider) {
 	otel.SetTracerProvider(tp)
-	otel.SetTextMapPropagator(
-		propagation.NewCompositeTextMapPropagator(
-			propagation.TraceContext{},
-			propagation.Baggage{},
-		),
-	)
+	otel.SetTextMapPropagator(propagation.TraceContext{})
 	otel.SetErrorHandler(slogErrorHandler{})
 }
 
@@ -134,15 +153,17 @@ func flushContext(ctx context.Context) (context.Context, context.CancelFunc) {
 
 // 버퍼에 남은 span들을 flush하여 데이터 유실을 방지합니다.
 func (p *Provider) Shutdown(ctx context.Context) error {
-	if p.tracerProvider == nil {
+	if p == nil || p.tracerProvider == nil {
 		return nil
 	}
-	flushCtx, cancel := flushContext(ctx)
-	defer cancel()
-	if err := p.tracerProvider.Shutdown(flushCtx); err != nil {
-		return fmt.Errorf("shutdown otel tracer provider: %w", err)
-	}
-	return nil
+	p.shutdownOnce.Do(func() {
+		flushCtx, cancel := flushContext(ctx)
+		defer cancel()
+		if err := p.tracerProvider.Shutdown(flushCtx); err != nil {
+			p.shutdownErr = fmt.Errorf("shutdown otel tracer provider: %w", err)
+		}
+	})
+	return p.shutdownErr
 }
 
 func (p *Provider) IsEnabled() bool {
