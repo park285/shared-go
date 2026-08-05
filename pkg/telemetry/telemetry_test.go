@@ -249,6 +249,62 @@ func TestBuildOTLPExporterOptions_DefaultsToTLS(t *testing.T) {
 	}
 }
 
+func TestBuildOTLPExporterOptions_EnvMustNotDowngradeTLS(t *testing.T) {
+	for _, envKey := range []string{"OTEL_EXPORTER_OTLP_INSECURE", "OTEL_EXPORTER_OTLP_TRACES_INSECURE"} {
+		t.Run(envKey, func(t *testing.T) {
+			t.Setenv(envKey, "true")
+
+			secure := exportViaProbe(t, Config{OTLPInsecure: false})
+			if secure.reached {
+				t.Fatalf("%s downgraded a secure exporter to plaintext: probe received %q", envKey, secure.method)
+			}
+			if secure.exportErr == nil {
+				t.Fatal("expected TLS export to a plaintext probe to fail")
+			}
+
+			insecure := exportViaProbe(t, Config{OTLPInsecure: true})
+			if !insecure.reached {
+				t.Fatalf("plaintext probe was never reached, so the secure leg proves nothing (export: %v)", insecure.exportErr)
+			}
+			if insecure.method != "/opentelemetry.proto.collector.trace.v1.TraceService/Export" {
+				t.Fatalf("unexpected OTLP method %q", insecure.method)
+			}
+		})
+	}
+}
+
+type probeResult struct {
+	exportErr error
+	method    string
+	reached   bool
+}
+
+func exportViaProbe(t *testing.T, config Config) probeResult {
+	t.Helper()
+
+	endpoint, methods := startTraceProbe(t)
+	config.OTLPEndpoint = endpoint
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	exporter, err := otlptracegrpc.New(ctx, buildOTLPExporterOptions(config)...)
+	if err != nil {
+		t.Fatalf("create exporter: %v", err)
+	}
+	t.Cleanup(func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), time.Second)
+		defer shutdownCancel()
+		_ = exporter.Shutdown(shutdownCtx)
+	})
+
+	result := probeResult{exportErr: exporter.ExportSpans(ctx, []sdktrace.ReadOnlySpan{recordTestSpan(t)})}
+	select {
+	case result.method = <-methods:
+		result.reached = true
+	default:
+	}
+	return result
+}
+
 func TestInstallGlobalProvider_SetsGlobals(t *testing.T) {
 	prevTP := otel.GetTracerProvider()
 	prevProp := otel.GetTextMapPropagator()

@@ -15,6 +15,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+	"google.golang.org/grpc/credentials"
 
 	"github.com/park285/shared-go/pkg/logging"
 )
@@ -104,9 +105,12 @@ func buildOTLPExporterOptions(config Config) []otlptracegrpc.Option {
 		otlptracegrpc.WithEndpoint(config.OTLPEndpoint),
 	}
 	if config.OTLPInsecure {
-		opts = append(opts, otlptracegrpc.WithInsecure())
+		return append(opts, otlptracegrpc.WithInsecure())
 	}
-	return opts
+	// otlptracegrpc는 OTEL_EXPORTER_OTLP_INSECURE 같은 env를 user option보다 먼저 적용한다.
+	// TLS를 명시하지 않으면 env가 심은 Insecure=true가 그대로 남아 평문으로 강등되므로,
+	// Insecure보다 우선 적용되는 GRPCCredentials로 TLS를 못박는다.
+	return append(opts, otlptracegrpc.WithTLSCredentials(credentials.NewTLS(nil)))
 }
 
 func buildSampler(config Config) sdktrace.Sampler {

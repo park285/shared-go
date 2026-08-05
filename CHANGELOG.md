@@ -3,6 +3,18 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## v1.43.3 - 2026-08-05
+
+### 수정
+
+- `telemetry`: `OTLPInsecure=false` provider가 `OTEL_EXPORTER_OTLP_INSECURE`,
+  `OTEL_EXPORTER_OTLP_TRACES_INSECURE`, `http://` scheme endpoint 환경 변수로 평문 강등되던
+  경로를 `WithTLSCredentials` 명시로 봉합합니다. upstream otlptracegrpc가 env를 user option보다
+  먼저 적용하는 동작이 원인이며, env 강등 회귀 테스트(강등 시 red가 확인된 mutation 검증 포함)를
+  복원했습니다. `OTLPInsecure=true`의 평문 동작은 불변입니다.
+- `telemetry`: doc.go에 전송 보안 계약을 문서화합니다 — TLS 기본, 평문은 collector가 같은 신뢰
+  경계 안에 있는 내부망 예외, log sink와 OTLP collector를 같은 저장소로 합류시키지 않는 운영 전제.
+
 ## v1.43.2 - 2026-08-05
 
 ### 변경
