@@ -3,6 +3,14 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## v1.43.2 - 2026-08-05
+
+### 변경
+
+- `logging`: `room_id`와 `user_id`를 운영 상관관계 ID로 보존합니다. 이름·대화 문맥을 담는
+  `room`, `room_name`, `chat_id`, `user_name`, `sender`, `game_key` privacy exact-key와 모든
+  credential 마스킹은 그대로 유지합니다.
+
 ## v1.43.1 - 2026-08-05
 
 ### 수정

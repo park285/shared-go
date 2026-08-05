@@ -7,8 +7,8 @@
 // component 값을 자동으로 병합합니다.
 //
 // operation lifecycle 로깅, 민감값 마스킹 handler, 파일 로깅과 압축 archive,
-// OpenTelemetry trace/span 상관관계 주입도 이 패키지의 책임입니다. privacy exact key는
-// slog attr과 중첩 map[string]any에서 depth 8까지 재귀적으로 마스킹하며,
+// OpenTelemetry trace/span 상관관계 주입도 이 패키지의 책임입니다. room_id와 user_id는
+// 운영 상관관계 ID로 보존하고, 나머지 privacy exact key는 slog attr과 중첩 map[string]any에서 depth 8까지 재귀적으로 마스킹하며,
 // map[string]string, []any 내부 map, struct 필드는 대상이 아닙니다. 서비스별 로거 생성과 운영 로그 규칙은 이 패키지의 공개
 // 진입점을 통해 맞춥니다.
 //

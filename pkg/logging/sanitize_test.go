@@ -227,7 +227,7 @@ func TestSanitizeHandler_CredentialKeysMaskedAcrossValueBranches(t *testing.T) {
 		},
 		{
 			name:  "kind_any_map_with_privacy_key",
-			attrs: []slog.Attr{slog.Any("token", map[string]any{"raw": secret, "user_id": "u-1"})},
+			attrs: []slog.Attr{slog.Any("token", map[string]any{"raw": secret, "user_name": "u-1"})},
 		},
 		{
 			name:  "kind_any_map_without_privacy_key",
@@ -339,11 +339,8 @@ func TestSanitizeHandler_MixedScenario(t *testing.T) {
 	if !strings.Contains(output, "Bearer ***REDACTED***") {
 		t.Errorf("Expected Bearer token to be masked, got: %s", output)
 	}
-	if strings.Contains(output, "user_id=42") {
-		t.Errorf("Expected user_id to be masked, got: %s", output)
-	}
-	if !strings.Contains(output, "user_id=***REDACTED***") {
-		t.Errorf("Expected user_id placeholder, got: %s", output)
+	if !strings.Contains(output, "user_id=42") {
+		t.Errorf("Expected operational user_id to be preserved, got: %s", output)
 	}
 	if !strings.Contains(output, "video_id=dQw4w9WgXcQ") {
 		t.Errorf("Expected public content id to be preserved, got: %s", output)
@@ -356,8 +353,8 @@ func TestSanitizeHandler_MixedScenario(t *testing.T) {
 	}
 
 	redactedCount := strings.Count(output, "***REDACTED***")
-	if redactedCount < 3 {
-		t.Errorf("Expected at least 3 redactions (password + api_key + user_id), got %d in: %s", redactedCount, output)
+	if redactedCount < 2 {
+		t.Errorf("Expected at least 2 redactions (password + api_key), got %d in: %s", redactedCount, output)
 	}
 }
 

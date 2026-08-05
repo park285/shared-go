@@ -36,7 +36,7 @@ var (
 
 const (
 	redactedValue      = "***REDACTED***"
-	tokenUserID        = "user_id"
+	tokenUserName      = "user_name"
 	tokenAPIKey        = "api_key"
 	tokenAPIKeyCompact = "apikey"
 	tokenPasswd        = "passwd"
@@ -81,11 +81,9 @@ var sensitiveExactKeys = map[string]struct{}{
 // 정확 일치만 사용한다. *_id suffix 규칙을 더하면 channel_id 같은 공개 콘텐츠 ID까지 가려진다.
 var privacyExactKeys = map[string]struct{}{
 	"room":              {},
-	"room_id":           {},
 	"room_name":         {},
 	"chat_id":           {},
-	tokenUserID:         {},
-	"user_name":         {},
+	tokenUserName:       {},
 	"thread_id":         {},
 	"session_thread_id": {},
 	"sender":            {},

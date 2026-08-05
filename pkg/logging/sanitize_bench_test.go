@@ -107,8 +107,8 @@ func newPrivacyRecord() slog.Record {
 	r := slog.NewRecord(testTime(), slog.LevelInfo, "plain message no secrets here", 0)
 	r.AddAttrs(
 		slog.String("username", "alice"),
-		slog.Int64("room_id", 8842),
-		slog.String("user_id", "u-8842"),
+		slog.Int64("room_name", 8842),
+		slog.String("user_name", "u-8842"),
 		slog.String("path", "/api/users"),
 	)
 	return r
@@ -118,7 +118,7 @@ func newPrivacyMapRecord() slog.Record {
 	r := slog.NewRecord(testTime(), slog.LevelInfo, "plain message no secrets here", 0)
 	r.AddAttrs(
 		slog.String("username", "alice"),
-		slog.Any("payload", map[string]any{"user_id": "u-8842", "video_id": "vid-1", "count": 3}),
+		slog.Any("payload", map[string]any{"user_name": "u-8842", "video_id": "vid-1", "count": 3}),
 	)
 	return r
 }
@@ -127,7 +127,7 @@ func newPrivacyMapRecord() slog.Record {
 func newWideRecord(privacy bool) slog.Record {
 	idKey := "video_id"
 	if privacy {
-		idKey = "user_id"
+		idKey = "user_name"
 	}
 	r := slog.NewRecord(testTime(), slog.LevelInfo, "plain message no secrets here", 0)
 	r.AddAttrs(

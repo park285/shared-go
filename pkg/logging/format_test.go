@@ -28,10 +28,13 @@ func logFormatProbe(logger *slog.Logger) {
 
 func assertProbeSanitized(t *testing.T, label, out string) {
 	t.Helper()
-	for _, leaked := range []string{probeUserID, probeToken, probeQuerySec} {
+	for _, leaked := range []string{probeToken, probeQuerySec} {
 		if strings.Contains(out, leaked) {
 			t.Fatalf("%s: unsanitized value %q reached the writer: %s", label, leaked, out)
 		}
+	}
+	if !strings.Contains(out, probeUserID) {
+		t.Fatalf("%s: operational user_id was not preserved: %s", label, out)
 	}
 	if !strings.Contains(out, redactedValue) {
 		t.Fatalf("%s: no redaction marker in output: %s", label, out)
@@ -67,10 +70,11 @@ func assertJSONProbe(t *testing.T, label, out string) {
 			t.Fatalf("%s: JSON record missing slog key %q: %v", label, key, record)
 		}
 	}
-	for _, key := range []string{"user_id", "authorization"} {
-		if got := record[key]; got != redactedValue {
-			t.Fatalf("%s: JSON %s = %v, want %q", label, key, got, redactedValue)
-		}
+	if got := record["user_id"]; got != probeUserID {
+		t.Fatalf("%s: JSON user_id = %v, want %q", label, got, probeUserID)
+	}
+	if got := record["authorization"]; got != redactedValue {
+		t.Fatalf("%s: JSON authorization = %v, want %q", label, got, redactedValue)
 	}
 	if msg, _ := record[slog.MessageKey].(string); strings.Contains(msg, probeQuerySec) {
 		t.Fatalf("%s: JSON msg kept query secret: %q", label, msg)
@@ -244,7 +248,7 @@ func TestFormatHandlers_MaskSensitiveKeysRegardlessOfValueKind(t *testing.T) {
 		attr slog.Attr
 		leak string
 	}{
-		{"privacy_int64", slog.Int64("user_id", 4821), "4821"},
+		{"privacy_int64", slog.Int64("room_name", 4821), "4821"},
 		{"privacy_bool", slog.Bool("sender", true), "true"},
 		{"credential_int64", slog.Int64("token", 987654321), "987654321"},
 		{"credential_int", slog.Int("api_key", 555111), "555111"},

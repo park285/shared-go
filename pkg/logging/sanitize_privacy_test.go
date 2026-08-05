@@ -21,9 +21,9 @@ func privacyOutput(t *testing.T, attrs ...slog.Attr) string {
 
 func TestSanitizeHandler_PrivacyKeysMaskedAcrossKinds(t *testing.T) {
 	keys := []string{
-		"room", "room_id", "room_name", "chat_id", "user_id",
+		"room", "room_name", "chat_id",
 		"user_name", "thread_id", "session_thread_id", "sender", "game_key",
-		"Room_ID", "user-id", "USER_NAME", "session.thread.id",
+		"USER_NAME", "session.thread.id",
 	}
 
 	for _, key := range keys {
@@ -52,7 +52,7 @@ func TestSanitizeHandler_PrivacyKeysMaskedAcrossKinds(t *testing.T) {
 	}
 }
 
-func TestSanitizeHandler_PrivacyKeysMaskedInsideGroups(t *testing.T) {
+func TestSanitizeHandler_OperationalIDsPreservedInsideGroups(t *testing.T) {
 	output := privacyOutput(t,
 		slog.Group("context",
 			slog.String("user_id", kakaoSentinelID),
@@ -63,14 +63,11 @@ func TestSanitizeHandler_PrivacyKeysMaskedInsideGroups(t *testing.T) {
 		),
 	)
 
-	if strings.Contains(output, kakaoSentinelID) || strings.Contains(output, "8842") {
-		t.Fatalf("nested privacy value leaked: %s", output)
+	if !strings.Contains(output, "context.user_id="+kakaoSentinelID) {
+		t.Fatalf("group user_id not preserved: %s", output)
 	}
-	if !strings.Contains(output, "context.user_id=***REDACTED***") {
-		t.Fatalf("group user_id not masked: %s", output)
-	}
-	if !strings.Contains(output, "context.chat.room_id=***REDACTED***") {
-		t.Fatalf("nested group room_id not masked: %s", output)
+	if !strings.Contains(output, "context.chat.room_id=8842") {
+		t.Fatalf("nested group room_id not preserved: %s", output)
 	}
 	if !strings.Contains(output, "context.chat.channel_id=UC1234567890") {
 		t.Fatalf("public content id inside group not preserved: %s", output)
@@ -95,6 +92,10 @@ func TestSanitizeHandler_PrivacyGroupValueMaskedWhole(t *testing.T) {
 
 func TestSanitizeHandler_PublicContentIDsPreserved(t *testing.T) {
 	cases := map[string]string{
+		"room_id":      "8842",
+		"user_id":      kakaoSentinelID,
+		"Room_ID":      "8843",
+		"user-id":      "user-8843",
 		"channel_id":   "UC1234567890",
 		"video_id":     "dQw4w9WgXcQ",
 		"content_id":   "content-42",
@@ -116,7 +117,7 @@ func TestSanitizeHandler_PublicContentIDsPreserved(t *testing.T) {
 	}
 }
 
-func TestSanitizeHandler_PrivacyKeysMaskedViaWithAttrsAndWithGroup(t *testing.T) {
+func TestSanitizeHandler_OperationalIDsPreservedViaWithAttrsAndWithGroup(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(newSanitizeHandler(slog.NewTextHandler(&buf, nil))).
 		With(slog.String("user_id", kakaoSentinelID)).
@@ -124,20 +125,18 @@ func TestSanitizeHandler_PrivacyKeysMaskedViaWithAttrsAndWithGroup(t *testing.T)
 	logger.LogAttrs(t.Context(), slog.LevelInfo, "privacy", slog.Int64("room_id", 8842), slog.String("video_id", "vid-1"))
 	output := buf.String()
 
-	if strings.Contains(output, kakaoSentinelID) || strings.Contains(output, "8842") {
-		t.Fatalf("privacy value leaked through With/WithGroup: %s", output)
+	if !strings.Contains(output, "user_id="+kakaoSentinelID) {
+		t.Fatalf("With user_id not preserved: %s", output)
 	}
-	if !strings.Contains(output, "request.room_id=***REDACTED***") {
-		t.Fatalf("WithGroup room_id not masked: %s", output)
+	if !strings.Contains(output, "request.room_id=8842") {
+		t.Fatalf("WithGroup room_id not preserved: %s", output)
 	}
 	if !strings.Contains(output, "request.video_id=vid-1") {
 		t.Fatalf("public id under WithGroup not preserved: %s", output)
 	}
 }
 
-// log_warn_test.go의 capture handler는 sanitize handler를 거치지 않으므로 room_id가 Int64로
-// 보존된다. privacy 정책이 실제로 적용되는 지점은 sanitize handler 경유 경로뿐이다.
-func TestLogWarnWithErrorAttrs_PrivacyKeysMaskedThroughSanitizeHandler(t *testing.T) {
+func TestLogWarnWithErrorAttrs_OperationalRoomIDPreserved(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(newSanitizeHandler(slog.NewTextHandler(&buf, nil)))
 
@@ -152,11 +151,8 @@ func TestLogWarnWithErrorAttrs_PrivacyKeysMaskedThroughSanitizeHandler(t *testin
 	)
 	output := buf.String()
 
-	if strings.Contains(output, "8842") {
-		t.Fatalf("room_id leaked through LogWarnWithErrorAttrs: %s", output)
-	}
-	if !strings.Contains(output, "room_id=***REDACTED***") {
-		t.Fatalf("room_id not masked: %s", output)
+	if !strings.Contains(output, "room_id=8842") {
+		t.Fatalf("room_id not preserved: %s", output)
 	}
 	if !strings.Contains(output, "channel_id=UC123") {
 		t.Fatalf("channel_id not preserved: %s", output)
@@ -226,7 +222,7 @@ func TestSanitizeHandler_NonPrivacyGroupUnaffected(t *testing.T) {
 	}
 }
 
-func TestSanitizeHandler_AnyMapPrivacyKeysMasked(t *testing.T) {
+func TestSanitizeHandler_AnyMapOperationalIDsPreserved(t *testing.T) {
 	payload := map[string]any{
 		"user_id":    kakaoSentinelID,
 		"room_id":    8842,
@@ -235,8 +231,8 @@ func TestSanitizeHandler_AnyMapPrivacyKeysMasked(t *testing.T) {
 	}
 	output := privacyOutput(t, slog.Any("payload", payload))
 
-	if strings.Contains(output, kakaoSentinelID) || strings.Contains(output, "8842") {
-		t.Fatalf("map[string]any privacy value leaked: %s", output)
+	if !strings.Contains(output, kakaoSentinelID) || !strings.Contains(output, "8842") {
+		t.Fatalf("map[string]any operational IDs not preserved: %s", output)
 	}
 	if !strings.Contains(output, "vid-1") {
 		t.Fatalf("map public id not preserved: %s", output)
@@ -257,7 +253,7 @@ func TestSanitizeHandler_AnyMapWithoutPrivacyKeysUnchanged(t *testing.T) {
 	}
 }
 
-func TestSanitizeHandler_NestedAnyMapPrivacyKeysMasked(t *testing.T) {
+func TestSanitizeHandler_NestedAnyMapOperationalUserIDPreserved(t *testing.T) {
 	nested := map[string]any{
 		"user_id":  kakaoSentinelID,
 		"video_id": "vid-1",
@@ -268,8 +264,8 @@ func TestSanitizeHandler_NestedAnyMapPrivacyKeysMasked(t *testing.T) {
 	}
 	output := privacyOutput(t, slog.Any("payload", payload))
 
-	if strings.Contains(output, kakaoSentinelID) {
-		t.Fatalf("nested map[string]any privacy value leaked: %s", output)
+	if !strings.Contains(output, kakaoSentinelID) {
+		t.Fatalf("nested map[string]any user_id not preserved: %s", output)
 	}
 	if !strings.Contains(output, "vid-1") || !strings.Contains(output, "visible") {
 		t.Fatalf("nested map public values not preserved: %s", output)
@@ -290,23 +286,23 @@ func TestMaskPrivacyMap_NestedCleanMapPreservesCopyOnHit(t *testing.T) {
 }
 
 func TestMaskPrivacyMap_DepthCapStopsSelfReference(t *testing.T) {
-	payload := map[string]any{"user_id": kakaoSentinelID}
+	payload := map[string]any{"user_name": kakaoSentinelID}
 	payload["self"] = payload
 
 	masked, changed := maskPrivacyMap(payload)
 	if !changed {
 		t.Fatal("maskPrivacyMap() changed = false, want true")
 	}
-	if got := masked["user_id"]; got != redactedValue {
-		t.Fatalf("masked[user_id] = %v, want %s", got, redactedValue)
+	if got := masked["user_name"]; got != redactedValue {
+		t.Fatalf("masked[user_name] = %v, want %s", got, redactedValue)
 	}
-	if got := payload["user_id"]; got != kakaoSentinelID {
-		t.Fatalf("caller map was mutated: payload[user_id] = %v", got)
+	if got := payload["user_name"]; got != kakaoSentinelID {
+		t.Fatalf("caller map was mutated: payload[user_name] = %v", got)
 	}
 }
 
 func TestMaskPrivacyMap_DepthNinePrivacyKeyIsNotTraversed(t *testing.T) {
-	payload := map[string]any{"user_id": kakaoSentinelID}
+	payload := map[string]any{"user_name": kakaoSentinelID}
 	for range maxPrivacyMapDepth + 1 {
 		payload = map[string]any{"nested": payload}
 	}
@@ -330,14 +326,14 @@ func TestSanitizeHandler_StringMapIsNotPrivacyMasked(t *testing.T) {
 }
 
 func TestIsPrivacyKey_RejectsBlanketIDSuffix(t *testing.T) {
-	blanket := []string{"channel_id", "video_id", "content_id", "request_id", "trace_id", "id", "correlation_id"}
+	blanket := []string{"room_id", "user_id", "Room_ID", "user-id", "channel_id", "video_id", "content_id", "request_id", "trace_id", "id", "correlation_id"}
 	for _, key := range blanket {
 		if isPrivacyKey(key) {
 			t.Errorf("isPrivacyKey(%q) = true, want false (no blanket *_id masking)", key)
 		}
 	}
 
-	masked := []string{"room", "room_id", "chat_id", "user_id", "user_name", "room_name", "thread_id", "session_thread_id", "sender", "game_key"}
+	masked := []string{"room", "chat_id", "user_name", "room_name", "thread_id", "session_thread_id", "sender", "game_key"}
 	for _, key := range masked {
 		if !isPrivacyKey(key) {
 			t.Errorf("isPrivacyKey(%q) = false, want true", key)
