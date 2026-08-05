@@ -2,9 +2,13 @@ package telemetry
 
 import (
 	"context"
+	"errors"
+	"math"
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"go.opentelemetry.io/otel"
@@ -28,6 +32,66 @@ func TestNewProvider_Disabled(t *testing.T) {
 	}
 	if provider.IsEnabled() {
 		t.Error("disabled provider should return false for IsEnabled")
+	}
+}
+
+func TestNewProvider_EnabledRejectsInvalidConfig(t *testing.T) {
+	base := Config{
+		Enabled:      true,
+		ServiceName:  "test-service",
+		OTLPEndpoint: "localhost:4317",
+		SampleRate:   0.5,
+	}
+	tests := []struct {
+		name   string
+		config Config
+		want   string
+	}{
+		{name: "missing service name", config: Config{Enabled: true, OTLPEndpoint: base.OTLPEndpoint, SampleRate: base.SampleRate}, want: "ServiceName"},
+		{name: "blank service name", config: Config{Enabled: true, ServiceName: " \t\n", OTLPEndpoint: base.OTLPEndpoint, SampleRate: base.SampleRate}, want: "ServiceName"},
+		{name: "missing OTLP endpoint", config: Config{Enabled: true, ServiceName: base.ServiceName, SampleRate: base.SampleRate}, want: "OTLPEndpoint"},
+		{name: "blank OTLP endpoint", config: Config{Enabled: true, ServiceName: base.ServiceName, OTLPEndpoint: " \t\n", SampleRate: base.SampleRate}, want: "OTLPEndpoint"},
+		{name: "negative sample rate", config: Config{Enabled: true, ServiceName: base.ServiceName, OTLPEndpoint: base.OTLPEndpoint, SampleRate: -0.01}, want: "SampleRate"},
+		{name: "sample rate above one", config: Config{Enabled: true, ServiceName: base.ServiceName, OTLPEndpoint: base.OTLPEndpoint, SampleRate: 1.01}, want: "SampleRate"},
+		{name: "not a number sample rate", config: Config{Enabled: true, ServiceName: base.ServiceName, OTLPEndpoint: base.OTLPEndpoint, SampleRate: math.NaN()}, want: "SampleRate"},
+		{name: "positive infinity sample rate", config: Config{Enabled: true, ServiceName: base.ServiceName, OTLPEndpoint: base.OTLPEndpoint, SampleRate: math.Inf(1)}, want: "SampleRate"},
+		{name: "negative infinity sample rate", config: Config{Enabled: true, ServiceName: base.ServiceName, OTLPEndpoint: base.OTLPEndpoint, SampleRate: math.Inf(-1)}, want: "SampleRate"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			provider, err := NewProvider(context.Background(), tt.config)
+			if err == nil {
+				if provider != nil {
+					_ = provider.Shutdown(context.Background())
+				}
+				t.Fatal("expected invalid enabled config to be rejected")
+			}
+			if provider != nil {
+				t.Fatal("invalid config must not return a provider")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected error to mention %s, got %q", tt.want, err)
+			}
+		})
+	}
+}
+
+func TestValidateConfig_TrimsRequiredValues(t *testing.T) {
+	config, err := validateConfig(Config{
+		Enabled:      true,
+		ServiceName:  " \t test-service \n",
+		OTLPEndpoint: " \t localhost:4317 \n",
+		SampleRate:   0.5,
+	})
+	if err != nil {
+		t.Fatalf("unexpected validation error: %v", err)
+	}
+	if config.ServiceName != "test-service" {
+		t.Fatalf("expected trimmed service name, got %q", config.ServiceName)
+	}
+	if config.OTLPEndpoint != "localhost:4317" {
+		t.Fatalf("expected trimmed OTLP endpoint, got %q", config.OTLPEndpoint)
 	}
 }
 
@@ -201,7 +265,9 @@ func TestInstallGlobalProvider_SetsGlobals(t *testing.T) {
 	fields := otel.GetTextMapPropagator().Fields()
 	assertContainsField(t, fields, "traceparent")
 	assertContainsField(t, fields, "tracestate")
-	assertContainsField(t, fields, "baggage")
+	if slices.Contains(fields, "baggage") {
+		t.Fatalf("trace context propagator must not include baggage, got %v", fields)
+	}
 
 	carrier := propagation.MapCarrier{}
 	ctx := trace.ContextWithSpanContext(context.Background(), trace.NewSpanContext(trace.SpanContextConfig{
@@ -223,8 +289,8 @@ func TestInstallGlobalProvider_SetsGlobals(t *testing.T) {
 	if carrier.Get("traceparent") == "" {
 		t.Fatal("expected traceparent to be injected")
 	}
-	if got := carrier.Get("baggage"); got != "tenant=test" {
-		t.Fatalf("expected baggage to be injected, got %q", got)
+	if got := carrier.Get("baggage"); got != "" {
+		t.Fatalf("baggage must not be injected, got %q", got)
 	}
 }
 
@@ -311,6 +377,59 @@ func TestProvider_Shutdown_CancelledParentStillFlushes(t *testing.T) {
 	if err := provider.Shutdown(ctx); err != nil {
 		t.Fatalf("shutdown must detach a cancelled parent and flush, got error: %v", err)
 	}
+}
+
+func TestProvider_Shutdown_IdempotentConcurrent(t *testing.T) {
+	shutdownErr := errors.New("exporter shutdown failed")
+	exporter := &countingShutdownExporter{err: shutdownErr}
+	provider := &Provider{tracerProvider: sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))}
+
+	const callers = 16
+	results := make(chan error, callers)
+	var wg sync.WaitGroup
+	for range callers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			results <- provider.Shutdown(context.Background())
+		}()
+	}
+	wg.Wait()
+	close(results)
+
+	var first error
+	for err := range results {
+		if first == nil {
+			first = err
+			continue
+		}
+		if err != first {
+			t.Fatalf("shutdown must return the stable first result, got distinct errors %p and %p", first, err)
+		}
+	}
+	if !errors.Is(first, shutdownErr) {
+		t.Fatalf("expected wrapped exporter shutdown error, got %v", first)
+	}
+	if got := exporter.shutdowns.Load(); got != 1 {
+		t.Fatalf("expected exporter shutdown once, got %d calls", got)
+	}
+	if err := provider.Shutdown(context.Background()); err != first {
+		t.Fatalf("repeated shutdown must return the stable first result, got distinct error %p", err)
+	}
+}
+
+type countingShutdownExporter struct {
+	shutdowns atomic.Int32
+	err       error
+}
+
+func (e *countingShutdownExporter) ExportSpans(context.Context, []sdktrace.ReadOnlySpan) error {
+	return nil
+}
+
+func (e *countingShutdownExporter) Shutdown(context.Context) error {
+	e.shutdowns.Add(1)
+	return e.err
 }
 
 func TestBuildSampler_NegativeRate(t *testing.T) {
