@@ -10,7 +10,32 @@ import (
 // DefaultDrainLimit은 body를 닫기 전 keep-alive 재사용을 위해 버릴 최대 바이트다.
 const DefaultDrainLimit int64 = 256 << 10
 
-var ErrNilBody = errors.New("httputil: response body is nil")
+var (
+	ErrNilBody          = errors.New("httputil: response body is nil")
+	ErrInvalidBodyLimit = errors.New("httputil: invalid body limit")
+)
+
+// ReadAllLimited는 상한을 넘으면 ErrResponseBodyTooLarge를 반환한다. r의 close 소유권은 호출부에 남는다.
+// maxBytes가 음수면 ErrInvalidBodyLimit이고, 0은 빈 body만 허용한다는 뜻이다.
+func ReadAllLimited(r io.Reader, maxBytes int64) ([]byte, error) {
+	if maxBytes < 0 {
+		return nil, fmt.Errorf("%w: max_bytes=%d", ErrInvalidBodyLimit, maxBytes)
+	}
+
+	// 상한 초과 판별에 1바이트가 더 필요한데, MaxInt64에서 +1은 음수로 감겨 LimitReader가 0바이트만 읽는다.
+	readLimit := maxBytes
+	if readLimit < math.MaxInt64 {
+		readLimit++
+	}
+	data, readErr := io.ReadAll(io.LimitReader(r, readLimit))
+	if readErr != nil {
+		return nil, fmt.Errorf("httputil: read body: %w", readErr)
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, fmt.Errorf("%w: max_bytes=%d", ErrResponseBodyTooLarge, maxBytes)
+	}
+	return data, nil
+}
 
 // ReadAllAndClose는 어떤 경로로 끝나든 body를 닫는다. 상한 초과는 ErrResponseBodyTooLarge이며
 // 남은 스트림은 DefaultDrainLimit까지만 버리고 포기한다. read 실패와 close 실패는 errors.Join으로 함께 남긴다.
@@ -18,20 +43,10 @@ func ReadAllAndClose(rc io.ReadCloser, maxBytes int64) ([]byte, error) {
 	if rc == nil {
 		return nil, ErrNilBody
 	}
-	if maxBytes < 0 {
-		closeErr := DrainAndClose(rc, DefaultDrainLimit)
-		return nil, errors.Join(fmt.Errorf("httputil: invalid body limit %d", maxBytes), closeErr)
-	}
 
-	// maxBytes+1까지 읽어야 본문이 상한을 실제로 넘었는지 판별할 수 있다.
-	data, readErr := io.ReadAll(io.LimitReader(rc, maxBytes+1))
-	if readErr != nil {
-		closeErr := DrainAndClose(rc, DefaultDrainLimit)
-		return nil, errors.Join(fmt.Errorf("httputil: read body: %w", readErr), closeErr)
-	}
-	if int64(len(data)) > maxBytes {
-		closeErr := DrainAndClose(rc, DefaultDrainLimit)
-		return nil, errors.Join(fmt.Errorf("%w: max_bytes=%d", ErrResponseBodyTooLarge, maxBytes), closeErr)
+	data, err := ReadAllLimited(rc, maxBytes)
+	if err != nil {
+		return nil, errors.Join(err, DrainAndClose(rc, DefaultDrainLimit))
 	}
 	if closeErr := DrainAndClose(rc, DefaultDrainLimit); closeErr != nil {
 		return nil, fmt.Errorf("httputil: close body: %w", closeErr)

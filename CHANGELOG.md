@@ -3,6 +3,23 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## v1.44.0 - 2026-08-06
+
+### 추가
+
+- `httputil`: `ReadAllLimited`를 도입합니다 — 상한 초과 시 `ErrResponseBodyTooLarge`,
+  음수 limit 거부 시 신설 `ErrInvalidBodyLimit`. close 소유권은 호출부에 남습니다.
+  `ReadAllAndClose`는 이 helper에 위임합니다.
+
+### 변경 (동작 파괴적)
+
+- `jsonutil.ReadAllLimit`: `maxBytes <= 0`에서 무제한 `io.ReadAll`로 fail-open하던 동작을
+  제거하고 `httputil.ErrInvalidBodyLimit`을 반환합니다. `ErrBodyTooLarge`는
+  `httputil.ErrResponseBodyTooLarge`의 alias가 되어 `errors.Is` 판정은 양방향 호환입니다.
+  스택 내 소비자 전수 grep 결과 non-positive limit 호출은 없습니다(모두 양수 상수/설정,
+  0은 생성자에서 기본값으로 clamp). 함수 자체는 Deprecated — `httputil.ReadAllLimited`를
+  직접 사용하십시오.
+
 ## v1.43.3 - 2026-08-05
 
 ### 수정

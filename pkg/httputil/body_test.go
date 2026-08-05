@@ -3,6 +3,7 @@ package httputil
 import (
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"testing"
@@ -105,6 +106,79 @@ func TestReadAllAndCloseNegativeLimitClosesBody(t *testing.T) {
 	}
 	if body.closes != 1 {
 		t.Fatalf("close calls = %d, want 1", body.closes)
+	}
+}
+
+func TestReadAllLimitedRejectsNegativeLimitWithoutReading(t *testing.T) {
+	t.Parallel()
+
+	body := &countingBody{reader: endlessReader{}}
+	got, err := ReadAllLimited(body, -1)
+	if !errors.Is(err, ErrInvalidBodyLimit) {
+		t.Fatalf("ReadAllLimited(-1) error = %v, want ErrInvalidBodyLimit", err)
+	}
+	if got != nil {
+		t.Fatalf("ReadAllLimited(-1) = %q, want nil", got)
+	}
+	if body.read != 0 {
+		t.Fatalf("read bytes = %d, want 0", body.read)
+	}
+	if body.closes != 0 {
+		t.Fatalf("close calls = %d, want 0: ReadAllLimited must not own close", body.closes)
+	}
+}
+
+func TestReadAllLimitedLeavesBodyOpen(t *testing.T) {
+	t.Parallel()
+
+	body := &countingBody{reader: strings.NewReader("payload")}
+	got, err := ReadAllLimited(body, 64)
+	if err != nil {
+		t.Fatalf("ReadAllLimited() error = %v, want nil", err)
+	}
+	if string(got) != "payload" {
+		t.Fatalf("ReadAllLimited() = %q, want %q", got, "payload")
+	}
+	if body.closes != 0 {
+		t.Fatalf("close calls = %d, want 0: ReadAllLimited must not own close", body.closes)
+	}
+}
+
+func TestReadAllLimitedZeroLimitAcceptsOnlyEmptyBody(t *testing.T) {
+	t.Parallel()
+
+	got, err := ReadAllLimited(strings.NewReader(""), 0)
+	if err != nil {
+		t.Fatalf("ReadAllLimited(empty, 0) error = %v, want nil", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("ReadAllLimited(empty, 0) = %q, want empty", got)
+	}
+
+	if _, err := ReadAllLimited(strings.NewReader("x"), 0); !errors.Is(err, ErrResponseBodyTooLarge) {
+		t.Fatalf("ReadAllLimited(non-empty, 0) error = %v, want ErrResponseBodyTooLarge", err)
+	}
+}
+
+func TestReadAllLimitedMaxInt64LimitDoesNotTruncate(t *testing.T) {
+	t.Parallel()
+
+	got, err := ReadAllLimited(strings.NewReader("payload"), math.MaxInt64)
+	if err != nil {
+		t.Fatalf("ReadAllLimited(MaxInt64) error = %v, want nil", err)
+	}
+	if string(got) != "payload" {
+		t.Fatalf("ReadAllLimited(MaxInt64) = %q, want %q", got, "payload")
+	}
+}
+
+func TestReadAllLimitedPropagatesReadError(t *testing.T) {
+	t.Parallel()
+
+	readErr := errors.New("read boom")
+	body := &countingBody{reader: strings.NewReader("x"), readE: readErr}
+	if _, err := ReadAllLimited(body, 64); !errors.Is(err, readErr) {
+		t.Fatalf("ReadAllLimited() error = %v, want wrapped read error", err)
 	}
 }
 
