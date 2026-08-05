@@ -3,6 +3,15 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## v1.43.1 - 2026-08-05
+
+### 수정
+
+- `telemetry`: `OTLPInsecure=true`가 exporter의 공개 `WithInsecure` 경계를 사용하도록 고쳐,
+  별도 OTLP endpoint 환경변수에 의존하지 않고도 plaintext gRPC collector에 연결합니다.
+- `telemetry`: exporter option test가 upstream private field와 concrete type 대신 실제 gRPC
+  연결의 endpoint 및 TLS/plaintext 동작을 검증합니다.
+
 ## v1.42.0 - 2026-08-02
 
 ### 호환성이 깨지는 변경

@@ -15,8 +15,6 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/park285/shared-go/pkg/logging"
 )
@@ -106,9 +104,7 @@ func buildOTLPExporterOptions(config Config) []otlptracegrpc.Option {
 		otlptracegrpc.WithEndpoint(config.OTLPEndpoint),
 	}
 	if config.OTLPInsecure {
-		opts = append(opts,
-			otlptracegrpc.WithDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
-		)
+		opts = append(opts, otlptracegrpc.WithInsecure())
 	}
 	return opts
 }

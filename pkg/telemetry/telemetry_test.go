@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"math"
-	"reflect"
+	"net"
 	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -17,8 +18,12 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestNewProvider_Disabled(t *testing.T) {
@@ -185,65 +190,63 @@ func TestBuildSampler_TraceIDRatioBased(t *testing.T) {
 	}
 }
 
-func TestBuildOTLPExporterOptions_Endpoint(t *testing.T) {
-	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "env-collector:4317")
-	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "env-traces:4317")
+func TestBuildOTLPExporterOptions_UsesConfiguredPlaintextEndpoint(t *testing.T) {
+	endpoint, methods := startTraceProbe(t)
 
-	for _, tt := range []struct {
-		name     string
-		endpoint string
-	}{
-		{name: "non-empty endpoint", endpoint: "otel-collector:4317"},
-		{name: "empty endpoint", endpoint: ""},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			opts := buildOTLPExporterOptions(Config{
-				OTLPEndpoint: tt.endpoint,
-				OTLPInsecure: false,
-			})
-
-			if len(opts) != 1 {
-				t.Fatalf("expected endpoint option only, got %d options", len(opts))
-			}
-			if got := otlpClientEndpoint(t, opts); got != tt.endpoint {
-				t.Fatalf("expected client endpoint %q, got %q", tt.endpoint, got)
-			}
-			assertOptionConfigType(t, opts[0], "*otlpconfig.genericOption")
-		})
-	}
-}
-
-func TestBuildOTLPExporterOptions_InsecureTrue(t *testing.T) {
-	config := Config{
-		OTLPEndpoint: "otel-collector:4317",
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	exporter, err := otlptracegrpc.New(ctx, buildOTLPExporterOptions(Config{
+		OTLPEndpoint: endpoint,
 		OTLPInsecure: true,
+	})...)
+	if err != nil {
+		t.Fatalf("create exporter: %v", err)
 	}
-	opts := buildOTLPExporterOptions(config)
+	t.Cleanup(func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), time.Second)
+		defer shutdownCancel()
+		_ = exporter.Shutdown(shutdownCtx)
+	})
 
-	if len(opts) != 2 {
-		t.Fatalf("expected endpoint and insecure dial options, got %d options", len(opts))
+	exportErr := exporter.ExportSpans(ctx, []sdktrace.ReadOnlySpan{recordTestSpan(t)})
+	if exportErr == nil {
+		t.Fatal("expected the probe collector to reject the export")
 	}
-	if got := otlpClientEndpoint(t, opts); got != config.OTLPEndpoint {
-		t.Fatalf("expected client endpoint %q, got %q", config.OTLPEndpoint, got)
+	select {
+	case method := <-methods:
+		if method != "/opentelemetry.proto.collector.trace.v1.TraceService/Export" {
+			t.Fatalf("unexpected OTLP method %q", method)
+		}
+	case <-ctx.Done():
+		t.Fatalf("configured endpoint was not reached: %v (export: %v)", ctx.Err(), exportErr)
 	}
-	assertOptionConfigType(t, opts[0], "*otlpconfig.genericOption")
-	assertOptionConfigType(t, opts[1], "*otlpconfig.grpcOption")
 }
 
-func TestBuildOTLPExporterOptions_InsecureFalse(t *testing.T) {
-	config := Config{
-		OTLPEndpoint: "otel-collector:4317",
+func TestBuildOTLPExporterOptions_DefaultsToTLS(t *testing.T) {
+	endpoint, methods := startTraceProbe(t)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	exporter, err := otlptracegrpc.New(ctx, buildOTLPExporterOptions(Config{
+		OTLPEndpoint: endpoint,
 		OTLPInsecure: false,
+	})...)
+	if err != nil {
+		t.Fatalf("create exporter: %v", err)
 	}
-	opts := buildOTLPExporterOptions(config)
+	t.Cleanup(func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), time.Second)
+		defer shutdownCancel()
+		_ = exporter.Shutdown(shutdownCtx)
+	})
 
-	if len(opts) != 1 {
-		t.Fatalf("expected insecure=false to keep only endpoint option, got %d options", len(opts))
+	if err := exporter.ExportSpans(ctx, []sdktrace.ReadOnlySpan{recordTestSpan(t)}); err == nil {
+		t.Fatal("expected TLS export to a plaintext probe to fail")
 	}
-	if got := otlpClientEndpoint(t, opts); got != config.OTLPEndpoint {
-		t.Fatalf("expected client endpoint %q, got %q", config.OTLPEndpoint, got)
+	select {
+	case method := <-methods:
+		t.Fatalf("TLS-disabled probe unexpectedly received %q", method)
+	default:
 	}
-	assertOptionConfigType(t, opts[0], "*otlpconfig.genericOption")
 }
 
 func TestInstallGlobalProvider_SetsGlobals(t *testing.T) {
@@ -455,33 +458,47 @@ func assertAttributeValue(t *testing.T, attrs map[attribute.Key]string, key attr
 	}
 }
 
-func otlpClientEndpoint(t *testing.T, opts []otlptracegrpc.Option) string {
+func startTraceProbe(t *testing.T) (string, <-chan string) {
 	t.Helper()
 
-	client := otlptracegrpc.NewClient(opts...)
-	value := reflect.ValueOf(client)
-	if value.Kind() != reflect.Pointer {
-		t.Fatalf("expected OTLP client pointer, got %T", client)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen for OTLP probe: %v", err)
 	}
-	field := value.Elem().FieldByName("endpoint")
-	if !field.IsValid() {
-		t.Fatalf("expected OTLP client %T to expose endpoint field", client)
-	}
-	return field.String()
+	methods := make(chan string, 1)
+	server := grpc.NewServer(grpc.UnknownServiceHandler(func(_ any, stream grpc.ServerStream) error {
+		method, _ := grpc.MethodFromServerStream(stream)
+		select {
+		case methods <- method:
+		default:
+		}
+		return status.Error(codes.Unimplemented, "trace probe")
+	}))
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	return listener.Addr().String(), methods
 }
 
-func assertOptionConfigType(t *testing.T, opt otlptracegrpc.Option, want string) {
+func recordTestSpan(t *testing.T) sdktrace.ReadOnlySpan {
 	t.Helper()
 
-	value := reflect.ValueOf(opt)
-	field := value.FieldByName("GRPCOption")
-	if !field.IsValid() {
-		t.Fatalf("expected option %T to expose GRPCOption field", opt)
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	t.Cleanup(func() {
+		_ = provider.Shutdown(context.Background())
+	})
+	_, span := provider.Tracer("telemetry-test").Start(context.Background(), "export-test")
+	span.End()
+	ended := recorder.Ended()
+	if len(ended) != 1 {
+		t.Fatalf("expected one recorded span, got %d", len(ended))
 	}
-	got := reflect.TypeOf(field.Interface()).String()
-	if got != want {
-		t.Fatalf("expected option config type %q, got %q", want, got)
-	}
+	return ended[0]
 }
 
 func assertContainsField(t *testing.T, fields []string, want string) {
