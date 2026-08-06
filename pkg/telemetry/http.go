@@ -7,12 +7,15 @@ import (
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/propagation"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // HTTPHandlerOptions는 NewPublicHTTPHandler 설정입니다.
 type HTTPHandlerOptions struct {
 	// Filter는 원본 요청을 tracing할지 결정합니다.
-	Filter func(*http.Request) bool
+	Filter           func(*http.Request) bool
+	SpanRoutePattern bool
 }
 
 type httpHandlerRequestTargetKey struct{}
@@ -34,14 +37,27 @@ func NewPublicHTTPHandler(handler http.Handler, operation string, opts HTTPHandl
 		restored.Body = r.Body
 		handler.ServeHTTP(w, restored)
 		r.Pattern = restored.Pattern
+
+		if opts.SpanRoutePattern && restored.Pattern != "" {
+			trace.SpanFromContext(r.Context()).
+				SetAttributes(semconv.HTTPRouteKey.String(restored.Pattern))
+		}
 	})
+
+	// otelhttp는 handler 종료 후 r.Pattern이 있으면 이 formatter로 span 이름을 다시 쓴다.
+	// 그래서 handler 안에서 SetName을 호출해도 여기서 덮인다 — 명명은 formatter에서만 한다.
+	nameFormatter := func(operation string, r *http.Request) string {
+		if opts.SpanRoutePattern && r != nil && r.Pattern != "" {
+			return operation + " " + r.Pattern
+		}
+
+		return operation
+	}
 
 	instrumentedOptions := []otelhttp.Option{
 		otelhttp.WithPropagators(propagation.TraceContext{}),
 		otelhttp.WithPublicEndpointFn(func(*http.Request) bool { return true }),
-		otelhttp.WithSpanNameFormatter(func(operation string, _ *http.Request) string {
-			return operation
-		}),
+		otelhttp.WithSpanNameFormatter(nameFormatter),
 	}
 
 	if opts.Filter != nil {

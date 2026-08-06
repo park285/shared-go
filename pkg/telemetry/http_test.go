@@ -414,3 +414,108 @@ func installPublicHTTPGlobals(t *testing.T, provider *sdktrace.TracerProvider, p
 		}
 	})
 }
+
+func TestNewPublicHTTPHandlerRoutePatternNaming(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		sdktrace.WithSpanProcessor(recorder),
+	)
+	installPublicHTTPGlobals(t, provider, propagation.TraceContext{})
+
+	const operation = "public.http"
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /rooms/{id}", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	handler := NewPublicHTTPHandler(mux, operation, HTTPHandlerOptions{SpanRoutePattern: true})
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(
+		t.Context(), http.MethodGet, "/rooms/private-room-123", http.NoBody))
+
+	spans := recorder.Ended()
+	if len(spans) != 1 {
+		t.Fatalf("ended spans = %d, want 1", len(spans))
+	}
+
+	const wantPattern = "GET /rooms/{id}"
+	if got := spans[0].Name(); got != operation+" "+wantPattern {
+		t.Fatalf("span name = %q, want %q", got, operation+" "+wantPattern)
+	}
+
+	var gotRoute string
+	for _, attr := range spans[0].Attributes() {
+		if attr.Key == attribute.Key("http.route") {
+			gotRoute = attr.Value.AsString()
+		}
+		if attr.Key == attribute.Key("url.path") {
+			t.Fatalf("url.path attribute must stay absent, got %q", attr.Value.AsString())
+		}
+	}
+	if gotRoute != wantPattern {
+		t.Fatalf("http.route = %q, want %q", gotRoute, wantPattern)
+	}
+
+	for _, attr := range spans[0].Attributes() {
+		if strings.Contains(attr.Value.Emit(), "private-room-123") {
+			t.Fatalf("attribute %s leaked the raw path segment", attr.Key)
+		}
+	}
+}
+
+func TestNewPublicHTTPHandlerRoutePatternUnmatchedKeepsOperation(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		sdktrace.WithSpanProcessor(recorder),
+	)
+	installPublicHTTPGlobals(t, provider, propagation.TraceContext{})
+
+	const operation = "public.http"
+
+	handler := NewPublicHTTPHandler(http.NewServeMux(), operation, HTTPHandlerOptions{SpanRoutePattern: true})
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(
+		t.Context(), http.MethodGet, "/unregistered", http.NoBody))
+
+	spans := recorder.Ended()
+	if len(spans) != 1 {
+		t.Fatalf("ended spans = %d, want 1", len(spans))
+	}
+	if got := spans[0].Name(); got != operation {
+		t.Fatalf("span name = %q, want %q", got, operation)
+	}
+	for _, attr := range spans[0].Attributes() {
+		if attr.Key == attribute.Key("http.route") {
+			t.Fatalf("http.route must stay absent on an unmatched route, got %q", attr.Value.AsString())
+		}
+	}
+}
+
+func TestNewPublicHTTPHandlerRoutePatternDisabledByDefault(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		sdktrace.WithSpanProcessor(recorder),
+	)
+	installPublicHTTPGlobals(t, provider, propagation.TraceContext{})
+
+	const operation = "public.http"
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /rooms/{id}", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	handler := NewPublicHTTPHandler(mux, operation, HTTPHandlerOptions{})
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(
+		t.Context(), http.MethodGet, "/rooms/private-room-123", http.NoBody))
+
+	spans := recorder.Ended()
+	if len(spans) != 1 {
+		t.Fatalf("ended spans = %d, want 1", len(spans))
+	}
+	if got := spans[0].Name(); got != operation {
+		t.Fatalf("span name = %q, want %q", got, operation)
+	}
+}

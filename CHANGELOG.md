@@ -3,6 +3,40 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## v1.46.0 - 2026-08-06
+
+### 추가
+
+- `telemetry`: `HTTPHandlerOptions.SpanRoutePattern`(opt-in)을 도입합니다 — 켜면 server
+  span 이름이 `<operation> <route pattern>`이 되고 `http.route` attribute가 붙습니다.
+  route 패턴은 정적 문자열이라 원문 경로·식별자를 노출하지 않습니다. 기본값 off이므로
+  기존 소비자의 span 이름은 그대로입니다. `net/http` `ServeMux` 라우팅에서만 유효합니다
+  (`http.Request.Pattern`이 채워지는 경우).
+
+## v1.45.0 - 2026-08-06
+
+### 추가
+
+- `llm`: GPT-5.6 explicit prompt cache를 지원합니다 — `Message.CacheBreakpoint`,
+  `openaipreset.CompletionRequest.CacheMode`, `Usage.CacheWriteTokens`.
+  breakpoint가 붙은 content block에 `prompt_cache_breakpoint{mode:explicit}`를 실어
+  안정 prefix 끝을 표시하고, 요청에는 `prompt_cache_options{mode:explicit}`를 보냅니다.
+  GPT-5.6 미만 모델은 이 필드를 400으로 거부하므로 소비자가 모델 게이팅을 해야 합니다.
+
+## v1.44.1 - 2026-08-06
+
+### 수정
+
+- `promptguard`: scoring budget을 넘어선 후보도 검사해 masked injection을 놓치지 않으면서
+  정상 입력 과차단을 만들지 않습니다. 차단 결정의 decode witness를 정확히 보존합니다.
+- `outputguard`: 중첩 short Base64 문맥을 한정된 범위에서 보존하고, root decode 재사용에
+  토큰 경계를 요구해 중첩 인코딩된 role header를 차단합니다.
+- `logging`: 구조화 map의 자격증명을 근거 기반으로 마스킹합니다 — 키 이름만으로 일괄
+  마스킹하지 않아 운영 식별자는 로그에 남습니다.
+- `guardtext`: Unicode 17 canonical reordering의 mark run 길이를 제한합니다.
+- `release`: source bundle을 manifest commit tree에 결속해 재계산된 대체 아카이브
+  체크섬을 거부합니다.
+
 ## v1.44.0 - 2026-08-06
 
 ### 추가
