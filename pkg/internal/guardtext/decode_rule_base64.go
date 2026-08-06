@@ -54,26 +54,15 @@ func appendShortRuleBase64Whole(
 	value := input[whole.start:whole.end]
 	var wholeReadable bool
 	if len(value) <= maxShortBase64CandidateLen {
-		previousCount := len(spans)
-		spans, wholeReadable = appendEmbeddedProtectedBase64Span(
+		spans, wholeReadable = appendShortRuleReadableBase64Whole(
 			spans,
 			input,
 			whole,
-			chargeReadableOnly,
-			true,
-			true,
-			embeddedDirectOrContext,
 			mayContribute,
 			embeddedContextMayContribute,
 			work,
 			status,
 		)
-		if wholeReadable && len(spans) == previousCount && decodeWorkComplete(status) {
-			decoded, err := DecodeBase64Candidate(value)
-			if err == nil && nestedShortContextMayContribute(input, whole, string(decoded), mayContribute, work, status) {
-				spans = append(spans, whole)
-			}
-		}
 	} else {
 		wholeReadable = readableBase64Span(input, whole, work, status)
 	}
@@ -102,6 +91,41 @@ func appendShortRuleBase64Whole(
 	}
 
 	return spans, seen
+}
+
+func appendShortRuleReadableBase64Whole(
+	spans []encodedSpan,
+	input string,
+	whole encodedSpan,
+	mayContribute func(string) bool,
+	embeddedContextMayContribute EmbeddedContextMatcher,
+	work *protectedDecodeWork,
+	status *DecodeStatus,
+) ([]encodedSpan, bool) {
+	previousCount := len(spans)
+	spans, readable := appendEmbeddedProtectedBase64Span(
+		spans,
+		input,
+		whole,
+		chargeReadableOnly,
+		true,
+		true,
+		embeddedDirectOrContext,
+		mayContribute,
+		embeddedContextMayContribute,
+		work,
+		status,
+	)
+	if !readable || len(spans) != previousCount || !decodeWorkComplete(status) {
+		return spans, readable
+	}
+
+	decoded, err := DecodeBase64Candidate(input[whole.start:whole.end])
+	if err == nil && nestedShortContextMayContribute(input, whole, string(decoded), mayContribute, work, status) {
+		spans = append(spans, whole)
+	}
+
+	return spans, readable
 }
 
 func nestedShortContextMayContribute(
