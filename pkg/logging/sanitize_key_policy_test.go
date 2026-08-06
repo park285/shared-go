@@ -27,6 +27,40 @@ func TestSanitizeHandlerGenericKeyRequiresSecretValueEvidence(t *testing.T) {
 	}
 }
 
+func TestSanitizeHandlerStructuredMapCredentialsUseExactOrValueEvidence(t *testing.T) {
+	t.Parallel()
+
+	nested := map[string]any{
+		"key":     "access-token",
+		"user_id": "user-42",
+		"room_id": 8842,
+	}
+	payload := map[string]any{
+		"api_key": "short-secret",
+		"key":     "cache-shard-1",
+		"nested":  nested,
+	}
+	output := privacyOutput(t, slog.Any("payload", payload))
+
+	for _, leaked := range []string{"short-secret", "access-token"} {
+		if strings.Contains(output, leaked) {
+			t.Fatalf("structured credential %q leaked: %s", leaked, output)
+		}
+	}
+	if strings.Count(output, redactedValue) < 2 {
+		t.Fatalf("structured credentials were not independently masked: %s", output)
+	}
+	for _, preserved := range []string{"cache-shard-1", "user-42", "8842"} {
+		if !strings.Contains(output, preserved) {
+			t.Fatalf("ordinary structured value %q was not preserved: %s", preserved, output)
+		}
+	}
+	if payload["api_key"] != "short-secret" || payload["key"] != "cache-shard-1" ||
+		nested["key"] != "access-token" || nested["user_id"] != "user-42" || nested["room_id"] != 8842 {
+		t.Fatalf("caller-owned structured map was mutated: payload=%v nested=%v", payload, nested)
+	}
+}
+
 func TestSanitizeHandlerOperationalIDsRemainObservable(t *testing.T) {
 	t.Parallel()
 
