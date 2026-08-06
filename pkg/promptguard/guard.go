@@ -309,7 +309,7 @@ func (g *Guard) evaluateRaw(input string) Evaluation {
 			SegmentBudgetExceeded: true,
 		}
 	}
-	decoded, status := g.decodedTextSegments(input)
+	decoded, status := g.decodedTextSegmentsWithRaw(input, segments)
 	segments = append(segments, decoded...)
 	evaluation := g.evaluateSegments(policy, segments)
 	if status != 0 {

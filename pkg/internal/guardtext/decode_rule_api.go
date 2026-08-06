@@ -84,6 +84,65 @@ func DecodeCandidatesWithContextForRuleOwner[T any](
 	return mergeSemanticCandidates(semantic.candidates, decoded)
 }
 
+// DecodeCandidatesWithContextForRuleOwnerAndBlockWitness는 일반 후보 admission과 별개로
+// 실제 owner 정책에서 Block인 bounded decode 후보 하나를 보존한다. decode 한도 자체를
+// 공격 근거로 쓰지 않으면서 depth·candidate 예산 뒤의 확정 공격만 차단할 때 사용한다.
+func DecodeCandidatesWithContextForRuleOwnerAndBlockWitness[T any](
+	input string,
+	owner T,
+	mayContribute func(T, string) bool,
+	contextMayContribute func(T, string, int, int, string) bool,
+	oversizedWouldBlock func(T, string, string, []string) bool,
+	candidateWouldBlock func(T, string) bool,
+) (DecodeResult, string) {
+	if mayContribute == nil || candidateWouldBlock == nil {
+		return DecodeCandidatesWithContextForRuleOwner(
+			input,
+			owner,
+			mayContribute,
+			contextMayContribute,
+			oversizedWouldBlock,
+		), ""
+	}
+
+	blockingCandidate := ""
+	wrappedMayContribute := func(owner T, candidate string) bool {
+		contributes := mayContribute(owner, candidate)
+		if contributes && blockingCandidate == "" && candidateWouldBlock(owner, candidate) {
+			blockingCandidate = candidate
+		}
+
+		return contributes
+	}
+
+	var wrappedContextMayContribute func(T, string, int, int, string) bool
+	if contextMayContribute != nil {
+		wrappedContextMayContribute = func(owner T, input string, start, end int, decoded string) bool {
+			contributes := contextMayContribute(owner, input, start, end, decoded)
+			if !contributes || blockingCandidate != "" {
+				return contributes
+			}
+
+			contextual, bounded := contextualAdmissionCandidate(input, encodedSpan{start: start, end: end}, decoded)
+			if bounded && candidateWouldBlock(owner, contextual) {
+				blockingCandidate = contextual
+			}
+
+			return contributes
+		}
+	}
+
+	result := DecodeCandidatesWithContextForRuleOwner(
+		input,
+		owner,
+		wrappedMayContribute,
+		wrappedContextMayContribute,
+		oversizedWouldBlock,
+	)
+
+	return result, blockingCandidate
+}
+
 func normalizedRuleDecodeInput(input string, needed bool) string {
 	if !needed {
 		return ""

@@ -19,6 +19,10 @@ func decodedTextSegments(input string) ([]textSegment, guardtext.DecodeStatus) {
 }
 
 func (g *Guard) decodedTextSegments(input string) ([]textSegment, guardtext.DecodeStatus) {
+	return g.decodedTextSegmentsWithRaw(input, nil)
+}
+
+func (g *Guard) decodedTextSegmentsWithRaw(input string, rawSegments []textSegment) ([]textSegment, guardtext.DecodeStatus) {
 	if g == nil {
 		return decodedTextSegments(input)
 	}
@@ -26,14 +30,19 @@ func (g *Guard) decodedTextSegments(input string) ([]textSegment, guardtext.Deco
 		return nil, 0
 	}
 
-	result := guardtext.DecodeCandidatesWithContextForRuleOwner(
+	result, blockingCandidate := guardtext.DecodeCandidatesWithContextForRuleOwnerAndBlockWitness(
 		input,
 		g,
 		decodedCandidateMayContributeForGuard,
 		decodedContextMayContributeForGuard,
 		oversizedDecodedWouldBlockForGuard,
+		decodedCandidateWouldBlockForGuard,
 	)
-	return textSegmentsFromDecodeResult(result)
+	scored, overflow := partitionDecodedSegments(result)
+	overflow = appendUniqueDecodedSegment(scored, overflow, blockingCandidate)
+	witnesses := g.blockingOverflowSegments(rawSegments, scored, overflow)
+
+	return append(scored, witnesses...), result.Status
 }
 
 func decodedCandidateMayContributeForGuard(guard *Guard, candidate string) bool {
@@ -42,6 +51,10 @@ func decodedCandidateMayContributeForGuard(guard *Guard, candidate string) bool 
 
 func decodedContextMayContributeForGuard(guard *Guard, input string, start, end int, decoded string) bool {
 	return guard.decodedContextMayContribute(input, start, end, decoded)
+}
+
+func decodedCandidateWouldBlockForGuard(guard *Guard, candidate string) bool {
+	return guard.evaluateSegments(guard.policy(), []textSegment{decodedCandidateSegment(candidate)}).Decision == DecisionBlock
 }
 
 func oversizedDecodedWouldBlockForGuard(guard *Guard, original, decoded string, bounded []string) bool {
@@ -68,18 +81,84 @@ func decodedCandidateSegment(candidate string) textSegment {
 }
 
 func textSegmentsFromDecodeResult(result guardtext.DecodeResult) ([]textSegment, guardtext.DecodeStatus) {
-	segments := make([]textSegment, 0, min(len(result.Candidates), maxBase64Candidates))
+	scored, _ := partitionDecodedSegments(result)
+
+	return scored, result.Status
+}
+
+func partitionDecodedSegments(result guardtext.DecodeResult) ([]textSegment, []textSegment) {
+	scored := make([]textSegment, 0, min(len(result.Candidates), maxBase64Candidates))
+	var overflow []textSegment
 	for _, candidate := range result.Candidates {
-		if len(segments) >= maxBase64Candidates {
-			break
-		}
 		if !guardtext.DecodedCandidateFitsBudget(candidate) {
 			continue
 		}
-		segments = append(segments, textSegment{Kind: segmentPlain, Views: normalizeViews(candidate)})
+		segment := decodedCandidateSegment(candidate)
+		if len(scored) < maxBase64Candidates {
+			scored = append(scored, segment)
+			continue
+		}
+		overflow = append(overflow, segment)
 	}
 
-	return segments, result.Status
+	return scored, overflow
+}
+
+func appendUniqueDecodedSegment(scored, overflow []textSegment, candidate string) []textSegment {
+	if candidate == "" || !guardtext.DecodedCandidateFitsBudget(candidate) {
+		return overflow
+	}
+	for _, segment := range scored {
+		if segment.Views.Raw == candidate {
+			return overflow
+		}
+	}
+	for _, segment := range overflow {
+		if segment.Views.Raw == candidate {
+			return overflow
+		}
+	}
+
+	return append(overflow, decodedCandidateSegment(candidate))
+}
+
+func (g *Guard) blockingOverflowSegments(raw, scored, overflow []textSegment) []textSegment {
+	if len(overflow) == 0 || g.segmentsBlock(raw, scored, nil) {
+		return nil
+	}
+	if !g.segmentsBlock(raw, scored, overflow) {
+		return nil
+	}
+
+	start, end := 1, len(overflow)
+	for start < end {
+		middle := start + (end-start)/2
+		if g.segmentsBlock(raw, scored, overflow[:middle]) {
+			end = middle
+		} else {
+			start = middle + 1
+		}
+	}
+
+	witnesses := slices.Clone(overflow[:start])
+	for index := range slices.Backward(witnesses) {
+		withoutCurrent := slices.Clone(witnesses[:index])
+		withoutCurrent = append(withoutCurrent, witnesses[index+1:]...)
+		if g.segmentsBlock(raw, scored, withoutCurrent) {
+			witnesses = withoutCurrent
+		}
+	}
+
+	return witnesses
+}
+
+func (g *Guard) segmentsBlock(raw, scored, overflow []textSegment) bool {
+	segments := make([]textSegment, 0, len(raw)+len(scored)+len(overflow))
+	segments = append(segments, raw...)
+	segments = append(segments, scored...)
+	segments = append(segments, overflow...)
+
+	return g.evaluateSegments(g.policy(), segments).Decision == DecisionBlock
 }
 
 func (g *Guard) decodedCandidateMayContribute(candidate string) bool {
