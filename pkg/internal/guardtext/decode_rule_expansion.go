@@ -48,10 +48,9 @@ func (d *contextDecoder) observeRuleExpansion(current decodeQueueEntry, candidat
 		contextual = replaceDecodedSpan(current.text, candidate.span, candidate.decoded)
 	}
 	if hasPlausibleShortRuleDecodeSurface(candidate.decoded) {
-		// depth≥1에서 root 원문에 그대로 있는 토큰의 미검증 plausible 확장 요구는
-		// root 레벨 확장이 이미 책임지므로 status 없이 생략한다. 그대로 두면 이음새
-		// 근처 이웃 재관찰이 depth 한도에 닿아 정상 반복 본문이 fail-closed 차단된다.
-		// 디코드로 새로 드러난 토큰은 root에 없어 기존 fail-closed가 그대로 남는다.
+		// depth≥1에서 root의 독립 인코딩 토큰과 동일한 값은 root 레벨 확장이 이미
+		// 책임지므로 status 없이 생략한다. 다른 인코딩 값 내부의 우연한 substring은
+		// 새 decode provenance이므로 생략하면 중첩 role surface를 놓친다.
 		if current.depth >= 1 && d.rootContainsValue(current.text[candidate.span.start:candidate.span.end]) {
 			return false
 		}
@@ -159,11 +158,32 @@ func encodedSpansOverlap(left, right encodedSpan) bool {
 }
 
 func (d *contextDecoder) rootContainsValue(value string) bool {
+	if value == "" {
+		return false
+	}
 	for _, root := range d.roots {
-		if strings.Contains(root, value) {
-			return true
+		for offset := 0; offset+len(value) <= len(root); {
+			relative := strings.Index(root[offset:], value)
+			if relative < 0 {
+				break
+			}
+			start := offset + relative
+			end := start + len(value)
+			if encodedValueHasTokenBoundaries(root, start, end) {
+				return true
+			}
+			offset = start + 1
 		}
 	}
 
 	return false
+}
+
+func encodedValueHasTokenBoundaries(input string, start, end int) bool {
+	return (start == 0 || !isEncodedValueByte(input[start-1])) &&
+		(end == len(input) || !isEncodedValueByte(input[end]))
+}
+
+func isEncodedValueByte(value byte) bool {
+	return isBase64Char(value) || value == '='
 }
