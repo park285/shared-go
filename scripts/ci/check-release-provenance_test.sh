@@ -40,6 +40,25 @@ commit="$(git -C "$repo" rev-parse HEAD)"
     echo "release provenance test: wrong commit was accepted" >&2
     exit 1
   fi
+
+  printf 'different commit tree\n' >README.md
+  git add README.md
+  git commit -qm alternate
+  alternate_commit="$(git rev-parse HEAD)"
+  cp -R dist retargeted
+  git archive --format=tar --prefix='release-fixture-v1.2.3/' "$alternate_commit" \
+    | gzip -n >retargeted/release-fixture-v1.2.3.tar.gz
+  (
+    cd retargeted
+    sha256sum \
+      release-fixture-v1.2.3.tar.gz \
+      release-fixture-v1.2.3.spdx.json \
+      release-manifest.json >SHA256SUMS
+  )
+  if bash "$root/scripts/ci/verify-release-bundle.sh" retargeted owner/release-fixture v1.2.3 "$commit" >/dev/null 2>&1; then
+    echo "release provenance test: alternate commit archive with recomputed checksums was accepted" >&2
+    exit 1
+  fi
 )
 
 fake_bin="$fixture/bin"
