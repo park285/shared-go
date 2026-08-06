@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	genericKeyField       = "key"
+	genericKeyField        = "key"
 	accessTokenPlaceholder = "access-token"
 )
 
@@ -37,8 +37,8 @@ func TestSanitizeHandlerStructuredMapCredentialsUseExactOrValueEvidence(t *testi
 
 	nested := map[string]any{
 		genericKeyField: accessTokenPlaceholder,
-		"user_id":      "user-42",
-		"room_id":      8842,
+		"user_id":       "user-42",
+		"room_id":       8842,
 	}
 	payload := map[string]any{
 		"api_key":       "short-secret",
