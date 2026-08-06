@@ -12,6 +12,7 @@ import (
 const (
 	maxBase64Candidates         = 8
 	maxDecodedRuleFragmentBytes = 14
+	maxWitnessMinimizeBytes     = 64 << 10
 )
 
 func decodedTextSegments(input string) ([]textSegment, guardtext.DecodeStatus) {
@@ -140,7 +141,13 @@ func (g *Guard) blockingOverflowSegments(raw, scored, overflow []textSegment) []
 		}
 	}
 
+	// 이진 탐색이 고른 prefix는 그 자체로 이미 block이므로, 최소화는 witness를 줄일 뿐
+	// 판정을 바꾸지 않는다. 최소화 1회당 raw+scored 전체를 다시 평가하므로 큰 입력에서는
+	// 평가 비용이 witness 개수만큼 증폭된다. 그래서 큰 입력은 비최소 witness로 되돌린다.
 	witnesses := slices.Clone(overflow[:start])
+	if segmentsByteTotal(raw)+segmentsByteTotal(scored) > maxWitnessMinimizeBytes {
+		return witnesses
+	}
 	for index := range slices.Backward(witnesses) {
 		withoutCurrent := slices.Clone(witnesses[:index])
 		withoutCurrent = append(withoutCurrent, witnesses[index+1:]...)
@@ -150,6 +157,15 @@ func (g *Guard) blockingOverflowSegments(raw, scored, overflow []textSegment) []
 	}
 
 	return witnesses
+}
+
+func segmentsByteTotal(segments []textSegment) int {
+	total := 0
+	for index := range segments {
+		total += len(segments[index].Views.Raw)
+	}
+
+	return total
 }
 
 func (g *Guard) segmentsBlock(raw, scored, overflow []textSegment) bool {
