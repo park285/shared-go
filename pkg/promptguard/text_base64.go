@@ -34,6 +34,9 @@ func (g *Guard) decodedTextSegments(input string) ([]textSegment, guardtext.Deco
 		oversizedDecodedWouldBlockForGuard,
 		decodedCandidateWouldBlockForGuard,
 	)
+	if blockingCandidate == "" && !result.Complete() {
+		blockingCandidate = blockingCandidateBeyondScoreBudgetForGuard(g, result.Candidates)
+	}
 	return textSegmentsFromDecodeResultWithBlockWitness(result, blockingCandidate)
 }
 
@@ -47,6 +50,19 @@ func decodedContextMayContributeForGuard(guard *Guard, input string, start, end 
 
 func decodedCandidateWouldBlockForGuard(guard *Guard, candidate string) bool {
 	return guard.evaluateSegments(guard.policy(), []textSegment{decodedCandidateSegment(candidate)}).Decision == DecisionBlock
+}
+
+func blockingCandidateBeyondScoreBudgetForGuard(guard *Guard, candidates []string) string {
+	if len(candidates) <= maxBase64Candidates {
+		return ""
+	}
+	for _, candidate := range candidates[maxBase64Candidates:] {
+		if decodedCandidateWouldBlockForGuard(guard, candidate) {
+			return candidate
+		}
+	}
+
+	return ""
 }
 
 func oversizedDecodedWouldBlockForGuard(guard *Guard, original, decoded string, bounded []string) bool {
