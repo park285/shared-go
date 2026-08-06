@@ -150,6 +150,51 @@ func TestCompleteResponsesRequest(t *testing.T) {
 			},
 		},
 		{
+			name: "explicit cache breakpoint and mode",
+			req: openaipreset.CompletionRequest{
+				Messages: []openaipreset.Message{
+					{Role: "developer", Content: "stable prefix", CacheBreakpoint: true},
+					{Role: "user", Content: "variable question"},
+				},
+				CacheKey:  "session-1",
+				CacheMode: " explicit ",
+			},
+			check: func(t *testing.T, payload map[string]any) {
+				t.Helper()
+				if got := payload["prompt_cache_key"]; got != "session-1" {
+					t.Fatalf("prompt_cache_key = %#v, want session-1", got)
+				}
+				options, ok := payload["prompt_cache_options"].(map[string]any)
+				if !ok || options["mode"] != "explicit" {
+					t.Fatalf("prompt_cache_options = %#v, want mode explicit", payload["prompt_cache_options"])
+				}
+				input := payload["input"].([]any)
+				if len(input) != 2 {
+					t.Fatalf("input len = %d, want 2", len(input))
+				}
+				first := input[0].(map[string]any)
+				if got := first["role"]; got != "developer" {
+					t.Fatalf("breakpoint message role = %#v, want developer", got)
+				}
+				blocks, ok := first["content"].([]any)
+				if !ok || len(blocks) != 1 {
+					t.Fatalf("breakpoint content = %#v, want single block list", first["content"])
+				}
+				block := blocks[0].(map[string]any)
+				if got := block["type"]; got != "input_text" {
+					t.Fatalf("block type = %#v, want input_text", got)
+				}
+				if got := block["text"]; got != "stable prefix" {
+					t.Fatalf("block text = %#v, want stable prefix", got)
+				}
+				breakpoint, ok := block["prompt_cache_breakpoint"].(map[string]any)
+				if !ok || breakpoint["mode"] != "explicit" {
+					t.Fatalf("prompt_cache_breakpoint = %#v, want mode explicit", block["prompt_cache_breakpoint"])
+				}
+				assertMessagePayload(t, input[1], "user", "variable question")
+			},
+		},
+		{
 			name: "openai instruction profile",
 			req: openaipreset.CompletionRequest{
 				Messages: []openaipreset.Message{
@@ -250,7 +295,7 @@ func TestCompleteResponsesRequest(t *testing.T) {
 			if got.Model != "gpt-returned" {
 				t.Fatalf("Model = %q, want gpt-returned", got.Model)
 			}
-			if got.Usage != (sharedllm.Usage{InputTokens: 12, OutputTokens: 5, TotalTokens: 17, CachedInputTokens: 2, ReasoningOutputTokens: 1}) {
+			if got.Usage != (sharedllm.Usage{InputTokens: 12, OutputTokens: 5, TotalTokens: 17, CachedInputTokens: 2, CacheWriteTokens: 7, ReasoningOutputTokens: 1}) {
 				t.Fatalf("Usage = %+v", got.Usage)
 			}
 			if !reporter.called || reporter.provider != "openai" || reporter.model != "gpt-returned" || reporter.usage != got.Usage {

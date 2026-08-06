@@ -299,6 +299,7 @@ func usageFromResponse(resp *responses.Response) Usage {
 		OutputTokens:          int(resp.Usage.OutputTokens),
 		TotalTokens:           int(resp.Usage.TotalTokens),
 		CachedInputTokens:     int(resp.Usage.InputTokensDetails.CachedTokens),
+		CacheWriteTokens:      int(resp.Usage.InputTokensDetails.CacheWriteTokens),
 		ReasoningOutputTokens: int(resp.Usage.OutputTokensDetails.ReasoningTokens),
 	}
 }
@@ -312,6 +313,7 @@ func usageFromChatCompletion(completion *openai.ChatCompletion) Usage {
 		OutputTokens:          int(completion.Usage.CompletionTokens),
 		TotalTokens:           int(completion.Usage.TotalTokens),
 		CachedInputTokens:     int(completion.Usage.PromptTokensDetails.CachedTokens),
+		CacheWriteTokens:      int(completion.Usage.PromptTokensDetails.CacheWriteTokens),
 		ReasoningOutputTokens: int(completion.Usage.CompletionTokensDetails.ReasoningTokens),
 	}
 }

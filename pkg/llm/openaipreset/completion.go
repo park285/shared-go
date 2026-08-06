@@ -9,6 +9,7 @@ import (
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/openai/openai-go/v3/shared"
+	"github.com/openai/openai-go/v3/shared/constant"
 
 	sharedllm "github.com/park285/shared-go/pkg/llm"
 	"github.com/park285/shared-go/pkg/llm/internal/openaidiag"
@@ -29,6 +30,7 @@ type CompletionRequest struct {
 	ReasoningEffort    string
 	WebSearch          bool
 	CacheKey           string
+	CacheMode          string
 	ResponseFormat     *ResponseFormat
 	InstructionProfile *sharedllm.InstructionProfile
 }
@@ -131,6 +133,9 @@ func (c *Client) completionParams(req CompletionRequest) (responses.ResponseNewP
 	if cacheKey := strings.TrimSpace(req.CacheKey); cacheKey != "" {
 		params.PromptCacheKey = openai.String(cacheKey)
 	}
+	if cacheMode := strings.TrimSpace(req.CacheMode); cacheMode != "" {
+		params.PromptCacheOptions = responses.ResponseNewParamsPromptCacheOptions{Mode: cacheMode}
+	}
 
 	return params, model, nil
 }
@@ -156,9 +161,31 @@ func completionInput(messages []Message) responses.ResponseInputParam {
 		if content == "" {
 			continue
 		}
+		if message.CacheBreakpoint {
+			out = append(out, cacheBreakpointMessage(content, message.Role))
+			continue
+		}
 		out = append(out, responses.ResponseInputItemParamOfMessage(content, CompletionRole(message.Role)))
 	}
 	return out
+}
+
+func cacheBreakpointMessage(content, role string) responses.ResponseInputItemUnionParam {
+	return responses.ResponseInputItemUnionParam{
+		OfMessage: &responses.EasyInputMessageParam{
+			Role: CompletionRole(role),
+			Content: responses.EasyInputMessageContentUnionParam{
+				OfInputItemContentList: responses.ResponseInputMessageContentListParam{
+					responses.ResponseInputContentUnionParam{
+						OfInputText: &responses.ResponseInputTextParam{
+							Text:                  content,
+							PromptCacheBreakpoint: responses.ResponseInputTextPromptCacheBreakpointParam{Mode: constant.ValueOf[constant.Explicit]()},
+						},
+					},
+				},
+			},
+		},
+	}
 }
 
 func CompletionRole(role string) responses.EasyInputMessageRole {
@@ -305,6 +332,7 @@ func UsageFromResponseUsage(usage *responses.ResponseUsage) sharedllm.Usage {
 		OutputTokens:          int(usage.OutputTokens),
 		TotalTokens:           int(usage.TotalTokens),
 		CachedInputTokens:     int(usage.InputTokensDetails.CachedTokens),
+		CacheWriteTokens:      int(usage.InputTokensDetails.CacheWriteTokens),
 		ReasoningOutputTokens: int(usage.OutputTokensDetails.ReasoningTokens),
 	}
 }
