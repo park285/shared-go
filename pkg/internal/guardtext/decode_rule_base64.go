@@ -54,6 +54,7 @@ func appendShortRuleBase64Whole(
 	value := input[whole.start:whole.end]
 	var wholeReadable bool
 	if len(value) <= maxShortBase64CandidateLen {
+		previousCount := len(spans)
 		spans, wholeReadable = appendEmbeddedProtectedBase64Span(
 			spans,
 			input,
@@ -67,6 +68,12 @@ func appendShortRuleBase64Whole(
 			work,
 			status,
 		)
+		if wholeReadable && len(spans) == previousCount && decodeWorkComplete(status) {
+			decoded, err := DecodeBase64Candidate(value)
+			if err == nil && nestedShortContextMayContribute(input, whole, string(decoded), mayContribute, work, status) {
+				spans = append(spans, whole)
+			}
+		}
 	} else {
 		wholeReadable = readableBase64Span(input, whole, work, status)
 	}
@@ -95,6 +102,42 @@ func appendShortRuleBase64Whole(
 	}
 
 	return spans, seen
+}
+
+func nestedShortContextMayContribute(
+	input string,
+	outer encodedSpan,
+	decoded string,
+	mayContribute func(string) bool,
+	work *protectedDecodeWork,
+	status *DecodeStatus,
+) bool {
+	for position := 0; position < len(decoded) && decodeWorkComplete(status); {
+		start := position
+		match := nextBase64Candidate(decoded, position)
+		position = match.next
+		if len(match.value) < 4 || len(match.value) > maxShortBase64CandidateLen {
+			continue
+		}
+		inner, err := DecodeBase64Candidate(match.value)
+		if err != nil || !IsReadableText(inner) {
+			continue
+		}
+		if !consumeProtectedDecodeWork(work, status, len(match.value)) {
+			return false
+		}
+
+		nested := replaceDecodedSpan(decoded, encodedSpan{start: start, end: match.next}, string(inner))
+		surface := contextualMatchSurface(input, outer, nested)
+		if !consumeProtectedContextWork(work, status, len(surface)) {
+			return false
+		}
+		if mayContribute == nil || mayContribute(surface) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func readableBase64Span(
