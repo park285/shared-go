@@ -26,14 +26,15 @@ func (g *Guard) decodedTextSegments(input string) ([]textSegment, guardtext.Deco
 		return nil, 0
 	}
 
-	result := guardtext.DecodeCandidatesWithContextForRuleOwner(
+	result, blockingCandidate := guardtext.DecodeCandidatesWithContextForRuleOwnerAndBlockWitness(
 		input,
 		g,
 		decodedCandidateMayContributeForGuard,
 		decodedContextMayContributeForGuard,
 		oversizedDecodedWouldBlockForGuard,
+		decodedCandidateWouldBlockForGuard,
 	)
-	return textSegmentsFromDecodeResult(result)
+	return textSegmentsFromDecodeResultWithBlockWitness(result, blockingCandidate)
 }
 
 func decodedCandidateMayContributeForGuard(guard *Guard, candidate string) bool {
@@ -42,6 +43,10 @@ func decodedCandidateMayContributeForGuard(guard *Guard, candidate string) bool 
 
 func decodedContextMayContributeForGuard(guard *Guard, input string, start, end int, decoded string) bool {
 	return guard.decodedContextMayContribute(input, start, end, decoded)
+}
+
+func decodedCandidateWouldBlockForGuard(guard *Guard, candidate string) bool {
+	return guard.evaluateSegments(guard.policy(), []textSegment{decodedCandidateSegment(candidate)}).Decision == DecisionBlock
 }
 
 func oversizedDecodedWouldBlockForGuard(guard *Guard, original, decoded string, bounded []string) bool {
@@ -68,7 +73,16 @@ func decodedCandidateSegment(candidate string) textSegment {
 }
 
 func textSegmentsFromDecodeResult(result guardtext.DecodeResult) ([]textSegment, guardtext.DecodeStatus) {
-	segments := make([]textSegment, 0, min(len(result.Candidates), maxBase64Candidates))
+	return textSegmentsFromDecodeResultWithBlockWitness(result, "")
+}
+
+func textSegmentsFromDecodeResultWithBlockWitness(result guardtext.DecodeResult, blockingCandidate string) ([]textSegment, guardtext.DecodeStatus) {
+	capacity := min(len(result.Candidates), maxBase64Candidates)
+	if blockingCandidate != "" {
+		capacity++
+	}
+	segments := make([]textSegment, 0, capacity)
+	blockingCandidateIncluded := false
 	for _, candidate := range result.Candidates {
 		if len(segments) >= maxBase64Candidates {
 			break
@@ -76,7 +90,11 @@ func textSegmentsFromDecodeResult(result guardtext.DecodeResult) ([]textSegment,
 		if !guardtext.DecodedCandidateFitsBudget(candidate) {
 			continue
 		}
-		segments = append(segments, textSegment{Kind: segmentPlain, Views: normalizeViews(candidate)})
+		segments = append(segments, decodedCandidateSegment(candidate))
+		blockingCandidateIncluded = blockingCandidateIncluded || candidate == blockingCandidate
+	}
+	if blockingCandidate != "" && !blockingCandidateIncluded && guardtext.DecodedCandidateFitsBudget(blockingCandidate) {
+		segments = append(segments, decodedCandidateSegment(blockingCandidate))
 	}
 
 	return segments, result.Status
