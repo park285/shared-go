@@ -136,6 +136,7 @@ func nestedShortContextMayContribute(
 	work *protectedDecodeWork,
 	status *DecodeStatus,
 ) bool {
+	unexploredNesting := false
 	for position := 0; position < len(decoded) && decodeWorkComplete(status); {
 		start := position
 		match := nextBase64Candidate(decoded, position)
@@ -159,6 +160,16 @@ func nestedShortContextMayContribute(
 		if mayContribute == nil || mayContribute(surface) {
 			return true
 		}
+		if !unexploredNesting {
+			unexploredNesting = hasDecodableShortRuleDecodeSurface(nested)
+		}
+	}
+
+	// 이 경로는 한 겹만 더 푼다. 남은 겹이 여전히 decode 가능하면 미탐색 층이 있는
+	// 것이므로 status를 세워 fail-closed로 넘긴다 — 세우지 않으면 3겹 이상 short
+	// 체인이 "완전히 탐색된 무해 입력"으로 보고된다.
+	if unexploredNesting {
+		mergeDecodeStatus(status, DecodeDepthLimit)
 	}
 
 	return false
@@ -209,7 +220,52 @@ func appendMatchingShortBase64Span(
 		work,
 		status,
 	)
+	if len(updated) != len(spans) || !decodeWorkComplete(status) {
+		return updated
+	}
+	// whole-run 앞뒤에 base64 문자 1개만 붙어도 전체 decode가 깨져 이 sub-span 열거가
+	// 유일한 탐지 경로가 된다. 여기서도 whole 경로와 동일하게 중첩 층을 검사해야
+	// 노이즈 문자로 fail-closed를 우회하지 못한다.
+	decoded, err := DecodeBase64Candidate(input[span.start:span.end])
+	if err != nil || !IsReadableText(decoded) {
+		return updated
+	}
+	if nestedShortContextMayContribute(input, span, string(decoded), mayContribute, work, status) {
+		updated = append(updated, span)
+	}
 	return updated
+}
+
+// hasPlausibleShortRuleDecodeSurface와 달리 "그럴듯함"(소문자+숫자)이 아니라 실제 readable
+// 복호 성공만 미탐색 층으로 인정한다. 넓은 술어를 쓰면 숫자가 섞인 무해한 2겹 중첩
+// (예: base64^2("hi Bob2"))까지 fail-closed로 차단된다.
+func hasDecodableShortRuleDecodeSurface(input string) bool {
+	if containsASCIIFold(input, "hex") {
+		for _, span := range shortRuleHexSpans(input) {
+			if span.end > span.start {
+				return true
+			}
+		}
+	}
+	for i := 0; i < len(input); {
+		match := nextBase64Candidate(input, i)
+		i = match.next
+		if len(match.value) < 4 {
+			continue
+		}
+		if len(match.value) > maxShortBase64CandidateLen {
+			if looksLikeEmbeddedBase64(match.value) {
+				return true
+			}
+			continue
+		}
+		var storage [maxShortBase64CandidateLen]byte
+		decoded, err := decodeBase64CandidateInto(storage[:], match.value)
+		if err == nil && IsReadableText(decoded) {
+			return true
+		}
+	}
+	return false
 }
 
 func plausibleShortBase64Value(value string) bool {
