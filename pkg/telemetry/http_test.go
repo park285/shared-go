@@ -458,7 +458,7 @@ func TestNewPublicHTTPHandlerRoutePatternNaming(t *testing.T) {
 	}
 
 	for _, attr := range spans[0].Attributes() {
-		if strings.Contains(attr.Value.Emit(), "private-room-123") {
+		if strings.Contains(attr.Value.String(), "private-room-123") {
 			t.Fatalf("attribute %s leaked the raw path segment", attr.Key)
 		}
 	}
