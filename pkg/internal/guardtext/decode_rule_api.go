@@ -139,14 +139,6 @@ func DecodeCandidatesWithContextForRuleOwnerAndBlockWitness[T any](
 		wrappedContextMayContribute,
 		oversizedWouldBlock,
 	)
-	if blockingCandidate == "" && !result.Complete() {
-		for _, candidate := range result.Candidates {
-			if candidateWouldBlock(owner, candidate) {
-				blockingCandidate = candidate
-				break
-			}
-		}
-	}
 
 	return result, blockingCandidate
 }
