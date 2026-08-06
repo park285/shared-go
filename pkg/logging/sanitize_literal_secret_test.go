@@ -15,7 +15,7 @@ func TestSanitizeKey_LiteralSecretNamesAreMasked(t *testing.T) {
 		tokenAPIKey,
 		"private-key",
 		tokenPrivateKey,
-		"access-token",
+		accessTokenPlaceholder,
 		"access_token",
 		"refresh-token",
 		"refresh_token",
@@ -26,7 +26,7 @@ func TestSanitizeKey_LiteralSecretNamesAreMasked(t *testing.T) {
 		t.Run(value, func(t *testing.T) {
 			t.Parallel()
 
-			output := keyFieldOutput(t, "key", value)
+			output := keyFieldOutput(t, genericKeyField, value)
 			if strings.Contains(output, value) {
 				t.Fatalf("literal secret value %q leaked in output: %s", value, output)
 			}
