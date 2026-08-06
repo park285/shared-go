@@ -58,6 +58,26 @@ actual_names=$(awk 'NF == 2 && $1 ~ /^[0-9a-f]{64}$/ {name=$2; sub(/^\*/, "", na
   sha256sum --check --strict SHA256SUMS >/dev/null
 )
 
+if ! git cat-file -e "${commit}^{commit}" 2>/dev/null; then
+  echo "release bundle: commit is not available in the checkout" >&2
+  exit 1
+fi
+archive_check_dir=$(mktemp -d)
+trap 'rm -rf "$archive_check_dir"' EXIT
+if ! git archive --format=tar --prefix="${repository_name}-${tag}/" "$commit" \
+  >"$archive_check_dir/expected.tar"; then
+  echo "release bundle: failed to archive the expected commit" >&2
+  exit 1
+fi
+if ! gzip -cd -- "$bundle_dir/$archive" >"$archive_check_dir/actual.tar"; then
+  echo "release bundle: source archive is not valid gzip" >&2
+  exit 1
+fi
+if ! cmp -s "$archive_check_dir/expected.tar" "$archive_check_dir/actual.tar"; then
+  echo "release bundle: source archive does not match the manifest commit tree" >&2
+  exit 1
+fi
+
 if tar -tzf "$bundle_dir/$archive" | awk -v prefix="${repository_name}-${tag}/" \
   'index($0, prefix) != 1 { exit 1 }'; then
   :
