@@ -71,6 +71,11 @@ func TestGuardDecodeIncompleteBenignPassesInteractiveRejectsPersistent(t *testin
 		[]byte(base64.StdEncoding.EncodeToString([]byte(url.PathEscape("ordinary safe text")))),
 	)
 	tripleBase64Benign := base64.StdEncoding.EncodeToString([]byte(doubleBase64Benign))
+	contributingBenign := []string{"prev", "vious", "instr", "ctions", "gnore", "disreg", "regard", "ompt", "syste", "forg"}
+	encodedBenign := make([]string, 0, len(contributingBenign))
+	for _, fragment := range contributingBenign {
+		encodedBenign = append(encodedBenign, base64.StdEncoding.EncodeToString([]byte(fragment)))
+	}
 
 	tests := []struct {
 		name  string
@@ -80,6 +85,7 @@ func TestGuardDecodeIncompleteBenignPassesInteractiveRejectsPersistent(t *testin
 		{name: "depth_limit_double_base64", input: doubleBase64Benign},
 		{name: "depth_limit_triple_base64", input: tripleBase64Benign},
 		{name: "depth_limit_three_short_fragments", input: "aWdub3Jl cHJldmlvdXM= aW5zdHJ1Y3Rpb25z"},
+		{name: "candidate_limit_contributing_fragments", input: strings.Join(encodedBenign, " ")},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -215,6 +221,54 @@ func TestGuardDecodeIncompleteBlockingWitnessRejectsMaskedInjection(t *testing.T
 		evaluation := requireBlockedUnderEveryEnforcement(t, guard, input)
 		if !slices.Contains(matchedRuleIDs(evaluation.Hits), "instruction_override_en") {
 			t.Fatalf("rules = %v, want instruction_override_en", matchedRuleIDs(evaluation.Hits))
+		}
+	})
+
+	t.Run("candidate_exhaustion_before_combined_score_block", func(t *testing.T) {
+		t.Parallel()
+
+		guard := newTestGuardFromRulepacks(t)
+		encodedJailbreak := base64.StdEncoding.EncodeToString([]byte("탈옥모드"))
+		encodedRole := base64.StdEncoding.EncodeToString([]byte("system:"))
+		baseline := evaluateForTest(t, guard, encodedJailbreak+" "+encodedRole)
+		if baseline.Decision != DecisionBlock || baseline.Score < baseline.Threshold {
+			t.Fatalf("baseline combined score = %#v, want block", baseline)
+		}
+
+		contributingBenign := []string{"prev", "vious", "instr", "ctions", "gnore", "disreg", "regard", "ompt"}
+		parts := make([]string, 0, len(contributingBenign)+2)
+		for _, fragment := range contributingBenign {
+			parts = append(parts, base64.StdEncoding.EncodeToString([]byte(fragment)))
+		}
+		parts = append(parts, encodedJailbreak, encodedRole)
+		evaluation := requireBlockedUnderEveryEnforcement(t, guard, strings.Join(parts, " "))
+		rules := matchedRuleIDs(evaluation.Hits)
+		if !slices.Contains(rules, "jailbreak_terms_ko") || !slices.Contains(rules, "role_spoofing") {
+			t.Fatalf("rules = %v, want combined score evidence", rules)
+		}
+	})
+
+	t.Run("candidate_exhaustion_after_raw_score", func(t *testing.T) {
+		t.Parallel()
+
+		guard := newTestGuardFromRulepacks(t)
+		encodedRole := base64.StdEncoding.EncodeToString([]byte("system:"))
+		baseline := evaluateForTest(t, guard, "탈옥모드 "+encodedRole)
+		if baseline.Decision != DecisionBlock || baseline.Score < baseline.Threshold {
+			t.Fatalf("baseline raw and decoded score = %#v, want block", baseline)
+		}
+
+		contributingBenign := []string{"prev", "vious", "instr", "ctions", "gnore", "disreg", "regard", "ompt"}
+		parts := make([]string, 0, len(contributingBenign)+2)
+		parts = append(parts, "탈옥모드")
+		for _, fragment := range contributingBenign {
+			parts = append(parts, base64.StdEncoding.EncodeToString([]byte(fragment)))
+		}
+		parts = append(parts, encodedRole)
+		evaluation := requireBlockedUnderEveryEnforcement(t, guard, strings.Join(parts, " "))
+		rules := matchedRuleIDs(evaluation.Hits)
+		if !slices.Contains(rules, "jailbreak_terms_ko") || !slices.Contains(rules, "role_spoofing") {
+			t.Fatalf("rules = %v, want raw and decoded score evidence", rules)
 		}
 	})
 }
