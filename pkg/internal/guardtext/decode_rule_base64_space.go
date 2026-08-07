@@ -2,6 +2,8 @@ package guardtext
 
 import "strings"
 
+const inlineSingleSpaceBase64Bytes = 256
+
 func normalizeSingleSpaceBase64(input string) (string, bool) {
 	var normalized strings.Builder
 	lastWrite := 0
@@ -46,17 +48,60 @@ func singleSpaceBase64Candidate(input string, index int) (int, bool) {
 		rightEnd++
 	}
 
-	if index-leftStart < 4 || rightEnd-(index+1) < 4 {
+	encodedLen := rightEnd - leftStart - 1
+	if index-leftStart < 4 || rightEnd-(index+1) < 4 || encodedLen < minBase64CandidateLen || encodedLen%4 == 1 {
 		return 0, false
 	}
-	candidate := input[leftStart:index] + input[index+1:rightEnd]
-	if len(candidate) < minBase64CandidateLen || len(candidate)%4 == 1 {
-		return 0, false
-	}
-	decoded, err := DecodeBase64Candidate(candidate)
-	if err != nil || !IsReadableText(decoded) {
+	if !readableJoinedBase64(input, leftStart, index, rightEnd, encodedLen) {
 		return 0, false
 	}
 
 	return rightEnd, true
+}
+
+func readableJoinedBase64(input string, leftStart, space, rightEnd, encodedLen int) bool {
+	if encodedLen > inlineSingleSpaceBase64Bytes {
+		candidate := input[leftStart:space] + input[space+1:rightEnd]
+		decoded, err := DecodeBase64Candidate(candidate)
+		return err == nil && IsReadableText(decoded)
+	}
+
+	var encoded [inlineSingleSpaceBase64Bytes]byte
+	copied := copy(encoded[:], input[leftStart:space])
+	copy(encoded[copied:], input[space+1:rightEnd])
+
+	var decoded [inlineSingleSpaceBase64Bytes]byte
+	candidate := encoded[:encodedLen]
+	encodings := base64RawStd[:]
+	hasPadding := false
+	hasURLAlphabet := false
+	hasStandardAlphabet := false
+	for _, value := range candidate {
+		switch value {
+		case '=':
+			hasPadding = true
+		case '-', '_':
+			hasURLAlphabet = true
+		case '+', '/':
+			hasStandardAlphabet = true
+		}
+	}
+	if hasPadding {
+		if hasURLAlphabet && !hasStandardAlphabet {
+			encodings = base64PaddedURL[:]
+		} else {
+			encodings = base64PaddedStd[:]
+		}
+	} else if hasURLAlphabet && !hasStandardAlphabet {
+		encodings = base64RawURL[:]
+	}
+
+	for _, encoding := range encodings {
+		decodedLen, err := encoding.Decode(decoded[:], candidate)
+		if err == nil {
+			return IsReadableText(decoded[:decodedLen])
+		}
+	}
+
+	return false
 }
