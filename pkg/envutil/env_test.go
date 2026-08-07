@@ -292,35 +292,6 @@ func TestListFromFile(t *testing.T) {
 	require.Equal(t, []string{"x", "y", "z"}, List("TEST_LIST_FILESRC"))
 }
 
-func TestListWithFallback(t *testing.T) {
-	tests := []struct {
-		name     string
-		key      string
-		value    string
-		set      bool
-		fallback string
-		expected []string
-	}{
-		{"key set splits its value", "TEST_LIST_FB", "a,b", true, "x,y", []string{"a", "b"}},
-		{"key unset splits fallback", "TEST_LIST_FB", "", false, "x,y", []string{"x", "y"}},
-		{"key empty splits fallback", "TEST_LIST_FB", "", true, "x,y", []string{"x", "y"}},
-		{"both empty returns nil", "TEST_LIST_FB", "", false, "", nil},
-		{"fallback deduped", "TEST_LIST_FB", "", false, "x,x", []string{"x"}},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.set {
-				t.Setenv(tt.key, tt.value)
-			} else {
-				require.NoError(t, os.Unsetenv(tt.key))
-			}
-			result := ListWithFallback(tt.key, tt.fallback)
-			require.Equal(t, tt.expected, result)
-		})
-	}
-}
-
 func TestMap(t *testing.T) {
 	tests := []struct {
 		name     string

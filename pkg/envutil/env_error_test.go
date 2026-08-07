@@ -43,9 +43,9 @@ func TestStrictParseErrorsDoNotContainRawValues(t *testing.T) {
 		call func(string) error
 	}{
 		{name: "int", key: "TEST_SECRET_INT", call: func(key string) error { _, err := IntE(key, 0); return err }},
-		{name: "int64 any", key: "TEST_SECRET_INT64", call: func(key string) error { _, err := Int64AnyE([]string{key}, 0); return err }},
+		{name: "int64", key: "TEST_SECRET_INT64", call: func(key string) error { _, err := Int64E(key, 0); return err }},
 		{name: "float", key: "TEST_SECRET_FLOAT", call: func(key string) error { _, err := FloatE(key, 0); return err }},
-		{name: "bool any", key: "TEST_SECRET_BOOL", call: func(key string) error { _, err := BoolAnyE([]string{key}, false); return err }},
+		{name: "bool", key: "TEST_SECRET_BOOL", call: func(key string) error { _, err := BoolE(key, false); return err }},
 	}
 
 	for _, tt := range tests {
@@ -158,10 +158,6 @@ func TestBoolAcceptanceSetIsShared(t *testing.T) {
 			if err != nil || got != want {
 				t.Errorf("BoolE(%q) = (%v, %v), want (%v, nil)", value, got, err, want)
 			}
-			gotAny, err := BoolAnyE([]string{"TEST_BOOL_TABLE"}, !want)
-			if err != nil || gotAny != want {
-				t.Errorf("BoolAnyE(%q) = (%v, %v), want (%v, nil)", value, gotAny, err, want)
-			}
 			gotExplicit, explicit, err := BoolExplicit("TEST_BOOL_TABLE")
 			if err != nil || !explicit || gotExplicit != want {
 				t.Errorf("BoolExplicit(%q) = (%v, %v, %v), want (%v, true, nil)", value, gotExplicit, explicit, err, want)
@@ -181,9 +177,6 @@ func TestBoolAcceptanceSetIsShared(t *testing.T) {
 			}
 			if _, err := BoolE("TEST_BOOL_TABLE", true); err == nil {
 				t.Errorf("BoolE(%q) error = nil, want error", value)
-			}
-			if _, err := BoolAnyE([]string{"TEST_BOOL_TABLE"}, true); err == nil {
-				t.Errorf("BoolAnyE(%q) error = nil, want error", value)
 			}
 			if _, _, err := BoolExplicit("TEST_BOOL_TABLE"); err == nil {
 				t.Errorf("BoolExplicit(%q) error = nil, want error", value)
@@ -268,58 +261,5 @@ func TestDurationE(t *testing.T) {
 	}
 	if !errors.Is(err, strconv.ErrSyntax) {
 		t.Fatalf("DurationE(invalid) error = %v, want strconv.ErrSyntax", err)
-	}
-}
-
-func TestAnyEUsesFirstNonEmptyValue(t *testing.T) {
-	t.Setenv("TEST_ANY_FIRST", " ")
-	t.Setenv("TEST_ANY_SECOND", "23")
-
-	gotInt, err := IntAnyE([]string{"TEST_ANY_FIRST", "TEST_ANY_SECOND"}, 7)
-	if err != nil || gotInt != 23 {
-		t.Fatalf("IntAnyE() = (%d, %v), want (23, nil)", gotInt, err)
-	}
-
-	gotInt64, err := Int64AnyE([]string{"TEST_ANY_FIRST", "TEST_ANY_SECOND"}, 7)
-	if err != nil || gotInt64 != 23 {
-		t.Fatalf("Int64AnyE() = (%d, %v), want (23, nil)", gotInt64, err)
-	}
-
-	t.Setenv("TEST_ANY_SECOND", "yes")
-	gotBool, err := BoolAnyE([]string{"TEST_ANY_FIRST", "TEST_ANY_SECOND"}, false)
-	if err != nil || !gotBool {
-		t.Fatalf("BoolAnyE() = (%v, %v), want (true, nil)", gotBool, err)
-	}
-}
-
-func TestAnyEStopsAtFirstInvalidValue(t *testing.T) {
-	t.Setenv("TEST_ANY_INVALID", "invalid")
-	t.Setenv("TEST_ANY_VALID", "42")
-
-	got, err := IntAnyE([]string{"TEST_ANY_INVALID", "TEST_ANY_VALID"}, 7)
-	if err == nil || got != 0 {
-		t.Fatalf("IntAnyE() = (%d, %v), want (0, error)", got, err)
-	}
-	if !strings.Contains(err.Error(), "TEST_ANY_INVALID") {
-		t.Fatalf("IntAnyE() error = %q, want first key", err)
-	}
-}
-
-func TestAnyEReturnsDefaultWhenAllValuesAreEmpty(t *testing.T) {
-	t.Setenv("TEST_ANY_EMPTY", " ")
-
-	gotInt, err := IntAnyE([]string{"TEST_ANY_UNSET", "TEST_ANY_EMPTY"}, 7)
-	if err != nil || gotInt != 7 {
-		t.Fatalf("IntAnyE() = (%d, %v), want (7, nil)", gotInt, err)
-	}
-
-	gotInt64, err := Int64AnyE(nil, 8)
-	if err != nil || gotInt64 != 8 {
-		t.Fatalf("Int64AnyE() = (%d, %v), want (8, nil)", gotInt64, err)
-	}
-
-	gotBool, err := BoolAnyE(nil, true)
-	if err != nil || !gotBool {
-		t.Fatalf("BoolAnyE() = (%v, %v), want (true, nil)", gotBool, err)
 	}
 }

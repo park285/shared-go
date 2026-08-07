@@ -196,54 +196,6 @@ func StringAny(keys ...string) string {
 	return ""
 }
 
-// Deprecated: iris-stack 소비자가 없습니다. 단일 키는 IntE를 쓰고, 다중 키 폴백이
-// 필요하면 호출부에서 StringAny로 키를 고른 뒤 파싱하십시오.
-func IntAnyE(keys []string, def int) (int, error) {
-	key, value, ok := firstEnvValue(keys)
-	if !ok {
-		return def, nil
-	}
-	parsed, err := strconv.Atoi(value)
-	if err != nil {
-		return 0, strictParseError(key, "int", err)
-	}
-	return parsed, nil
-}
-
-// Deprecated: iris-stack 소비자가 없습니다. 단일 키는 Int64E를 쓰고, 다중 키 폴백이
-// 필요하면 호출부에서 StringAny로 키를 고른 뒤 파싱하십시오.
-func Int64AnyE(keys []string, def int64) (int64, error) {
-	key, value, ok := firstEnvValue(keys)
-	if !ok {
-		return def, nil
-	}
-	parsed, err := strconv.ParseInt(value, 10, 64)
-	if err != nil {
-		return 0, strictParseError(key, "int64", err)
-	}
-	return parsed, nil
-}
-
-// Deprecated: iris-stack 소비자가 없습니다. 단일 키는 BoolE를 쓰고, 다중 키 폴백이
-// 필요하면 호출부에서 StringAny로 키를 고른 뒤 파싱하십시오.
-func BoolAnyE(keys []string, def bool) (bool, error) {
-	key, value, ok := firstEnvValue(keys)
-	if !ok {
-		return def, nil
-	}
-	return parseBoolE(key, value)
-}
-
-func firstEnvValue(keys []string) (string, string, bool) {
-	for _, key := range keys {
-		value := strings.TrimSpace(os.Getenv(key))
-		if value != "" {
-			return key, value, true
-		}
-	}
-	return "", "", false
-}
-
 // lookupBool은 Bool/BoolE/BoolExplicit/dotenv 로더가 공유하는 유일한 bool 수용 집합이다.
 // strict 변형은 미수용 값에 대한 반환(기본값 vs 에러)만 다르고 수용 집합은 같다.
 func lookupBool(value string) (parsed bool, ok bool) {
@@ -274,17 +226,7 @@ func strictParseError(key, kind string, err error) error {
 }
 
 func List(key string) []string {
-	return listWithFallback(key, "")
-}
-
-// Deprecated: iris-stack 소비자가 없습니다. List를 쓰고 빈 결과에 대한 기본값은
-// 호출부에서 처리하십시오.
-func ListWithFallback(key, fallback string) []string {
-	return listWithFallback(key, fallback)
-}
-
-func listWithFallback(key, fallback string) []string {
-	raw := StringOrFile(key, fallback)
+	raw := StringOrFile(key, "")
 	if raw == "" {
 		return nil
 	}

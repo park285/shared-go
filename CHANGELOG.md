@@ -3,6 +3,42 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## v1.47.0 - 2026-08-07
+
+### 호환성이 깨지는 변경
+
+- 스택 내 소비자가 0인 exported API를 제거합니다. README 호환성 정책(보장 대상은
+  `hololive-bot`·`chat-bot-go-kakao`·`twentyq-bot` 세 소비자로 한정)에 따라 major 승격 없이
+  제거하며, v1.42.0에서 예고한 `envutil` 다중-키 폴백 계열의 예고된 제거입니다.
+  - `jsonutil.ReadAllLimit` — `httputil.ReadAllLimited`를 직접 사용하십시오. 별칭
+    `jsonutil.ErrBodyTooLarge`는 소비자가 있으므로 유지합니다.
+  - `stringutil.HashForLog` — `TruncatedLogHash`를 사용하십시오.
+  - `envutil.IntAnyE`·`Int64AnyE`·`BoolAnyE` — 단일 키는 `IntE`/`Int64E`/`BoolE`를 쓰고,
+    다중 키 폴백이 필요하면 `StringAny`로 키를 고른 뒤 파싱하십시오.
+  - `envutil.ListWithFallback` — `List`를 쓰고 빈 결과의 기본값은 호출부에서 처리하십시오.
+  - `envutil.FirstStringOrSecretFile` — 키별로 `StringOrSecretFile`을 호출하고 폴백 순서는
+    호출부에서 정하십시오.
+
+## v1.46.2 - 2026-08-07
+
+### 수정
+
+- `guardtext`: 공백 결합 판독이 원본 판독을 대체하던 회귀를 고칩니다. 결합본은 두 번째
+  판독으로 더해지며, 결합 대상은 4자 그룹 정렬이 깨져 어느 쪽도 단독 해독되지 않는 분할로
+  한정합니다. 정상 토큰 경계에서 합치면 2조각 조합 탐지를 잃습니다.
+
+## v1.46.1 - 2026-08-06
+
+### 수정
+
+- `guardtext`: 공백 하나로 분할된 Base64를 rule decoding 경로로 보내 중첩 short base64의
+  미탐색 층 fail-open을 봉합합니다.
+- `telemetry`: traced/filtered 두 wrapper 경로 모두에서 route pattern을 전파합니다.
+
+### 성능
+
+- `promptguard`: witness 최소화에 64KiB size-gate를 추가합니다.
+
 ## v1.46.0 - 2026-08-06
 
 ### 추가

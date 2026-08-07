@@ -183,36 +183,3 @@ func TestStringOrSecretFile_FailClosedOnInsecureFile(t *testing.T) {
 	require.Empty(t, got)
 	require.NotContains(t, err.Error(), "topsecret")
 }
-
-func TestFirstStringOrSecretFile_SkipsUnsetKeyToSecureFile(t *testing.T) {
-	dir := t.TempDir()
-	filePath := filepath.Join(dir, "secret")
-	require.NoError(t, os.WriteFile(filePath, []byte("from-b-file"), 0o600))
-
-	for _, k := range []string{"FIRST_A", "FIRST_A_FILE", "FIRST_B", "FIRST_B_FILE"} {
-		require.NoError(t, os.Unsetenv(k))
-	}
-	t.Setenv("FIRST_B_FILE", filePath)
-
-	got, err := FirstStringOrSecretFile([]string{"FIRST_A", "FIRST_B"}, "def")
-	require.NoError(t, err)
-	require.Equal(t, "from-b-file", got)
-}
-
-func TestFirstStringOrSecretFile_FailClosedOnConfiguredInsecureFile(t *testing.T) {
-	dir := t.TempDir()
-	filePath := filepath.Join(dir, "secret")
-	require.NoError(t, os.WriteFile(filePath, []byte("topsecret"), 0o600))
-	require.NoError(t, os.Chmod(filePath, 0o644))
-
-	for _, k := range []string{"FIRST_A", "FIRST_A_FILE", "FIRST_B", "FIRST_B_FILE"} {
-		require.NoError(t, os.Unsetenv(k))
-	}
-	t.Setenv("FIRST_A_FILE", filePath)
-	t.Setenv("FIRST_B", "fallback-b")
-
-	got, err := FirstStringOrSecretFile([]string{"FIRST_A", "FIRST_B"}, "def")
-	require.Error(t, err)
-	require.Empty(t, got)
-	require.NotContains(t, err.Error(), "topsecret")
-}

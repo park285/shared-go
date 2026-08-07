@@ -101,20 +101,6 @@ func StringOrSecretFile(key, def string) (string, error) {
 	return def, nil
 }
 
-// Deprecated: iris-stack 소비자가 없습니다. 키별로 StringOrSecretFile을 호출하고
-// 폴백 순서는 호출부에서 정하십시오.
-func FirstStringOrSecretFile(keys []string, def string) (string, error) {
-	for _, key := range keys {
-		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
-			return value, nil
-		}
-		if strings.TrimSpace(os.Getenv(key+"_FILE")) != "" {
-			return secretFile(key)
-		}
-	}
-	return def, nil
-}
-
 func validateSecretFileMode(key, filePath string, perm os.FileMode) error {
 	if perm&0o400 == 0 || perm&0o137 != 0 {
 		return fmt.Errorf("%s_FILE path %q has insecure permissions %s", key, filePath, perm.String())

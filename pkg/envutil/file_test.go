@@ -90,26 +90,3 @@ func TestStringOrSecretFile(t *testing.T) {
 		require.Equal(t, "def", got)
 	})
 }
-
-func TestFirstStringOrSecretFile(t *testing.T) {
-	t.Run("first non-empty env wins", func(t *testing.T) {
-		for _, k := range []string{"TEST_FA", "TEST_FA_FILE", "TEST_FB_FILE"} {
-			require.NoError(t, os.Unsetenv(k))
-		}
-		t.Setenv("TEST_FB", "from-b")
-
-		got, err := FirstStringOrSecretFile([]string{"TEST_FA", "TEST_FB"}, "def")
-		require.NoError(t, err)
-		require.Equal(t, "from-b", got)
-	})
-
-	t.Run("default when no key set", func(t *testing.T) {
-		for _, k := range []string{"TEST_FA", "TEST_FA_FILE", "TEST_FB", "TEST_FB_FILE"} {
-			require.NoError(t, os.Unsetenv(k))
-		}
-
-		got, err := FirstStringOrSecretFile([]string{"TEST_FA", "TEST_FB"}, "def")
-		require.NoError(t, err)
-		require.Equal(t, "def", got)
-	})
-}
