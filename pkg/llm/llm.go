@@ -39,6 +39,7 @@ type JSONRequest struct {
 	ReasoningEffort string
 	WebSearch       bool
 	ChatCompletions bool
+	CacheKey        string
 }
 
 type JSONResponse struct {

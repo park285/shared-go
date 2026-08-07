@@ -372,3 +372,47 @@ func TestSanitizeResponsesSchemaName(t *testing.T) {
 		t.Fatalf("64자 cap 실패: len=%d", len(got))
 	}
 }
+
+func TestOpenAICompatibleJSONGeneratorForwardsPromptCacheKey(t *testing.T) {
+	var payload map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		decoded := map[string]any{}
+		if err := json.NewDecoder(r.Body).Decode(&decoded); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		payload = decoded
+		writeJSON(t, w, `{"id":"resp-1","object":"response","created_at":1,"status":"completed","model":"gpt-test","output":[{"id":"msg-1","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"{\"ok\":true}","annotations":[]}]}],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}`)
+	}))
+	defer server.Close()
+
+	generator, err := NewOpenAICompatibleJSONGenerator(OpenAICompatibleConfig{BaseURL: server.URL, APIKey: "test-key"})
+	if err != nil {
+		t.Fatalf("NewOpenAICompatibleJSONGenerator error = %v", err)
+	}
+
+	base := JSONRequest{
+		TaskName:     "summarize",
+		SystemPrompt: "system prompt",
+		UserPrompt:   "user prompt",
+		SchemaName:   "summary",
+		Schema:       map[string]any{"type": "object"},
+		Model:        "gpt-test",
+	}
+
+	withKey := base
+	withKey.CacheKey = " tq:answer "
+	if _, err := RunJSON(t.Context(), generator, withKey, "openai", nil); err != nil {
+		t.Fatalf("RunJSON with cache key error = %v", err)
+	}
+	if got := payload["prompt_cache_key"]; got != "tq:answer" {
+		t.Fatalf("payload prompt_cache_key = %#v, want tq:answer (trimmed)", got)
+	}
+
+	if _, err := RunJSON(t.Context(), generator, base, "openai", nil); err != nil {
+		t.Fatalf("RunJSON without cache key error = %v", err)
+	}
+	if _, exists := payload["prompt_cache_key"]; exists {
+		t.Fatalf("payload carries prompt_cache_key without CacheKey: %#v", payload["prompt_cache_key"])
+	}
+}

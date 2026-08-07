@@ -19,9 +19,18 @@ type config struct {
 	usageReporter                sharedllm.UsageReporter
 	logger                       *slog.Logger
 	maxRetries                   *int
+	promptCacheKeyPrefix         string
 }
 
 type Option func(*config)
+
+// WithPromptCacheKeyPrefix는 요청마다 prefix+task를 prompt_cache_key로 전송한다.
+// GPT-5.6+는 이 키가 있어야 prefix 캐시 매칭이 성립한다.
+func WithPromptCacheKeyPrefix(prefix string) Option {
+	return func(c *config) {
+		c.promptCacheKeyPrefix = strings.TrimSpace(prefix)
+	}
+}
 
 func WithSchemaName(name string) Option {
 	return func(c *config) {

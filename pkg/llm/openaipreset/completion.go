@@ -170,7 +170,13 @@ func completionInput(messages []Message) responses.ResponseInputParam {
 	return out
 }
 
+// Responses API는 assistant 입력 블록에 input_text/breakpoint를 허용하지 않는다
+// (400 또는 무시로 캐시 전체 비활성) — assistant는 breakpoint 없이 평문으로 렌더한다.
 func cacheBreakpointMessage(content, role string) responses.ResponseInputItemUnionParam {
+	if CompletionRole(role) == responses.EasyInputMessageRoleAssistant {
+		return responses.ResponseInputItemParamOfMessage(content, responses.EasyInputMessageRoleAssistant)
+	}
+
 	return responses.ResponseInputItemUnionParam{
 		OfMessage: &responses.EasyInputMessageParam{
 			Role: CompletionRole(role),

@@ -46,6 +46,7 @@ type Client struct {
 	allowChatCompletionsFallback bool
 	usageReporter                sharedllm.UsageReporter
 	logger                       *slog.Logger
+	promptCacheKeyPrefix         string
 }
 
 type PromptLayers struct {
@@ -106,7 +107,15 @@ func New(baseURL, apiKey, model string, opts ...Option) (*Client, error) {
 		allowChatCompletionsFallback: cfg.allowChatCompletionsFallback,
 		usageReporter:                reporter,
 		logger:                       cfg.logger,
+		promptCacheKeyPrefix:         cfg.promptCacheKeyPrefix,
 	}, nil
+}
+
+func (c *Client) promptCacheKeyFor(task string) string {
+	if c.promptCacheKeyPrefix == "" {
+		return ""
+	}
+	return c.promptCacheKeyPrefix + strings.TrimSpace(task)
 }
 
 // reasoning·web-search 모델은 첫 응답 헤더까지 수십 초가 걸려 externalAPI 프로파일의 15s로는 끊긴다.
@@ -175,6 +184,7 @@ func (c *Client) GenerateLayeredResponsesJSON(ctx context.Context, task string, 
 	params, model, err := c.completionParams(CompletionRequest{
 		Messages: []Message{{Role: "system", Content: prompts.Invariant}, {Role: "developer", Content: prompts.Developer}, {Role: "user", Content: prompts.User}},
 		Model:    c.model, ResponseFormat: &ResponseFormat{Name: sharedllm.ResponsesSchemaName(task), Schema: schema, Strict: true}, InstructionProfile: &profile,
+		CacheKey: c.promptCacheKeyFor(task),
 	})
 	if err != nil {
 		return "", err
@@ -257,6 +267,7 @@ func (c *Client) generate(
 			ReasoningEffort: c.reasoningEffort,
 			WebSearch:       c.webSearch,
 			ChatCompletions: c.chatCompletions,
+			CacheKey:        c.promptCacheKeyFor(taskName),
 		}, providerLabel, c.usageReporter)
 	})
 }

@@ -166,6 +166,9 @@ func (g *OpenAICompatibleJSONGenerator) generateResponsesJSON(ctx context.Contex
 	if effort := strings.TrimSpace(req.ReasoningEffort); effort != "" {
 		params.Reasoning = shared.ReasoningParam{Effort: shared.ReasoningEffort(effort)}
 	}
+	if cacheKey := strings.TrimSpace(req.CacheKey); cacheKey != "" {
+		params.PromptCacheKey = openai.String(cacheKey)
+	}
 
 	resp, err := g.client.Responses.New(ctx, params)
 	if err != nil {
@@ -209,6 +212,9 @@ func (g *OpenAICompatibleJSONGenerator) generateChatCompletionsJSON(ctx context.
 	}
 	if effort := strings.TrimSpace(req.ReasoningEffort); effort != "" {
 		params.ReasoningEffort = shared.ReasoningEffort(effort)
+	}
+	if cacheKey := strings.TrimSpace(req.CacheKey); cacheKey != "" {
+		params.PromptCacheKey = openai.String(cacheKey)
 	}
 
 	completion, err := g.client.Chat.Completions.New(ctx, params)
