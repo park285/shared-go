@@ -20,6 +20,11 @@ type HTTPHandlerOptions struct {
 
 type httpHandlerRequestTargetKey struct{}
 
+type httpHandlerRequestState struct {
+	original *http.Request
+	pattern  string
+}
+
 // NewPublicHTTPHandler는 개인정보를 span에 기록하지 않는 server tracing을 추가합니다.
 func NewPublicHTTPHandler(handler http.Handler, operation string, opts HTTPHandlerOptions) http.Handler {
 	if strings.TrimSpace(operation) == "" {
@@ -27,15 +32,16 @@ func NewPublicHTTPHandler(handler http.Handler, operation string, opts HTTPHandl
 	}
 
 	restoredHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		original, ok := r.Context().Value(httpHandlerRequestTargetKey{}).(*http.Request)
-		if !ok {
+		state, ok := r.Context().Value(httpHandlerRequestTargetKey{}).(*httpHandlerRequestState)
+		if !ok || state == nil || state.original == nil {
 			handler.ServeHTTP(w, r)
 			return
 		}
 
-		restored := original.WithContext(r.Context())
+		restored := state.original.WithContext(r.Context())
 		restored.Body = r.Body
 		handler.ServeHTTP(w, restored)
+		state.pattern = restored.Pattern
 		r.Pattern = restored.Pattern
 
 		if opts.SpanRoutePattern && restored.Pattern != "" {
@@ -62,19 +68,20 @@ func NewPublicHTTPHandler(handler http.Handler, operation string, opts HTTPHandl
 
 	if opts.Filter != nil {
 		instrumentedOptions = append(instrumentedOptions, otelhttp.WithFilter(func(r *http.Request) bool {
-			original, ok := r.Context().Value(httpHandlerRequestTargetKey{}).(*http.Request)
-			if !ok {
+			state, ok := r.Context().Value(httpHandlerRequestTargetKey{}).(*httpHandlerRequestState)
+			if !ok || state == nil || state.original == nil {
 				return opts.Filter(r)
 			}
 
-			return opts.Filter(original.WithContext(r.Context()))
+			return opts.Filter(state.original.WithContext(r.Context()))
 		}))
 	}
 
 	instrumented := otelhttp.NewHandler(restoredHandler, operation, instrumentedOptions...)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := context.WithValue(r.Context(), httpHandlerRequestTargetKey{}, r)
+		state := &httpHandlerRequestState{original: r}
+		ctx := context.WithValue(r.Context(), httpHandlerRequestTargetKey{}, state)
 		traced := r.WithContext(ctx)
 
 		traced.Host = ""
@@ -101,6 +108,6 @@ func NewPublicHTTPHandler(handler http.Handler, operation string, opts HTTPHandl
 		traced.RequestURI = ""
 
 		instrumented.ServeHTTP(w, traced)
-		r.Pattern = traced.Pattern
+		r.Pattern = state.pattern
 	})
 }
