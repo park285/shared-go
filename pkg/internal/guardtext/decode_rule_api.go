@@ -2,17 +2,19 @@ package guardtext
 
 // HasPotentialRuleDecodeSurface는 rule decode가 필요한 변환 문법의 존재 여부를 빠르게 판정한다.
 func HasPotentialRuleDecodeSurface(input string) bool {
-	if _, changed := normalizeSingleSpaceBase64(input); changed {
-		return true
-	}
 	potential, needsNormalization := ruleDecodePreflight(input)
 	if potential {
 		return true
 	}
 
 	normalized := normalizedRuleDecodeInput(input, needsNormalization)
+	if normalized != "" && (hasPotentialDecodeSurface(normalized) || hasPlausibleShortRuleDecodeSurface(normalized)) {
+		return true
+	}
 
-	return normalized != "" && (hasPotentialDecodeSurface(normalized) || hasPlausibleShortRuleDecodeSurface(normalized))
+	_, changed := normalizeSingleSpaceBase64(input)
+
+	return changed
 }
 
 // DecodeCandidatesWithContextForRules expands standard transforms and short
@@ -22,7 +24,35 @@ func DecodeCandidatesWithContextForRules(input string, mayContribute func(string
 	if mayContribute == nil {
 		return DecodeCandidatesWithContext(input)
 	}
-	input, _ = normalizeSingleSpaceBase64(input)
+	result := decodeCandidatesForRules(input, mayContribute)
+	joined, changed := normalizeSingleSpaceBase64(input)
+	if !changed {
+		return result
+	}
+
+	return mergeSplitBase64Readings(result, decodeCandidatesForRules(joined, mayContribute))
+}
+
+// 공백 정규화본은 원본을 대체하지 않고 두 번째 읽기로 더한다. 대체하면 " "로 나뉜 두 토큰이
+// 하나로 합쳐져, 각각을 독립 조각으로 조합해 구를 만드는 기존 탐지가 사라진다.
+func mergeSplitBase64Readings(original, joined DecodeResult) DecodeResult {
+	if len(joined.Candidates) == 0 {
+		mergeDecodeStatus(&original.Status, joined.Status)
+
+		return original
+	}
+
+	merged := mergeSemanticCandidates(joined.Candidates, original)
+	// 원본의 fail-closed는 split 토큰을 못 읽어서 선 것이다. 결합 읽기가 그 토큰을 끝까지
+	// 해독했다면 미탐색 표면이 남지 않으므로 결합 읽기의 상태를 따른다.
+	if joined.Complete() {
+		merged.Status = joined.Status
+	}
+
+	return merged
+}
+
+func decodeCandidatesForRules(input string, mayContribute func(string) bool) DecodeResult {
 	semantic := decodeSemanticRuleInput(input, mayContribute)
 	if semantic.status != 0 {
 		return DecodeResult{Status: semantic.status}
@@ -50,7 +80,26 @@ func DecodeCandidatesWithContextForRuleOwner[T any](
 	if mayContribute == nil {
 		return DecodeCandidatesWithContext(input)
 	}
-	input, _ = normalizeSingleSpaceBase64(input)
+
+	result := decodeForRuleOwner(input, owner, mayContribute, contextMayContribute, oversizedWouldBlock)
+	joined, changed := normalizeSingleSpaceBase64(input)
+	if !changed {
+		return result
+	}
+
+	return mergeSplitBase64Readings(
+		result,
+		decodeForRuleOwner(joined, owner, mayContribute, contextMayContribute, oversizedWouldBlock),
+	)
+}
+
+func decodeForRuleOwner[T any](
+	input string,
+	owner T,
+	mayContribute func(T, string) bool,
+	contextMayContribute func(T, string, int, int, string) bool,
+	oversizedWouldBlock func(T, string, string, []string) bool,
+) DecodeResult {
 	matcher := func(candidate string) bool { return mayContribute(owner, candidate) }
 	semantic := decodeSemanticRuleInput(input, matcher)
 	if semantic.status != 0 {
