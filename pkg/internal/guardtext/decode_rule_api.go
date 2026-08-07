@@ -2,6 +2,9 @@ package guardtext
 
 // HasPotentialRuleDecodeSurface는 rule decode가 필요한 변환 문법의 존재 여부를 빠르게 판정한다.
 func HasPotentialRuleDecodeSurface(input string) bool {
+	if _, changed := normalizeSingleSpaceBase64(input); changed {
+		return true
+	}
 	potential, needsNormalization := ruleDecodePreflight(input)
 	if potential {
 		return true
@@ -19,6 +22,7 @@ func DecodeCandidatesWithContextForRules(input string, mayContribute func(string
 	if mayContribute == nil {
 		return DecodeCandidatesWithContext(input)
 	}
+	input, _ = normalizeSingleSpaceBase64(input)
 	semantic := decodeSemanticRuleInput(input, mayContribute)
 	if semantic.status != 0 {
 		return DecodeResult{Status: semantic.status}
@@ -46,6 +50,7 @@ func DecodeCandidatesWithContextForRuleOwner[T any](
 	if mayContribute == nil {
 		return DecodeCandidatesWithContext(input)
 	}
+	input, _ = normalizeSingleSpaceBase64(input)
 	matcher := func(candidate string) bool { return mayContribute(owner, candidate) }
 	semantic := decodeSemanticRuleInput(input, matcher)
 	if semantic.status != 0 {
