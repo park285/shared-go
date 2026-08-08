@@ -96,6 +96,83 @@ func TestAdaptInstructionMessages(t *testing.T) {
 	}
 }
 
+func TestAdaptInstructionMessagesPreservesCacheBreakpoints(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name                string
+		systemBreakpoint    bool
+		developerBreakpoint bool
+	}{
+		{name: "none"},
+		{name: "system layer", systemBreakpoint: true},
+		{name: "developer layer", developerBreakpoint: true},
+		{name: "both layers", systemBreakpoint: true, developerBreakpoint: true},
+	}
+
+	profiles := []struct {
+		name    string
+		profile InstructionProfile
+	}{
+		{name: "openai", profile: InstructionProfileOpenAI},
+		{name: "single developer", profile: InstructionProfileSingleDeveloper},
+		{name: "single system", profile: InstructionProfileSingleSystem},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			messages := []Message{
+				{Role: "system", Content: "invariant", CacheBreakpoint: tt.systemBreakpoint},
+				{Role: "developer", Content: "developer", CacheBreakpoint: tt.developerBreakpoint},
+				{Role: "user", Content: "question", CacheBreakpoint: true},
+				{Role: "assistant", Content: "answer"},
+				{Role: "unknown", Content: "unknown content", CacheBreakpoint: true},
+			}
+
+			for _, profile := range profiles {
+				profile := profile
+				t.Run(profile.name, func(t *testing.T) {
+					t.Parallel()
+					got, err := AdaptInstructionMessages(messages, profile.profile)
+					if err != nil {
+						t.Fatalf("AdaptInstructionMessages error = %v", err)
+					}
+
+					var want []Message
+					switch profile.profile {
+					case InstructionProfileOpenAI:
+						want = []Message{
+							{Role: "developer", Content: "[APPLICATION INVARIANTS]\ninvariant", CacheBreakpoint: tt.systemBreakpoint},
+							{Role: "developer", Content: "[DEVELOPER INSTRUCTIONS]\ndeveloper", CacheBreakpoint: tt.developerBreakpoint},
+						}
+					case InstructionProfileSingleDeveloper:
+						want = []Message{{
+							Role:            "developer",
+							Content:         "[APPLICATION INVARIANTS]\ninvariant\n\n[DEVELOPER INSTRUCTIONS]\ndeveloper",
+							CacheBreakpoint: tt.systemBreakpoint || tt.developerBreakpoint,
+						}}
+					case InstructionProfileSingleSystem:
+						want = []Message{{
+							Role:            "system",
+							Content:         "[APPLICATION INVARIANTS]\ninvariant\n\n[DEVELOPER INSTRUCTIONS]\ndeveloper",
+							CacheBreakpoint: tt.systemBreakpoint || tt.developerBreakpoint,
+						}}
+					}
+					want = append(want,
+						Message{Role: "user", Content: "question", CacheBreakpoint: true},
+						Message{Role: "assistant", Content: "answer"},
+						Message{Role: "unknown", Content: "unknown content", CacheBreakpoint: true},
+					)
+					if !reflect.DeepEqual(got, want) {
+						t.Fatalf("AdaptInstructionMessages = %#v, want %#v", got, want)
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestAdaptInstructionMessagesSingleProfilesOmitMissingSection(t *testing.T) {
 	t.Parallel()
 
@@ -149,8 +226,8 @@ func TestAdaptInstructionMessagesOmitsEmptyLayers(t *testing.T) {
 	t.Parallel()
 
 	messages := []Message{
-		{Role: "system", Content: " \t\n"},
-		{Role: "developer", Content: ""},
+		{Role: "system", Content: " \t\n", CacheBreakpoint: true},
+		{Role: "developer", Content: "", CacheBreakpoint: true},
 		{Role: "user", Content: "question"},
 	}
 

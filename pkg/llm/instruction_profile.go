@@ -42,6 +42,8 @@ func AdaptInstructionMessages(messages []Message, profile InstructionProfile) ([
 
 	var invariants []string
 	var developers []string
+	var invariantsCacheBreakpoint bool
+	var developersCacheBreakpoint bool
 	history := make([]Message, 0, len(messages))
 	phase := instructionPhaseInvariant
 
@@ -59,6 +61,7 @@ func AdaptInstructionMessages(messages []Message, profile InstructionProfile) ([
 				return nil, fmt.Errorf("%w: invariant at index %d follows history", ErrInvalidInstructionSequence, i)
 			}
 			invariants = append(invariants, message.Content)
+			invariantsCacheBreakpoint = invariantsCacheBreakpoint || message.CacheBreakpoint
 		case roleDeveloper:
 			if strings.TrimSpace(message.Content) == "" {
 				continue
@@ -68,6 +71,7 @@ func AdaptInstructionMessages(messages []Message, profile InstructionProfile) ([
 			}
 			phase = instructionPhaseDeveloper
 			developers = append(developers, message.Content)
+			developersCacheBreakpoint = developersCacheBreakpoint || message.CacheBreakpoint
 		default:
 			phase = instructionPhaseHistory
 			history = append(history, message)
@@ -77,12 +81,12 @@ func AdaptInstructionMessages(messages []Message, profile InstructionProfile) ([
 	adapted := make([]Message, 0, len(history)+2)
 	switch profile {
 	case InstructionProfileOpenAI:
-		adapted = appendInstructionSection(adapted, roleDeveloper, applicationInvariantsLabel, invariants)
-		adapted = appendInstructionSection(adapted, roleDeveloper, developerInstructionsLabel, developers)
+		adapted = appendInstructionSection(adapted, roleDeveloper, applicationInvariantsLabel, invariants, invariantsCacheBreakpoint)
+		adapted = appendInstructionSection(adapted, roleDeveloper, developerInstructionsLabel, developers, developersCacheBreakpoint)
 	case InstructionProfileSingleDeveloper:
-		adapted = appendFlattenedInstruction(adapted, roleDeveloper, invariants, developers)
+		adapted = appendFlattenedInstruction(adapted, roleDeveloper, invariants, developers, invariantsCacheBreakpoint || developersCacheBreakpoint)
 	case InstructionProfileSingleSystem:
-		adapted = appendFlattenedInstruction(adapted, roleSystem, invariants, developers)
+		adapted = appendFlattenedInstruction(adapted, roleSystem, invariants, developers, invariantsCacheBreakpoint || developersCacheBreakpoint)
 	}
 	return append(adapted, history...), nil
 }
@@ -101,17 +105,18 @@ func validInstructionProfile(profile InstructionProfile) bool {
 		profile == InstructionProfileSingleSystem
 }
 
-func appendInstructionSection(messages []Message, role, label string, contents []string) []Message {
+func appendInstructionSection(messages []Message, role, label string, contents []string, cacheBreakpoint bool) []Message {
 	if len(contents) == 0 {
 		return messages
 	}
 	return append(messages, Message{
-		Role:    role,
-		Content: labeledInstruction(label, strings.Join(contents, "\n\n")),
+		Role:            role,
+		Content:         labeledInstruction(label, strings.Join(contents, "\n\n")),
+		CacheBreakpoint: cacheBreakpoint,
 	})
 }
 
-func appendFlattenedInstruction(messages []Message, role string, invariants, developers []string) []Message {
+func appendFlattenedInstruction(messages []Message, role string, invariants, developers []string, cacheBreakpoint bool) []Message {
 	sections := make([]string, 0, 2)
 	if len(invariants) > 0 {
 		sections = append(sections, labeledInstruction(applicationInvariantsLabel, strings.Join(invariants, "\n\n")))
@@ -122,7 +127,7 @@ func appendFlattenedInstruction(messages []Message, role string, invariants, dev
 	if len(sections) == 0 {
 		return messages
 	}
-	return append(messages, Message{Role: role, Content: strings.Join(sections, "\n\n")})
+	return append(messages, Message{Role: role, Content: strings.Join(sections, "\n\n"), CacheBreakpoint: cacheBreakpoint})
 }
 
 func labeledInstruction(label, prompt string) string {
