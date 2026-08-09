@@ -173,6 +173,37 @@ func TestAdaptInstructionMessagesPreservesCacheBreakpoints(t *testing.T) {
 	}
 }
 
+func TestAdaptInstructionMessagesOpenAIPreservesMultipleCacheBreakpoints(t *testing.T) {
+	t.Parallel()
+
+	messages := []Message{
+		{Role: "system", Content: "invariant one", CacheBreakpoint: true},
+		{Role: "system", Content: "invariant two"},
+		{Role: "system", Content: "invariant three", CacheBreakpoint: true},
+		{Role: "developer", Content: "persona-independent", CacheBreakpoint: true},
+		{Role: "developer", Content: "persona-specific", CacheBreakpoint: true},
+		{Role: "developer", Content: "runtime context"},
+		{Role: "user", Content: "question", CacheBreakpoint: true},
+	}
+
+	want := []Message{
+		{Role: "developer", Content: "[APPLICATION INVARIANTS]\ninvariant one", CacheBreakpoint: true},
+		{Role: "developer", Content: "invariant two\n\ninvariant three", CacheBreakpoint: true},
+		{Role: "developer", Content: "[DEVELOPER INSTRUCTIONS]\npersona-independent", CacheBreakpoint: true},
+		{Role: "developer", Content: "persona-specific", CacheBreakpoint: true},
+		{Role: "developer", Content: "runtime context"},
+		{Role: "user", Content: "question", CacheBreakpoint: true},
+	}
+
+	got, err := AdaptInstructionMessages(messages, InstructionProfileOpenAI)
+	if err != nil {
+		t.Fatalf("AdaptInstructionMessages error = %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("AdaptInstructionMessages = %#v, want %#v", got, want)
+	}
+}
+
 func TestAdaptInstructionMessagesSingleProfilesOmitMissingSection(t *testing.T) {
 	t.Parallel()
 
