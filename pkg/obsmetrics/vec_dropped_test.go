@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -21,10 +22,8 @@ func expositionLines(t *testing.T, write func(w io.Writer) bool) []string {
 func assertHasLine(t *testing.T, lines []string, want string) {
 	t.Helper()
 
-	for _, line := range lines {
-		if line == want {
-			return
-		}
+	if slices.Contains(lines, want) {
+		return
 	}
 	t.Fatalf("exposition missing line %q:\n%s", want, strings.Join(lines, "\n"))
 }

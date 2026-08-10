@@ -53,12 +53,10 @@ func TestCleanupCloser_Close_ConcurrentRunsOnce(t *testing.T) {
 	c := NewCleanupCloser(func() { count.Add(1) })
 
 	var wg sync.WaitGroup
-	for i := 0; i < 16; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 16 {
+		wg.Go(func() {
 			c.Close()
-		}()
+		})
 	}
 	wg.Wait()
 

@@ -292,7 +292,7 @@ func TestRun_SignalWithPendingErrorStillFiresOnError(t *testing.T) {
 	const iterations = 30
 	runtimeErr := errors.New("runtime boom on signal race")
 
-	for i := 0; i < iterations; i++ {
+	for i := range iterations {
 		var onErrorCount atomic.Int32
 		var gotErr atomic.Value
 

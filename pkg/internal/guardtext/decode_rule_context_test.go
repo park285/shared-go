@@ -14,7 +14,7 @@ func TestDecodeCandidatesWithContextForRulesSkipsManyNonContributingBase64Values
 
 	parts := make([]string, 0, maxDecodeCandidates+1)
 	for i := range maxDecodeCandidates + 1 {
-		parts = append(parts, base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("ordinary conversation record number %d", i))))
+		parts = append(parts, base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "ordinary conversation record number %d", i)))
 	}
 	result := DecodeCandidatesWithContextForRules(strings.Join(parts, " "), func(string) bool { return false })
 	if !result.Complete() || len(result.Candidates) != 0 {

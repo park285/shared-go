@@ -447,11 +447,9 @@ func TestProvider_Shutdown_IdempotentConcurrent(t *testing.T) {
 	results := make(chan error, callers)
 	var wg sync.WaitGroup
 	for range callers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			results <- provider.Shutdown(context.Background())
-		}()
+		})
 	}
 	wg.Wait()
 	close(results)

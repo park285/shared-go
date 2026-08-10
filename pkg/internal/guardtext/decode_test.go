@@ -26,7 +26,7 @@ func TestDecodeCandidatesRoundRobinPreventsFamilyMonopoly(t *testing.T) {
 	t.Parallel()
 	readable := make([]string, maxDecodeCandidates+2)
 	for i := range readable {
-		readable[i] = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("monopoly readable payload %02d", i)))
+		readable[i] = base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "monopoly readable payload %02d", i))
 	}
 	input := strings.Join(readable, "!") + "!%69%67%6e%6f%72%65"
 	result := DecodeCandidates(input)
@@ -43,7 +43,7 @@ func TestDecodeCandidatesRoundRobinPreservesLaterFamilyCandidate(t *testing.T) {
 	t.Parallel()
 	base64Candidates := make([]string, maxDecodeCandidates)
 	for i := range base64Candidates {
-		base64Candidates[i] = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("readable base64 candidate number %02d", i)))
+		base64Candidates[i] = base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "readable base64 candidate number %02d", i))
 	}
 	input := strings.Join(base64Candidates, "!") + "!%69%67%6e%6f%72%65"
 	percentProjection := strings.Join(base64Candidates, "!") + "!ignore"
@@ -57,7 +57,7 @@ func TestDecodeCandidatesCandidateLimitPairedBoundaries(t *testing.T) {
 	t.Parallel()
 	encoded := make([]string, maxDecodeCandidates+1)
 	for i := range encoded {
-		encoded[i] = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("decoded candidate payload number %02d", i)))
+		encoded[i] = base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "decoded candidate payload number %02d", i))
 	}
 	exact := DecodeCandidates(strings.Join(encoded[:maxDecodeCandidates], "!"))
 	if len(exact.Candidates) != maxDecodeCandidates || !exact.Complete() {
@@ -104,7 +104,7 @@ func TestDecodeCandidatesScanLimitPairedBoundaries(t *testing.T) {
 	}
 	distinct := make([]string, maxDecodeScans+1)
 	for i := range distinct {
-		distinct[i] = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("distinct readable payload number %03d", i)))
+		distinct[i] = base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "distinct readable payload number %03d", i))
 	}
 	omitted := DecodeCandidates(strings.Join(distinct, "!"))
 	if omitted.Complete() {

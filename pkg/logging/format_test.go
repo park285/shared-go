@@ -44,7 +44,7 @@ func assertProbeSanitized(t *testing.T, label, out string) {
 func probeJSONRecord(t *testing.T, label, out string) map[string]any {
 	t.Helper()
 	var probe map[string]any
-	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(out), "\n") {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
