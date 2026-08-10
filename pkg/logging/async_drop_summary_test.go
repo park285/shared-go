@@ -231,7 +231,7 @@ func TestAsyncDropWriter_CloseNoSummaryWhenNoDrops(t *testing.T) {
 	w := newAsyncDropWriter(&target, 64)
 
 	for i := range 10 {
-		w.Write([]byte(fmt.Sprintf("line-%d\n", i)))
+		w.Write(fmt.Appendf(nil, "line-%d\n", i))
 	}
 
 	if err := w.Close(); err != nil {

@@ -300,11 +300,9 @@ func TestFixedWindowRateLimiterConcurrentHotIdentity(t *testing.T) {
 	results := make(chan bool, requests)
 	var wg sync.WaitGroup
 	for range requests {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			results <- limiter.Allow("shared")
-		}()
+		})
 	}
 	wg.Wait()
 	close(results)

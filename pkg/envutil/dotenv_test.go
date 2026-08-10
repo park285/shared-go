@@ -76,7 +76,6 @@ func TestLoadDotenvFile(t *testing.T) {
 				tt.setup(t, path)
 			}
 			for key := range tt.wantEnv {
-				key := key
 				t.Cleanup(func() { _ = os.Unsetenv(key) })
 			}
 

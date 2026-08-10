@@ -22,7 +22,6 @@ func TestSanitizeKey_LiteralSecretNamesAreMasked(t *testing.T) {
 		" SECRET-KEY ",
 		"Api_Key",
 	} {
-		value := value
 		t.Run(value, func(t *testing.T) {
 			t.Parallel()
 

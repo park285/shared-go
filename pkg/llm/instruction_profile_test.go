@@ -131,7 +131,6 @@ func TestAdaptInstructionMessagesPreservesCacheBreakpoints(t *testing.T) {
 			}
 
 			for _, profile := range profiles {
-				profile := profile
 				t.Run(profile.name, func(t *testing.T) {
 					t.Parallel()
 					got, err := AdaptInstructionMessages(messages, profile.profile)

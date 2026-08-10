@@ -337,12 +337,10 @@ func TestCheckConcurrentSameKeyEmitsOneEventPerCaller(t *testing.T) {
 	start := make(chan struct{})
 	var wg sync.WaitGroup
 	for range callers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			<-start
 			_, _ = guard.Check(CheckRequest{Text: "same concurrent input", Source: SourceSessionContext, Enforcement: EnforcementPersistent})
-		}()
+		})
 	}
 	close(start)
 	wg.Wait()

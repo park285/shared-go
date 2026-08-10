@@ -15,7 +15,7 @@ func TestMetricVectorsEnforceSeriesLimit(t *testing.T) {
 	gauge := NewGaugeVecWithOptions("active", "Active", options)
 	histogram := NewHistogramVecWithOptions("latency", "Latency", []float64{1}, options)
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		labels := Labels{"id": fmt.Sprintf("%d", i)}
 		counter.Inc(labels)
 		gauge.Set(labels, float64(i))
@@ -63,7 +63,7 @@ func TestMetricVectorConcurrentAdmissionNeverExceedsLimit(t *testing.T) {
 	const limit = 8
 	vec := NewCounterVecWithOptions("requests_total", "Requests", VecOptions{MaxSeries: limit})
 	var wg sync.WaitGroup
-	for i := 0; i < 128; i++ {
+	for i := range 128 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
