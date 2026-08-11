@@ -3,6 +3,47 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## v1.49.0 - 2026-08-11
+
+### 호환성이 깨지는 변경
+
+- `logging`: JSON 출력의 `source`가 3-attr group에서 `"file:line"` 문자열로 평탄화되고
+  `function` 필드가 사라집니다. `AddSource` formatter가 record마다 `*slog.Source`를 두 번
+  할당하고 slog이 그것을 group으로 전개하며 다시 할당하던 경로를 제거한 결과입니다.
+  `source.file`·`source.function`·`source.line`을 참조하는 로그 질의는 갱신해야 합니다.
+  PC 0 record가 낳는 빈 `Source`는 빈 `Attr`로 남겨 slog이 통째로 생략하도록 유지합니다.
+
+### 성능
+
+- `logging`: hot path 할당을 제거합니다 — context lookup, attr 구성, error helper의 attr 병합
+  slice, slog source 값 재사용, sanitizer group의 copy-on-write 전환.
+
+### 수정
+
+- `logging`: caller가 소유한 `source` 값을 formatter가 덮어쓰지 않도록 보존합니다.
+
+### 기타
+
+- Go 1.26 test rewrites를 적용합니다.
+
+## v1.48.2 - 2026-08-09
+
+### 수정
+
+- `llm`: 다중 cache breakpoint를 instruction segment별로 보존합니다.
+
+## v1.48.1 - 2026-08-08
+
+### 수정
+
+- `llm`: instruction profile 변환에서 cache breakpoint를 보존합니다.
+
+## v1.48.0 - 2026-08-07
+
+### 추가
+
+- `llm`: `prompt_cache_key`를 배선하고 assistant cache breakpoint를 평문으로 렌더합니다.
+
 ## v1.47.0 - 2026-08-07
 
 ### 호환성이 깨지는 변경
