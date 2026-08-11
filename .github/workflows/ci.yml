@@ -65,8 +65,10 @@ jobs:
       - name: golangci-lint
         run: make lint
 
-      - name: Deterministic guard allocation ceilings
-        run: go test -count=1 -run '^TestPromptGuardAllocationCeilings$' ./pkg/promptguard
+      - name: Deterministic allocation ceilings
+        run: |
+          go test -count=1 -run '^TestPromptGuardAllocationCeilings$' ./pkg/promptguard
+          go test -count=1 -run '^TestLoggingAllocationCeilings$' ./pkg/logging
 
       - name: go test race
         run: go test -race -count=1 ./...

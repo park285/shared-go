@@ -161,6 +161,30 @@ func TestSanitizeGroupCopyOnWrite_MasksNestedValue(t *testing.T) {
 	}
 }
 
+func TestErrorHelpers_CaptureCallerSource(t *testing.T) {
+	cases := map[string]func(context.Context, *slog.Logger){
+		"LogAndWrapError": func(ctx context.Context, logger *slog.Logger) {
+			_ = LogAndWrapError(ctx, logger, "op", context.DeadlineExceeded)
+		},
+		"LogWarnWithErrorAttrs": func(ctx context.Context, logger *slog.Logger) {
+			LogWarnWithErrorAttrs(ctx, logger, "event", "message", context.DeadlineExceeded)
+		},
+	}
+
+	for name, call := range cases {
+		t.Run(name, func(t *testing.T) {
+			handler := &hotpathCaptureHandler{}
+			call(context.Background(), slog.New(handler))
+
+			frames := runtime.CallersFrames([]uintptr{handler.record.PC})
+			frame, _ := frames.Next()
+			if !strings.HasSuffix(frame.File, "pkg/logging/hotpath_test.go") {
+				t.Fatalf("source file = %q, want the call site rather than the helper body", frame.File)
+			}
+		})
+	}
+}
+
 func BenchmarkLogCommonPath(b *testing.B) {
 	logger := slog.New(hotpathDiscardHandler{})
 	ctx := WithRequestID(WithRuntime(context.Background(), "bot"), "req-1")

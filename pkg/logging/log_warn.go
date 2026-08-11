@@ -11,10 +11,5 @@ func LogWarnWithErrorAttrs(ctx context.Context, logger *slog.Logger, event, mess
 		return
 	}
 
-	errorAttrs := ErrorAttrs(err)
-	mergedAttrs := make([]slog.Attr, 0, len(errorAttrs)+len(attrs))
-	mergedAttrs = append(mergedAttrs, errorAttrs...)
-	mergedAttrs = append(mergedAttrs, attrs...)
-
-	Warn(ctx, logger, event, message, mergedAttrs...)
+	logWith(ctx, logger, slog.LevelWarn, event, message, callerSkipViaHelper, ErrorAttrs(err), attrs)
 }

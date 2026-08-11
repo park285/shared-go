@@ -28,12 +28,23 @@ func Log(ctx context.Context, logger *slog.Logger, level slog.Level, event, mess
 	log(ctx, logger, level, event, message, attrs...)
 }
 
-// log는 level gate 뒤 Record를 직접 구성해 전달한다. Logger.LogAttrs의 두 번째 Enabled
-// 호출과 임시 attr 병합 slice를 피하고, Record의 inline attr 저장소를 그대로 활용한다.
-//
-// runtime.Callers의 skip 3은 이 함수 바로 위의 exported logging wrapper 호출자를 가리킨다.
-// 따라서 일반적인 Debug/Info/Warn/Error/Log 사용에서는 실제 애플리케이션 호출 위치가 남는다.
+// runtime.Callers에 넘길 skip. logWith까지의 프레임 수가 경로마다 다르므로 상수로 고정한다.
+const (
+	// runtime.Callers → logWith → log → exported wrapper → 실제 호출자
+	callerSkipViaWrapper = 4
+	// runtime.Callers → logWith → 호출한 helper → 실제 호출자
+	callerSkipViaHelper = 3
+)
+
 func log(ctx context.Context, logger *slog.Logger, level slog.Level, event, message string, attrs ...slog.Attr) {
+	logWith(ctx, logger, level, event, message, callerSkipViaWrapper, attrs, nil)
+}
+
+// logWith는 level gate 뒤 Record를 직접 구성해 전달한다. Logger.LogAttrs의 두 번째 Enabled
+// 호출과 임시 attr 병합 slice를 피하고, Record의 inline attr 저장소를 그대로 활용한다.
+// primary와 secondary를 따로 받는 것도 같은 이유다. 호출자가 두 attr 묶음을 미리 합치면
+// 그 병합 slice가 record마다 할당된다.
+func logWith(ctx context.Context, logger *slog.Logger, level slog.Level, event, message string, skip int, primary, secondary []slog.Attr) {
 	if logger == nil {
 		return
 	}
@@ -45,14 +56,15 @@ func log(ctx context.Context, logger *slog.Logger, level slog.Level, event, mess
 	}
 
 	var pcs [1]uintptr
-	runtime.Callers(3, pcs[:])
+	runtime.Callers(skip, pcs[:])
 
 	record := slog.NewRecord(time.Now(), level, logMessage(event, message), pcs[0])
 	if strings.TrimSpace(event) != "" {
 		record.AddAttrs(Event(event))
 	}
 	contextValuesFrom(ctx).addToRecord(&record)
-	record.AddAttrs(attrs...)
+	record.AddAttrs(primary...)
+	record.AddAttrs(secondary...)
 	_ = logger.Handler().Handle(ctx, record) //nolint:errcheck // slog.Logger의 public logging API도 handler error를 반환하지 않는다
 }
 
