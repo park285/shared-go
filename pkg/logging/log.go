@@ -53,7 +53,7 @@ func log(ctx context.Context, logger *slog.Logger, level slog.Level, event, mess
 	}
 	contextValuesFrom(ctx).addToRecord(&record)
 	record.AddAttrs(attrs...)
-	_ = logger.Handler().Handle(ctx, record)
+	_ = logger.Handler().Handle(ctx, record) //nolint:errcheck // slog.Logger의 public logging API도 handler error를 반환하지 않는다
 }
 
 func logMessage(event, message string) string {
