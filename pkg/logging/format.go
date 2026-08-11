@@ -30,9 +30,7 @@ func newFormatHandler(level slog.Level, w io.Writer) slog.Handler {
 }
 
 // slog 기본값은 빌드 머신의 절대 경로를 모든 record에 싣는다.
-// dir/file 축약으로 빌드 디렉터리 구조 노출과 record 크기를 함께 줄이고,
-// "dir/file.go:line" 한 문자열로 평탄화해 record마다 드는 *slog.Source 재할당과
-// slog의 source group 전개 할당을 함께 없앤다.
+// dir/file 축약으로 빌드 디렉터리 구조 노출과 record 크기를 함께 줄인다.
 func shortenSource(groups []string, attr slog.Attr) slog.Attr {
 	if len(groups) > 0 || attr.Key != slog.SourceKey {
 		return attr

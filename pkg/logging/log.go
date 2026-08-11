@@ -28,7 +28,6 @@ func Log(ctx context.Context, logger *slog.Logger, level slog.Level, event, mess
 	log(ctx, logger, level, event, message, attrs...)
 }
 
-// runtime.Callers에 넘길 skip. logWith까지의 프레임 수가 경로마다 다르므로 상수로 고정한다.
 const (
 	// runtime.Callers → logWith → log → exported wrapper → 실제 호출자
 	callerSkipViaWrapper = 4
