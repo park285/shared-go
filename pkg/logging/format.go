@@ -38,11 +38,8 @@ func shortenSource(groups []string, attr slog.Attr) slog.Attr {
 	if !ok {
 		return attr
 	}
-	return slog.Any(slog.SourceKey, &slog.Source{
-		Function: source.Function,
-		File:     lastPathSegments(source.File),
-		Line:     source.Line,
-	})
+	source.File = lastPathSegments(source.File)
+	return attr
 }
 
 // filepath.Join은 Clean 때문에 record마다 할당한다. 여기서는 substring slice로 충분하다.
