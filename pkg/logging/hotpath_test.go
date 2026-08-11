@@ -91,6 +91,15 @@ func TestContextAttrs_EmptyZeroAlloc(t *testing.T) {
 	}
 }
 
+func TestBroadValueKeyNormalizesRawKeys(t *testing.T) {
+	if !isBroadValueKey(" KEY ") {
+		t.Fatal("raw broad-value key was not normalized")
+	}
+	if isBroadValueKey("api_key") {
+		t.Fatal("sensitive exact key must not be classified as a broad-value key")
+	}
+}
+
 func TestSanitizeCleanGroup_ZeroAlloc(t *testing.T) {
 	attr := slog.Group("request",
 		slog.String("method", "GET"),
