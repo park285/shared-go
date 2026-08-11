@@ -6,14 +6,21 @@ import (
 	"strings"
 )
 
-type contextKey string
+type contextKey uint8
 
 const (
-	requestIDContextKey contextKey = "hololive.logging.request_id"
-	jobIDContextKey     contextKey = "hololive.logging.job_id"
-	runtimeContextKey   contextKey = "hololive.logging.runtime"
-	componentContextKey contextKey = "hololive.logging.component"
+	requestIDContextKey contextKey = iota
+	jobIDContextKey
+	runtimeContextKey
+	componentContextKey
 )
+
+type contextValues struct {
+	runtime   string
+	component string
+	requestID string
+	jobID     string
+}
 
 func WithRequestID(ctx context.Context, requestID string) context.Context {
 	return withString(ctx, requestIDContextKey, requestID)
@@ -48,25 +55,74 @@ func componentFromContext(ctx context.Context) string {
 }
 
 func ContextAttrs(ctx context.Context) []slog.Attr {
-	if ctx == nil {
+	values := contextValuesFrom(ctx)
+	count := values.count()
+	if count == 0 {
 		return nil
 	}
 
-	attrs := make([]slog.Attr, 0, 4)
-	if value := runtimeFromContext(ctx); value != "" {
-		attrs = append(attrs, Runtime(value))
-	}
-	if value := componentFromContext(ctx); value != "" {
-		attrs = append(attrs, componentAttr(value))
-	}
-	if value := requestIDFromContext(ctx); value != "" {
-		attrs = append(attrs, RequestID(value))
-	}
-	if value := jobIDFromContext(ctx); value != "" {
-		attrs = append(attrs, jobIDAttr(value))
+	return values.appendTo(make([]slog.Attr, 0, count))
+}
+
+func contextValuesFrom(ctx context.Context) contextValues {
+	if ctx == nil {
+		return contextValues{}
 	}
 
+	return contextValues{
+		runtime:   runtimeFromContext(ctx),
+		component: componentFromContext(ctx),
+		requestID: requestIDFromContext(ctx),
+		jobID:     jobIDFromContext(ctx),
+	}
+}
+
+func (v contextValues) count() int {
+	count := 0
+	if v.runtime != "" {
+		count++
+	}
+	if v.component != "" {
+		count++
+	}
+	if v.requestID != "" {
+		count++
+	}
+	if v.jobID != "" {
+		count++
+	}
+	return count
+}
+
+func (v contextValues) appendTo(attrs []slog.Attr) []slog.Attr {
+	if v.runtime != "" {
+		attrs = append(attrs, Runtime(v.runtime))
+	}
+	if v.component != "" {
+		attrs = append(attrs, componentAttr(v.component))
+	}
+	if v.requestID != "" {
+		attrs = append(attrs, RequestID(v.requestID))
+	}
+	if v.jobID != "" {
+		attrs = append(attrs, jobIDAttr(v.jobID))
+	}
 	return attrs
+}
+
+func (v contextValues) addToRecord(record *slog.Record) {
+	if v.runtime != "" {
+		record.AddAttrs(Runtime(v.runtime))
+	}
+	if v.component != "" {
+		record.AddAttrs(componentAttr(v.component))
+	}
+	if v.requestID != "" {
+		record.AddAttrs(RequestID(v.requestID))
+	}
+	if v.jobID != "" {
+		record.AddAttrs(jobIDAttr(v.jobID))
+	}
 }
 
 func withString(ctx context.Context, key contextKey, value string) context.Context {
