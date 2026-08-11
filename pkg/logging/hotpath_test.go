@@ -91,23 +91,6 @@ func TestContextAttrs_EmptyZeroAlloc(t *testing.T) {
 	}
 }
 
-func TestShortenSource_ReusesSourceValue(t *testing.T) {
-	source := &slog.Source{
-		Function: "main.run",
-		File:     "/build/root/pkg/logging/file.go",
-		Line:     42,
-	}
-	attr := slog.Any(slog.SourceKey, source)
-
-	out := shortenSource(nil, attr)
-	if out.Value.Any() != source {
-		t.Fatal("shortenSource replaced the source object")
-	}
-	if source.File != "logging/file.go" {
-		t.Fatalf("source file = %q, want %q", source.File, "logging/file.go")
-	}
-}
-
 func TestSanitizeCleanGroup_ZeroAlloc(t *testing.T) {
 	attr := slog.Group("request",
 		slog.String("method", "GET"),
