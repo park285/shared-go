@@ -26,7 +26,7 @@ func (h *hotpathCaptureHandler) Handle(_ context.Context, record slog.Record) er
 }
 
 func (h *hotpathCaptureHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
-func (h *hotpathCaptureHandler) WithGroup(string) slog.Handler     { return h }
+func (h *hotpathCaptureHandler) WithGroup(string) slog.Handler      { return h }
 
 type hotpathDiscardHandler struct{}
 
