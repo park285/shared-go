@@ -12,11 +12,6 @@ func LogAndWrapError(ctx context.Context, logger *slog.Logger, op string, err er
 		return nil
 	}
 
-	errorAttrs := ErrorAttrs(err)
-	mergedAttrs := make([]slog.Attr, 0, len(errorAttrs)+len(attrs))
-	mergedAttrs = append(mergedAttrs, errorAttrs...)
-	mergedAttrs = append(mergedAttrs, attrs...)
-
-	Error(ctx, logger, op+".failed", op+": "+err.Error(), mergedAttrs...)
+	logWith(ctx, logger, slog.LevelError, op+".failed", op+": "+err.Error(), callerSkipViaHelper, ErrorAttrs(err), attrs)
 	return fmt.Errorf("%s: %w", op, err)
 }

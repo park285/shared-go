@@ -2,6 +2,7 @@ package logging
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -10,6 +11,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 const (
@@ -356,19 +358,35 @@ func TestJSONFormat_ShortensSourcePath(t *testing.T) {
 	slog.New(newFormatHandler(slog.LevelInfo, &buf)).Info("format_probe_source")
 
 	record := probeJSONRecord(t, "json/source", buf.String())
-	source, ok := record[slog.SourceKey].(map[string]any)
+	source, ok := record[slog.SourceKey].(string)
 	if !ok {
-		t.Fatalf("source is not an object: %v", record[slog.SourceKey])
+		t.Fatalf("source is not a string: %v", record[slog.SourceKey])
 	}
-	file, _ := source["file"].(string)
+	file, line, found := strings.Cut(source, ":")
+	if !found {
+		t.Fatalf("source = %q, want \"file:line\"", source)
+	}
 	if filepath.IsAbs(file) {
-		t.Fatalf("source.file is an absolute build path: %q", file)
+		t.Fatalf("source file is an absolute build path: %q", file)
 	}
 	if want := "logging/format_test.go"; file != want {
-		t.Fatalf("source.file = %q, want %q", file, want)
+		t.Fatalf("source file = %q, want %q", file, want)
 	}
-	if _, ok := source["line"]; !ok {
-		t.Fatalf("source.line dropped: %v", source)
+	if line == "" || line == "0" {
+		t.Fatalf("source line dropped: %q", source)
+	}
+}
+
+func TestJSONFormat_OmitsSourceForZeroPC(t *testing.T) {
+	var buf bytes.Buffer
+	handler := newFormatHandler(slog.LevelInfo, &buf)
+	if err := handler.Handle(context.Background(), slog.NewRecord(time.Now(), slog.LevelInfo, "format_probe_zero_pc", 0)); err != nil {
+		t.Fatalf("handle zero-PC record: %v", err)
+	}
+
+	record := probeJSONRecord(t, "json/zero-pc", buf.String())
+	if value, ok := record[slog.SourceKey]; ok {
+		t.Fatalf("PC 0 record carries a source attr: %v", value)
 	}
 }
 

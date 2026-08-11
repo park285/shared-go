@@ -296,9 +296,10 @@ func (h *sanitizeHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 // 열린 group 이름이 privacy·credential key면 그 아래 attr은 key가 무엇이든 값이 그 식별자나
 // credential의 구성 요소다.
 func (h *sanitizeHandler) WithGroup(name string) slog.Handler {
+	normalizedName := normalizeSensitiveKey(name)
 	return &sanitizeHandler{
 		inner:         h.inner.WithGroup(name),
-		inMaskedGroup: h.inMaskedGroup || isPrivacyKey(name) || isSensitiveKey(name),
+		inMaskedGroup: h.inMaskedGroup || isMaskedNormalizedKey(normalizedName),
 	}
 }
 
@@ -325,38 +326,47 @@ func sanitizeAttrChanged(attr slog.Attr) (slog.Attr, bool) {
 	attr.Value = attr.Value.Resolve()
 	// key 기반 판정은 값을 읽지 않으므로 모든 값 분기(KindAny·KindGroup·KindString)보다 앞이어야
 	// 한다. 뒤에 두면 마스킹 여부가 값 타입이나 무관한 map 내용에 종속된다.
-	if isPrivacyKey(attr.Key) || isSensitiveKey(attr.Key) {
+	normalizedKey := normalizeSensitiveKey(attr.Key)
+	if isMaskedNormalizedKey(normalizedKey) {
 		return slog.String(attr.Key, redactedValue), true
 	}
 	if attr.Value.Kind() == slog.KindAny {
-		if raw, ok := attr.Value.Any().(map[string]any); ok {
+		value := attr.Value.Any()
+		if raw, ok := value.(map[string]any); ok {
 			if masked, mapChanged := maskPrivacyMap(raw); mapChanged {
 				return slog.Any(attr.Key, masked), true
 			}
 		}
-		if err, ok := attr.Value.Any().(error); ok {
+		if err, ok := value.(error); ok {
 			return slog.String(attr.Key, RedactDiagnostic(err.Error())), true
 		}
 	}
 
 	if attr.Value.Kind() == slog.KindGroup {
 		groupAttrs := attr.Value.Group()
-		sanitized := make([]any, 0, len(groupAttrs))
-		for _, groupAttr := range groupAttrs {
-			out, c := sanitizeAttrChanged(groupAttr)
-			if c {
-				changed = true
+		for index, groupAttr := range groupAttrs {
+			out, childChanged := sanitizeAttrChanged(groupAttr)
+			if !childChanged {
+				continue
 			}
-			sanitized = append(sanitized, out)
+
+			sanitized := make([]slog.Attr, len(groupAttrs))
+			copy(sanitized, groupAttrs[:index])
+			sanitized[index] = out
+			for next := index + 1; next < len(groupAttrs); next++ {
+				sanitized[next] = sanitizeAttr(groupAttrs[next])
+			}
+			attr.Value = slog.GroupValue(sanitized...)
+			return attr, true
 		}
-		return slog.Group(attr.Key, sanitized...), changed
+		return attr, changed
 	}
 
 	if attr.Value.Kind() != slog.KindString {
 		return attr, changed
 	}
 
-	if isBroadValueKey(attr.Key) && isSecretLikeValue(attr.Value.String()) {
+	if isBroadValueNormalizedKey(normalizedKey) && isSecretLikeValue(attr.Value.String()) {
 		return slog.String(attr.Key, redactedValue), true
 	}
 
@@ -368,15 +378,16 @@ func sanitizeAttrChanged(attr slog.Attr) (slog.Attr, bool) {
 }
 
 func isSensitiveKey(key string) bool {
-	normalized := normalizeSensitiveKey(key)
+	return isSensitiveNormalizedKey(normalizeSensitiveKey(key))
+}
+
+func isSensitiveNormalizedKey(normalized string) bool {
 	if normalized == "" {
 		return false
 	}
-
 	if _, ok := sensitiveExactKeys[normalized]; ok {
 		return true
 	}
-
 	return strings.HasSuffix(normalized, "_token") ||
 		strings.HasSuffix(normalized, "_secret") ||
 		strings.HasSuffix(normalized, "_password") ||
@@ -385,6 +396,10 @@ func isSensitiveKey(key string) bool {
 		strings.HasSuffix(normalized, "_api_key") ||
 		strings.HasSuffix(normalized, "_private_key") ||
 		strings.HasSuffix(normalized, "_secret_key")
+}
+
+func isMaskedNormalizedKey(normalized string) bool {
+	return isPrivacyNormalizedKey(normalized) || isSensitiveNormalizedKey(normalized)
 }
 
 func normalizeSensitiveKey(key string) string {
@@ -400,12 +415,20 @@ var broadValueKeys = map[string]struct{}{
 }
 
 func isBroadValueKey(key string) bool {
-	_, ok := broadValueKeys[normalizeSensitiveKey(key)]
+	return isBroadValueNormalizedKey(normalizeSensitiveKey(key))
+}
+
+func isBroadValueNormalizedKey(normalized string) bool {
+	_, ok := broadValueKeys[normalized]
 	return ok
 }
 
 func isPrivacyKey(key string) bool {
-	_, ok := privacyExactKeys[normalizeSensitiveKey(key)]
+	return isPrivacyNormalizedKey(normalizeSensitiveKey(key))
+}
+
+func isPrivacyNormalizedKey(normalized string) bool {
+	_, ok := privacyExactKeys[normalized]
 	return ok
 }
 
@@ -447,11 +470,12 @@ func maskPrivacyMapDepth(raw map[string]any, depth int) (map[string]any, bool) {
 }
 
 func shouldMaskStructuredMapValue(key string, value any) bool {
-	if isPrivacyKey(key) || isSensitiveKey(key) {
+	normalizedKey := normalizeSensitiveKey(key)
+	if isMaskedNormalizedKey(normalizedKey) {
 		return true
 	}
 	text, ok := value.(string)
-	return ok && isBroadValueKey(key) && isSecretLikeValue(text)
+	return ok && isBroadValueNormalizedKey(normalizedKey) && isSecretLikeValue(text)
 }
 
 var secretLikePrefixes = []string{
