@@ -174,7 +174,7 @@ func TestLoadDotenv(t *testing.T) {
 			opts: DotenvOptions{ServiceName: "twentyq"},
 			setup: func(t *testing.T, dir string) {
 				t.Setenv("TWENTYQ_ENV_FILE", filepath.Join(dir, "missing.env"))
-				t.Setenv("TWENTYQ_REQUIRE_OPENBAO", "true")
+				t.Setenv("TWENTYQ_REQUIRE_STATIC_SECRETS", "true")
 			},
 			wantErr: "stat dotenv file failed",
 		},
