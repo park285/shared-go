@@ -3,6 +3,15 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## Unreleased
+
+### 호환성이 깨지는 변경
+
+- `envutil`: `ServiceName` dotenv 로딩의 strict 스위치가 `<PREFIX>_REQUIRE_OPENBAO`에서
+  `<PREFIX>_REQUIRE_STATIC_SECRETS`로 바뀝니다. OpenBao는 2026-08-08에 퇴역했고 구 이름은
+  더 이상 조회하지 않으므로, 그 이름만 설정한 배포는 strict 모드가 꺼진 채로 동작합니다.
+  현행 이름으로 옮겨야 합니다.
+
 ## v1.49.0 - 2026-08-11
 
 ### 호환성이 깨지는 변경

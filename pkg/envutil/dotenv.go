@@ -128,15 +128,15 @@ func loadStrictDotenvFile(path string, info os.FileInfo) error {
 
 func loadServiceDotenv(serviceName string) (bool, error) {
 	prefix := serviceEnvPrefix(serviceName)
-	requireOpenBao := dotenvBool(prefix+"_REQUIRE_OPENBAO", false)
+	requireStaticSecrets := dotenvBool(prefix+"_REQUIRE_STATIC_SECRETS", false)
 	defaultPath := ServiceDotenvPath(serviceName)
 
 	if envFile := strings.TrimSpace(os.Getenv(prefix + "_ENV_FILE")); envFile != "" {
-		strict := requireOpenBao || strings.HasPrefix(envFile, defaultPathDir(defaultPath)+string(os.PathSeparator))
+		strict := requireStaticSecrets || strings.HasPrefix(envFile, defaultPathDir(defaultPath)+string(os.PathSeparator))
 		return true, LoadDotenvFile(envFile, true, strict)
 	}
 
-	if requireOpenBao {
+	if requireStaticSecrets {
 		return true, LoadDotenvFile(defaultPath, true, true)
 	}
 	return false, nil
