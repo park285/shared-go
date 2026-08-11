@@ -108,6 +108,67 @@ func TestShortenSource_ReusesSourceValue(t *testing.T) {
 	}
 }
 
+func TestSanitizeCleanGroup_ZeroAlloc(t *testing.T) {
+	attr := slog.Group("request",
+		slog.String("method", "GET"),
+		slog.String("path", "/api/users"),
+		slog.Int("status", 200),
+	)
+	var (
+		out     slog.Attr
+		changed bool
+	)
+
+	got := testing.AllocsPerRun(1000, func() {
+		out, changed = sanitizeAttrChanged(attr)
+	})
+	if got != 0 {
+		t.Fatalf("clean group sanitize allocs = %v, want 0", got)
+	}
+	if changed {
+		t.Fatal("clean group reported a change")
+	}
+	if !out.Equal(attr) {
+		t.Fatalf("clean group changed: got %v, want %v", out, attr)
+	}
+}
+
+func TestSanitizeGroupCopyOnWrite_MasksNestedValue(t *testing.T) {
+	attr := slog.Group("request",
+		slog.String("method", "GET"),
+		slog.Group("headers",
+			slog.String("authorization", "Bearer secret"),
+			slog.String("accept", "application/json"),
+		),
+		slog.Int("status", 200),
+	)
+
+	out, changed := sanitizeAttrChanged(attr)
+	if !changed {
+		t.Fatal("sensitive nested group reported no change")
+	}
+
+	requestAttrs := out.Value.Group()
+	if len(requestAttrs) != 3 {
+		t.Fatalf("request attrs = %d, want 3", len(requestAttrs))
+	}
+	headers := requestAttrs[1].Value.Group()
+	if len(headers) != 2 {
+		t.Fatalf("header attrs = %d, want 2", len(headers))
+	}
+	if got := headers[0].Value.String(); got != redactedValue {
+		t.Fatalf("authorization = %q, want %q", got, redactedValue)
+	}
+	if got := headers[1].Value.String(); got != "application/json" {
+		t.Fatalf("accept = %q, want %q", got, "application/json")
+	}
+
+	originalHeaders := attr.Value.Group()[1].Value.Group()
+	if got := originalHeaders[0].Value.String(); got != "Bearer secret" {
+		t.Fatalf("caller-owned group mutated: authorization = %q", got)
+	}
+}
+
 func BenchmarkLogCommonPath(b *testing.B) {
 	logger := slog.New(hotpathDiscardHandler{})
 	ctx := WithRequestID(WithRuntime(context.Background(), "bot"), "req-1")
@@ -117,5 +178,22 @@ func BenchmarkLogCommonPath(b *testing.B) {
 			slog.String("method", "GET"),
 			slog.Int("status", 200),
 		)
+	}
+}
+
+func BenchmarkSanitizeCleanGroup(b *testing.B) {
+	attr := slog.Group("request",
+		slog.String("method", "GET"),
+		slog.String("path", "/api/users"),
+		slog.Int("status", 200),
+	)
+	var out slog.Attr
+
+	b.ReportAllocs()
+	for range b.N {
+		out, _ = sanitizeAttrChanged(attr)
+	}
+	if !out.Equal(attr) {
+		b.Fatal("clean group changed")
 	}
 }
