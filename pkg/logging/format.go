@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strconv"
 	"strings"
 )
 
@@ -29,7 +30,9 @@ func newFormatHandler(level slog.Level, w io.Writer) slog.Handler {
 }
 
 // slog 기본값은 빌드 머신의 절대 경로를 모든 record에 싣는다.
-// dir/file 축약으로 빌드 디렉터리 구조 노출과 record 크기를 함께 줄인다.
+// dir/file 축약으로 빌드 디렉터리 구조 노출과 record 크기를 함께 줄이고,
+// "dir/file.go:line" 한 문자열로 평탄화해 record마다 드는 *slog.Source 재할당과
+// slog의 source group 전개 할당을 함께 없앤다.
 func shortenSource(groups []string, attr slog.Attr) slog.Attr {
 	if len(groups) > 0 || attr.Key != slog.SourceKey {
 		return attr
@@ -38,16 +41,22 @@ func shortenSource(groups []string, attr slog.Attr) slog.Attr {
 	if !ok {
 		return attr
 	}
-	return slog.Any(slog.SourceKey, &slog.Source{
-		Function: source.Function,
-		File:     lastPathSegments(source.File),
-		Line:     source.Line,
-	})
+	// PC 0 record는 빈 Source를 낳는다. 빈 Attr을 돌려줘야 slog이 통째로 생략한다.
+	// 평탄화 판본은 이 가드가 없으면 ":0"을 실어 생략을 되살리지 못한다.
+	if source.File == "" && source.Line == 0 {
+		return slog.Attr{}
+	}
+
+	var buf [128]byte
+	out := append(buf[:0], lastPathSegments(source.File)...)
+	out = append(out, ':')
+	out = strconv.AppendInt(out, int64(source.Line), 10)
+	return slog.String(slog.SourceKey, string(out))
 }
 
 // filepath.Join은 Clean 때문에 record마다 할당한다. 여기서는 substring slice로 충분하다.
-// 빈 경로에 ""를 돌려주는 것이 load-bearing이다. filepath 판본은 "."를 만들어, PC 0 record가
-// 낳는 빈 Source를 slog이 생략하지 못하게 되살린다.
+// 빈 경로에 ""를 돌려주는 것이 load-bearing이다. filepath 판본은 "."를 만들어, File만
+// 비어 있고 Line이 살아 있는 record에 ".:42" 같은 허위 경로를 남긴다.
 func lastPathSegments(path string) string {
 	base := strings.LastIndexByte(path, '/')
 	if base < 0 {
