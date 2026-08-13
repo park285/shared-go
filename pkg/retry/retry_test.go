@@ -3,6 +3,7 @@ package retry
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -399,5 +400,59 @@ func TestWithRetry_MaxAttemptsNormalizedToOne(t *testing.T) {
 	}
 	if callCount != 1 {
 		t.Errorf("expected 1 call, got %d", callCount)
+	}
+}
+
+func TestSleepReportsCancellationForNonPositiveDuration(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	for range 200 {
+		if Sleep(ctx, 0) {
+			t.Fatal("Sleep(cancelled, 0) = true, want false")
+		}
+	}
+}
+
+func TestWithRetryRejectsNegativeDelayOverride(t *testing.T) {
+	targetErr := errors.New("boom")
+	attempts := 0
+
+	err := WithRetry(context.Background(), RetryOptions{
+		MaxAttempts: 3,
+		BaseDelay:   time.Millisecond,
+		DelayOverride: func(error, time.Duration) (time.Duration, bool) {
+			return -3 * time.Second, true
+		},
+		OnRetry: func(int, error, time.Duration) {
+			t.Fatal("OnRetry called for an invalid delay override")
+		},
+		Sleep: func(context.Context, time.Duration) bool {
+			t.Fatal("Sleep called for an invalid delay override")
+			return true
+		},
+	}, func(_ context.Context) error {
+		attempts++
+		return targetErr
+	})
+
+	if !errors.Is(err, targetErr) {
+		t.Fatalf("WithRetry() error = %v, want original error preserved", err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "negative duration") {
+		t.Fatalf("WithRetry() error = %v, want invalid delay reason", err)
+	}
+	if attempts != 1 {
+		t.Fatalf("attempts = %d, want 1", attempts)
+	}
+}
+
+func TestRetryDelayWithoutMaxDelayKeepsUnboundedGrowth(t *testing.T) {
+	delay, err := retryDelay(RetryOptions{BaseDelay: time.Second, Jitter: time.Millisecond}, 6, nil)
+	if err != nil {
+		t.Fatalf("retryDelay() error = %v", err)
+	}
+	if delay < 64*time.Second {
+		t.Fatalf("retryDelay() = %v, want unbounded exponential growth without MaxDelay", delay)
 	}
 }

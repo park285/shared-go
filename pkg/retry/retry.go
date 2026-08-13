@@ -2,6 +2,7 @@ package retry
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -71,7 +72,11 @@ func handleRetryFailure(ctx context.Context, opts RetryOptions, attempt int, err
 	if attempt >= opts.MaxAttempts-1 {
 		return retryAttemptOutcome{done: true, err: err}
 	}
-	if !sleepBeforeRetry(ctx, opts, attempt, err) {
+	slept, delayErr := sleepBeforeRetry(ctx, opts, attempt, err)
+	if delayErr != nil {
+		return retryAttemptOutcome{done: true, err: errors.Join(err, delayErr)}
+	}
+	if !slept {
 		return retryAttemptOutcome{done: true, err: err}
 	}
 	return retryAttemptOutcome{lastErr: err}
@@ -101,28 +106,43 @@ func shouldContinueRetry(opts RetryOptions, err error) bool {
 	return opts.ShouldRetry == nil || opts.ShouldRetry(err)
 }
 
-func sleepBeforeRetry(ctx context.Context, opts RetryOptions, attempt int, err error) bool {
-	delay := retryDelay(opts, attempt, err)
+func sleepBeforeRetry(ctx context.Context, opts RetryOptions, attempt int, err error) (bool, error) {
+	delay, delayErr := retryDelay(opts, attempt, err)
+	if delayErr != nil {
+		return false, delayErr
+	}
 	if opts.OnRetry != nil {
 		opts.OnRetry(attempt+1, err, delay)
 	}
-	return opts.Sleep(ctx, delay)
+	return opts.Sleep(ctx, delay), nil
 }
 
-func retryDelay(opts RetryOptions, attempt int, err error) time.Duration {
+func retryDelay(opts RetryOptions, attempt int, err error) (time.Duration, error) {
 	delay := backoff.ComputeExponentialBackoff(attempt, opts.BaseDelay, 0, opts.Jitter)
 	if opts.DelayOverride != nil {
 		if override, ok := opts.DelayOverride(err, delay); ok {
+			if override < 0 {
+				return 0, fmt.Errorf("retry delay override returned negative duration %s", override)
+			}
 			delay = override
 		}
 	}
 	if opts.MaxDelay > 0 && delay > opts.MaxDelay {
-		return opts.MaxDelay
+		return opts.MaxDelay, nil
 	}
-	return delay
+	return delay, nil
 }
 
 func sleepWithContext(ctx context.Context, d time.Duration) bool {
+	// d가 0 이하면 timer가 즉시 발화해 select가 ctx.Done()과 무작위로 경합한다. 반환값은 호출자의
+	// 루프 계속 여부라, 취소를 약 절반의 확률로 놓치면 종료 중에도 다음 시도가 나간다.
+	if ctx.Err() != nil {
+		return false
+	}
+	if d <= 0 {
+		return true
+	}
+
 	timer := time.NewTimer(d)
 	defer timer.Stop()
 	select {
