@@ -11,6 +11,10 @@ type KeyedMutex struct {
 	shards [keyedMutexShardCount]sync.Mutex
 }
 
+// keyedMutexShard가 uint8을 반환하므로 shard 수가 256 미만이면 일부 hash가 인덱스 범위를
+// 벗어나 hot path에서 패닉한다. 음수 상수는 uint 변환에서 컴파일이 실패하므로 하한을 고정한다.
+const _ = uint(keyedMutexShardCount - 256)
+
 func (m *KeyedMutex) Lock(key string) {
 	m.shards[keyedMutexShard(key)].Lock()
 }
