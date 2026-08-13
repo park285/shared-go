@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -201,4 +203,78 @@ func writeSelfSignedCert(t *testing.T, serverName string) (string, string) {
 	}
 
 	return certFile, keyFile
+}
+
+func TestNewClientDialGuardRejectsUnusableDestination(t *testing.T) {
+	t.Parallel()
+
+	for _, target := range []string{"https://0.0.0.0:44443/probe", "https://[::]:44443/probe"} {
+		t.Run(target, func(t *testing.T) {
+			t.Parallel()
+
+			var (
+				mu   sync.Mutex
+				seen []net.IP
+			)
+
+			client, closeFn, err := NewClient(2*time.Second, ClientOptions{
+				DialGuard: func(ip net.IP) error {
+					mu.Lock()
+					defer mu.Unlock()
+
+					seen = append(seen, ip)
+
+					return nil
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			defer closeFn()
+
+			resp, err := client.Get(target)
+			if err == nil {
+				_ = resp.Body.Close()
+				t.Fatalf("Get(%s) error = nil, want the dial rejected before the guard", target)
+			}
+
+			if !strings.Contains(err.Error(), "unusable destination address") {
+				t.Fatalf("Get(%s) error = %v, want the unspecified-address rejection", target, err)
+			}
+
+			mu.Lock()
+			defer mu.Unlock()
+
+			if len(seen) != 0 {
+				t.Fatalf("DialGuard saw %v, want unusable destinations rejected before the guard runs", seen)
+			}
+		})
+	}
+}
+
+func TestPreferIPv4PreservesResolveUDPAddrSelection(t *testing.T) {
+	t.Parallel()
+
+	addresses := []net.IPAddr{
+		{IP: net.ParseIP("2001:db8::1")},
+		{IP: net.ParseIP("192.0.2.1")},
+	}
+	if got := preferIPv4(addresses); !got.IP.Equal(net.ParseIP("192.0.2.1")) {
+		t.Fatalf("preferIPv4() = %v, want IPv4 candidate", got)
+	}
+
+	ipv6Only := []net.IPAddr{{IP: net.ParseIP("fe80::1"), Zone: "tailscale0"}}
+	if got := preferIPv4(ipv6Only); !got.IP.Equal(ipv6Only[0].IP) || got.Zone != "tailscale0" {
+		t.Fatalf("preferIPv4() = %v, want sole IPv6 candidate with zone", got)
+	}
+}
+
+func TestDialHostPreservesIPv6Zone(t *testing.T) {
+	t.Parallel()
+
+	addr := net.IPAddr{IP: net.ParseIP("fe80::1"), Zone: "tailscale0"}
+	if got := dialHost(addr); got != "fe80::1%tailscale0" {
+		t.Fatalf("dialHost() = %q, want zone-qualified IPv6 host", got)
+	}
 }

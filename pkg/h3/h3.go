@@ -87,14 +87,34 @@ func NewClient(timeout time.Duration, opts ClientOptions) (*http.Client, func(),
 	if opts.DialGuard != nil {
 		guard := opts.DialGuard
 		transport.Dial = func(ctx context.Context, addr string, tlsCfg *tls.Config, cfg *quic.Config) (*quic.Conn, error) {
-			udpAddr, err := net.ResolveUDPAddr("udp", addr)
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, fmt.Errorf("split h3 dial addr %s: %w", addr, err)
+			}
+
+			// net.ResolveUDPAddr는 ctx를 받지 않는다. transport.Close()는 mutex를 쥔 채
+			// dial 취소를 기다리므로, 이름 해석이 ctx를 무시하면 종료와 그 client의 다른
+			// 요청이 resolver 타임아웃 전부를 함께 기다린다.
+			addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
 			if err != nil {
 				return nil, fmt.Errorf("resolve h3 dial addr %s: %w", addr, err)
 			}
-			if guardErr := guard(udpAddr.IP); guardErr != nil {
+			if len(addrs) == 0 {
+				return nil, fmt.Errorf("resolve h3 dial addr %s: no addresses", addr)
+			}
+
+			chosen := preferIPv4(addrs)
+
+			// net.IP의 판별 메서드는 nil/unspecified에서 전부 false라, 올바른 guard도
+			// 이 주소를 허용한다. guard에 넘기기 전에 거른다.
+			if len(chosen.IP) == 0 || chosen.IP.IsUnspecified() {
+				return nil, fmt.Errorf("reject h3 dial addr %s: unusable destination address", addr)
+			}
+
+			if guardErr := guard(chosen.IP); guardErr != nil {
 				return nil, guardErr
 			}
-			return quic.DialAddrEarly(ctx, udpAddr.String(), tlsCfg, cfg)
+			return quic.DialAddrEarly(ctx, net.JoinHostPort(dialHost(chosen), port), tlsCfg, cfg)
 		}
 	}
 
@@ -106,6 +126,27 @@ func NewClient(timeout time.Duration, opts ClientOptions) (*http.Client, func(),
 	return client, func() {
 		_ = transport.Close() //nolint:errcheck // 종료 시 transport 정리 실패는 무시
 	}, nil
+}
+
+// net.ResolveUDPAddr는 호스트명에 대해 addrList.first(isIPv4)로 IPv4를 우선 선택했다.
+// LookupIPAddr은 그 필터도 RFC 6724 정렬도 적용하지 않으므로, 여기서 복원하지 않으면
+// IPv6 egress가 없는 배포에서 AAAA를 골라 handshake 상한까지 매달린다.
+func preferIPv4(addrs []net.IPAddr) net.IPAddr {
+	for _, candidate := range addrs {
+		if candidate.IP.To4() != nil {
+			return candidate
+		}
+	}
+
+	return addrs[0]
+}
+
+func dialHost(addr net.IPAddr) string {
+	if addr.Zone == "" {
+		return addr.IP.String()
+	}
+
+	return addr.IP.String() + "%" + addr.Zone
 }
 
 func newClientQUICConfig() *quic.Config {
