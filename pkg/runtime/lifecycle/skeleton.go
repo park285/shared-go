@@ -2,6 +2,7 @@ package lifecycle
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/signal"
 	"syscall"
@@ -35,7 +36,7 @@ func Run(opts Options) error {
 
 	errCh := make(chan error, 1)
 	startRuntime(opts.Start, runCtx, errCh)
-	waitForStop(baseCtx, sigCh, errCh, opts.OnSignal, opts.OnError)
+	runtimeErr := waitForStop(baseCtx, sigCh, errCh, opts.OnSignal, opts.OnError)
 	beforeShutdown(opts.BeforeShutdown)
 
 	cancel()
@@ -43,7 +44,14 @@ func Run(opts Options) error {
 	shutdownCtx, shutdownCancel := shutdownContext(opts.ShutdownTimeout)
 	defer shutdownCancel()
 
-	return shutdown(opts.Shutdown, shutdownCtx)
+	shutdownErr := shutdown(opts.Shutdown, shutdownCtx)
+	if runtimeErr == nil {
+		return shutdownErr
+	}
+	if shutdownErr == nil {
+		return runtimeErr
+	}
+	return errors.Join(runtimeErr, shutdownErr)
 }
 
 func baseContext(ctx context.Context) context.Context {
@@ -80,25 +88,28 @@ func waitForStop(
 	errCh <-chan error,
 	onSignal func(os.Signal),
 	onError func(error),
-) {
+) error {
 	select {
 	case sig := <-sigCh:
 		handleSignal(onSignal, sig)
-		drainRuntimeError(errCh, onError)
+		return drainRuntimeError(errCh, onError)
 	case err := <-errCh:
 		handleRuntimeError(onError, err)
+		return err
 	case <-baseCtx.Done():
-		drainRuntimeError(errCh, onError)
+		return drainRuntimeError(errCh, onError)
 	}
 }
 
-func drainRuntimeError(errCh <-chan error, onError func(error)) {
+func drainRuntimeError(errCh <-chan error, onError func(error)) error {
 	select {
 	case err := <-errCh:
 		if err != nil {
 			handleRuntimeError(onError, err)
 		}
+		return err
 	default:
+		return nil
 	}
 }
 

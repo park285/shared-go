@@ -77,7 +77,7 @@ func TestRun_StopsOnSignalAndRunsShutdownWithTimeout(t *testing.T) {
 	}
 }
 
-func TestRun_StopsOnRuntimeErrorAndReturnsShutdownError(t *testing.T) {
+func TestRun_StopsOnRuntimeErrorAndReturnsRuntimeAndShutdownErrors(t *testing.T) {
 	t.Parallel()
 
 	runtimeErr := errors.New("runtime boom")
@@ -99,8 +99,11 @@ func TestRun_StopsOnRuntimeErrorAndReturnsShutdownError(t *testing.T) {
 			return shutdownErr
 		},
 	})
+	if !errors.Is(err, runtimeErr) {
+		t.Fatalf("Run() error = %v, want runtime error %v", err, runtimeErr)
+	}
 	if !errors.Is(err, shutdownErr) {
-		t.Fatalf("Run() error = %v, want %v", err, shutdownErr)
+		t.Fatalf("Run() error = %v, want shutdown error %v", err, shutdownErr)
 	}
 	if !errors.Is(gotErr, runtimeErr) {
 		t.Fatalf("OnError() error = %v, want %v", gotErr, runtimeErr)
@@ -254,10 +257,13 @@ func TestDrainRuntimeError_FiresOnErrorWhenErrorPending(t *testing.T) {
 	errCh <- pendingErr
 
 	var gotErr error
-	drainRuntimeError(errCh, func(err error) { gotErr = err })
+	drainedErr := drainRuntimeError(errCh, func(err error) { gotErr = err })
 
 	if !errors.Is(gotErr, pendingErr) {
 		t.Fatalf("OnError() error = %v, want %v", gotErr, pendingErr)
+	}
+	if !errors.Is(drainedErr, pendingErr) {
+		t.Fatalf("drainRuntimeError() error = %v, want %v", drainedErr, pendingErr)
 	}
 }
 
@@ -266,10 +272,13 @@ func TestDrainRuntimeError_NoOpWhenEmpty(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	called := false
-	drainRuntimeError(errCh, func(error) { called = true })
+	drainedErr := drainRuntimeError(errCh, func(error) { called = true })
 
 	if called {
 		t.Fatal("OnError() should not fire when errCh is empty")
+	}
+	if drainedErr != nil {
+		t.Fatalf("drainRuntimeError() error = %v, want nil", drainedErr)
 	}
 }
 
@@ -279,10 +288,13 @@ func TestDrainRuntimeError_SkipsNilError(t *testing.T) {
 	errCh := make(chan error, 1)
 	errCh <- nil
 	called := false
-	drainRuntimeError(errCh, func(error) { called = true })
+	drainedErr := drainRuntimeError(errCh, func(error) { called = true })
 
 	if called {
 		t.Fatal("OnError() should not fire for a nil error")
+	}
+	if drainedErr != nil {
+		t.Fatalf("drainRuntimeError() error = %v, want nil", drainedErr)
 	}
 }
 
@@ -312,8 +324,8 @@ func TestRun_SignalWithPendingErrorStillFiresOnError(t *testing.T) {
 			},
 			Shutdown: func(context.Context) error { return nil },
 		})
-		if err != nil {
-			t.Fatalf("iteration %d: Run() error = %v, want nil", i, err)
+		if !errors.Is(err, runtimeErr) {
+			t.Fatalf("iteration %d: Run() error = %v, want %v", i, err, runtimeErr)
 		}
 		if onErrorCount.Load() != 1 {
 			t.Fatalf("iteration %d: OnError() called %d times, want exactly 1", i, onErrorCount.Load())

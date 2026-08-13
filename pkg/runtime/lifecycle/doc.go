@@ -11,6 +11,10 @@
 // 아니라 취소 직후에 시작됩니다. Shutdown ctx는 별도 context이고 ShutdownTimeout(0 이하면
 // DefaultShutdownTimeout)으로 bounded합니다.
 //
+// runtime error는 OnError에 관측용으로 전달하면서 Run 반환값에도 보존합니다. shutdown도 실패하면
+// 두 error를 errors.Is/As로 각각 식별할 수 있도록 함께 반환합니다. runtime error 없이 signal이나
+// BaseContext 취소로 정상 종료하면 기존과 같이 shutdown 결과만 반환합니다.
+//
 // # 순서 있는 종료(RunCloseSteps) 계약
 //
 // RunCloseSteps의 다음 계약은 시그니처만으로는 드러나지 않습니다.
