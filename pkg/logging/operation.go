@@ -28,7 +28,7 @@ func RunOperation(ctx context.Context, logger *slog.Logger, opts OperationOption
 
 	start := time.Now()
 	if !opts.SkipStartLog {
-		Log(ctx, logger, opts.Level, eventOrDefault(opts.StartEvent, name+".started"), "operation started", baseAttrs...)
+		logWith(ctx, logger, opts.Level, eventOrDefault(opts.StartEvent, name+".started"), "operation started", callerSkipViaHelper, baseAttrs, nil)
 	}
 
 	err := fn(ctx)
@@ -37,11 +37,11 @@ func RunOperation(ctx context.Context, logger *slog.Logger, opts OperationOption
 
 	if err != nil {
 		attrs = append(attrs, ErrorAttrs(err)...)
-		Error(ctx, logger, eventOrDefault(opts.FailureEvent, name+".failed"), "operation failed", attrs...)
+		logWith(ctx, logger, slog.LevelError, eventOrDefault(opts.FailureEvent, name+".failed"), "operation failed", callerSkipViaHelper, attrs, nil)
 		return err
 	}
 
-	Log(ctx, logger, opts.Level, eventOrDefault(opts.SuccessEvent, name+".succeeded"), "operation succeeded", attrs...)
+	logWith(ctx, logger, opts.Level, eventOrDefault(opts.SuccessEvent, name+".succeeded"), "operation succeeded", callerSkipViaHelper, attrs, nil)
 	return nil
 }
 

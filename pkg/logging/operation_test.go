@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -169,6 +170,51 @@ func TestRunOperationUsesCustomEvents(t *testing.T) {
 			}
 			for i, wantEvent := range tt.wantEvents {
 				requireRecordValue(t, records[i], "event", wantEvent)
+			}
+		})
+	}
+}
+
+type operationSourceHandler struct {
+	pcs []uintptr
+}
+
+func (h *operationSourceHandler) Enabled(context.Context, slog.Level) bool { return true }
+
+func (h *operationSourceHandler) Handle(_ context.Context, record slog.Record) error {
+	h.pcs = append(h.pcs, record.PC)
+	return nil
+}
+
+func (h *operationSourceHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h *operationSourceHandler) WithGroup(string) slog.Handler      { return h }
+
+func TestRunOperationCapturesCallerSource(t *testing.T) {
+	tests := []struct {
+		name string
+		fn   func(context.Context) error
+	}{
+		{name: "success", fn: func(context.Context) error { return nil }},
+		{name: "failure", fn: func(context.Context) error { return errors.New("fail") }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := &operationSourceHandler{}
+
+			_ = RunOperation(context.Background(), slog.New(handler), OperationOptions{Name: "sync"}, tt.fn)
+
+			if len(handler.pcs) != 2 {
+				t.Fatalf("got %d records, want 2 (started + terminal)", len(handler.pcs))
+			}
+			for i, pc := range handler.pcs {
+				frame, _ := runtime.CallersFrames([]uintptr{pc}).Next()
+				if !strings.HasSuffix(frame.File, "pkg/logging/operation_test.go") {
+					t.Fatalf("record %d source = %s:%d, want the RunOperation call site rather than the RunOperation body", i, frame.File, frame.Line)
+				}
+				if !strings.Contains(frame.Function, "TestRunOperationCapturesCallerSource") {
+					t.Fatalf("record %d source function = %q, want the RunOperation caller", i, frame.Function)
+				}
 			}
 		})
 	}
