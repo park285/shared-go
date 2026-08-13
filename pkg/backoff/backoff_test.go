@@ -295,3 +295,53 @@ func TestComputeExponentialBackoffHalfJitter_InvalidInputsReturnZero(t *testing.
 		})
 	}
 }
+
+func TestNextExponentialBackoffTreatsNonPositiveMaxAsUnbounded(t *testing.T) {
+	t.Parallel()
+
+	for _, maxInterval := range []time.Duration{0, -time.Second} {
+		if got := NextExponentialBackoff(5*time.Second, maxInterval, time.Second); got <= 0 {
+			t.Fatalf("NextExponentialBackoff(max=%v) = %v, want a positive delay", maxInterval, got)
+		}
+	}
+}
+
+func TestNextExponentialBackoffCapsTheFirstStep(t *testing.T) {
+	t.Parallel()
+
+	if got := NextExponentialBackoff(0, 5*time.Second, 30*time.Second); got != 5*time.Second {
+		t.Fatalf("NextExponentialBackoff(current=0, max=5s, step=30s) = %v, want 5s", got)
+	}
+}
+
+func TestNextExponentialBackoffDoesNotOverflow(t *testing.T) {
+	t.Parallel()
+
+	if got := NextExponentialBackoff(time.Duration(math.MaxInt64-1), 0, time.Second); got <= 0 {
+		t.Fatalf("NextExponentialBackoff(near-max current) = %v, want a positive delay", got)
+	}
+}
+
+// maxInterval은 지수 항만 제한하고 jitter는 그 위에 더해지므로 실효 상한은 maxInterval+jitter-1이다.
+// 이 경계가 조용히 커지면 소비자의 재전송 지평 계산이 어긋난다.
+func TestComputeExponentialBackoffCapBoundsOnlyTheExponentialTerm(t *testing.T) {
+	t.Parallel()
+
+	const (
+		maxInterval = 10 * time.Millisecond
+		jitter      = 4 * time.Millisecond
+	)
+
+	highest := time.Duration(0)
+	for range 5000 {
+		highest = max(highest, ComputeExponentialBackoff(20, time.Millisecond, maxInterval, jitter))
+	}
+
+	if highest > maxInterval+jitter-1 {
+		t.Fatalf("highest = %v, want <= %v", highest, maxInterval+jitter-1)
+	}
+
+	if highest <= maxInterval {
+		t.Fatalf("highest = %v, want additive jitter above the %v cap", highest, maxInterval)
+	}
+}
