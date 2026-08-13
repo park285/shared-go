@@ -312,3 +312,36 @@ func (c *fakeSQLConn) Begin() (driver.Tx, error) {
 func (c *fakeSQLConn) ExecContext(context.Context, string, []driver.NamedValue) (driver.Result, error) {
 	return driver.RowsAffected(1), nil
 }
+
+func TestApplyRunsEachMigrationFileWithoutArguments(t *testing.T) {
+	t.Parallel()
+
+	body := "CREATE TABLE a(id int);\nCREATE TABLE b(id int);\n"
+	fsys := fstest.MapFS{
+		ManifestName: {Data: []byte("001 first.sql\n")},
+		"first.sql":  {Data: []byte(body)},
+	}
+
+	var calls []recordedExec
+	if err := Apply(context.Background(), fsys, recordingExec(&calls, "")); err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+
+	var applied *recordedExec
+
+	for i := range calls {
+		if calls[i].query == body {
+			applied = &calls[i]
+
+			break
+		}
+	}
+
+	if applied == nil {
+		t.Fatalf("migration body was never executed; calls = %v", calls)
+	}
+
+	if len(applied.args) != 0 {
+		t.Fatalf("migration body executed with %d arguments (%v); pgx only takes the simple protocol — and with it the implicit transaction that makes a multi-statement file atomic — when the argument list is empty", len(applied.args), applied.args)
+	}
+}
