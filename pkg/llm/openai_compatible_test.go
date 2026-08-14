@@ -279,6 +279,62 @@ func TestOpenAICompatibleJSONGeneratorDoesNotFallbackOnRefusal(t *testing.T) {
 	}
 }
 
+func TestOpenAICompatibleJSONGeneratorDoesNotFallbackOnEmptyOutput(t *testing.T) {
+	var paths []string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		writeJSON(t, w, `{"id":"resp-1","object":"response","created_at":1,"status":"completed","model":"gpt-test","output":[]}`)
+	}))
+	defer server.Close()
+
+	generator, err := NewOpenAICompatibleJSONGenerator(OpenAICompatibleConfig{
+		BaseURL:                      server.URL,
+		APIKey:                       "test-key",
+		AllowChatCompletionsFallback: true,
+	})
+	if err != nil {
+		t.Fatalf("NewOpenAICompatibleJSONGenerator error = %v", err)
+	}
+
+	_, err = generator.GenerateJSON(t.Context(), validJSONRequest())
+	if !errors.Is(err, ErrOpenAIEmptyOutput) {
+		t.Fatalf("GenerateJSON error = %v, want ErrOpenAIEmptyOutput", err)
+	}
+	if strings.Join(paths, ",") != "/responses" {
+		t.Fatalf("paths = %v, want no fallback", paths)
+	}
+}
+
+func TestOpenAICompatibleJSONGeneratorDoesNotFallbackOnServerError(t *testing.T) {
+	var paths []string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		http.Error(w, `{"error":{"message":"unavailable","type":"server_error","code":"server_error"}}`, http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	zeroRetries := 0
+	generator, err := NewOpenAICompatibleJSONGenerator(OpenAICompatibleConfig{
+		BaseURL:                      server.URL,
+		APIKey:                       "test-key",
+		AllowChatCompletionsFallback: true,
+		MaxRetries:                   &zeroRetries,
+	})
+	if err != nil {
+		t.Fatalf("NewOpenAICompatibleJSONGenerator error = %v", err)
+	}
+
+	_, err = generator.GenerateJSON(t.Context(), validJSONRequest())
+	if err == nil {
+		t.Fatal("GenerateJSON error = nil, want server error")
+	}
+	if strings.Join(paths, ",") != "/responses" {
+		t.Fatalf("paths = %v, want /responses without chat completions", paths)
+	}
+}
+
 func TestOpenAICompatibleJSONGeneratorEmptyOutputDiagnostic(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(t, w, `{"id":"resp-1","object":"response","created_at":1,"status":"completed","model":"gpt-test","output":[]}`)

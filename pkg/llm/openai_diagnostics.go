@@ -2,10 +2,8 @@ package llm
 
 import (
 	"errors"
-	"net"
 	"net/http"
 	"strings"
-	"syscall"
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/responses"
@@ -24,13 +22,10 @@ func shouldFallbackToChatCompletions(err error) bool {
 	if errors.Is(err, ErrOpenAIRefusalOutput) {
 		return false
 	}
-	if errors.Is(err, ErrOpenAIEmptyOutput) {
-		return true
-	}
 	if shouldFallbackOpenAIError(err) {
 		return true
 	}
-	return shouldFallbackNetworkError(err)
+	return false
 }
 
 func shouldFallbackOpenAIError(err error) bool {
@@ -45,8 +40,6 @@ func shouldFallbackOpenAIStatus(statusCode int) bool {
 	switch statusCode {
 	case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusNotImplemented:
 		return true
-	case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
-		return true
 	default:
 		return false
 	}
@@ -59,15 +52,6 @@ func shouldFallbackOpenAICode(code string) bool {
 	default:
 		return false
 	}
-}
-
-func shouldFallbackNetworkError(err error) bool {
-	if errors.Is(err, syscall.ECONNREFUSED) {
-		return true
-	}
-
-	var netErr net.Error
-	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
 func safeOpenAICompatibleError(err error) error {
