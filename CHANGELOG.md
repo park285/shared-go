@@ -3,6 +3,26 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## v1.51.0 - 2026-08-15
+
+### 추가
+
+- `kakaoformat`: Markdown을 카카오 일반챗 화면에 맞는 유니코드 평문으로 렌더하고, 오픈채팅 여부를 `IsOpenChat`으로 판별합니다.
+
+### 수정
+
+- `llm`: Chat Completions fallback 트리거를 미지원 엔드포인트로 제한합니다.
+- `lifecycle`: runtime 오류를 `Run` 반환값에 보존합니다.
+- `lockutil`: shard 배열 하한을 compile-time에 검증합니다.
+- `h3`: `DialGuard` DNS 해석을 request context에 연결합니다.
+- `retry`: invalid delay와 취소를 다음 attempt 전에 거부합니다.
+- `logging`: `RunOperation` 로그에 실제 호출자 source를 기록합니다.
+- `backoff`: 최초 지연 상한과 duration overflow를 보정합니다.
+
+### 기타
+
+- Go 툴체인 핀을 `1.26.6`으로 올립니다.
+
 ## v1.50.0 - 2026-08-12
 
 ### 호환성이 깨지는 변경
