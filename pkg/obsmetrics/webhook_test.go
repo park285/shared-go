@@ -109,3 +109,21 @@ func TestWebhookDiagnosticsExported(t *testing.T) {
 		}
 	}
 }
+
+func TestWebhookMetricsCanDisableLegacySchedulerFamilies(t *testing.T) {
+	t.Parallel()
+
+	metrics := NewWebhookMetrics("twentyq")
+	metrics.DisableLegacyQueueMetrics()
+	metrics.ObserveQueueDepth(7)
+	metrics.SetDiagnosticsSource(func() WebhookDiagnostics {
+		return WebhookDiagnostics{WorkersConfigured: 4, Pending: 2}
+	})
+
+	body := renderWebhook(t, metrics)
+	for _, forbidden := range []string{"twentyq_webhook_queue_depth", "twentyq_webhook_workers_configured"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("legacy scheduler metric %q was exported", forbidden)
+		}
+	}
+}

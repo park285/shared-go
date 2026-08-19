@@ -5,6 +5,14 @@
 
 ## 미출시
 
+## v1.52.1 - 2026-08-20
+
+### 추가
+
+- `obsmetrics.WebhookMetrics.DisableLegacyQueueMetrics`를 추가해 durable admission consumer가
+  생성하지 않은 in-memory scheduler gauge를 명시적으로 숨길 수 있게 했습니다. 기존 consumer의
+  기본 exposition은 유지합니다.
+
 ## v1.52.0 - 2026-08-20
 
 ### 추가

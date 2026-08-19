@@ -36,13 +36,22 @@ type WebhookMetrics struct {
 	enqueueFailures atomic.Uint64
 	accepted        atomic.Uint64
 
-	handlerDuration *Histogram
-	enqueueWait     *Histogram
-	decodeLatency   *Histogram
-	dedupLatency    *Histogram
-	queueDepth      atomic.Int64
+	handlerDuration            *Histogram
+	enqueueWait                *Histogram
+	decodeLatency              *Histogram
+	dedupLatency               *Histogram
+	queueDepth                 atomic.Int64
+	legacyQueueMetricsDisabled atomic.Bool
 
 	diagnosticsSource atomic.Pointer[func() WebhookDiagnostics]
+}
+
+// DisableLegacyQueueMetrics는 in-memory scheduler가 없는 durable consumer에서
+// legacy scheduler gauge와 diagnostics exposition을 끈다. 기존 consumer의 기본 동작은 유지한다.
+func (m *WebhookMetrics) DisableLegacyQueueMetrics() {
+	if m != nil {
+		m.legacyQueueMetricsDisabled.Store(true)
+	}
 }
 
 // NewWebhookMetrics는 prefix 네임스페이스(예: "chat_bot", "twentyq")로 webhook 메트릭을 만듭니다.
@@ -181,6 +190,10 @@ func (m *WebhookMetrics) Expose(w io.Writer) bool {
 		if !WriteHistogram(w, h.name, h.help, h.hist.Snapshot()) {
 			return false
 		}
+	}
+
+	if m.legacyQueueMetricsDisabled.Load() {
+		return true
 	}
 
 	if !WriteGauge(w, n("queue_depth"), "Current webhook worker queue depth.", strconv.FormatInt(m.queueDepth.Load(), 10)) {
