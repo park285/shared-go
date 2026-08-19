@@ -5,6 +5,18 @@
 
 ## 미출시
 
+## v1.53.0 - 2026-08-20
+
+### 호환성이 깨지는 변경
+
+- Stack Worker Contract v1 전환 뒤 남아 있던 `pkg/workerconfig` legacy profile decoder와
+  default fixture를 제거했습니다.
+- invalid capacity를 양수 기본값으로 clamp하던 `workerpool.NewManaged`를 제거하고 오류를
+  반환하는 `NewManagedPool`만 유지합니다.
+- `obsmetrics.WebhookDiagnostics`, `SetDiagnosticsSource`, `DisableLegacyQueueMetrics`와 generic
+  webhook queue/worker metric families를 제거했습니다. queue/executor 상태는 각 runtime의
+  sealed worker registry와 `iris_stack_worker_*`만 소유합니다.
+
 ## v1.52.3 - 2026-08-20
 
 ### 변경
