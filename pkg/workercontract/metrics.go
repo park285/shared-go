@@ -3,6 +3,7 @@ package workercontract
 import (
 	"fmt"
 	"io"
+	"maps"
 	"sort"
 	"strconv"
 	"strings"
@@ -174,9 +175,7 @@ func addSample(families map[string]*MetricFamily, family string, labels map[stri
 
 func cloneLabels(labels map[string]string) map[string]string {
 	clone := make(map[string]string, len(labels)+1)
-	for name, value := range labels {
-		clone[name] = value
-	}
+	maps.Copy(clone, labels)
 	return clone
 }
 
