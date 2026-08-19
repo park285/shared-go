@@ -180,17 +180,17 @@ func decodeProfile(raw []byte, identity Identity) (Profile, error) {
 }
 
 func decodeWorker(raw json.RawMessage, workerID string) (WorkerProfile, error) {
-	fields, err := decodeExactObject(raw, "workers."+workerID, "executor", "queue", "settings")
-	if err != nil {
-		return WorkerProfile{}, err
+	fields, fieldsErr := decodeExactObject(raw, "workers."+workerID, "executor", "queue", "settings")
+	if fieldsErr != nil {
+		return WorkerProfile{}, fieldsErr
 	}
-	executorFields, err := decodeExactObject(fields["executor"], "workers."+workerID+".executor", "enabled", "configured_workers", "attempt_timeout")
-	if err != nil {
-		return WorkerProfile{}, err
+	executorFields, executorErr := decodeExactObject(fields["executor"], "workers."+workerID+".executor", "enabled", "configured_workers", "attempt_timeout")
+	if executorErr != nil {
+		return WorkerProfile{}, executorErr
 	}
-	queueFields, err := decodeExactObject(fields["queue"], "workers."+workerID+".queue", "capacity", "max_age")
-	if err != nil {
-		return WorkerProfile{}, err
+	queueFields, queueErr := decodeExactObject(fields["queue"], "workers."+workerID+".queue", "capacity", "max_age")
+	if queueErr != nil {
+		return WorkerProfile{}, queueErr
 	}
 	var worker WorkerProfile
 	if err := decodeField(executorFields, "enabled", &worker.Executor.Enabled); err != nil {

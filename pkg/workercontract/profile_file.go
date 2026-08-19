@@ -59,6 +59,7 @@ func readRegularProfile(path string) ([]byte, error) {
 	if !before.Mode().IsRegular() {
 		return nil, profileFileError{code: ProfileFileTypeInvalid}
 	}
+	// #nosec G304 -- path is the explicit operator-owned profile source; Lstat/File.Stat inode checks reject substitution.
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, profileFileError{code: ProfileFileUnreadable}
