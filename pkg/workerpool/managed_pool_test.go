@@ -13,6 +13,10 @@ import (
 	"github.com/park285/shared-go/pkg/workerpool"
 )
 
+func trySubmit(pool *workerpool.ManagedPool, spec workerpool.JobSpec) bool {
+	return pool.TrySubmitResult(spec).Accepted
+}
+
 func TestManagedPoolCreatesJobBudgetAtDequeue(t *testing.T) {
 	pool := workerpool.NewManaged(workerpool.ManagedConfig{Workers: 1, QueueSize: 2})
 	t.Cleanup(func() {
@@ -25,7 +29,7 @@ func TestManagedPoolCreatesJobBudgetAtDequeue(t *testing.T) {
 
 	started := make(chan struct{})
 	release := make(chan struct{})
-	if !pool.TrySubmit(workerpool.JobSpec{
+	if !trySubmit(pool, workerpool.JobSpec{
 		Kind:    "blocker",
 		Timeout: time.Second,
 		Run: func(context.Context) {
@@ -42,7 +46,7 @@ func TestManagedPoolCreatesJobBudgetAtDequeue(t *testing.T) {
 	runResult := make(chan error, 1)
 	finalized := make(chan workerpool.JobOutcome, 1)
 	var finalizeCalls atomic.Int32
-	if !pool.TrySubmit(workerpool.JobSpec{
+	if !trySubmit(pool, workerpool.JobSpec{
 		Context: receiveCtx,
 		Kind:    "ask",
 		Timeout: 200 * time.Millisecond,
@@ -83,7 +87,7 @@ func TestManagedPoolFinalizesQueueRejectionExactlyOnce(t *testing.T) {
 	pool := workerpool.NewManaged(workerpool.ManagedConfig{Workers: 1, QueueSize: 1})
 	started := make(chan struct{})
 	release := make(chan struct{})
-	if !pool.TrySubmit(workerpool.JobSpec{
+	if !trySubmit(pool, workerpool.JobSpec{
 		Kind: "blocker",
 		Run: func(context.Context) {
 			close(started)
@@ -93,7 +97,7 @@ func TestManagedPoolFinalizesQueueRejectionExactlyOnce(t *testing.T) {
 		t.Fatal("TrySubmit(blocker) = false")
 	}
 	awaitClosed(t, started, "blocker start")
-	if !pool.TrySubmit(workerpool.JobSpec{Kind: "queued", Run: func(context.Context) {}}) {
+	if !trySubmit(pool, workerpool.JobSpec{Kind: "queued", Run: func(context.Context) {}}) {
 		t.Fatal("TrySubmit(queued) = false")
 	}
 
@@ -149,52 +153,6 @@ func TestManagedPoolRunNilRejectionClaimsFinalizer(t *testing.T) {
 	}
 }
 
-func TestManagedPoolLegacyTrySubmitLeavesRejectedFinalizeWithCaller(t *testing.T) {
-	pool := workerpool.NewManaged(workerpool.ManagedConfig{Workers: 1, QueueSize: 1})
-	started := make(chan struct{})
-	releaseRun := make(chan struct{})
-	finalized := make(chan struct{}, 1)
-	if !pool.TrySubmit(workerpool.JobSpec{Run: func(context.Context) {
-		close(started)
-		<-releaseRun
-	}}) {
-		t.Fatal("TrySubmit(blocker) = false")
-	}
-	awaitClosed(t, started, "blocker start")
-	if !pool.TrySubmit(workerpool.JobSpec{Run: func(context.Context) {}}) {
-		t.Fatal("TrySubmit(queued) = false")
-	}
-
-	begin := time.Now()
-	if pool.TrySubmit(workerpool.JobSpec{
-		Kind: "rejected",
-		Run:  func(context.Context) {},
-		Finalize: func(context.Context, workerpool.JobOutcome) {
-			finalized <- struct{}{}
-		},
-	}) {
-		t.Fatal("TrySubmit(rejected) = true")
-	}
-	if elapsed := time.Since(begin); elapsed > 100*time.Millisecond {
-		t.Fatalf("TrySubmit(rejected) elapsed = %v, want bounded return", elapsed)
-	}
-	select {
-	case <-finalized:
-		t.Fatal("legacy TrySubmit claimed a rejected finalizer without returning ownership")
-	case <-time.After(50 * time.Millisecond):
-	}
-	if snapshot := pool.Snapshot(); snapshot.Finalizer.Reservations != 0 {
-		t.Fatalf("finalizer reservations = %d, want 0 after caller-owned rejection", snapshot.Finalizer.Reservations)
-	}
-
-	close(releaseRun)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	if err := pool.CloseContext(ctx); err != nil {
-		t.Fatalf("CloseContext() error = %v", err)
-	}
-}
-
 func TestManagedPoolReaperFinalizesStaleJobWhileWorkersAreBusy(t *testing.T) {
 	pool := workerpool.NewManaged(workerpool.ManagedConfig{Workers: 1, QueueSize: 2})
 	started := make(chan struct{})
@@ -209,7 +167,7 @@ func TestManagedPoolReaperFinalizesStaleJobWhileWorkersAreBusy(t *testing.T) {
 			t.Errorf("CloseContext() error = %v", err)
 		}
 	})
-	if !pool.TrySubmit(workerpool.JobSpec{
+	if !trySubmit(pool, workerpool.JobSpec{
 		Kind: "blocker",
 		Run: func(context.Context) {
 			close(started)
@@ -223,7 +181,7 @@ func TestManagedPoolReaperFinalizesStaleJobWhileWorkersAreBusy(t *testing.T) {
 	finalized := make(chan workerpool.JobOutcome, 1)
 	var runCalls atomic.Int32
 	var finalizeCalls atomic.Int32
-	if !pool.TrySubmit(workerpool.JobSpec{
+	if !trySubmit(pool, workerpool.JobSpec{
 		Kind:        "stale",
 		MaxQueueAge: 30 * time.Millisecond,
 		Run:         func(context.Context) { runCalls.Add(1) },
@@ -251,7 +209,7 @@ func TestManagedPoolSnapshotReportsQueueInFlightAgeAndOutcomes(t *testing.T) {
 	pool := workerpool.NewManaged(workerpool.ManagedConfig{Workers: 1, QueueSize: 1})
 	started := make(chan struct{})
 	release := make(chan struct{})
-	if !pool.TrySubmit(workerpool.JobSpec{
+	if !trySubmit(pool, workerpool.JobSpec{
 		Kind: "running",
 		Run: func(context.Context) {
 			close(started)
@@ -261,10 +219,10 @@ func TestManagedPoolSnapshotReportsQueueInFlightAgeAndOutcomes(t *testing.T) {
 		t.Fatal("TrySubmit(running) = false")
 	}
 	awaitClosed(t, started, "running job start")
-	if !pool.TrySubmit(workerpool.JobSpec{Kind: "queued", Run: func(context.Context) {}}) {
+	if !trySubmit(pool, workerpool.JobSpec{Kind: "queued", Run: func(context.Context) {}}) {
 		t.Fatal("TrySubmit(queued) = false")
 	}
-	if pool.TrySubmit(workerpool.JobSpec{Kind: "rejected", Run: func(context.Context) {}}) {
+	if trySubmit(pool, workerpool.JobSpec{Kind: "rejected", Run: func(context.Context) {}}) {
 		t.Fatal("TrySubmit(rejected) = true")
 	}
 	time.Sleep(time.Millisecond)
@@ -293,7 +251,7 @@ func TestManagedPoolShutdownDropsQueuedAndCancelsInFlight(t *testing.T) {
 	started := make(chan struct{})
 	runCause := make(chan error, 1)
 	runOutcome := make(chan workerpool.JobOutcome, 1)
-	if !pool.TrySubmit(workerpool.JobSpec{
+	if !trySubmit(pool, workerpool.JobSpec{
 		Kind: "running",
 		Run: func(ctx context.Context) {
 			close(started)
@@ -311,7 +269,7 @@ func TestManagedPoolShutdownDropsQueuedAndCancelsInFlight(t *testing.T) {
 	queuedOutcome := make(chan workerpool.JobOutcome, 1)
 	var queuedRuns atomic.Int32
 	var queuedFinalizers atomic.Int32
-	if !pool.TrySubmit(workerpool.JobSpec{
+	if !trySubmit(pool, workerpool.JobSpec{
 		Kind: "queued",
 		Run:  func(context.Context) { queuedRuns.Add(1) },
 		Finalize: func(_ context.Context, outcome workerpool.JobOutcome) {
@@ -348,7 +306,7 @@ func TestManagedPoolClassifiesTimeoutCause(t *testing.T) {
 	pool := workerpool.NewManaged(workerpool.ManagedConfig{Workers: 1, QueueSize: 1})
 	causeCh := make(chan error, 1)
 	outcomeCh := make(chan workerpool.JobOutcome, 1)
-	if !pool.TrySubmit(workerpool.JobSpec{
+	if !trySubmit(pool, workerpool.JobSpec{
 		Kind:    "timeout",
 		Timeout: 20 * time.Millisecond,
 		Run: func(ctx context.Context) {
@@ -392,7 +350,7 @@ func TestManagedPoolStartsConfiguredWorkersForPreloadedQueue(t *testing.T) {
 		}
 	})
 	for index := range 4 {
-		if !pool.TrySubmit(workerpool.JobSpec{
+		if !trySubmit(pool, workerpool.JobSpec{
 			Kind: fmt.Sprintf("parallel-%d", index),
 			Run: func(context.Context) {
 				started <- struct{}{}
@@ -433,7 +391,7 @@ func TestManagedPoolWakesConfiguredWorkersAlreadyWaiting(t *testing.T) {
 	// 모든 worker가 빈 queue에서 대기하도록 한 뒤 한 scheduler turn에 작업을 넣는다.
 	time.Sleep(20 * time.Millisecond)
 	for index := range 4 {
-		if !pool.TrySubmit(workerpool.JobSpec{
+		if !trySubmit(pool, workerpool.JobSpec{
 			Kind: fmt.Sprintf("waiting-%d", index),
 			Run: func(context.Context) {
 				started <- struct{}{}
@@ -459,13 +417,13 @@ func TestManagedPoolCloseContextReturnsWhenQueuedFinalizerDoesNotReturn(t *testi
 	releaseRun := make(chan struct{})
 	releaseFinalize := make(chan struct{})
 	pool := workerpool.NewManaged(workerpool.ManagedConfig{Workers: 1, QueueSize: 2, FinalizeTimeout: time.Millisecond})
-	if !pool.TrySubmit(workerpool.JobSpec{Run: func(context.Context) {
+	if !trySubmit(pool, workerpool.JobSpec{Run: func(context.Context) {
 		close(started)
 		<-releaseRun
 	}}) {
 		t.Fatal("first TrySubmit() = false")
 	}
-	if !pool.TrySubmit(workerpool.JobSpec{
+	if !trySubmit(pool, workerpool.JobSpec{
 		Run: func(context.Context) {},
 		Finalize: func(context.Context, workerpool.JobOutcome) {
 			<-releaseFinalize
@@ -495,13 +453,13 @@ func TestManagedPoolCloseContextWaitsForQueuedFinalizerCompletion(t *testing.T) 
 	started := make(chan struct{})
 	releaseFinalize := make(chan struct{})
 	pool := workerpool.NewManaged(workerpool.ManagedConfig{Workers: 1, QueueSize: 2})
-	if !pool.TrySubmit(workerpool.JobSpec{Run: func(ctx context.Context) {
+	if !trySubmit(pool, workerpool.JobSpec{Run: func(ctx context.Context) {
 		close(started)
 		<-ctx.Done()
 	}}) {
 		t.Fatal("TrySubmit(running) = false")
 	}
-	if !pool.TrySubmit(workerpool.JobSpec{
+	if !trySubmit(pool, workerpool.JobSpec{
 		Run: func(context.Context) {},
 		Finalize: func(context.Context, workerpool.JobOutcome) {
 			<-releaseFinalize
@@ -544,7 +502,7 @@ func TestManagedPoolFinalizerDispatchDrainsAfterCloseWhileCallbackStillRuns(t *t
 		FinalizeConcurrency: 1,
 		FinalizeQueueSize:   2,
 	})
-	if !pool.TrySubmit(workerpool.JobSpec{
+	if !trySubmit(pool, workerpool.JobSpec{
 		Run: func(context.Context) {},
 		Finalize: func(context.Context, workerpool.JobOutcome) {
 			close(firstStarted)
@@ -554,7 +512,7 @@ func TestManagedPoolFinalizerDispatchDrainsAfterCloseWhileCallbackStillRuns(t *t
 		t.Fatal("TrySubmit(first) = false")
 	}
 	awaitClosed(t, firstStarted, "first finalizer start")
-	if !pool.TrySubmit(workerpool.JobSpec{
+	if !trySubmit(pool, workerpool.JobSpec{
 		Run: func(context.Context) {},
 		Finalize: func(context.Context, workerpool.JobOutcome) {
 			close(secondStarted)
@@ -607,7 +565,7 @@ func TestManagedPoolAcceptedJobsRetainFinalizerReservation(t *testing.T) {
 		FinalizeTimeout:     time.Second,
 	})
 	for index := range 2 {
-		if !pool.TrySubmit(workerpool.JobSpec{
+		if !trySubmit(pool, workerpool.JobSpec{
 			Kind: fmt.Sprintf("reserved-%d", index),
 			Run: func(context.Context) {
 				runCalls.Add(1)
@@ -676,7 +634,7 @@ func TestManagedPoolAcceptedQueuedFinalizerStartsAfterSlotReturns(t *testing.T) 
 		FinalizeQueueSize:   2,
 		FinalizeTimeout:     finalizeTimeout,
 	})
-	if !pool.TrySubmit(workerpool.JobSpec{
+	if !trySubmit(pool, workerpool.JobSpec{
 		Run: func(context.Context) {},
 		Finalize: func(ctx context.Context, _ workerpool.JobOutcome) {
 			firstCalls.Add(1)
@@ -686,7 +644,7 @@ func TestManagedPoolAcceptedQueuedFinalizerStartsAfterSlotReturns(t *testing.T) 
 	}) {
 		t.Fatal("TrySubmit(first finalizer) = false")
 	}
-	if !pool.TrySubmit(workerpool.JobSpec{
+	if !trySubmit(pool, workerpool.JobSpec{
 		Run: func(context.Context) {},
 		Finalize: func(ctx context.Context, outcome workerpool.JobOutcome) {
 			secondCalls.Add(1)
@@ -751,7 +709,7 @@ func TestManagedPoolFinalizerReportsLateCompletionOnce(t *testing.T) {
 		FinalizeQueueSize: 1,
 		FinalizeTimeout:   20 * time.Millisecond,
 	})
-	if !pool.TrySubmit(workerpool.JobSpec{
+	if !trySubmit(pool, workerpool.JobSpec{
 		Run: func(context.Context) {},
 		Finalize: func(ctx context.Context, _ workerpool.JobOutcome) {
 			<-ctx.Done()
@@ -794,7 +752,7 @@ func TestManagedPoolFinalizerReportsLateCompletionOnce(t *testing.T) {
 
 func TestManagedPoolFinalizerContainsPanic(t *testing.T) {
 	pool := workerpool.NewManaged(workerpool.ManagedConfig{Workers: 1, QueueSize: 1})
-	if !pool.TrySubmit(workerpool.JobSpec{
+	if !trySubmit(pool, workerpool.JobSpec{
 		Run: func(context.Context) {},
 		Finalize: func(context.Context, workerpool.JobOutcome) {
 			panic("finalizer panic")
@@ -805,7 +763,7 @@ func TestManagedPoolFinalizerContainsPanic(t *testing.T) {
 	awaitManagedSnapshot(t, pool, "finalizer panic", func(snapshot workerpool.ManagedSnapshot) bool {
 		return snapshot.Finalizer.Panicked == 1 && snapshot.Finalizer.InFlight == 0
 	})
-	if !pool.TrySubmit(workerpool.JobSpec{Run: func(context.Context) {}}) {
+	if !trySubmit(pool, workerpool.JobSpec{Run: func(context.Context) {}}) {
 		t.Fatal("TrySubmit(after finalizer panic) = false")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)

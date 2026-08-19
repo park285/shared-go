@@ -243,19 +243,12 @@ func (p *ManagedPool) Snapshot() ManagedSnapshot {
 	return snapshot
 }
 
-// TrySubmit은 작업을 기다리지 않고 queue에 admission한다.
-// false이면 pool은 Finalize를 호출하지 않으며 callback ownership은 호출자에게 남는다.
-// rejected callback도 pool에 위임해야 하는 caller는 TrySubmitResult를 사용한다.
-func (p *ManagedPool) TrySubmit(spec JobSpec) bool {
-	return p.trySubmit(spec, false).Accepted
-}
-
-// TrySubmitResult는 TrySubmit과 같은 admission을 수행하고 Finalize callback의 ownership을 반환한다.
+// TrySubmitResult는 작업을 기다리지 않고 queue에 admission하고 Finalize callback의 ownership을 반환한다.
 func (p *ManagedPool) TrySubmitResult(spec JobSpec) ManagedSubmitResult {
-	return p.trySubmit(spec, true)
+	return p.trySubmit(spec)
 }
 
-func (p *ManagedPool) trySubmit(spec JobSpec, claimRejectedFinalizer bool) ManagedSubmitResult {
+func (p *ManagedPool) trySubmit(spec JobSpec) ManagedSubmitResult {
 	if p == nil {
 		return ManagedSubmitResult{Reason: ManagedSubmitRejected}
 	}
@@ -272,13 +265,13 @@ func (p *ManagedPool) trySubmit(spec JobSpec, claimRejectedFinalizer bool) Manag
 		}
 	}
 	if spec.Run == nil {
-		return p.rejectSubmission(job, claimRejectedFinalizer)
+		return p.rejectSubmission(job)
 	}
 
 	p.mu.Lock()
 	if p.closed || len(p.queue) >= p.queueSize {
 		p.mu.Unlock()
-		return p.rejectSubmission(job, claimRejectedFinalizer)
+		return p.rejectSubmission(job)
 	}
 	p.queue = append(p.queue, job)
 	p.workAvailable.Signal()
@@ -293,20 +286,9 @@ func (p *ManagedPool) trySubmit(spec JobSpec, claimRejectedFinalizer bool) Manag
 	}
 }
 
-func (p *ManagedPool) rejectSubmission(job *managedJob, claimFinalizer bool) ManagedSubmitResult {
-	if claimFinalizer {
-		p.finalizeJob(job, JobOutcomeRejected)
-		return rejectedSubmitResult(job.finalizerReserved)
-	}
-
-	job.finalizeOnce.Do(func() {
-		p.mu.Lock()
-		p.outcomes[JobOutcomeRejected]++
-		p.mu.Unlock()
-		p.finalizer.Release(job.finalizerReserved)
-		job.finalizerReserved = false
-	})
-	return ManagedSubmitResult{Reason: ManagedSubmitRejected}
+func (p *ManagedPool) rejectSubmission(job *managedJob) ManagedSubmitResult {
+	p.finalizeJob(job, JobOutcomeRejected)
+	return rejectedSubmitResult(job.finalizerReserved)
 }
 
 func rejectedSubmitResult(finalizerClaimed bool) ManagedSubmitResult {

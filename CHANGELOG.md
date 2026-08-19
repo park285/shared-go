@@ -3,6 +3,14 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## 미출시
+
+### 호환성이 깨지는 변경
+
+- `workerpool.ManagedPool.TrySubmit`을 제거하고 admission 결과와 rejection finalizer ownership을
+  함께 반환하는 `TrySubmitResult`로 단일화했습니다. 스택 내 소비자는 모두
+  `Accepted`와 `FinalizerClaimed`를 확인하도록 이관했습니다.
+
 ## v1.51.0 - 2026-08-15
 
 ### 추가

@@ -23,7 +23,7 @@ func TestManagedPoolStuckFinalizerPermanentlyBlocksAdmission(t *testing.T) {
 		FinalizeTimeout:     20 * time.Millisecond,
 	})
 
-	if !pool.TrySubmit(workerpool.JobSpec{
+	if !trySubmit(pool, workerpool.JobSpec{
 		Run:      func(context.Context) {},
 		Finalize: func(context.Context, workerpool.JobOutcome) { <-release },
 	}) {
@@ -54,7 +54,7 @@ func TestManagedPoolStuckFinalizerPermanentlyBlocksAdmission(t *testing.T) {
 		t.Fatalf("finalizer snapshot = %+v, want the overdue slot still holding its reservation", blocked.Finalizer)
 	}
 	runCompleted := make(chan struct{})
-	if !pool.TrySubmit(workerpool.JobSpec{Run: func(context.Context) { close(runCompleted) }}) {
+	if !trySubmit(pool, workerpool.JobSpec{Run: func(context.Context) { close(runCompleted) }}) {
 		t.Fatal("TrySubmit(no finalizer) = false, want admission unaffected without a finalizer")
 	}
 	awaitClosed(t, runCompleted, "run-only job")
