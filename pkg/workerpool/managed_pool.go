@@ -11,8 +11,6 @@ import (
 	"time"
 )
 
-const defaultFinalizeTimeout = 5 * time.Second
-
 // ErrJobTimeout은 dequeue 이후 job budget이 소진된 원인이다.
 var ErrJobTimeout = errors.New("managed worker job timeout")
 
@@ -193,31 +191,6 @@ type ManagedPool struct {
 	admissionsRejected uint64
 	finalizer          *managedFinalizer
 	logger             *slog.Logger
-}
-
-// NewManaged는 v1.51 이하 소비자의 bounded rollout 호환 경로다.
-// 새 호출부는 validation error를 보존하는 NewManagedPool을 사용한다.
-// Deprecated: use NewManagedPool.
-func NewManaged(config ManagedConfig) *ManagedPool {
-	if config.Workers < 1 {
-		config.Workers = 1
-	}
-	if config.QueueSize < 1 {
-		config.QueueSize = 1
-	}
-	if config.FinalizeTimeout <= 0 {
-		config.FinalizeTimeout = defaultFinalizeTimeout
-	}
-	if config.FinalizeConcurrency < 1 {
-		config.FinalizeConcurrency = config.Workers
-	}
-	if config.FinalizeQueueSize < 1 {
-		config.FinalizeQueueSize = config.Workers + config.QueueSize
-	}
-	if config.Logger == nil {
-		config.Logger = slog.Default()
-	}
-	return newManagedPool(config)
 }
 
 // NewManagedPool은 explicit config를 검증한 뒤 ManagedPool을 시작한다.

@@ -38,7 +38,7 @@ func TestWebhookMetricsPrefixNaming(t *testing.T) {
 	}
 }
 
-func TestWebhookMetricsHistogramAndGauge(t *testing.T) {
+func TestWebhookMetricsHistogramAndRetiredQueueGauge(t *testing.T) {
 	t.Parallel()
 
 	m := NewWebhookMetrics("twentyq")
@@ -51,11 +51,13 @@ func TestWebhookMetricsHistogramAndGauge(t *testing.T) {
 	for _, want := range []string{
 		"twentyq_webhook_handler_duration_seconds_count 2",
 		"twentyq_webhook_handler_duration_seconds_bucket",
-		"twentyq_webhook_queue_depth 3",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("body missing %q:\n%s", want, body)
 		}
+	}
+	if strings.Contains(body, "twentyq_webhook_queue_depth") {
+		t.Fatalf("retired scheduler metric was exported:\n%s", body)
 	}
 }
 
@@ -78,52 +80,22 @@ func TestWebhookMetricsDecodeLatencyHistogram(t *testing.T) {
 	}
 }
 
-func TestWebhookDiagnosticsExported(t *testing.T) {
-	t.Parallel()
-
-	m := NewWebhookMetrics("chat_bot")
-	m.SetDiagnosticsSource(func() WebhookDiagnostics {
-		return WebhookDiagnostics{
-			WorkersConfigured: 16,
-			QueueSize:         1000,
-			Pending:           4,
-			InFlight:          2,
-			EnqueueRejected:   9,
-			QueueFullCount:    5,
-			HandlerTimeouts:   3,
-		}
-	})
-
-	body := renderWebhook(t, m)
-	for _, want := range []string{
-		"chat_bot_webhook_workers_configured 16",
-		"chat_bot_webhook_queue_size 1000",
-		"chat_bot_webhook_pending 4",
-		"chat_bot_webhook_inflight 2",
-		"chat_bot_webhook_enqueue_rejected_total 9",
-		"chat_bot_webhook_queue_full_total 5",
-		"chat_bot_webhook_handler_timeouts_total 3",
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("body missing %q:\n%s", want, body)
-		}
-	}
-}
-
-func TestWebhookMetricsCanDisableLegacySchedulerFamilies(t *testing.T) {
+func TestWebhookMetricsOmitRetiredSchedulerFamilies(t *testing.T) {
 	t.Parallel()
 
 	metrics := NewWebhookMetrics("twentyq")
-	metrics.DisableLegacyQueueMetrics()
 	metrics.ObserveQueueDepth(7)
-	metrics.SetDiagnosticsSource(func() WebhookDiagnostics {
-		return WebhookDiagnostics{WorkersConfigured: 4, Pending: 2}
-	})
 
 	body := renderWebhook(t, metrics)
-	for _, forbidden := range []string{"twentyq_webhook_queue_depth", "twentyq_webhook_workers_configured"} {
+	for _, forbidden := range []string{
+		"twentyq_webhook_queue_depth",
+		"twentyq_webhook_workers_configured",
+		"twentyq_webhook_queue_size",
+		"twentyq_webhook_pending",
+		"twentyq_webhook_inflight",
+	} {
 		if strings.Contains(body, forbidden) {
-			t.Fatalf("legacy scheduler metric %q was exported", forbidden)
+			t.Fatalf("retired scheduler metric %q was exported", forbidden)
 		}
 	}
 }

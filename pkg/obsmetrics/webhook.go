@@ -2,7 +2,6 @@ package obsmetrics
 
 import (
 	"io"
-	"strconv"
 	"sync/atomic"
 	"time"
 )
@@ -10,17 +9,6 @@ import (
 // WebhookLatencyBuckets는 ms~분 범위를 덮는 초 단위 히스토그램 경계입니다.
 var WebhookLatencyBuckets = []float64{
 	0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120,
-}
-
-// WebhookDiagnostics는 webhook 워커/큐 진단 스냅샷을 메트릭으로 노출하기 위한 운영 값입니다.
-type WebhookDiagnostics struct {
-	WorkersConfigured int
-	QueueSize         int
-	Pending           int
-	InFlight          int
-	EnqueueRejected   uint64
-	QueueFullCount    uint64
-	HandlerTimeouts   uint64
 }
 
 // WebhookMetrics는 iris-client-go webhook.Metrics 관측 포인트를 prefix 네임스페이스
@@ -36,22 +24,10 @@ type WebhookMetrics struct {
 	enqueueFailures atomic.Uint64
 	accepted        atomic.Uint64
 
-	handlerDuration            *Histogram
-	enqueueWait                *Histogram
-	decodeLatency              *Histogram
-	dedupLatency               *Histogram
-	queueDepth                 atomic.Int64
-	legacyQueueMetricsDisabled atomic.Bool
-
-	diagnosticsSource atomic.Pointer[func() WebhookDiagnostics]
-}
-
-// DisableLegacyQueueMetrics는 in-memory scheduler가 없는 durable consumer에서
-// legacy scheduler gauge와 diagnostics exposition을 끈다. 기존 consumer의 기본 동작은 유지한다.
-func (m *WebhookMetrics) DisableLegacyQueueMetrics() {
-	if m != nil {
-		m.legacyQueueMetricsDisabled.Store(true)
-	}
+	handlerDuration *Histogram
+	enqueueWait     *Histogram
+	decodeLatency   *Histogram
+	dedupLatency    *Histogram
 }
 
 // NewWebhookMetrics는 prefix 네임스페이스(예: "chat_bot", "twentyq")로 webhook 메트릭을 만듭니다.
@@ -119,31 +95,14 @@ func (m *WebhookMetrics) ObserveEnqueueWait(d time.Duration) {
 	}
 }
 
-func (m *WebhookMetrics) ObserveQueueDepth(depth int) {
-	if m != nil {
-		m.queueDepth.Store(int64(depth))
-	}
-}
+// ObserveQueueDepth는 iris-client-go webhook.Metrics 계약을 구현한다. Scheduler queue는
+// Stack Worker Contract registry가 소유하므로 generic webhook metric으로 중복 노출하지 않는다.
+func (m *WebhookMetrics) ObserveQueueDepth(_ int) {}
 
 func (m *WebhookMetrics) ObserveHandlerDuration(d time.Duration) {
 	if m != nil && m.handlerDuration != nil {
 		m.handlerDuration.Observe(d.Seconds())
 	}
-}
-
-// SetDiagnosticsSource는 워커/큐 진단 스냅샷을 노출 시점에 읽어올 콜백을 등록합니다. nil이면 진단 게이지를 생략합니다.
-func (m *WebhookMetrics) SetDiagnosticsSource(source func() WebhookDiagnostics) {
-	if m == nil {
-		return
-	}
-
-	if source == nil {
-		m.diagnosticsSource.Store(nil)
-
-		return
-	}
-
-	m.diagnosticsSource.Store(&source)
 }
 
 // Expose는 <prefix>_webhook_* 메트릭을 Prometheus 텍스트 포맷으로 직렬화합니다.
@@ -188,56 +147,6 @@ func (m *WebhookMetrics) Expose(w io.Writer) bool {
 		}
 
 		if !WriteHistogram(w, h.name, h.help, h.hist.Snapshot()) {
-			return false
-		}
-	}
-
-	if m.legacyQueueMetricsDisabled.Load() {
-		return true
-	}
-
-	if !WriteGauge(w, n("queue_depth"), "Current webhook worker queue depth.", strconv.FormatInt(m.queueDepth.Load(), 10)) {
-		return false
-	}
-
-	return m.writeDiagnostics(w, n)
-}
-
-func (m *WebhookMetrics) writeDiagnostics(w io.Writer, n func(string) string) bool {
-	source := m.diagnosticsSource.Load()
-	if source == nil {
-		return true
-	}
-
-	diag := (*source)()
-
-	gauges := []struct {
-		name  string
-		help  string
-		value int64
-	}{
-		{n("workers_configured"), "Configured webhook worker count.", int64(diag.WorkersConfigured)},
-		{n("queue_size"), "Configured webhook queue size.", int64(diag.QueueSize)},
-		{n("pending"), "Webhook requests queued and not yet started.", int64(diag.Pending)},
-		{n("inflight"), "Webhook requests currently being handled.", int64(diag.InFlight)},
-	}
-	for _, g := range gauges {
-		if !WriteGauge(w, g.name, g.help, strconv.FormatInt(g.value, 10)) {
-			return false
-		}
-	}
-
-	counters := []struct {
-		name  string
-		help  string
-		value uint64
-	}{
-		{n("enqueue_rejected_total"), "Total webhook requests rejected at enqueue time.", diag.EnqueueRejected},
-		{n("queue_full_total"), "Total webhook requests dropped because the queue was full.", diag.QueueFullCount},
-		{n("handler_timeouts_total"), "Total webhook handler executions that timed out.", diag.HandlerTimeouts},
-	}
-	for _, c := range counters {
-		if !WriteCounter(w, c.name, c.help, c.value) {
 			return false
 		}
 	}

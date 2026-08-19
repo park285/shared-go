@@ -122,7 +122,7 @@ func (r *Registry) Register(registration Registration) error {
 	if profileWorker.Executor.Enabled && registration.ExecutorSnapshot == nil {
 		return fmt.Errorf("worker registry: %s: executor snapshot source required", registration.WorkerID)
 	}
-	if registration.QueueSnapshot == nil && !(registration.QueueBackend == QueueMemory && !profileWorker.Executor.Enabled) {
+	if registration.QueueSnapshot == nil && (registration.QueueBackend != QueueMemory || profileWorker.Executor.Enabled) {
 		return fmt.Errorf("worker registry: %s: queue snapshot source required", registration.WorkerID)
 	}
 	if profileWorker.Executor.AttemptTimeout.Mode == DurationModePerJob && !registration.PerJobDeadlineValidated {
@@ -307,12 +307,16 @@ func (r *Registry) Handler() http.Handler {
 		writer.Header().Set("Content-Type", "application/json")
 		if err != nil {
 			writer.WriteHeader(http.StatusServiceUnavailable)
-			_ = json.NewEncoder(writer).Encode(map[string]string{"errorCode": "worker_registry_unavailable"})
+			if encodeErr := json.NewEncoder(writer).Encode(map[string]string{"errorCode": "worker_registry_unavailable"}); encodeErr != nil {
+				return
+			}
 			return
 		}
 		if !envelope.Complete {
 			writer.WriteHeader(http.StatusServiceUnavailable)
 		}
-		_ = json.NewEncoder(writer).Encode(envelope)
+		if encodeErr := json.NewEncoder(writer).Encode(envelope); encodeErr != nil {
+			return
+		}
 	})
 }

@@ -67,16 +67,27 @@ func (r *Registry) Metrics(observedAt time.Time) ([]MetricFamily, error) {
 	if err != nil {
 		return nil, err
 	}
+	families, byName := newMetricFamilies()
+	addProfileMetricSamples(byName, envelope, r.runtime)
+	r.addWorkerMetricSamples(byName, envelope)
+	return families, nil
+}
+
+func newMetricFamilies() ([]MetricFamily, map[string]*MetricFamily) {
 	families := make([]MetricFamily, len(metricDescriptors))
 	byName := make(map[string]*MetricFamily, len(metricDescriptors))
 	for index, descriptor := range metricDescriptors {
 		families[index] = MetricFamily{Name: descriptor.name, Help: descriptor.help, Type: descriptor.metricType}
 		byName[descriptor.name] = &families[index]
 	}
+	return families, byName
+}
+
+func addProfileMetricSamples(byName map[string]*MetricFamily, envelope DiagnosticsEnvelope, runtime RuntimeKind) {
 	processLabels := map[string]string{
 		"stack_service": envelope.Service,
 		"stack_role":    envelope.Role,
-		"runtime":       string(r.runtime),
+		"runtime":       string(runtime),
 	}
 	profileLabels := cloneLabels(processLabels)
 	profileLabels["contract_version"] = strconv.Itoa(ContractVersion)
@@ -85,55 +96,68 @@ func (r *Registry) Metrics(observedAt time.Time) ([]MetricFamily, error) {
 	addSample(byName, "iris_stack_worker_profile_info", profileLabels, 1)
 	addSample(byName, "iris_stack_worker_profile_file_match", processLabels, boolFloat(envelope.Profile.FileMatch))
 	addSample(byName, "iris_stack_worker_profile_file_last_check_timestamp_seconds", processLabels, millisecondsToSeconds(envelope.Profile.FileCheckedAtEpochMS))
+}
 
+func (r *Registry) addWorkerMetricSamples(byName map[string]*MetricFamily, envelope DiagnosticsEnvelope) {
 	workerIDs := make([]string, 0, len(envelope.Workers))
 	for workerID := range envelope.Workers {
 		workerIDs = append(workerIDs, workerID)
 	}
 	sort.Strings(workerIDs)
 	for _, workerID := range workerIDs {
-		diagnostics := envelope.Workers[workerID]
-		profileWorker := r.loaded.Profile.Workers[workerID]
-		labels := map[string]string{
-			"stack_service": envelope.Service,
-			"stack_role":    envelope.Role,
-			"worker":        workerID,
-			"runtime":       string(diagnostics.Runtime),
-			"queue_backend": string(diagnostics.Queue.Backend),
-			"queue_scope":   string(diagnostics.Queue.Scope),
-		}
-		policyLabels := cloneLabels(labels)
-		policyLabels["attempt_timeout_mode"] = string(profileWorker.Executor.AttemptTimeout.Mode)
-		policyLabels["queue_age_mode"] = string(profileWorker.Queue.MaxAge.Mode)
-		addSample(byName, "iris_stack_worker_policy_info", policyLabels, 1)
-		addSample(byName, "iris_stack_worker_enabled", labels, boolFloat(diagnostics.Executor.Enabled))
-		addSample(byName, "iris_stack_worker_configured_workers", labels, float64(diagnostics.Executor.ConfiguredWorkers))
-		addSample(byName, "iris_stack_worker_running_workers", labels, float64(diagnostics.Executor.RunningWorkers))
-		if profileWorker.Executor.AttemptTimeout.Mode == DurationModeFixed {
-			addSample(byName, "iris_stack_worker_attempt_timeout_seconds", labels, millisecondsToSeconds(*profileWorker.Executor.AttemptTimeout.Milliseconds))
-		}
-		if profileWorker.Queue.MaxAge.Mode == DurationModeFixed {
-			addSample(byName, "iris_stack_worker_max_queue_age_seconds", labels, millisecondsToSeconds(*profileWorker.Queue.MaxAge.Milliseconds))
-		}
-		addSample(byName, "iris_stack_worker_queue_bounded", labels, boolFloat(diagnostics.Queue.Bounded))
-		if diagnostics.Queue.Capacity != nil {
-			addSample(byName, "iris_stack_worker_queue_capacity", labels, float64(*diagnostics.Queue.Capacity))
-		}
-		if diagnostics.Queue.SnapshotStatus == QueueSnapshotCurrent {
-			addSample(byName, "iris_stack_worker_queue_depth", labels, float64(*diagnostics.Queue.Depth))
-			addSample(byName, "iris_stack_worker_oldest_queued_age_seconds", labels, millisecondsToSeconds(*diagnostics.Queue.OldestQueuedAgeMS))
-		}
-		addSample(byName, "iris_stack_worker_in_flight", labels, float64(diagnostics.Executor.InFlight))
-		addSample(byName, "iris_stack_worker_oldest_in_flight_age_seconds", labels, millisecondsToSeconds(diagnostics.Executor.OldestInFlightAgeMS))
-		addSample(byName, "iris_stack_worker_queue_snapshot_success", labels, boolFloat(diagnostics.Queue.SnapshotStatus == QueueSnapshotCurrent))
-		if diagnostics.Queue.LastSuccessAtEpochMS != nil {
-			addSample(byName, "iris_stack_worker_queue_snapshot_last_success_timestamp_seconds", labels, millisecondsToSeconds(*diagnostics.Queue.LastSuccessAtEpochMS))
-		}
-		addAdmissionSamples(byName, labels, diagnostics.Totals.Admissions)
-		addAttemptSamples(byName, labels, diagnostics.Totals.Attempts)
-		addDiscardSamples(byName, labels, diagnostics.Totals.Discarded)
+		r.addSingleWorkerMetricSamples(byName, envelope, workerID)
 	}
-	return families, nil
+}
+
+func (r *Registry) addSingleWorkerMetricSamples(byName map[string]*MetricFamily, envelope DiagnosticsEnvelope, workerID string) {
+	diagnostics := envelope.Workers[workerID]
+	profileWorker := r.loaded.Profile.Workers[workerID]
+	labels := map[string]string{
+		"stack_service": envelope.Service,
+		"stack_role":    envelope.Role,
+		"worker":        workerID,
+		"runtime":       string(diagnostics.Runtime),
+		"queue_backend": string(diagnostics.Queue.Backend),
+		"queue_scope":   string(diagnostics.Queue.Scope),
+	}
+	policyLabels := cloneLabels(labels)
+	policyLabels["attempt_timeout_mode"] = string(profileWorker.Executor.AttemptTimeout.Mode)
+	policyLabels["queue_age_mode"] = string(profileWorker.Queue.MaxAge.Mode)
+	addSample(byName, "iris_stack_worker_policy_info", policyLabels, 1)
+	addSample(byName, "iris_stack_worker_enabled", labels, boolFloat(diagnostics.Executor.Enabled))
+	addSample(byName, "iris_stack_worker_configured_workers", labels, float64(diagnostics.Executor.ConfiguredWorkers))
+	addSample(byName, "iris_stack_worker_running_workers", labels, float64(diagnostics.Executor.RunningWorkers))
+	addWorkerPolicySamples(byName, labels, profileWorker)
+	addWorkerQueueSamples(byName, labels, diagnostics)
+	addSample(byName, "iris_stack_worker_in_flight", labels, float64(diagnostics.Executor.InFlight))
+	addSample(byName, "iris_stack_worker_oldest_in_flight_age_seconds", labels, millisecondsToSeconds(diagnostics.Executor.OldestInFlightAgeMS))
+	addAdmissionSamples(byName, labels, diagnostics.Totals.Admissions)
+	addAttemptSamples(byName, labels, diagnostics.Totals.Attempts)
+	addDiscardSamples(byName, labels, diagnostics.Totals.Discarded)
+}
+
+func addWorkerPolicySamples(byName map[string]*MetricFamily, labels map[string]string, profileWorker WorkerProfile) {
+	if profileWorker.Executor.AttemptTimeout.Mode == DurationModeFixed {
+		addSample(byName, "iris_stack_worker_attempt_timeout_seconds", labels, millisecondsToSeconds(*profileWorker.Executor.AttemptTimeout.Milliseconds))
+	}
+	if profileWorker.Queue.MaxAge.Mode == DurationModeFixed {
+		addSample(byName, "iris_stack_worker_max_queue_age_seconds", labels, millisecondsToSeconds(*profileWorker.Queue.MaxAge.Milliseconds))
+	}
+}
+
+func addWorkerQueueSamples(byName map[string]*MetricFamily, labels map[string]string, diagnostics WorkerDiagnostics) {
+	addSample(byName, "iris_stack_worker_queue_bounded", labels, boolFloat(diagnostics.Queue.Bounded))
+	if diagnostics.Queue.Capacity != nil {
+		addSample(byName, "iris_stack_worker_queue_capacity", labels, float64(*diagnostics.Queue.Capacity))
+	}
+	if diagnostics.Queue.SnapshotStatus == QueueSnapshotCurrent {
+		addSample(byName, "iris_stack_worker_queue_depth", labels, float64(*diagnostics.Queue.Depth))
+		addSample(byName, "iris_stack_worker_oldest_queued_age_seconds", labels, millisecondsToSeconds(*diagnostics.Queue.OldestQueuedAgeMS))
+	}
+	addSample(byName, "iris_stack_worker_queue_snapshot_success", labels, boolFloat(diagnostics.Queue.SnapshotStatus == QueueSnapshotCurrent))
+	if diagnostics.Queue.LastSuccessAtEpochMS != nil {
+		addSample(byName, "iris_stack_worker_queue_snapshot_last_success_timestamp_seconds", labels, millisecondsToSeconds(*diagnostics.Queue.LastSuccessAtEpochMS))
+	}
 }
 
 func addAdmissionSamples(families map[string]*MetricFamily, labels map[string]string, totals AdmissionTotals) {
