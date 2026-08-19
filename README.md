@@ -37,7 +37,7 @@ go get github.com/park285/shared-go@latest
 | `pkg/runtime` | Go 런타임 최적화를 포함한 프로세스 부트스트랩 도구 (`automaxprocs`, 애플리케이션 라이프사이클 관리, HTTPServer) |
 | `pkg/stringutil` | 범용 문자열 처리 유틸리티 |
 | `pkg/telemetry` | OpenTelemetry 기반의 분산 트레이싱(Tracing) 정보 설정 및 컨텍스트 전파 유틸리티 |
-| `pkg/workerconfig` | 개별 백그라운드 워커들의 동작 프로파일 설정 로드 모듈 |
+| `pkg/workercontract` | strict worker profile 로드, diagnostics registry, 공통 Prometheus exposition 모듈 |
 | `pkg/workerpool` | 큐(Queue) 기반의 동시성 제어 워커 풀 구현체 |
 
 새로운 공통 기능이 필요할 경우, `pkg/` 하위에 신규 패키지 형식으로 추가해 주십시오.

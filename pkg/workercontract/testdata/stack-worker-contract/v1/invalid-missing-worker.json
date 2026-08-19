@@ -1,0 +1,1 @@
+{"contract_version":1,"service":"chatbotgo","role":"bot","profile_id":"invalid-missing-worker","workers":{"command":{"executor":{"enabled":true,"configured_workers":1,"attempt_timeout":{"mode":"per_job","milliseconds":null}},"queue":{"capacity":{"mode":"bounded","items":1},"max_age":{"mode":"none","milliseconds":null}},"settings":{}}}}

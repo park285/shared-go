@@ -1,0 +1,22 @@
+{
+  "contractVersion": 1,
+  "service": "chatbotgo",
+  "role": "bot",
+  "observedAtEpochMs": 1787126400000,
+  "complete": false,
+  "profile": {
+    "id": "chatbotgo-contract-fixture",
+    "hash": "d6f1d7a1e12fce3bd9cc90583e40228940f7b395c0446e5cfb52437a52490424",
+    "fileMatch": true,
+    "fileCheckedAtEpochMs": 1787126399000,
+    "fileErrorCode": null
+  },
+  "workers": {
+    "webhook_inbox": {
+      "runtime": "go",
+      "executor": {"enabled": true, "configuredWorkers": 16, "runningWorkers": 16, "inFlight": 2, "oldestInFlightAgeMs": 481},
+      "queue": {"backend": "postgres", "scope": "shared", "bounded": false, "capacity": null, "depth": null, "oldestQueuedAgeMs": null, "snapshotStatus": "unavailable", "lastSuccessAtEpochMs": 1787126384000, "errorCode": "queue_snapshot_failed"},
+      "totals": {"admissions": {"accepted": 100, "duplicate": 2, "rejected": 1, "failed": 0, "outcomeUnknown": 0}, "attempts": {"success": 95, "failed": 2, "timeout": 1, "canceled": 0, "panic": 0, "outcomeUnknown": 0}, "discarded": {"stale": 1, "shutdown": 0}}
+    }
+  }
+}

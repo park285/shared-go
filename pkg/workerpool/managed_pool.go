@@ -112,11 +112,18 @@ type ManagedFinalizerSnapshot struct {
 
 // ManagedSnapshot은 pool의 현재 queue, 실행, outcome 상태를 복사해 제공한다.
 type ManagedSnapshot struct {
-	QueueDepth     int
-	InFlight       int
-	OldestQueueAge time.Duration
-	Outcomes       map[JobOutcome]uint64
-	Finalizer      ManagedFinalizerSnapshot
+	ConfiguredWorkers  int
+	RunningWorkers     int
+	QueueDepth         int
+	InFlight           int
+	OldestQueueAge     time.Duration
+	OldestInFlightAge  time.Duration
+	AdmissionsAccepted uint64
+	AdmissionsRejected uint64
+	Attempts           map[JobOutcome]uint64
+	Discarded          map[JobOutcome]uint64
+	Outcomes           map[JobOutcome]uint64
+	Finalizer          ManagedFinalizerSnapshot
 }
 
 type managedJob struct {
@@ -125,6 +132,7 @@ type managedJob struct {
 	expiresAt         time.Time
 	finalizerReserved bool
 	finalizeOnce      sync.Once
+	started           bool
 }
 
 type managedFinalizerTask struct {
@@ -146,6 +154,11 @@ type managedFinalizerResult struct {
 	stack       []byte
 }
 
+type managedInFlight struct {
+	cancel    context.CancelCauseFunc
+	startedAt time.Time
+}
+
 type managedFinalizer struct {
 	mu       sync.Mutex
 	queue    []*managedFinalizerTask
@@ -159,24 +172,32 @@ type managedFinalizer struct {
 
 // ManagedPool은 dequeue-time budget과 단일 finalization을 소유하는 worker pool이다.
 type ManagedPool struct {
-	mu            sync.Mutex
-	queue         []*managedJob
-	queueSize     int
-	closed        bool
-	workAvailable *sync.Cond
-	reaperNotify  chan struct{}
-	stopCh        chan struct{}
-	shutdownDone  chan struct{}
-	shutdownOnce  sync.Once
-	workerWG      sync.WaitGroup
-	reaperWG      sync.WaitGroup
-	inFlight      map[*managedJob]context.CancelCauseFunc
-	outcomes      map[JobOutcome]uint64
-	finalizer     *managedFinalizer
-	logger        *slog.Logger
+	mu                 sync.Mutex
+	queue              []*managedJob
+	queueSize          int
+	configuredWorkers  int
+	runningWorkers     int
+	closed             bool
+	workAvailable      *sync.Cond
+	reaperNotify       chan struct{}
+	stopCh             chan struct{}
+	shutdownDone       chan struct{}
+	shutdownOnce       sync.Once
+	workerWG           sync.WaitGroup
+	reaperWG           sync.WaitGroup
+	inFlight           map[*managedJob]managedInFlight
+	outcomes           map[JobOutcome]uint64
+	attempts           map[JobOutcome]uint64
+	discarded          map[JobOutcome]uint64
+	admissionsAccepted uint64
+	admissionsRejected uint64
+	finalizer          *managedFinalizer
+	logger             *slog.Logger
 }
 
-// NewManaged는 immutable worker와 queue 크기로 ManagedPool을 시작한다.
+// NewManaged는 v1.51 이하 소비자의 bounded rollout 호환 경로다.
+// 새 호출부는 validation error를 보존하는 NewManagedPool을 사용한다.
+// Deprecated: use NewManagedPool.
 func NewManaged(config ManagedConfig) *ManagedPool {
 	if config.Workers < 1 {
 		config.Workers = 1
@@ -196,15 +217,44 @@ func NewManaged(config ManagedConfig) *ManagedPool {
 	if config.Logger == nil {
 		config.Logger = slog.Default()
 	}
+	return newManagedPool(config)
+}
 
+// NewManagedPool은 explicit config를 검증한 뒤 ManagedPool을 시작한다.
+func NewManagedPool(config ManagedConfig) (*ManagedPool, error) {
+	if config.Workers < 1 || config.Workers > 4096 {
+		return nil, fmt.Errorf("managed worker pool: workers must be in 1..4096")
+	}
+	if config.QueueSize < 1 || config.QueueSize > 1_048_576 {
+		return nil, fmt.Errorf("managed worker pool: queue size must be in 1..1048576")
+	}
+	if config.FinalizeTimeout <= 0 {
+		return nil, fmt.Errorf("managed worker pool: finalize timeout must be positive")
+	}
+	if config.FinalizeConcurrency < 1 || config.FinalizeConcurrency > 4096 {
+		return nil, fmt.Errorf("managed worker pool: finalize concurrency must be in 1..4096")
+	}
+	if config.FinalizeQueueSize < config.FinalizeConcurrency || config.FinalizeQueueSize > 1_048_576 {
+		return nil, fmt.Errorf("managed worker pool: finalize queue size must be in finalize concurrency..1048576")
+	}
+	if config.Logger == nil {
+		config.Logger = slog.Default()
+	}
+	return newManagedPool(config), nil
+}
+
+func newManagedPool(config ManagedConfig) *ManagedPool {
 	pool := &ManagedPool{
-		queue:        make([]*managedJob, 0, config.QueueSize),
-		queueSize:    config.QueueSize,
-		reaperNotify: make(chan struct{}, 1),
-		stopCh:       make(chan struct{}),
-		shutdownDone: make(chan struct{}),
-		inFlight:     make(map[*managedJob]context.CancelCauseFunc, config.Workers),
-		outcomes:     make(map[JobOutcome]uint64),
+		queue:             make([]*managedJob, 0, config.QueueSize),
+		queueSize:         config.QueueSize,
+		configuredWorkers: config.Workers,
+		reaperNotify:      make(chan struct{}, 1),
+		stopCh:            make(chan struct{}),
+		shutdownDone:      make(chan struct{}),
+		inFlight:          make(map[*managedJob]managedInFlight, config.Workers),
+		outcomes:          make(map[JobOutcome]uint64),
+		attempts:          make(map[JobOutcome]uint64),
+		discarded:         make(map[JobOutcome]uint64),
 		finalizer: newManagedFinalizer(
 			config.FinalizeConcurrency,
 			config.FinalizeQueueSize,
@@ -231,14 +281,28 @@ func (p *ManagedPool) Snapshot() ManagedSnapshot {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	snapshot := ManagedSnapshot{
-		QueueDepth: len(p.queue),
-		InFlight:   len(p.inFlight),
-		Outcomes:   make(map[JobOutcome]uint64, len(p.outcomes)),
+		ConfiguredWorkers:  p.configuredWorkers,
+		RunningWorkers:     p.runningWorkers,
+		QueueDepth:         len(p.queue),
+		InFlight:           len(p.inFlight),
+		Outcomes:           make(map[JobOutcome]uint64, len(p.outcomes)),
+		Attempts:           make(map[JobOutcome]uint64, len(p.attempts)),
+		Discarded:          make(map[JobOutcome]uint64, len(p.discarded)),
+		AdmissionsAccepted: p.admissionsAccepted,
+		AdmissionsRejected: p.admissionsRejected,
 	}
 	if len(p.queue) > 0 {
 		snapshot.OldestQueueAge = max(time.Since(p.queue[0].enqueuedAt), 0)
 	}
+	for _, inFlight := range p.inFlight {
+		age := max(time.Since(inFlight.startedAt), 0)
+		if age > snapshot.OldestInFlightAge {
+			snapshot.OldestInFlightAge = age
+		}
+	}
 	maps.Copy(snapshot.Outcomes, p.outcomes)
+	maps.Copy(snapshot.Attempts, p.attempts)
+	maps.Copy(snapshot.Discarded, p.discarded)
 	snapshot.Finalizer = p.finalizer.Snapshot()
 	return snapshot
 }
@@ -274,6 +338,7 @@ func (p *ManagedPool) trySubmit(spec JobSpec) ManagedSubmitResult {
 		return p.rejectSubmission(job)
 	}
 	p.queue = append(p.queue, job)
+	p.admissionsAccepted++
 	p.workAvailable.Signal()
 	p.mu.Unlock()
 	if !job.expiresAt.IsZero() {
@@ -327,8 +392,8 @@ func (p *ManagedPool) shutdown() {
 	queued := p.queue
 	p.queue = nil
 	cancels := make([]context.CancelCauseFunc, 0, len(p.inFlight))
-	for _, cancel := range p.inFlight {
-		cancels = append(cancels, cancel)
+	for _, inFlight := range p.inFlight {
+		cancels = append(cancels, inFlight.cancel)
 	}
 	close(p.stopCh)
 	p.workAvailable.Broadcast()
@@ -347,7 +412,15 @@ func (p *ManagedPool) shutdown() {
 }
 
 func (p *ManagedPool) worker() {
-	defer p.workerWG.Done()
+	p.mu.Lock()
+	p.runningWorkers++
+	p.mu.Unlock()
+	defer func() {
+		p.mu.Lock()
+		p.runningWorkers--
+		p.mu.Unlock()
+		p.workerWG.Done()
+	}()
 	for {
 		job, ok := p.take()
 		if !ok {
@@ -399,7 +472,8 @@ func (p *ManagedPool) run(job *managedJob) {
 		p.finalizeJob(job, JobOutcomeShutdown)
 		return
 	}
-	p.inFlight[job] = shutdownCancel
+	job.started = true
+	p.inFlight[job] = managedInFlight{cancel: shutdownCancel, startedAt: time.Now()}
 	p.mu.Unlock()
 
 	outcome := JobOutcomeSuccess
@@ -511,6 +585,16 @@ func (p *ManagedPool) finalizeJob(job *managedJob, outcome JobOutcome) {
 	job.finalizeOnce.Do(func() {
 		p.mu.Lock()
 		p.outcomes[outcome]++
+		if job.started {
+			p.attempts[outcome]++
+		} else {
+			switch outcome {
+			case JobOutcomeRejected:
+				p.admissionsRejected++
+			case JobOutcomeStale, JobOutcomeShutdown:
+				p.discarded[outcome]++
+			}
+		}
 		p.mu.Unlock()
 		p.finalizer.Schedule(job.spec, outcome, job.finalizerReserved)
 	})

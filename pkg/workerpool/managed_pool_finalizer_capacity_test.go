@@ -15,7 +15,7 @@ func TestManagedPoolStuckFinalizerPermanentlyBlocksAdmission(t *testing.T) {
 	unblock := func() { releaseOnce.Do(func() { close(release) }) }
 	t.Cleanup(unblock)
 
-	pool := workerpool.NewManaged(workerpool.ManagedConfig{
+	pool := newManagedPoolForTest(t, workerpool.ManagedConfig{
 		Workers:             1,
 		QueueSize:           1,
 		FinalizeConcurrency: 1,
@@ -81,7 +81,7 @@ func TestManagedPoolStuckFinalizerPermanentlyBlocksAdmission(t *testing.T) {
 }
 
 func TestManagedPoolReportsClosedFinalizerRejectionSeparately(t *testing.T) {
-	pool := workerpool.NewManaged(workerpool.ManagedConfig{Workers: 1, QueueSize: 1})
+	pool := newManagedPoolForTest(t, workerpool.ManagedConfig{Workers: 1, QueueSize: 1})
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()

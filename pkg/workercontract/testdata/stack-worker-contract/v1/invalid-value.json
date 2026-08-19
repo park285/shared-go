@@ -1,0 +1,1 @@
+{"contract_version":1,"service":"hololive","role":"youtube-collector","profile_id":"INVALID VALUE","workers":{"collection":{"executor":{"enabled":"yes","configured_workers":4097,"attempt_timeout":{"mode":"fixed","milliseconds":86400001}},"queue":{"capacity":{"mode":"bounded","items":1048577},"max_age":{"mode":"fixed","milliseconds":86400001}},"settings":{}}}}

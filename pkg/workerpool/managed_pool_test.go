@@ -17,8 +17,26 @@ func trySubmit(pool *workerpool.ManagedPool, spec workerpool.JobSpec) bool {
 	return pool.TrySubmitResult(spec).Accepted
 }
 
+func newManagedPoolForTest(t *testing.T, config workerpool.ManagedConfig) *workerpool.ManagedPool {
+	t.Helper()
+	if config.FinalizeTimeout == 0 {
+		config.FinalizeTimeout = 5 * time.Second
+	}
+	if config.FinalizeConcurrency == 0 {
+		config.FinalizeConcurrency = config.Workers
+	}
+	if config.FinalizeQueueSize == 0 {
+		config.FinalizeQueueSize = config.Workers + config.QueueSize
+	}
+	pool, err := workerpool.NewManagedPool(config)
+	if err != nil {
+		t.Fatalf("NewManagedPool() error = %v", err)
+	}
+	return pool
+}
+
 func TestManagedPoolCreatesJobBudgetAtDequeue(t *testing.T) {
-	pool := workerpool.NewManaged(workerpool.ManagedConfig{Workers: 1, QueueSize: 2})
+	pool := newManagedPoolForTest(t, workerpool.ManagedConfig{Workers: 1, QueueSize: 2})
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
@@ -84,7 +102,7 @@ func TestManagedPoolCreatesJobBudgetAtDequeue(t *testing.T) {
 }
 
 func TestManagedPoolFinalizesQueueRejectionExactlyOnce(t *testing.T) {
-	pool := workerpool.NewManaged(workerpool.ManagedConfig{Workers: 1, QueueSize: 1})
+	pool := newManagedPoolForTest(t, workerpool.ManagedConfig{Workers: 1, QueueSize: 1})
 	started := make(chan struct{})
 	release := make(chan struct{})
 	if !trySubmit(pool, workerpool.JobSpec{
@@ -131,7 +149,7 @@ func TestManagedPoolFinalizesQueueRejectionExactlyOnce(t *testing.T) {
 
 func TestManagedPoolRunNilRejectionClaimsFinalizer(t *testing.T) {
 	finalized := make(chan workerpool.JobOutcome, 1)
-	pool := workerpool.NewManaged(workerpool.ManagedConfig{Workers: 1, QueueSize: 1, FinalizeQueueSize: 1})
+	pool := newManagedPoolForTest(t, workerpool.ManagedConfig{Workers: 1, QueueSize: 1, FinalizeQueueSize: 1})
 	result := pool.TrySubmitResult(workerpool.JobSpec{
 		Finalize: func(_ context.Context, outcome workerpool.JobOutcome) {
 			finalized <- outcome
@@ -154,7 +172,7 @@ func TestManagedPoolRunNilRejectionClaimsFinalizer(t *testing.T) {
 }
 
 func TestManagedPoolReaperFinalizesStaleJobWhileWorkersAreBusy(t *testing.T) {
-	pool := workerpool.NewManaged(workerpool.ManagedConfig{Workers: 1, QueueSize: 2})
+	pool := newManagedPoolForTest(t, workerpool.ManagedConfig{Workers: 1, QueueSize: 2})
 	started := make(chan struct{})
 	release := make(chan struct{})
 	var releaseOnce sync.Once
@@ -206,7 +224,7 @@ func TestManagedPoolReaperFinalizesStaleJobWhileWorkersAreBusy(t *testing.T) {
 }
 
 func TestManagedPoolSnapshotReportsQueueInFlightAgeAndOutcomes(t *testing.T) {
-	pool := workerpool.NewManaged(workerpool.ManagedConfig{Workers: 1, QueueSize: 1})
+	pool := newManagedPoolForTest(t, workerpool.ManagedConfig{Workers: 1, QueueSize: 1})
 	started := make(chan struct{})
 	release := make(chan struct{})
 	if !trySubmit(pool, workerpool.JobSpec{
@@ -234,6 +252,9 @@ func TestManagedPoolSnapshotReportsQueueInFlightAgeAndOutcomes(t *testing.T) {
 	if snapshot.OldestQueueAge <= 0 {
 		t.Fatalf("OldestQueueAge = %v, want > 0", snapshot.OldestQueueAge)
 	}
+	if snapshot.ConfiguredWorkers != 1 || snapshot.RunningWorkers != 1 || snapshot.OldestInFlightAge <= 0 {
+		t.Fatalf("worker snapshot = %+v", snapshot)
+	}
 	if snapshot.Outcomes[workerpool.JobOutcomeRejected] != 1 {
 		t.Fatalf("rejected outcomes = %d, want 1", snapshot.Outcomes[workerpool.JobOutcomeRejected])
 	}
@@ -246,8 +267,38 @@ func TestManagedPoolSnapshotReportsQueueInFlightAgeAndOutcomes(t *testing.T) {
 	}
 }
 
+func TestNewManagedPoolRejectsInvalidConfiguration(t *testing.T) {
+	valid := workerpool.ManagedConfig{
+		Workers:             1,
+		QueueSize:           1,
+		FinalizeTimeout:     time.Second,
+		FinalizeConcurrency: 1,
+		FinalizeQueueSize:   1,
+	}
+	tests := []struct {
+		name   string
+		mutate func(*workerpool.ManagedConfig)
+	}{
+		{"workers", func(config *workerpool.ManagedConfig) { config.Workers = 0 }},
+		{"queue", func(config *workerpool.ManagedConfig) { config.QueueSize = 0 }},
+		{"finalize timeout", func(config *workerpool.ManagedConfig) { config.FinalizeTimeout = 0 }},
+		{"finalize concurrency", func(config *workerpool.ManagedConfig) { config.FinalizeConcurrency = 0 }},
+		{"finalize capacity", func(config *workerpool.ManagedConfig) { config.FinalizeQueueSize = 0 }},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			config := valid
+			testCase.mutate(&config)
+			pool, err := workerpool.NewManagedPool(config)
+			if err == nil || pool != nil {
+				t.Fatalf("NewManagedPool() = %v, %v", pool, err)
+			}
+		})
+	}
+}
+
 func TestManagedPoolShutdownDropsQueuedAndCancelsInFlight(t *testing.T) {
-	pool := workerpool.NewManaged(workerpool.ManagedConfig{Workers: 1, QueueSize: 2})
+	pool := newManagedPoolForTest(t, workerpool.ManagedConfig{Workers: 1, QueueSize: 2})
 	started := make(chan struct{})
 	runCause := make(chan error, 1)
 	runOutcome := make(chan workerpool.JobOutcome, 1)
@@ -303,7 +354,7 @@ func TestManagedPoolShutdownDropsQueuedAndCancelsInFlight(t *testing.T) {
 }
 
 func TestManagedPoolClassifiesTimeoutCause(t *testing.T) {
-	pool := workerpool.NewManaged(workerpool.ManagedConfig{Workers: 1, QueueSize: 1})
+	pool := newManagedPoolForTest(t, workerpool.ManagedConfig{Workers: 1, QueueSize: 1})
 	causeCh := make(chan error, 1)
 	outcomeCh := make(chan workerpool.JobOutcome, 1)
 	if !trySubmit(pool, workerpool.JobSpec{
@@ -336,7 +387,7 @@ func TestManagedPoolClassifiesTimeoutCause(t *testing.T) {
 func TestManagedPoolStartsConfiguredWorkersForPreloadedQueue(t *testing.T) {
 	previousProcs := runtime.GOMAXPROCS(1)
 	defer runtime.GOMAXPROCS(previousProcs)
-	pool := workerpool.NewManaged(workerpool.ManagedConfig{Workers: 4, QueueSize: 4})
+	pool := newManagedPoolForTest(t, workerpool.ManagedConfig{Workers: 4, QueueSize: 4})
 	started := make(chan struct{}, 4)
 	release := make(chan struct{})
 	var releaseOnce sync.Once
@@ -374,7 +425,7 @@ func TestManagedPoolStartsConfiguredWorkersForPreloadedQueue(t *testing.T) {
 func TestManagedPoolWakesConfiguredWorkersAlreadyWaiting(t *testing.T) {
 	previousProcs := runtime.GOMAXPROCS(1)
 	defer runtime.GOMAXPROCS(previousProcs)
-	pool := workerpool.NewManaged(workerpool.ManagedConfig{Workers: 4, QueueSize: 4})
+	pool := newManagedPoolForTest(t, workerpool.ManagedConfig{Workers: 4, QueueSize: 4})
 	started := make(chan struct{}, 4)
 	release := make(chan struct{})
 	var releaseOnce sync.Once
@@ -416,7 +467,7 @@ func TestManagedPoolCloseContextReturnsWhenQueuedFinalizerDoesNotReturn(t *testi
 	started := make(chan struct{})
 	releaseRun := make(chan struct{})
 	releaseFinalize := make(chan struct{})
-	pool := workerpool.NewManaged(workerpool.ManagedConfig{Workers: 1, QueueSize: 2, FinalizeTimeout: time.Millisecond})
+	pool := newManagedPoolForTest(t, workerpool.ManagedConfig{Workers: 1, QueueSize: 2, FinalizeTimeout: time.Millisecond})
 	if !trySubmit(pool, workerpool.JobSpec{Run: func(context.Context) {
 		close(started)
 		<-releaseRun
@@ -452,7 +503,7 @@ func TestManagedPoolCloseContextReturnsWhenQueuedFinalizerDoesNotReturn(t *testi
 func TestManagedPoolCloseContextWaitsForQueuedFinalizerCompletion(t *testing.T) {
 	started := make(chan struct{})
 	releaseFinalize := make(chan struct{})
-	pool := workerpool.NewManaged(workerpool.ManagedConfig{Workers: 1, QueueSize: 2})
+	pool := newManagedPoolForTest(t, workerpool.ManagedConfig{Workers: 1, QueueSize: 2})
 	if !trySubmit(pool, workerpool.JobSpec{Run: func(ctx context.Context) {
 		close(started)
 		<-ctx.Done()
@@ -496,7 +547,7 @@ func TestManagedPoolFinalizerDispatchDrainsAfterCloseWhileCallbackStillRuns(t *t
 	releaseSecondCallback := func() { releaseSecondOnce.Do(func() { close(releaseSecond) }) }
 	t.Cleanup(releaseFirstCallback)
 	t.Cleanup(releaseSecondCallback)
-	pool := workerpool.NewManaged(workerpool.ManagedConfig{
+	pool := newManagedPoolForTest(t, workerpool.ManagedConfig{
 		Workers:             1,
 		QueueSize:           2,
 		FinalizeConcurrency: 1,
@@ -557,7 +608,7 @@ func TestManagedPoolAcceptedJobsRetainFinalizerReservation(t *testing.T) {
 	releaseFinalize := make(chan struct{})
 	var runCalls atomic.Int32
 	var finalizeCalls atomic.Int32
-	pool := workerpool.NewManaged(workerpool.ManagedConfig{
+	pool := newManagedPoolForTest(t, workerpool.ManagedConfig{
 		Workers:             1,
 		QueueSize:           8,
 		FinalizeConcurrency: 1,
@@ -627,7 +678,7 @@ func TestManagedPoolAcceptedQueuedFinalizerStartsAfterSlotReturns(t *testing.T) 
 	}, 1)
 	var firstCalls atomic.Int32
 	var secondCalls atomic.Int32
-	pool := workerpool.NewManaged(workerpool.ManagedConfig{
+	pool := newManagedPoolForTest(t, workerpool.ManagedConfig{
 		Workers:             1,
 		QueueSize:           2,
 		FinalizeConcurrency: 1,
@@ -703,7 +754,7 @@ func TestManagedPoolAcceptedQueuedFinalizerStartsAfterSlotReturns(t *testing.T) 
 
 func TestManagedPoolFinalizerReportsLateCompletionOnce(t *testing.T) {
 	releaseFinalize := make(chan struct{})
-	pool := workerpool.NewManaged(workerpool.ManagedConfig{
+	pool := newManagedPoolForTest(t, workerpool.ManagedConfig{
 		Workers:           1,
 		QueueSize:         1,
 		FinalizeQueueSize: 1,
@@ -751,7 +802,7 @@ func TestManagedPoolFinalizerReportsLateCompletionOnce(t *testing.T) {
 }
 
 func TestManagedPoolFinalizerContainsPanic(t *testing.T) {
-	pool := workerpool.NewManaged(workerpool.ManagedConfig{Workers: 1, QueueSize: 1})
+	pool := newManagedPoolForTest(t, workerpool.ManagedConfig{Workers: 1, QueueSize: 1})
 	if !trySubmit(pool, workerpool.JobSpec{
 		Run: func(context.Context) {},
 		Finalize: func(context.Context, workerpool.JobOutcome) {

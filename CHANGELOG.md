@@ -5,6 +5,15 @@
 
 ## 미출시
 
+## v1.52.0 - 2026-08-20
+
+### 추가
+
+- `workercontract`: Stack Worker Contract v1 strict profile loader, sealed runtime registry,
+  queue sampler, diagnostics envelope와 Prometheus exposition을 추가했습니다.
+- `workerpool`: 검증 오류를 반환하는 `NewManagedPool`과 configured/running worker,
+  oldest in-flight age, admission/attempt/discard snapshot을 추가했습니다.
+
 ### 호환성이 깨지는 변경
 
 - `workerpool.ManagedPool.TrySubmit`을 제거하고 admission 결과와 rejection finalizer ownership을
