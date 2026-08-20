@@ -131,97 +131,92 @@ func assignPolicyDigest(set *compiledRulepackSet) error {
 	return nil
 }
 
-func loadRulepackSetDir(dir string) (compiledRulepackSet, error) {
-	paths := findRulepackFiles(dir)
-	if len(paths) == 0 {
-		return compiledRulepackSet{}, fmt.Errorf("no rulepacks found in %s", dir)
+type rulepackSource struct {
+	root  string
+	paths []string
+	read  func(string) ([]byte, error)
+}
+
+func dirRulepackSource(dir string) (rulepackSource, error) {
+	return rulepackSource{
+		root:  dir,
+		paths: findRulepackFiles(dir),
+		read: func(rulepackPath string) ([]byte, error) {
+			return readRulepackFile(dir, rulepackPath)
+		},
+	}, nil
+}
+
+func fsRulepackSource(fsys fs.FS, root string) (rulepackSource, error) {
+	cleanRoot, err := cleanRulepackFSRoot(root)
+	if err != nil {
+		return rulepackSource{}, err
 	}
 
-	files := make([]loadedRulepack, 0, len(paths))
-	for _, rulepackPath := range paths {
-		data, err := readRulepackFile(dir, rulepackPath)
+	return rulepackSource{
+		root:  cleanRoot,
+		paths: findRulepackFSFiles(fsys, cleanRoot),
+		read: func(rulepackPath string) ([]byte, error) {
+			return fs.ReadFile(fsys, rulepackPath)
+		},
+	}, nil
+}
+
+func decodeRulepackSource(source rulepackSource, err error) ([]loadedRulepack, error) {
+	if err != nil {
+		return nil, err
+	}
+	if len(source.paths) == 0 {
+		return nil, fmt.Errorf("no rulepacks found in %s", source.root)
+	}
+
+	files := make([]loadedRulepack, 0, len(source.paths))
+	for _, rulepackPath := range source.paths {
+		data, err := source.read(rulepackPath)
 		if err != nil {
-			return compiledRulepackSet{}, fmt.Errorf("read rulepack %s: %w", rulepackPath, err)
+			return nil, fmt.Errorf("read rulepack %s: %w", rulepackPath, err)
 		}
 		file, err := decodeRulepackFile(rulepackPath, data)
 		if err != nil {
-			return compiledRulepackSet{}, fmt.Errorf("load rulepack %s: %w", rulepackPath, err)
+			return nil, fmt.Errorf("load rulepack %s: %w", rulepackPath, err)
 		}
 		files = append(files, file)
+	}
+
+	return files, nil
+}
+
+func loadRulepackSetDir(dir string) (compiledRulepackSet, error) {
+	files, err := decodeRulepackSource(dirRulepackSource(dir))
+	if err != nil {
+		return compiledRulepackSet{}, err
 	}
 
 	return compileRulepackSet(files)
 }
 
 func loadRulepackSetFS(fsys fs.FS, root string) (compiledRulepackSet, error) {
-	cleanRoot, err := cleanRulepackFSRoot(root)
+	files, err := decodeRulepackSource(fsRulepackSource(fsys, root))
 	if err != nil {
 		return compiledRulepackSet{}, err
-	}
-	paths := findRulepackFSFiles(fsys, cleanRoot)
-	if len(paths) == 0 {
-		return compiledRulepackSet{}, fmt.Errorf("no rulepacks found in %s", cleanRoot)
-	}
-
-	files := make([]loadedRulepack, 0, len(paths))
-	for _, rulepackPath := range paths {
-		data, err := fs.ReadFile(fsys, rulepackPath)
-		if err != nil {
-			return compiledRulepackSet{}, fmt.Errorf("read rulepack %s: %w", rulepackPath, err)
-		}
-		file, err := decodeRulepackFile(rulepackPath, data)
-		if err != nil {
-			return compiledRulepackSet{}, fmt.Errorf("load rulepack %s: %w", rulepackPath, err)
-		}
-		files = append(files, file)
 	}
 
 	return compileRulepackSet(files)
 }
 
 func loadRulepackOverlayDir(dir string, policy compiledPolicy) (compiledRulepackSet, error) {
-	paths := findRulepackFiles(dir)
-	if len(paths) == 0 {
-		return compiledRulepackSet{}, fmt.Errorf("no rulepacks found in %s", dir)
-	}
-
-	files := make([]loadedRulepack, 0, len(paths))
-	for _, rulepackPath := range paths {
-		data, err := readRulepackFile(dir, rulepackPath)
-		if err != nil {
-			return compiledRulepackSet{}, fmt.Errorf("read rulepack %s: %w", rulepackPath, err)
-		}
-		file, err := decodeRulepackFile(rulepackPath, data)
-		if err != nil {
-			return compiledRulepackSet{}, fmt.Errorf("load rulepack %s: %w", rulepackPath, err)
-		}
-		files = append(files, file)
+	files, err := decodeRulepackSource(dirRulepackSource(dir))
+	if err != nil {
+		return compiledRulepackSet{}, err
 	}
 
 	return compileV3Overlay(files, policy)
 }
 
 func loadRulepackOverlayFS(fsys fs.FS, root string, policy compiledPolicy) (compiledRulepackSet, error) {
-	cleanRoot, err := cleanRulepackFSRoot(root)
+	files, err := decodeRulepackSource(fsRulepackSource(fsys, root))
 	if err != nil {
 		return compiledRulepackSet{}, err
-	}
-	paths := findRulepackFSFiles(fsys, cleanRoot)
-	if len(paths) == 0 {
-		return compiledRulepackSet{}, fmt.Errorf("no rulepacks found in %s", cleanRoot)
-	}
-
-	files := make([]loadedRulepack, 0, len(paths))
-	for _, rulepackPath := range paths {
-		data, err := fs.ReadFile(fsys, rulepackPath)
-		if err != nil {
-			return compiledRulepackSet{}, fmt.Errorf("read rulepack %s: %w", rulepackPath, err)
-		}
-		file, err := decodeRulepackFile(rulepackPath, data)
-		if err != nil {
-			return compiledRulepackSet{}, fmt.Errorf("load rulepack %s: %w", rulepackPath, err)
-		}
-		files = append(files, file)
 	}
 
 	return compileV3Overlay(files, policy)
@@ -273,14 +268,14 @@ func compileV3Set(files []loadedRulepack) (compiledRulepackSet, error) {
 		if file.raw.Kind != rulepackKindRules {
 			continue
 		}
-		pack, err := compileRulepack(&file.raw)
+		fileRules, err := compileRules(&file.raw)
 		if err != nil {
 			return compiledRulepackSet{}, fmt.Errorf("%s: %w", file.path, err)
 		}
-		if err := addRuleIDs(seen, pack.Rules); err != nil {
+		if err := addRuleIDs(seen, fileRules); err != nil {
 			return compiledRulepackSet{}, err
 		}
-		rules = append(rules, pack.Rules...)
+		rules = append(rules, fileRules...)
 	}
 	slices.SortFunc(rules, func(left, right compiledRule) int {
 		return strings.Compare(left.ID, right.ID)
@@ -304,14 +299,14 @@ func compileV3Overlay(files []loadedRulepack, policy compiledPolicy) (compiledRu
 		if file.raw.Kind != rulepackKindRules {
 			return compiledRulepackSet{}, fmt.Errorf("%s: v3 overlay must be rules-only", file.path)
 		}
-		pack, err := compileRulepack(&file.raw)
+		fileRules, err := compileRules(&file.raw)
 		if err != nil {
 			return compiledRulepackSet{}, fmt.Errorf("%s: %w", file.path, err)
 		}
-		if err := addRuleIDs(seen, pack.Rules); err != nil {
+		if err := addRuleIDs(seen, fileRules); err != nil {
 			return compiledRulepackSet{}, err
 		}
-		rules = append(rules, pack.Rules...)
+		rules = append(rules, fileRules...)
 	}
 	slices.SortFunc(rules, func(left, right compiledRule) int {
 		return strings.Compare(left.ID, right.ID)

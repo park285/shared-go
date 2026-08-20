@@ -21,24 +21,31 @@ func compileRulepack(raw *rawRulepack) (compiledPack, error) {
 		return compiledPack{}, fmt.Errorf("rulepack version must be 3")
 	}
 
-	policy := compilePolicy(raw)
-
-	rules := make([]compiledRule, 0, len(raw.Rules))
-	for i := range raw.Rules {
-		compiled, err := compileRule(&raw.Rules[i])
-		if err != nil {
-			return compiledPack{}, fmt.Errorf("compile rule %q: %w", raw.Rules[i].ID, err)
-		}
-
-		rules = append(rules, compiled)
+	rules, err := compileRules(raw)
+	if err != nil {
+		return compiledPack{}, err
 	}
 
 	return compiledPack{
 		Version: raw.Version,
 		Kind:    strings.ToLower(strings.TrimSpace(raw.Kind)),
-		Policy:  policy,
+		Policy:  compilePolicy(raw),
 		Rules:   rules,
 	}, nil
+}
+
+func compileRules(raw *rawRulepack) ([]compiledRule, error) {
+	rules := make([]compiledRule, 0, len(raw.Rules))
+	for i := range raw.Rules {
+		compiled, err := compileRule(&raw.Rules[i])
+		if err != nil {
+			return nil, fmt.Errorf("compile rule %q: %w", raw.Rules[i].ID, err)
+		}
+
+		rules = append(rules, compiled)
+	}
+
+	return rules, nil
 }
 
 func compileRule(rule *rawRule) (compiledRule, error) {
