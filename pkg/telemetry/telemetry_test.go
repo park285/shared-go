@@ -273,6 +273,59 @@ func TestBuildOTLPExporterOptions_EnvMustNotDowngradeTLS(t *testing.T) {
 	}
 }
 
+func TestBuildOTLPExporterOptions_AcceptsEndpointURL(t *testing.T) {
+	endpoint, methods := startTraceProbe(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	exporter, err := otlptracegrpc.New(ctx, buildOTLPExporterOptions(Config{
+		OTLPEndpoint: "http://" + endpoint,
+		OTLPInsecure: true,
+	})...)
+	if err != nil {
+		t.Fatalf("create exporter: %v", err)
+	}
+	t.Cleanup(func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), time.Second)
+		defer shutdownCancel()
+		_ = exporter.Shutdown(shutdownCtx)
+	})
+
+	exportErr := exporter.ExportSpans(ctx, []sdktrace.ReadOnlySpan{recordTestSpan(t)})
+	select {
+	case method := <-methods:
+		if method != "/opentelemetry.proto.collector.trace.v1.TraceService/Export" {
+			t.Fatalf("unexpected OTLP method %q", method)
+		}
+	case <-ctx.Done():
+		t.Fatalf("URL endpoint was not reached: %v (export: %v)", ctx.Err(), exportErr)
+	}
+}
+
+func TestValidateConfig_EndpointForms(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		endpoint string
+		wantErr  bool
+	}{
+		{name: "host port", endpoint: "otel-collector:4317"},
+		{name: "http url", endpoint: "http://100.100.1.3:4317"},
+		{name: "https url", endpoint: "https://otel-collector:4317"},
+		{name: "url without host", endpoint: "http://", wantErr: true},
+		{name: "url with colon path", endpoint: "http:///4317", wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := validateConfig(Config{ServiceName: "svc", OTLPEndpoint: tc.endpoint, SampleRate: 0.1})
+			if tc.wantErr && err == nil {
+				t.Fatalf("expected %q to be rejected", tc.endpoint)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("expected %q to be accepted: %v", tc.endpoint, err)
+			}
+		})
+	}
+}
+
 type probeResult struct {
 	exportErr error
 	method    string

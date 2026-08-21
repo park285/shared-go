@@ -5,6 +5,16 @@
 
 ## 미출시
 
+## v1.53.1 - 2026-08-21
+
+### 변경
+
+- `telemetry.Config.OTLPEndpoint`가 `host:port`뿐 아니라 `http://host:port`·`https://host:port`
+  URL 형식도 받습니다(`otlptracegrpc.WithEndpointURL`). host가 없는 URL은 `NewProvider`가
+  거절합니다. `OTEL_EXPORTER_OTLP_ENDPOINT` env 값을 그대로 넘기는 소비자는 env를 URL 형식으로
+  두면 otel SDK가 같은 env를 URL로 선파싱하며 남기던 `parse url` 경고가 사라집니다. TLS/plaintext
+  결정은 기존처럼 `OTLPInsecure`가 소유합니다.
+
 ## v1.53.0 - 2026-08-20
 
 ### 호환성이 깨지는 변경

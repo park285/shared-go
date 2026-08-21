@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -34,7 +35,9 @@ type Config struct {
 	Environment string
 
 	// OTLPEndpoint: OTLP collector/exporter 주소입니다.
-	// 예: "otel-collector:4317" (gRPC) 또는 "otel-collector:4318" (HTTP)
+	// "otel-collector:4317"(host:port) 또는 "http://otel-collector:4317"(URL) 형식을 받습니다.
+	// OTEL_EXPORTER_OTLP_ENDPOINT env를 그대로 넘길 때는 URL 형식이어야 otel SDK의
+	// env 파싱 경고가 나지 않습니다.
 	OTLPEndpoint string
 
 	// OTLPInsecure: true면 TLS 없이 연결합니다. 내부망에서만 사용하세요.
@@ -85,6 +88,12 @@ func validateConfig(config Config) (Config, error) {
 	if config.OTLPEndpoint == "" {
 		return Config{}, fmt.Errorf("invalid telemetry config: OTLPEndpoint is required")
 	}
+	if isEndpointURL(config.OTLPEndpoint) {
+		parsed, err := url.Parse(config.OTLPEndpoint)
+		if err != nil || parsed.Host == "" {
+			return Config{}, fmt.Errorf("invalid telemetry config: OTLPEndpoint URL must include a host: %q", config.OTLPEndpoint)
+		}
+	}
 	if math.IsNaN(config.SampleRate) || math.IsInf(config.SampleRate, 0) || config.SampleRate < 0 || config.SampleRate > 1 {
 		return Config{}, fmt.Errorf("invalid telemetry config: SampleRate must be between 0 and 1")
 	}
@@ -101,9 +110,7 @@ func buildResource(config Config) *resource.Resource {
 }
 
 func buildOTLPExporterOptions(config Config) []otlptracegrpc.Option {
-	opts := []otlptracegrpc.Option{
-		otlptracegrpc.WithEndpoint(config.OTLPEndpoint),
-	}
+	opts := []otlptracegrpc.Option{endpointOption(config.OTLPEndpoint)}
 	if config.OTLPInsecure {
 		return append(opts, otlptracegrpc.WithInsecure())
 	}
@@ -111,6 +118,17 @@ func buildOTLPExporterOptions(config Config) []otlptracegrpc.Option {
 	// TLS를 명시하지 않으면 env가 심은 Insecure=true가 그대로 남아 평문으로 강등되므로,
 	// Insecure보다 우선 적용되는 GRPCCredentials로 TLS를 못박는다.
 	return append(opts, otlptracegrpc.WithTLSCredentials(credentials.NewTLS(nil)))
+}
+
+func isEndpointURL(endpoint string) bool {
+	return strings.Contains(endpoint, "://")
+}
+
+func endpointOption(endpoint string) otlptracegrpc.Option {
+	if isEndpointURL(endpoint) {
+		return otlptracegrpc.WithEndpointURL(endpoint)
+	}
+	return otlptracegrpc.WithEndpoint(endpoint)
 }
 
 func buildSampler(config Config) sdktrace.Sampler {
