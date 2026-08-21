@@ -193,6 +193,9 @@ func decodeWorker(raw json.RawMessage, workerID string) (WorkerProfile, error) {
 		return WorkerProfile{}, queueErr
 	}
 	var worker WorkerProfile
+	if bytes.Equal(bytes.TrimSpace(executorFields["enabled"]), []byte("null")) {
+		return WorkerProfile{}, fmt.Errorf("workers.%s.executor.enabled: boolean required", workerID)
+	}
 	if err := decodeField(executorFields, "enabled", &worker.Executor.Enabled); err != nil {
 		return WorkerProfile{}, err
 	}

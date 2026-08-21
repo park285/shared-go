@@ -12,13 +12,18 @@ import (
 	"github.com/park285/shared-go/pkg/workercontract"
 )
 
-func chatbotIdentity(t *testing.T) workercontract.Identity {
+func knownIdentity(t *testing.T, service, role string) workercontract.Identity {
 	t.Helper()
-	identity, err := workercontract.KnownIdentity("chatbotgo", "bot")
+	identity, err := workercontract.KnownIdentity(service, role)
 	if err != nil {
-		t.Fatalf("KnownIdentity() error = %v", err)
+		t.Fatalf("KnownIdentity(%q, %q) error = %v", service, role, err)
 	}
 	return identity
+}
+
+func chatbotIdentity(t *testing.T) workercontract.Identity {
+	t.Helper()
+	return knownIdentity(t, "chatbotgo", "bot")
 }
 
 func validProfilePath() string {
@@ -45,19 +50,70 @@ func TestLoadProfileFileValidatesExactBytesAndIdentity(t *testing.T) {
 }
 
 func TestLoadProfileFileRejectsEveryNegativeFixture(t *testing.T) {
+	chatbot := chatbotIdentity(t)
+	collector := knownIdentity(t, "hololive", "youtube-collector")
+	cases := map[string]struct {
+		identity workercontract.Identity
+		wantErr  string
+	}{
+		"invalid-duplicate-key.json":  {collector, `duplicate JSON key "service"`},
+		"invalid-extra-worker.json":   {collector, "workers: got [collection extra], want [collection]"},
+		"invalid-missing.json":        {chatbot, "profile.profile_id: required"},
+		"invalid-missing-worker.json": {chatbot, "workers: got [command], want [command compaction draw summary webhook_inbox]"},
+		"invalid-mode.json":           {collector, "workers.collection.executor.attempt_timeout.mode: invalid"},
+		"invalid-null-mismatch.json":  {collector, "workers.collection.executor.attempt_timeout.milliseconds: out of range"},
+		"invalid-trailing-json.json":  {chatbot, "trailing JSON value"},
+		"invalid-unknown-field.json":  {collector, "workers.collection.unknown: unknown field"},
+		"invalid-value.json":          {collector, "enabled: json: cannot unmarshal string"},
+		"invalid-wrong-role.json":     {collector, "profile identity: got hololive/unknown, want hololive/youtube-collector"},
+		"invalid-wrong-service.json":  {collector, "profile identity: got unknown/youtube-collector, want hololive/youtube-collector"},
+		"invalid-wrong-version.json":  {collector, "contract_version: got 2, want 1"},
+		"invalid-zero.json":           {collector, "workers.collection.executor.configured_workers: out of range"},
+	}
 	paths, err := filepath.Glob(filepath.Join("testdata", "stack-worker-contract", "v1", "invalid-*.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(paths) != 13 {
-		t.Fatalf("negative fixtures = %d, want 13", len(paths))
+	if len(paths) != 13 || len(cases) != len(paths) {
+		t.Fatalf("negative fixtures = %d, expectations = %d, want 13 each", len(paths), len(cases))
 	}
 	for _, path := range paths {
-		t.Run(filepath.Base(path), func(t *testing.T) {
-			if _, loadErr := workercontract.LoadProfileFile(path, chatbotIdentity(t)); loadErr == nil {
+		base := filepath.Base(path)
+		t.Run(base, func(t *testing.T) {
+			expected, ok := cases[base]
+			if !ok {
+				t.Fatalf("fixture %q has no declared rule expectation", base)
+			}
+			_, loadErr := workercontract.LoadProfileFile(path, expected.identity)
+			if loadErr == nil {
 				t.Fatal("LoadProfileFile() error = nil")
 			}
+			if !strings.Contains(loadErr.Error(), expected.wantErr) {
+				t.Fatalf("LoadProfileFile() error = %v, want it to contain %q", loadErr, expected.wantErr)
+			}
 		})
+	}
+}
+
+func TestLoadProfileFileRejectsNullEnabled(t *testing.T) {
+	raw, err := os.ReadFile(validProfilePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutated := strings.Replace(string(raw), `"enabled": true`, `"enabled": null`, 1)
+	if mutated == string(raw) {
+		t.Fatal("valid fixture no longer carries an enabled literal")
+	}
+	path := filepath.Join(t.TempDir(), "null-enabled.json")
+	if err := os.WriteFile(path, []byte(mutated), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, loadErr := workercontract.LoadProfileFile(path, chatbotIdentity(t))
+	if loadErr == nil {
+		t.Fatalf("LoadProfileFile() error = nil, webhook_inbox enabled = %v", loaded.Profile.Workers["webhook_inbox"].Executor.Enabled)
+	}
+	if want := "workers.webhook_inbox.executor.enabled: boolean required"; !strings.Contains(loadErr.Error(), want) {
+		t.Fatalf("LoadProfileFile() error = %v, want it to contain %q", loadErr, want)
 	}
 }
 

@@ -263,6 +263,9 @@ func (p *ManagedPool) trySubmit(spec JobSpec) ManagedSubmitResult {
 	if spec.MaxQueueAge > 0 {
 		job.expiresAt = job.enqueuedAt.Add(spec.MaxQueueAge)
 	}
+	if p.shuttingDown() {
+		return p.rejectClosedSubmission(job)
+	}
 	if spec.Finalize != nil {
 		reserved, reserveReason := p.finalizer.Reserve(spec.Kind)
 		job.finalizerReserved = reserved
@@ -292,6 +295,25 @@ func (p *ManagedPool) trySubmit(spec JobSpec) ManagedSubmitResult {
 		FinalizerClaimed: job.finalizerReserved,
 		Reason:           ManagedSubmitAccepted,
 	}
+}
+
+func (p *ManagedPool) shuttingDown() bool {
+	select {
+	case <-p.stopCh:
+		return true
+	default:
+		return false
+	}
+}
+
+// shutdown은 closed를 먼저 세우고 in-flight job을 모두 기다린 뒤에야 finalizer를 닫는다. 이 경로가 없으면
+// 그 사이 제출이 아직 열린 finalizer의 reservation을 소진한 뒤 재시도 가능한 capacity 신호를 돌려준다.
+func (p *ManagedPool) rejectClosedSubmission(job *managedJob) ManagedSubmitResult {
+	p.finalizeJob(job, JobOutcomeRejected)
+	if job.spec.Finalize != nil {
+		return ManagedSubmitResult{Reason: ManagedSubmitRejectedFinalizerClosed}
+	}
+	return ManagedSubmitResult{Reason: ManagedSubmitRejected}
 }
 
 func (p *ManagedPool) rejectSubmission(job *managedJob) ManagedSubmitResult {

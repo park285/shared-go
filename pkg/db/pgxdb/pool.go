@@ -148,12 +148,19 @@ func overlayPoolConfig(poolCfg *pgxpool.Config, pool PoolConfig) error {
 	if err := validateConnCounts(pool); err != nil {
 		return err
 	}
+	minConns, maxConns := poolCfg.MinConns, poolCfg.MaxConns
 	if pool.MinConns > 0 {
-		poolCfg.MinConns = int32(pool.MinConns)
+		minConns = int32(pool.MinConns)
 	}
 	if pool.MaxConns > 0 {
-		poolCfg.MaxConns = int32(pool.MaxConns)
+		maxConns = int32(pool.MaxConns)
 	}
+	// pgx는 MinConns > MaxConns를 거부하지 않고 health check 틱마다 초과분 생성을 재시도한다.
+	if minConns > maxConns {
+		return fmt.Errorf("pgxdb: pool min conns %d exceeds max conns %d", minConns, maxConns)
+	}
+	poolCfg.MinConns = minConns
+	poolCfg.MaxConns = maxConns
 	overlayLifetime(poolCfg, pool)
 	if pool.ConnMaxIdleTime > 0 {
 		poolCfg.MaxConnIdleTime = pool.ConnMaxIdleTime

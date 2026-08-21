@@ -42,6 +42,7 @@ func SQLExec(db SQLExecer) Execer {
 }
 
 // WithOnly는 지정한 migration 파일명만 manifest 순서대로 적용한다.
+// 이름을 하나도 넘기지 않으면 Apply는 아무것도 적용하지 않는 대신 오류를 반환한다.
 // manifest에 없는 이름은 Apply가 세션 설정·ledger 생성 전에 거부하지만, Apply를
 // WithAdvisoryLock 안에서 호출하는 문서화된 패턴에서는 이 검출이 lock 획득 뒤에
 // 일어난다. lock 전 fail-fast가 필요하면 호출자가 Manifest()로 사전 검증하라.
@@ -70,6 +71,7 @@ func Manifest(fsys fs.FS) (names []string, err error) {
 	lineNo := 0
 	seenOrders := make(map[string]int)
 	seenNames := make(map[string]int)
+	lastOrder := ""
 	for scanner.Scan() {
 		lineNo++
 		line := strings.TrimSpace(scanner.Text())
@@ -77,16 +79,9 @@ func Manifest(fsys fs.FS) (names []string, err error) {
 			continue
 		}
 
-		fields := strings.Fields(line)
-		if len(fields) != 2 {
-			return nil, fmt.Errorf("manifest line %d: malformed %q (want \"NNN filename.sql\")", lineNo, line)
-		}
-		order, name := fields[0], fields[1]
-		if !isDecimalOrder(order) {
-			return nil, fmt.Errorf("manifest line %d: order %q must contain only decimal digits", lineNo, order)
-		}
-		if !fs.ValidPath(name) || strings.Contains(name, "/") || !strings.HasSuffix(name, ".sql") {
-			return nil, fmt.Errorf("manifest line %d: migration %q must be a single .sql filename", lineNo, name)
+		order, name, parseErr := parseManifestLine(lineNo, line)
+		if parseErr != nil {
+			return nil, parseErr
 		}
 		if prev, ok := seenOrders[order]; ok {
 			return nil, fmt.Errorf("manifest line %d: duplicate order %q (first seen at line %d)", lineNo, order, prev)
@@ -94,8 +89,12 @@ func Manifest(fsys fs.FS) (names []string, err error) {
 		if prev, ok := seenNames[name]; ok {
 			return nil, fmt.Errorf("manifest line %d: duplicate filename %q (first seen at line %d)", lineNo, name, prev)
 		}
+		if lastOrder != "" && !orderAscends(lastOrder, order) {
+			return nil, fmt.Errorf("manifest line %d: order %q must be greater than previous order %q", lineNo, order, lastOrder)
+		}
 		seenOrders[order] = lineNo
 		seenNames[name] = lineNo
+		lastOrder = order
 		names = append(names, name)
 	}
 
@@ -106,6 +105,32 @@ func Manifest(fsys fs.FS) (names []string, err error) {
 		return nil, fmt.Errorf("manifest %q has no entries", ManifestName)
 	}
 	return names, nil
+}
+
+func parseManifestLine(lineNo int, line string) (order, name string, err error) {
+	fields := strings.Fields(line)
+	if len(fields) != 2 {
+		return "", "", fmt.Errorf("manifest line %d: malformed %q (want \"NNN filename.sql\")", lineNo, line)
+	}
+	order, name = fields[0], fields[1]
+	if !isDecimalOrder(order) {
+		return "", "", fmt.Errorf("manifest line %d: order %q must contain only decimal digits", lineNo, order)
+	}
+	if !fs.ValidPath(name) || strings.Contains(name, "/") || !strings.HasSuffix(name, ".sql") {
+		return "", "", fmt.Errorf("manifest line %d: migration %q must be a single .sql filename", lineNo, name)
+	}
+	return order, name, nil
+}
+
+// 적용 순서는 manifest의 줄 순서다. 순서 토큰이 그 순서와 어긋나면 토큰이 잘못된 안전감만 주므로,
+// 토큰이 줄 순서와 일치함을 적재 시점에 강제한다.
+func orderAscends(previous, current string) bool {
+	prev := strings.TrimLeft(previous, "0")
+	cur := strings.TrimLeft(current, "0")
+	if len(prev) != len(cur) {
+		return len(prev) < len(cur)
+	}
+	return prev < cur
 }
 
 func isDecimalOrder(value string) bool {
@@ -171,6 +196,9 @@ func applyOptions(opts []Option) options {
 func (o options) validateOnly(entries []string) error {
 	if o.only == nil {
 		return nil
+	}
+	if len(o.only) == 0 {
+		return fmt.Errorf("dbmigrate: WithOnly requires at least one migration name")
 	}
 	present := make(map[string]bool, len(entries))
 	for _, name := range entries {
