@@ -213,9 +213,7 @@ func TestManagedPoolConcurrentShutdownKeepsFinalizerOwnershipBalanced(t *testing
 	stop := make(chan struct{})
 	var submitters sync.WaitGroup
 	for range 8 {
-		submitters.Add(1)
-		go func() {
-			defer submitters.Done()
+		submitters.Go(func() {
 			for {
 				select {
 				case <-stop:
@@ -232,7 +230,7 @@ func TestManagedPoolConcurrentShutdownKeepsFinalizerOwnershipBalanced(t *testing
 					claimed.Add(1)
 				}
 			}
-		}()
+		})
 	}
 
 	time.Sleep(10 * time.Millisecond)
