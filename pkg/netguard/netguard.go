@@ -133,6 +133,11 @@ func IsBlockedAddr(addr netip.Addr) bool {
 	if !addr.IsValid() {
 		return true
 	}
+	// netip.Prefix.Contains는 zone이 붙은 주소에 항상 false를 돌려주므로, zone을 남겨두면 아래 대역
+	// 검사가 통째로 무력화된다. egress 대상에 interface zone이 붙을 이유도 없어 fail-closed로 막는다.
+	if addr.Zone() != "" {
+		return true
+	}
 	addr = addr.Unmap()
 	for index := range blockedAddressPrefixes {
 		if blockedAddressPrefixes[index].Contains(addr) {
@@ -591,7 +596,7 @@ func sameOrigin(a, b *url.URL) bool {
 }
 
 func stripHeaders(req *http.Request) {
-	for name := range req.Header {
-		req.Header.Del(name)
-	}
+	// Header.Del은 키를 canonical 형태로 바꿔 지우므로, 호출자가 맵에 직접 꽂은 비canonical 키
+	// ("x-internal-token")는 Del로 지워지지 않고 그대로 다음 hop에 실린다.
+	clear(req.Header)
 }

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/netip"
 	"net/url"
 	"slices"
@@ -946,4 +947,113 @@ func mustURL(t *testing.T, raw string) *url.URL {
 		t.Fatalf("url.Parse(%q) error = %v", raw, err)
 	}
 	return parsed
+}
+
+func TestRedirectPolicyStripsNonCanonicalHeaderKeys(t *testing.T) {
+	t.Parallel()
+
+	policy := Policy{
+		Resolver: staticResolver{
+			"example.com": {net.ParseIP("93.184.216.34")},
+			"other.com":   {net.ParseIP("93.184.216.35")},
+		},
+	}
+	req := &http.Request{
+		URL: mustURL(t, "https://other.com/next"),
+		Header: http.Header{
+			"x-internal-token": []string{"secret"},
+			"authorization":    []string{"Bearer token"},
+			"Authorization":    []string{"Bearer canonical"},
+		},
+	}
+	via := []*http.Request{{URL: mustURL(t, "https://example.com/start")}}
+
+	if err := RedirectPolicy(RedirectConfig{Policy: policy, MaxRedirects: 3})(req, via); err != nil {
+		t.Fatalf("RedirectPolicy() error = %v", err)
+	}
+	if len(req.Header) != 0 {
+		t.Fatalf("cross-origin redirect header = %v, want empty", req.Header)
+	}
+
+	nilHeaderReq := &http.Request{URL: mustURL(t, "https://other.com/next")}
+	if err := RedirectPolicy(RedirectConfig{Policy: policy, MaxRedirects: 3})(nilHeaderReq, via); err != nil {
+		t.Fatalf("RedirectPolicy() nil header error = %v", err)
+	}
+}
+
+func TestRedirectPolicyStripsNonCanonicalHeaderKeysOnWire(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu       sync.Mutex
+		gotToken string
+	)
+	final := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		gotToken = r.Header.Get("X-Internal-Token")
+		mu.Unlock()
+	}))
+	defer final.Close()
+
+	start := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, final.URL+"/next", http.StatusFound)
+	}))
+	defer start.Close()
+
+	policy := Policy{
+		AllowedIPPrefixes: []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")},
+		Schemes:           []string{"http"},
+		Timeout:           5 * time.Second,
+	}
+	client := GuardedClient(nil, policy)
+	client.CheckRedirect = RedirectPolicy(RedirectConfig{Policy: policy, MaxRedirects: 3})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, start.URL+"/start", nil)
+	if err != nil {
+		t.Fatalf("http.NewRequestWithContext() error = %v", err)
+	}
+	req.Header["x-internal-token"] = []string{"secret"}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("client.Do() error = %v", err)
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+
+	mu.Lock()
+	defer mu.Unlock()
+	if gotToken != "" {
+		t.Fatalf("cross-origin hop received X-Internal-Token = %q, want empty", gotToken)
+	}
+}
+
+func TestIsBlockedAddrZonedAddressFailsClosed(t *testing.T) {
+	t.Parallel()
+
+	tests := []string{
+		"fc00::1%eth0",
+		"64:ff9b::a9fe:a9fe%eth0",
+		"fe80::1%eth0",
+		"::1%lo",
+		"ff02::1%eth0",
+		"2001:db8::1%eth0",
+		"::ffff:169.254.169.254%eth0",
+		"2001:4860:4860::8888%eth0",
+	}
+	for _, raw := range tests {
+		t.Run(raw, func(t *testing.T) {
+			t.Parallel()
+
+			addr, err := netip.ParseAddr(raw)
+			if err != nil {
+				t.Fatalf("netip.ParseAddr(%q) error = %v", raw, err)
+			}
+			if !IsBlockedAddr(addr) {
+				t.Fatalf("IsBlockedAddr(%q) = false, want true", raw)
+			}
+		})
+	}
 }

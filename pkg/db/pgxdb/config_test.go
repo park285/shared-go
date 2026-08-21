@@ -266,3 +266,87 @@ func TestValidateConnCounts_Int32Range(t *testing.T) {
 		t.Fatal("negative min: expected error, got nil")
 	}
 }
+
+func TestOverlayPoolConfig_RejectsMinAboveEffectiveMax(t *testing.T) {
+	t.Parallel()
+
+	t.Run("max left at pgx parse default", func(t *testing.T) {
+		t.Parallel()
+		pc := mustParse(t, "postgres://u@127.0.0.1:5432/db?sslmode=disable")
+		parsedMax := pc.MaxConns
+		if parsedMax <= 0 {
+			t.Fatalf("precondition: parsed MaxConns = %d, want positive pgx default", parsedMax)
+		}
+		overMax := int(parsedMax) + 1
+
+		err := overlayPoolConfig(pc, PoolConfig{MinConns: overMax})
+		if err == nil {
+			t.Fatalf("overlayPoolConfig(MinConns=%d) over parsed MaxConns=%d: expected error, got nil", overMax, parsedMax)
+		}
+		if !strings.Contains(err.Error(), "exceeds max conns") {
+			t.Errorf("error = %v, want inverted conn range error", err)
+		}
+		if pc.MinConns == int32(overMax) {
+			t.Error("rejected overlay must not be partially applied")
+		}
+	})
+
+	t.Run("max left at dsn value", func(t *testing.T) {
+		t.Parallel()
+		pc := mustParse(t, "postgres://u@127.0.0.1:5432/db?sslmode=disable&pool_max_conns=12")
+		if pc.MaxConns != 12 {
+			t.Fatalf("precondition: parsed MaxConns = %d, want 12", pc.MaxConns)
+		}
+		if err := overlayPoolConfig(pc, PoolConfig{MinConns: 30}); err == nil {
+			t.Fatal("overlayPoolConfig(MinConns=30) over parsed MaxConns=12: expected error, got nil")
+		}
+		if pc.MinConns == 30 {
+			t.Error("rejected overlay must not be partially applied")
+		}
+	})
+
+	t.Run("min left at dsn value", func(t *testing.T) {
+		t.Parallel()
+		pc := mustParse(t, "postgres://u@127.0.0.1:5432/db?sslmode=disable&pool_min_conns=8&pool_max_conns=20")
+		if pc.MinConns != 8 {
+			t.Fatalf("precondition: parsed MinConns = %d, want 8", pc.MinConns)
+		}
+		if err := overlayPoolConfig(pc, PoolConfig{MaxConns: 4}); err == nil {
+			t.Fatal("overlayPoolConfig(MaxConns=4) under parsed MinConns=8: expected error, got nil")
+		}
+		if pc.MaxConns == 4 {
+			t.Error("rejected overlay must not be partially applied")
+		}
+	})
+
+	t.Run("inverted dsn with empty overlay", func(t *testing.T) {
+		t.Parallel()
+		pc := mustParse(t, "postgres://u@127.0.0.1:5432/db?sslmode=disable&pool_min_conns=30&pool_max_conns=10")
+		if pc.MinConns != 30 || pc.MaxConns != 10 {
+			t.Fatalf("precondition: parsed conns = %d/%d, want 30/10", pc.MinConns, pc.MaxConns)
+		}
+		if err := overlayPoolConfig(pc, PoolConfig{}); err == nil {
+			t.Fatal("overlayPoolConfig with inverted dsn range: expected error, got nil")
+		}
+	})
+}
+
+func TestOverlayPoolConfig_AcceptsValidPartialOverlay(t *testing.T) {
+	t.Parallel()
+
+	pc := mustParse(t, "postgres://u@127.0.0.1:5432/db?sslmode=disable&pool_max_conns=20")
+	if err := overlayPoolConfig(pc, PoolConfig{MinConns: 8}); err != nil {
+		t.Fatalf("overlayPoolConfig(MinConns=8) under parsed MaxConns=20: unexpected error %v", err)
+	}
+	if pc.MinConns != 8 || pc.MaxConns != 20 {
+		t.Errorf("conns = %d/%d, want 8/20", pc.MinConns, pc.MaxConns)
+	}
+
+	pc = mustParse(t, "postgres://u@127.0.0.1:5432/db?sslmode=disable&pool_min_conns=2&pool_max_conns=20")
+	if err := overlayPoolConfig(pc, PoolConfig{MaxConns: 6}); err != nil {
+		t.Fatalf("overlayPoolConfig(MaxConns=6) over parsed MinConns=2: unexpected error %v", err)
+	}
+	if pc.MinConns != 2 || pc.MaxConns != 6 {
+		t.Errorf("conns = %d/%d, want 2/6", pc.MinConns, pc.MaxConns)
+	}
+}

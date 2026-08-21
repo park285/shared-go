@@ -35,6 +35,27 @@ func TestManifest(t *testing.T) {
 			wantErr: "open manifest",
 		},
 		{
+			name: "descending order token rejected",
+			fsys: fstest.MapFS{
+				ManifestName: {Data: []byte("002 second.sql\n001 first.sql\n")},
+			},
+			wantErr: `manifest line 2: order "001" must be greater than previous order "002"`,
+		},
+		{
+			name: "order token width does not decide precedence",
+			fsys: fstest.MapFS{
+				ManifestName: {Data: []byte("010 tenth.sql\n009 ninth.sql\n")},
+			},
+			wantErr: `manifest line 2: order "009" must be greater than previous order "010"`,
+		},
+		{
+			name: "zero padded ascending order accepted",
+			fsys: fstest.MapFS{
+				ManifestName: {Data: []byte("009 ninth.sql\n010 tenth.sql\n")},
+			},
+			want: []string{"ninth.sql", "tenth.sql"},
+		},
+		{
 			name: "too few fields",
 			fsys: fstest.MapFS{
 				ManifestName: {Data: []byte("001\n")},
@@ -343,5 +364,56 @@ func TestApplyRunsEachMigrationFileWithoutArguments(t *testing.T) {
 
 	if len(applied.args) != 0 {
 		t.Fatalf("migration body executed with %d arguments (%v); pgx only takes the simple protocol — and with it the implicit transaction that makes a multi-statement file atomic — when the argument list is empty", len(applied.args), applied.args)
+	}
+}
+
+func TestApplyWithOnlyRejectsEmptySelection(t *testing.T) {
+	t.Parallel()
+
+	fsys := fstest.MapFS{
+		ManifestName: {Data: []byte("001 first.sql\n002 second.sql\n")},
+		"first.sql":  {Data: []byte("select 1")},
+		"second.sql": {Data: []byte("select 2")},
+	}
+
+	db := newFakeLedgerDB()
+	err := Apply(context.Background(), fsys, db.Exec,
+		WithOnly(),
+		WithSession(SessionConfig{LockTimeout: time.Second, StatementTimeout: time.Second}),
+		WithLedger(Ledger{}, db),
+	)
+	if err == nil {
+		t.Fatalf("Apply() error = nil, want error for empty WithOnly selection")
+	}
+	if !strings.Contains(err.Error(), "WithOnly") {
+		t.Fatalf("Apply() error = %v, want error naming WithOnly", err)
+	}
+	if len(db.execs) != 0 {
+		t.Fatalf("execs = %v, want none: empty WithOnly must fail before session/ledger side effects", db.execs)
+	}
+	if len(db.events) != 0 {
+		t.Fatalf("events = %v, want none before WithOnly validation", db.events)
+	}
+}
+
+func TestApplyWithOnlyEmptyVariadicSliceRejected(t *testing.T) {
+	t.Parallel()
+
+	fsys := fstest.MapFS{
+		ManifestName: {Data: []byte("001 first.sql\n")},
+		"first.sql":  {Data: []byte("select 1")},
+	}
+
+	var selected []string
+	var got []string
+	err := Apply(context.Background(), fsys, func(_ context.Context, query string, _ ...any) error {
+		got = append(got, query)
+		return nil
+	}, WithOnly(selected...))
+	if err == nil {
+		t.Fatalf("Apply() error = nil, want error for empty WithOnly selection")
+	}
+	if len(got) != 0 {
+		t.Fatalf("executed SQL = %v, want none", got)
 	}
 }
