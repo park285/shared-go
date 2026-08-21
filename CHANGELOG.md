@@ -5,6 +5,31 @@
 
 ## 미출시
 
+## v1.54.0 - 2026-08-21
+
+### 호환성이 깨지는 변경
+
+- `dbmigrate.WithOnly()`를 인자 없이 호출하면 오류입니다. 이전에는 빈 선택 집합이 검증을
+  통과한 뒤 마이그레이션을 하나도 적용하지 않고 성공을 반환해, ledger 테이블만 만들어진
+  상태가 운영자에게는 적용 완료로 보였습니다.
+- `dbmigrate.Manifest`가 순서 토큰이 줄 순서와 함께 오름차순인지 적재 시점에 강제합니다.
+  적용 순서는 줄 순서이므로, 토큰이 어긋난 manifest는 검증만 통과하고 잘못된 안전감을
+  주었습니다. 현재 스택의 manifest는 전부 오름차순이라 동작 변화는 없습니다.
+- `netguard.IsBlockedAddr`가 zone이 붙은 IPv6 주소를 차단합니다. `netip.Prefix.Contains`가
+  zone이 있으면 무조건 false를 돌려주어 ULA·NAT64·documentation 대역이 통과하던 fail-open을
+  닫습니다.
+- `workercontract`가 `workers.*.executor.enabled`의 `null`을 거부합니다. `encoding/json`이
+  `null`을 non-pointer bool에 넣을 때 값을 그대로 두기 때문에, 스키마가 boolean을 요구하는데도
+  워커가 꺼진 채 기동하고 지표까지 정상으로 보고했습니다.
+
+### 변경
+
+- `netguard.RedirectPolicy`가 교차 출처 리다이렉트에서 헤더를 전부 제거합니다. `Header.Del`이
+  키를 정규 형태로 바꿔 지우기 때문에 소문자 키의 자격증명이 다음 hop으로 전달되었습니다.
+- `workerpool.ManagedPool`이 종료 중 제출을 용량 부족이 아니라 종료 신호로 거부합니다.
+  이전에는 영구히 닫힌 풀이 재시도 가능한 backpressure 신호를 반복해 producer가 무한 재시도했습니다.
+- `pgxdb`가 부분 overlay에서도 실효 `MinConns`/`MaxConns`를 기준으로 역전을 거부합니다.
+
 ## v1.53.1 - 2026-08-21
 
 ### 변경
