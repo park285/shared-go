@@ -5,6 +5,16 @@
 
 ## 미출시
 
+### 변경
+
+- Go 툴체인 핀을 `1.27.0`으로, `golangci-lint`를 `v2.13.1`로 올립니다. Go 1.27 `go fix`
+  modernizer 재작성(`errors.AsType`, `sync/atomic` 타입, 내장 필드 리터럴)을 적용했고
+  `.golangci.yml`의 wrapcheck 키를 v2 스키마(`ignore-sigs`·`ignore-package-globs`)로 고쳤습니다.
+  `errors.AsType`의 typed 반환값을 버리는 blank 할당은 errcheck 예외로 등록했습니다.
+- `logging`: JSON handler가 `level`을 `Level.MarshalJSON` 대신 문자열로 직접 싣습니다. Go 1.27의
+  v2 기반 `encoding/json`이 그 경로에서 record마다 박싱 할당을 하나 더 하던 것을 없애, 출력은
+  같고 common path 4·wrap path 11 할당 상한을 유지합니다.
+
 ## v1.54.0 - 2026-08-21
 
 ### 호환성이 깨지는 변경

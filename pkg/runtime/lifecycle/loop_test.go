@@ -25,17 +25,17 @@ func TestRunTickerLoop_ContextCancelReturnsCtxErr(t *testing.T) {
 
 func TestRunTickerLoop_OnTickErrorTerminatesLoop(t *testing.T) {
 	wantErr := errors.New("tick failed")
-	var calls int32
+	var calls atomic.Int32
 
 	err := RunTickerLoop(context.Background(), time.Millisecond, func(context.Context) error {
-		atomic.AddInt32(&calls, 1)
+		calls.Add(1)
 		return wantErr
 	})
 
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("RunTickerLoop() error = %v, want %v", err, wantErr)
 	}
-	if got := atomic.LoadInt32(&calls); got != 1 {
+	if got := calls.Load(); got != 1 {
 		t.Fatalf("onTick calls = %d, want 1", got)
 	}
 }
@@ -70,11 +70,11 @@ func TestRunTickerLoop_TicksAtInterval(t *testing.T) {
 	defer cancel()
 
 	done := make(chan error, 1)
-	var calls int32
+	var calls atomic.Int32
 
 	go func() {
 		done <- RunTickerLoop(ctx, 5*time.Millisecond, func(context.Context) error {
-			if atomic.AddInt32(&calls, 1) == 3 {
+			if calls.Add(1) == 3 {
 				cancel()
 			}
 			return nil
@@ -90,7 +90,7 @@ func TestRunTickerLoop_TicksAtInterval(t *testing.T) {
 		t.Fatal("RunTickerLoop() did not stop after context cancellation")
 	}
 
-	if got := atomic.LoadInt32(&calls); got < 3 {
+	if got := calls.Load(); got < 3 {
 		t.Fatalf("onTick calls = %d, want at least 3", got)
 	}
 }

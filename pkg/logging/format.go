@@ -25,8 +25,33 @@ func newFormatHandler(level slog.Level, w io.Writer) slog.Handler {
 	return newSanitizeHandler(slog.NewJSONHandler(w, &slog.HandlerOptions{
 		Level:       level,
 		AddSource:   true,
-		ReplaceAttr: shortenSource,
+		ReplaceAttr: replaceBuiltinAttr,
 	}))
+}
+
+func replaceBuiltinAttr(groups []string, attr slog.Attr) slog.Attr {
+	if len(groups) > 0 {
+		return attr
+	}
+	switch attr.Key {
+	case slog.LevelKey:
+		return stringifyLevel(attr)
+	case slog.SourceKey:
+		return shortenSource(groups, attr)
+	default:
+		return attr
+	}
+}
+
+// slog은 level을 Level.MarshalJSON으로 직렬화하는데, Go 1.27부터 encoding/json이 v2 구현이라
+// 이 경로가 record마다 reflect.New 박싱을 한 번 더 한다. 같은 문자열을 직접 실으면 JSON 출력은
+// 바이트 단위로 같고 json 인코더를 거치지 않는다.
+func stringifyLevel(attr slog.Attr) slog.Attr {
+	level, ok := attr.Value.Any().(slog.Level)
+	if !ok {
+		return attr
+	}
+	return slog.String(slog.LevelKey, level.String())
 }
 
 // slog 기본값은 빌드 머신의 절대 경로를 모든 record에 싣는다.

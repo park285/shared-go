@@ -32,8 +32,7 @@ func warnParse(key, value, kind string, err error, def any) {
 }
 
 func parseErrorKind(err error) string {
-	var numErr *strconv.NumError
-	if errors.As(err, &numErr) {
+	if numErr, ok := errors.AsType[*strconv.NumError](err); ok {
 		switch {
 		case errors.Is(numErr.Err, strconv.ErrSyntax):
 			return "invalid_syntax"

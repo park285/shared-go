@@ -60,6 +60,8 @@ linters:
       exclude-functions:
         - (*os.File).Close
         - (io.Closer).Close
+        # errors.AsType의 첫 반환값은 typed target이라 blank 할당이 의도적(ok만 검사)이다.
+        - errors.AsType
 
     govet:
       enable-all: true
@@ -121,7 +123,7 @@ linters:
           disabled: true
 
     wrapcheck:
-      ignoreSigs:
+      ignore-sigs:
         - .Errorf(
         - errors.New(
         - errors.Unwrap(
@@ -137,7 +139,7 @@ linters:
         - .ReadAll(
         - .AsInt64(
         - .NewPool(
-      ignorePackageGlobs:
+      ignore-package-globs:
         - encoding/*
         - github.com/stretchr/testify/*
         # Valkey 클라이언트 에러는 직접 반환

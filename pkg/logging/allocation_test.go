@@ -20,7 +20,7 @@ func TestLoggingAllocationCeilings(t *testing.T) {
 	}{
 		{
 			name:      "log common path",
-			maxAllocs: 5,
+			maxAllocs: 4,
 			call: func() {
 				Log(ctx, logger, slog.LevelInfo, "request.completed", "request completed",
 					slog.String("method", "GET"), slog.Int("status", 200))
@@ -28,7 +28,7 @@ func TestLoggingAllocationCeilings(t *testing.T) {
 		},
 		{
 			name:      "log and wrap error",
-			maxAllocs: 12,
+			maxAllocs: 11,
 			call: func() {
 				_ = LogAndWrapError(ctx, logger, "op", context.DeadlineExceeded, slog.String("a", "b"))
 			},

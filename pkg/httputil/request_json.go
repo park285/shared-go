@@ -75,8 +75,7 @@ func (e *JSONRequestError) Unwrap() error {
 
 // DecodeJSONRequestStatus는 JSON 요청 오류에 대응하는 HTTP status를 반환한다.
 func DecodeJSONRequestStatus(err error) int {
-	var requestErr *JSONRequestError
-	if errors.As(err, &requestErr) {
+	if requestErr, ok := errors.AsType[*JSONRequestError](err); ok {
 		return requestErr.StatusCode
 	}
 	return http.StatusBadRequest
@@ -145,8 +144,7 @@ func validateJSONRequestContentType(contentType string, required bool) error {
 }
 
 func mapJSONRequestDecodeError(err error, sawBody bool) error {
-	var maxBytesErr *http.MaxBytesError
-	if errors.As(err, &maxBytesErr) {
+	if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 		return newJSONRequestError(
 			http.StatusRequestEntityTooLarge,
 			"request_entity_too_large",

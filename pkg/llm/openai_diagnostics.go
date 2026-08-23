@@ -29,8 +29,7 @@ func shouldFallbackToChatCompletions(err error) bool {
 }
 
 func shouldFallbackOpenAIError(err error) bool {
-	var apiErr *openai.Error
-	if errors.As(err, &apiErr) {
+	if apiErr, ok := errors.AsType[*openai.Error](err); ok {
 		return shouldFallbackOpenAIStatus(apiErr.StatusCode) || shouldFallbackOpenAICode(apiErr.Code)
 	}
 	return false

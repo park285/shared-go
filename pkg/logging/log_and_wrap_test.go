@@ -64,8 +64,7 @@ func TestLogAndWrapError_WrapsErrorWithOpPrefix(t *testing.T) {
 	if !errors.Is(err, cause) {
 		t.Fatal("wrapped error does not match cause with errors.Is")
 	}
-	var target *logAndWrapTypedError
-	if !errors.As(err, &target) {
+	if _, ok := errors.AsType[*logAndWrapTypedError](err); !ok {
 		t.Fatal("wrapped error does not match cause type with errors.As")
 	}
 }

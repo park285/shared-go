@@ -60,8 +60,8 @@ func decodeCandidatesWithContext(
 		embeddedContextMayContribute: embeddedContextMayContribute,
 		seenWholes:                   newSpanContextSeen(input),
 		roots:                        roots,
+		mayContribute:                mayContribute,
 	}
-	decoder.mayContribute = mayContribute
 	for _, root := range roots {
 		if _, exists := decoder.visited[root]; exists {
 			continue

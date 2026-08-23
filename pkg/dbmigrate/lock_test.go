@@ -262,10 +262,8 @@ func TestWithAdvisoryLockEvictsConnOnUnlockFailure(t *testing.T) {
 
 	unlockErr := errors.New("unlock boom")
 	session := &fakeEvictingLockSession{
-		fakeLockSession: fakeLockSession{
-			tryResults: []bool{true},
-			unlockErr:  unlockErr,
-		},
+		tryResults: []bool{true},
+		unlockErr:  unlockErr,
 	}
 	err := WithAdvisoryLock(t.Context(), session, LockConfig{
 		Acquire: 20 * time.Millisecond,
@@ -286,7 +284,7 @@ func TestWithAdvisoryLockDoesNotEvictWhenUnlockSucceeds(t *testing.T) {
 	t.Parallel()
 
 	session := &fakeEvictingLockSession{
-		fakeLockSession: fakeLockSession{tryResults: []bool{true}},
+		tryResults: []bool{true},
 	}
 	err := WithAdvisoryLock(t.Context(), session, LockConfig{
 		Acquire: 20 * time.Millisecond,
@@ -307,10 +305,8 @@ func TestWithAdvisoryLockEvictsWhenLockNotHeld(t *testing.T) {
 	t.Parallel()
 
 	session := &fakeEvictingLockSession{
-		fakeLockSession: fakeLockSession{
-			tryResults:        []bool{true},
-			unlockReleasedSet: true,
-		},
+		tryResults:        []bool{true},
+		unlockReleasedSet: true,
 	}
 	err := WithAdvisoryLock(t.Context(), session, LockConfig{
 		Acquire: 20 * time.Millisecond,
@@ -332,10 +328,8 @@ func TestWithAdvisoryLockEvictsAndInvokesCallbackOnUnlockFailure(t *testing.T) {
 
 	unlockErr := errors.New("unlock boom")
 	session := &fakeEvictingLockSession{
-		fakeLockSession: fakeLockSession{
-			tryResults: []bool{true},
-			unlockErr:  unlockErr,
-		},
+		tryResults: []bool{true},
+		unlockErr:  unlockErr,
 	}
 	var callbackErr error
 	err := WithAdvisoryLock(t.Context(), session, LockConfig{
@@ -362,10 +356,8 @@ func TestWithAdvisoryLockEvictPanicKeepsUnlockErrorSemantics(t *testing.T) {
 
 	unlockErr := errors.New("unlock boom")
 	session := &fakeEvictingLockSession{
-		fakeLockSession: fakeLockSession{
-			tryResults: []bool{true},
-			unlockErr:  unlockErr,
-		},
+		tryResults: []bool{true},
+		unlockErr:  unlockErr,
 		evictPanic: true,
 	}
 	err := WithAdvisoryLock(t.Context(), session, LockConfig{
@@ -391,10 +383,8 @@ func TestWithAdvisoryLockEvictPanicStillInvokesCallback(t *testing.T) {
 
 	unlockErr := errors.New("unlock boom")
 	session := &fakeEvictingLockSession{
-		fakeLockSession: fakeLockSession{
-			tryResults: []bool{true},
-			unlockErr:  unlockErr,
-		},
+		tryResults: []bool{true},
+		unlockErr:  unlockErr,
 		evictPanic: true,
 	}
 	var callbackErr error
@@ -423,10 +413,8 @@ func TestWithAdvisoryLockEvictPanicKeepsRunErrorJoin(t *testing.T) {
 	runErr := errors.New("run failed")
 	unlockErr := errors.New("unlock boom")
 	session := &fakeEvictingLockSession{
-		fakeLockSession: fakeLockSession{
-			tryResults: []bool{true},
-			unlockErr:  unlockErr,
-		},
+		tryResults: []bool{true},
+		unlockErr:  unlockErr,
 		evictPanic: true,
 	}
 	err := WithAdvisoryLock(t.Context(), session, LockConfig{
@@ -451,10 +439,8 @@ func TestWithAdvisoryLockEvictPanicDoesNotReplaceFnPanic(t *testing.T) {
 	t.Parallel()
 
 	session := &fakeEvictingLockSession{
-		fakeLockSession: fakeLockSession{
-			tryResults: []bool{true},
-			unlockErr:  errors.New("unlock boom"),
-		},
+		tryResults: []bool{true},
+		unlockErr:  errors.New("unlock boom"),
 		evictPanic: true,
 	}
 	var recovered any

@@ -117,8 +117,7 @@ func (c *ProfileFileChecker) Check(now time.Time) ProfileFileStatus {
 	raw, err := readRegularProfile(c.path)
 	status := ProfileFileStatus{CheckedAtEpochMS: now.UnixMilli()}
 	if err != nil {
-		var fileErr profileFileError
-		if errors.As(err, &fileErr) {
+		if fileErr, ok := errors.AsType[profileFileError](err); ok {
 			status.ErrorCode = &fileErr.code
 		} else {
 			code := ProfileFileUnreadable

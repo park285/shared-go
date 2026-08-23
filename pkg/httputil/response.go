@@ -48,8 +48,7 @@ func (e *APIError) Unwrap() error {
 }
 
 func IsStatus(err error, statusCode int) bool {
-	var apiErr *APIError
-	if errors.As(err, &apiErr) {
+	if apiErr, ok := errors.AsType[*APIError](err); ok {
 		return apiErr.StatusCode == statusCode
 	}
 	return false
