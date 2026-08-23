@@ -111,8 +111,7 @@ func TestJSONClientNewJSONRequestRejectsUnsupportedV2Shapes(t *testing.T) {
 			if err == nil {
 				t.Fatal("NewJSONRequest() error = nil, want v2 semantic failure")
 			}
-			var semanticErr *jsonv2.SemanticError
-			if !errors.As(err, &semanticErr) {
+			if _, ok := errors.AsType[*jsonv2.SemanticError](err); !ok {
 				t.Fatalf("error type = %T, want *jsonv2.SemanticError in chain", err)
 			}
 		})

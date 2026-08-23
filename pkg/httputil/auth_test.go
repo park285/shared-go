@@ -100,8 +100,7 @@ func TestWriteJSONEncodeFailureDoesNotCommitResponse(t *testing.T) {
 	if err == nil {
 		t.Fatal("WriteJSON() error = nil, want invalid UTF-8 failure")
 	}
-	var syntacticErr *jsontext.SyntacticError
-	if !errors.As(err, &syntacticErr) {
+	if _, ok := errors.AsType[*jsontext.SyntacticError](err); !ok {
 		t.Fatalf("error type = %T, want *jsontext.SyntacticError", err)
 	}
 	if w.status != 0 || w.body.Len() != 0 || w.header.Get(HeaderContentType) != "" {

@@ -107,14 +107,12 @@ func TestDecodeJSONRequestRejectsV2InvalidInputs(t *testing.T) {
 			err := DecodeJSONRequest(httptest.NewRecorder(), req, &got, DecodeJSONRequestOptions{Strict: tt.strict})
 			assertJSONRequestStatus(t, err, http.StatusBadRequest)
 			if tt.wantSyntactic {
-				var syntacticErr *jsontext.SyntacticError
-				if !errors.As(err, &syntacticErr) {
+				if _, ok := errors.AsType[*jsontext.SyntacticError](err); !ok {
 					t.Fatalf("error type = %T, want *jsontext.SyntacticError in chain", err)
 				}
 				return
 			}
-			var semanticErr *jsonv2.SemanticError
-			if !errors.As(err, &semanticErr) {
+			if _, ok := errors.AsType[*jsonv2.SemanticError](err); !ok {
 				t.Fatalf("error type = %T, want *jsonv2.SemanticError in chain", err)
 			}
 		})
@@ -148,8 +146,7 @@ func TestDecodeJSONRequestUsesV2FixedByteArrayFormat(t *testing.T) {
 		}
 		err := DecodeJSONRequest(httptest.NewRecorder(), req, &got, DecodeJSONRequestOptions{})
 		assertJSONRequestStatus(t, err, http.StatusBadRequest)
-		var semanticErr *jsonv2.SemanticError
-		if !errors.As(err, &semanticErr) {
+		if _, ok := errors.AsType[*jsonv2.SemanticError](err); !ok {
 			t.Fatalf("error type = %T, want *jsonv2.SemanticError in chain", err)
 		}
 	})
