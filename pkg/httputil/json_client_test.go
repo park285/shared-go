@@ -99,6 +99,7 @@ func TestJSONClientNewJSONRequestRejectsUnsupportedV2Shapes(t *testing.T) {
 		{
 			name: "malformed struct tag",
 			payload: struct {
+				//lint:ignore SA5008 v2가 잘못된 struct tag를 SemanticError로 거절하는지 검증하려고 일부러 둔 fixture다.
 				Value string `json:"value,"`
 			}{Value: "x"},
 		},
