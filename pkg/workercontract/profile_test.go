@@ -88,7 +88,10 @@ func TestLoadProfileFileRejectsEveryNegativeFixture(t *testing.T) {
 			if loadErr == nil {
 				t.Fatal("LoadProfileFile() error = nil")
 			}
-			if !strings.Contains(loadErr.Error(), expected.wantErr) {
+			// encoding/json/v2는 프로세스마다 "cannot"과 "unable to" 중 하나를 무작위로 골라
+			// 오류 문구에 의존하지 못하게 막으므로, 비교 전에 그 부분만 정규화한다.
+			actual := strings.Replace(loadErr.Error(), "json: unable to ", "json: cannot ", 1)
+			if !strings.Contains(actual, expected.wantErr) {
 				t.Fatalf("LoadProfileFile() error = %v, want it to contain %q", loadErr, expected.wantErr)
 			}
 		})
