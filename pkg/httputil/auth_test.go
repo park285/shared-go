@@ -1,12 +1,14 @@
 package httputil
 
 import (
+	"bytes"
+	jsontext "encoding/json/jsontext"
+	jsonv2 "encoding/json/v2"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	sharedjson "github.com/park285/shared-go/pkg/json"
 )
 
 func TestConstantTimeStringEqual(t *testing.T) {
@@ -84,9 +86,26 @@ func TestWriteJSON(t *testing.T) {
 	if got := rec.Header().Get(HeaderContentType); got != ContentTypeJSON {
 		t.Fatalf("Content-Type = %q, want %q", got, ContentTypeJSON)
 	}
-	body := strings.TrimSpace(rec.Body.String())
+	body := rec.Body.String()
 	if body != `{"html":"<b>&</b>"}` {
 		t.Fatalf("body = %q, want unescaped HTML JSON", body)
+	}
+}
+
+func TestWriteJSONEncodeFailureDoesNotCommitResponse(t *testing.T) {
+	t.Parallel()
+
+	w := &responseWriteProbe{header: make(http.Header)}
+	err := WriteJSON(w, http.StatusCreated, map[string]string{"invalid": "ok\xffbad"})
+	if err == nil {
+		t.Fatal("WriteJSON() error = nil, want invalid UTF-8 failure")
+	}
+	var syntacticErr *jsontext.SyntacticError
+	if !errors.As(err, &syntacticErr) {
+		t.Fatalf("error type = %T, want *jsontext.SyntacticError", err)
+	}
+	if w.status != 0 || w.body.Len() != 0 || w.header.Get(HeaderContentType) != "" {
+		t.Fatalf("response committed on encode failure: status=%d header=%q body=%q", w.status, w.header.Get(HeaderContentType), w.body.String())
 	}
 }
 
@@ -104,7 +123,7 @@ func TestWriteErrorJSONTrimsAndUsesWriteJSON(t *testing.T) {
 		t.Fatalf("Content-Type = %q, want %q", got, ContentTypeJSON)
 	}
 	var payload ErrorResponse
-	if err := sharedjson.Unmarshal([]byte(strings.TrimSpace(rec.Body.String())), &payload); err != nil {
+	if err := jsonv2.Unmarshal([]byte(strings.TrimSpace(rec.Body.String())), &payload); err != nil {
 		t.Fatalf("unmarshal error body: %v", err)
 	}
 	if payload.Error != "CODE" || payload.Message != "msg" {
@@ -200,7 +219,7 @@ func TestAdminAuthMiddleware(t *testing.T) {
 			}
 
 			var payload ErrorResponse
-			if err := sharedjson.Unmarshal([]byte(strings.TrimSpace(rec.Body.String())), &payload); err != nil {
+			if err := jsonv2.Unmarshal([]byte(strings.TrimSpace(rec.Body.String())), &payload); err != nil {
 				t.Fatalf("unmarshal error body: %v", err)
 			}
 			if payload.Error != tt.wantCode {
@@ -208,4 +227,21 @@ func TestAdminAuthMiddleware(t *testing.T) {
 			}
 		})
 	}
+}
+
+type responseWriteProbe struct {
+	header http.Header
+	status int
+	body   bytes.Buffer
+}
+
+func (w *responseWriteProbe) Header() http.Header { return w.header }
+
+func (w *responseWriteProbe) WriteHeader(status int) { w.status = status }
+
+func (w *responseWriteProbe) Write(p []byte) (int, error) {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	return w.body.Write(p)
 }

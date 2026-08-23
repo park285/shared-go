@@ -1,7 +1,7 @@
 package llm
 
 import (
-	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -23,7 +23,7 @@ func TestOpenAICompatibleJSONGeneratorResponsesStructuredRequest(t *testing.T) {
 		if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
 			t.Errorf("authorization = %q, want bearer test-key", got)
 		}
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		if err := jsonv2.UnmarshalRead(r.Body, &payload); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
 		writeJSON(t, w, `{"id":"resp-1","object":"response","created_at":1,"status":"completed","model":"gpt-returned","output":[{"id":"msg-1","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"{\"ok\":true}","annotations":[]}]}],"usage":{"input_tokens":12,"input_tokens_details":{"cached_tokens":2},"output_tokens":5,"output_tokens_details":{"reasoning_tokens":1},"total_tokens":17}}`)
@@ -161,7 +161,7 @@ func TestOpenAICompatibleJSONGeneratorChatCompletionsStructuredOutput(t *testing
 		if r.URL.Path != "/chat/completions" {
 			t.Errorf("path = %s, want /chat/completions", r.URL.Path)
 		}
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		if err := jsonv2.UnmarshalRead(r.Body, &payload); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
 		writeJSON(t, w, `{"id":"chatcmpl-1","object":"chat.completion","created":1,"model":"gpt-chat","choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"Here is JSON: {\"ok\":true}"}}],"usage":{"prompt_tokens":7,"prompt_tokens_details":{"cached_tokens":1},"completion_tokens":3,"completion_tokens_details":{"reasoning_tokens":2},"total_tokens":10}}`)
@@ -370,7 +370,7 @@ func writeJSON(t *testing.T, w http.ResponseWriter, body string) {
 func containsJSON(t *testing.T, value any, want string) bool {
 	t.Helper()
 
-	raw, err := json.Marshal(value)
+	raw, err := jsonv2.Marshal(value)
 	if err != nil {
 		t.Fatalf("marshal value: %v", err)
 	}
@@ -434,7 +434,7 @@ func TestOpenAICompatibleJSONGeneratorForwardsPromptCacheKey(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		decoded := map[string]any{}
-		if err := json.NewDecoder(r.Body).Decode(&decoded); err != nil {
+		if err := jsonv2.UnmarshalRead(r.Body, &decoded); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
 		payload = decoded

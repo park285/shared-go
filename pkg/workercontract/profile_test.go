@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/park285/shared-go/pkg/workercontract"
+	"github.com/park285/shared-go/v2/pkg/workercontract"
 )
 
 func knownIdentity(t *testing.T, service, role string) workercontract.Identity {
@@ -56,7 +56,7 @@ func TestLoadProfileFileRejectsEveryNegativeFixture(t *testing.T) {
 		identity workercontract.Identity
 		wantErr  string
 	}{
-		"invalid-duplicate-key.json":  {collector, `duplicate JSON key "service"`},
+		"invalid-duplicate-key.json":  {collector, `duplicate object member name "service"`},
 		"invalid-extra-worker.json":   {collector, "workers: got [collection extra], want [collection]"},
 		"invalid-missing.json":        {chatbot, "profile.profile_id: required"},
 		"invalid-missing-worker.json": {chatbot, "workers: got [command], want [command compaction draw summary webhook_inbox]"},
@@ -64,7 +64,7 @@ func TestLoadProfileFileRejectsEveryNegativeFixture(t *testing.T) {
 		"invalid-null-mismatch.json":  {collector, "workers.collection.executor.attempt_timeout.milliseconds: out of range"},
 		"invalid-trailing-json.json":  {chatbot, "trailing JSON value"},
 		"invalid-unknown-field.json":  {collector, "workers.collection.unknown: unknown field"},
-		"invalid-value.json":          {collector, "enabled: json: cannot unmarshal string"},
+		"invalid-value.json":          {collector, "enabled: json: cannot unmarshal JSON string into Go bool"},
 		"invalid-wrong-role.json":     {collector, "profile identity: got hololive/unknown, want hololive/youtube-collector"},
 		"invalid-wrong-service.json":  {collector, "profile identity: got unknown/youtube-collector, want hololive/youtube-collector"},
 		"invalid-wrong-version.json":  {collector, "contract_version: got 2, want 1"},

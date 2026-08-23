@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/park285/shared-go/pkg/netguard"
+	"github.com/park285/shared-go/v2/pkg/netguard"
 )
 
 func TestFetchURL_DNSRebinding_6ccdf328(t *testing.T) {

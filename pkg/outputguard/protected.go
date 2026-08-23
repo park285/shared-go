@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/park285/shared-go/pkg/internal/guardtext"
+	"github.com/park285/shared-go/v2/pkg/internal/guardtext"
 )
 
 var ErrInvalidProtectedTexts = errors.New("outputguard: invalid protected texts")

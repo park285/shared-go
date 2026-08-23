@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/park285/shared-go/pkg/workercontract"
+	"github.com/park285/shared-go/v2/pkg/workercontract"
 )
 
 func buildChatbotRegistry(t *testing.T, webhookQueue func() workercontract.QueueSnapshot) *workercontract.Registry {

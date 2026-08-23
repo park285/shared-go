@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/park285/shared-go/pkg/internal/guardtext"
+	"github.com/park285/shared-go/v2/pkg/internal/guardtext"
 )
 
 const maxOutputBytes = 1 << 20

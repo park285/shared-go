@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/park285/shared-go/pkg/backoff"
+	"github.com/park285/shared-go/v2/pkg/backoff"
 )
 
 type RetryOptions struct {

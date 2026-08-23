@@ -2,6 +2,7 @@ package openaipreset
 
 import (
 	"context"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -16,11 +17,10 @@ import (
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/responses"
 
-	"github.com/park285/shared-go/pkg/httputil"
-	sharedjson "github.com/park285/shared-go/pkg/json"
-	sharedllm "github.com/park285/shared-go/pkg/llm"
-	"github.com/park285/shared-go/pkg/llm/internal/openaidiag"
-	"github.com/park285/shared-go/pkg/logging"
+	"github.com/park285/shared-go/v2/pkg/httputil"
+	sharedllm "github.com/park285/shared-go/v2/pkg/llm"
+	"github.com/park285/shared-go/v2/pkg/llm/internal/openaidiag"
+	"github.com/park285/shared-go/v2/pkg/logging"
 )
 
 const (
@@ -273,13 +273,13 @@ func (c *Client) generate(
 }
 
 func decodeJSONInto(task, text string, out any) error {
-	if err := sharedjson.Unmarshal([]byte(text), out); err != nil {
+	if err := jsonv2.Unmarshal([]byte(text), out); err != nil {
 		return fmt.Errorf("decode %s json failed: %w", strings.TrimSpace(task), &redactedCauseError{cause: err})
 	}
 	return nil
 }
 
-// sonic decode error 메시지는 실패 지점 주변 원문을 담으므로 렌더링하면 provider
+// JSON decode error 메시지는 실패 지점 주변 원문을 담을 수 있으므로 렌더링하면 provider
 // 출력이 샌다(TestGenerateJSONIntoDecodeErrorOmitsProviderOutput). 원문은 Unwrap으로만
 // 전달해 errors.Is/As 대상 클래스를 보존하고, 메시지에는 타입만 남긴다.
 type redactedCauseError struct{ cause error }

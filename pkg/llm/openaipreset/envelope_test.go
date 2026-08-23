@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/park285/shared-go/pkg/llm/openaipreset"
+	"github.com/park285/shared-go/v2/pkg/llm/openaipreset"
 )
 
 func TestLooksLikeToolCallEnvelope(t *testing.T) {

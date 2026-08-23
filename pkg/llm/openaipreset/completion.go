@@ -2,7 +2,7 @@ package openaipreset
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"fmt"
 	"strings"
 
@@ -11,8 +11,8 @@ import (
 	"github.com/openai/openai-go/v3/shared"
 	"github.com/openai/openai-go/v3/shared/constant"
 
-	sharedllm "github.com/park285/shared-go/pkg/llm"
-	"github.com/park285/shared-go/pkg/llm/internal/openaidiag"
+	sharedllm "github.com/park285/shared-go/v2/pkg/llm"
+	"github.com/park285/shared-go/v2/pkg/llm/internal/openaidiag"
 )
 
 type Message = sharedllm.Message
@@ -281,52 +281,28 @@ func LooksLikeToolCallEnvelope(text string) bool {
 		return false
 	}
 
-	decoder := json.NewDecoder(strings.NewReader(trimmed))
-	if token, err := decoder.Token(); err != nil || token != json.Delim('{') {
+	decoder := jsontext.NewDecoder(strings.NewReader(trimmed))
+	if token, err := decoder.ReadToken(); err != nil || token.Kind() != jsontext.KindBeginObject {
 		return false
 	}
-	for decoder.More() {
-		token, err := decoder.Token()
+	for decoder.PeekKind() != jsontext.KindEndObject {
+		token, err := decoder.ReadToken()
 		if err != nil {
 			return false
 		}
-		key, ok := token.(string)
-		if !ok {
+		if token.Kind() != jsontext.KindString {
 			return false
 		}
+		key := token.String()
 		if key == "tool_calls" || key == "function_call" || key == "tool_call" {
 			return true
 		}
-		if err := skipJSONValue(decoder); err != nil {
+		if err := decoder.SkipValue(); err != nil {
 			return false
 		}
 	}
 
 	return false
-}
-
-func skipJSONValue(decoder *json.Decoder) error {
-	depth := 0
-	for {
-		token, err := decoder.Token()
-		if err != nil {
-			return err
-		}
-		delim, isDelim := token.(json.Delim)
-		switch {
-		case !isDelim:
-			if depth == 0 {
-				return nil
-			}
-		case delim == '{' || delim == '[':
-			depth++
-		default:
-			depth--
-			if depth == 0 {
-				return nil
-			}
-		}
-	}
 }
 
 func UsageFromResponseUsage(usage *responses.ResponseUsage) sharedllm.Usage {

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/park285/shared-go/pkg/logging/internal/archive"
+	"github.com/park285/shared-go/v2/pkg/logging/internal/archive"
 )
 
 func TestNewLogger(t *testing.T) {

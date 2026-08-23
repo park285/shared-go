@@ -1,12 +1,12 @@
 package httputil
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"crypto/subtle"
+	jsonv2 "encoding/json/v2"
 	"net/http"
 	"strings"
-
-	sharedjson "github.com/park285/shared-go/pkg/json"
 )
 
 const (
@@ -53,11 +53,14 @@ func APIKeyFromRequest(r *http.Request) string {
 
 // WriteJSON은 값을 JSON으로 인코딩해 HTTP 응답 본문으로 쓴다. HTML escape는 적용하지 않는다.
 func WriteJSON(w http.ResponseWriter, status int, v any) error {
+	var body bytes.Buffer
+	if err := jsonv2.MarshalWrite(&body, v); err != nil {
+		return err
+	}
 	w.Header().Set(HeaderContentType, ContentTypeJSON)
 	w.WriteHeader(status)
-	enc := sharedjson.NewEncoder(w)
-	enc.SetEscapeHTML(false)
-	return enc.Encode(v)
+	_, err := w.Write(body.Bytes())
+	return err
 }
 
 // WriteErrorJSON은 표준 관리 HTTP JSON 에러 응답을 쓴다.

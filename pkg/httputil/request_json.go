@@ -1,14 +1,14 @@
 package httputil
 
 import (
+	"encoding/json/jsontext"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
 	"mime"
 	"net/http"
 	"strings"
-
-	sharedjson "github.com/park285/shared-go/pkg/json"
 )
 
 // DefaultMaxRequestBodyBytes는 JSON 요청 본문의 기본 최대 크기다.
@@ -103,16 +103,16 @@ func DecodeJSONRequest(w http.ResponseWriter, r *http.Request, v any, opts Decod
 	defer func() { _ = body.Close() }()
 
 	counter := &jsonRequestBodyReader{r: body}
-	dec := sharedjson.NewDecoder(counter)
+	dec := jsontext.NewDecoder(counter)
+	var decodeOptions jsonv2.Options
 	if opts.Strict {
-		dec.DisallowUnknownFields()
+		decodeOptions = jsonv2.RejectUnknownMembers(true)
 	}
-	if err := dec.Decode(v); err != nil {
+	if err := jsonv2.UnmarshalDecode(dec, v, decodeOptions); err != nil {
 		return mapJSONRequestDecodeError(err, counter.sawNonSpace)
 	}
 
-	var extra any
-	if err := dec.Decode(&extra); err != nil {
+	if _, err := dec.ReadValue(); err != nil {
 		if errors.Is(err, io.EOF) {
 			return nil
 		}

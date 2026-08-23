@@ -1,7 +1,7 @@
 package workercontract
 
 import (
-	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/http"
@@ -304,18 +304,21 @@ func validQueueSnapshot(snapshot QueueSnapshot) bool {
 func (r *Registry) Handler() http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		envelope, err := r.Diagnostics(time.Now())
-		writer.Header().Set("Content-Type", "application/json")
+		status := http.StatusOK
+		var payload any = envelope
 		if err != nil {
-			writer.WriteHeader(http.StatusServiceUnavailable)
-			if encodeErr := json.NewEncoder(writer).Encode(map[string]string{"errorCode": "worker_registry_unavailable"}); encodeErr != nil {
-				return
-			}
+			status = http.StatusServiceUnavailable
+			payload = map[string]string{"errorCode": "worker_registry_unavailable"}
+		} else if !envelope.Complete {
+			status = http.StatusServiceUnavailable
+		}
+		body, encodeErr := jsonv2.Marshal(payload)
+		if encodeErr != nil {
 			return
 		}
-		if !envelope.Complete {
-			writer.WriteHeader(http.StatusServiceUnavailable)
-		}
-		if encodeErr := json.NewEncoder(writer).Encode(envelope); encodeErr != nil {
+		writer.Header().Set("Content-Type", "application/json")
+		writer.WriteHeader(status)
+		if _, writeErr := writer.Write(body); writeErr != nil {
 			return
 		}
 	})

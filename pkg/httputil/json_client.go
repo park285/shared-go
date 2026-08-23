@@ -3,12 +3,11 @@ package httputil
 import (
 	"bytes"
 	"context"
+	jsonv2 "encoding/json/v2"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
-
-	sharedjson "github.com/park285/shared-go/pkg/json"
 )
 
 // JSONClient는 내부 서비스 간 JSON API 호출용 공통 HTTP 클라이언트입니다.
@@ -47,7 +46,7 @@ func (c *JSONClient) NewRequest(ctx context.Context, method, path string) (*http
 
 // NewJSONRequest는 JSON body 요청을 생성합니다.
 func (c *JSONClient) NewJSONRequest(ctx context.Context, method, path string, payload any) (*http.Request, error) {
-	body, err := sharedjson.Marshal(payload)
+	body, err := jsonv2.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}

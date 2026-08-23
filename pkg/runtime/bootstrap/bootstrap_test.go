@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	sharedlogging "github.com/park285/shared-go/pkg/logging"
+	sharedlogging "github.com/park285/shared-go/v2/pkg/logging"
 )
 
 type testConfig struct {

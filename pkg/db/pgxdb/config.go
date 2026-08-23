@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/park285/shared-go/pkg/envutil"
+	"github.com/park285/shared-go/v2/pkg/envutil"
 )
 
 var queryExecModeNames = map[string]string{

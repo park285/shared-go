@@ -8,7 +8,7 @@ import (
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/responses"
 
-	"github.com/park285/shared-go/pkg/llm/internal/openaidiag"
+	"github.com/park285/shared-go/v2/pkg/llm/internal/openaidiag"
 )
 
 func extractResponsesOutputText(resp *responses.Response) (string, error) {

@@ -8,8 +8,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	sharedllm "github.com/park285/shared-go/pkg/llm"
-	"github.com/park285/shared-go/pkg/llm/openaipreset"
+	sharedllm "github.com/park285/shared-go/v2/pkg/llm"
+	"github.com/park285/shared-go/v2/pkg/llm/openaipreset"
 )
 
 func TestResolveOpenAIMaxRetries(t *testing.T) {

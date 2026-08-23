@@ -5,8 +5,27 @@
 
 ## 미출시
 
+## v2.0.0 - 2026-08-23
+
+### 호환성이 깨지는 변경
+
+- 모듈 경로가 `github.com/park285/shared-go/v2`로 바뀝니다. 소비자는 `go.mod`의 require
+  지시자와 모든 import 경로를 `/v2`로 갱신해야 합니다.
+- `pkg/json` 패키지를 삭제합니다. `Marshal`, `Unmarshal`, `MarshalIndent`, `Valid`,
+  `NewEncoder`, `NewDecoder`, `RawMessage`, `Encoder`는 더 이상 제공하지 않으므로, 호출부는
+  `encoding/json/v2`와 `encoding/json/jsontext`를 직접 사용해야 합니다.
+- `workercontract.DecodeSettings`의 첫 인자 타입이 `encoding/json.RawMessage`에서
+  `jsontext.Value`로 바뀝니다. Go 1.27에서 두 타입은 별칭 관계이므로 기존 호출부는 그대로
+  컴파일되지만, 공개 시그니처는 v2 타입으로 고정됩니다.
+- JSON 디코딩이 중복된 object 이름과 잘못된 UTF-8을 거절하고 struct field 이름을 대소문자까지
+  정확히 일치시킵니다. 인코딩에서는 nil slice와 nil map을 각각 `[]`와 `{}`로 씁니다. 숫자와
+  bool의 zero-value 생략이 wire 계약인 field에는 `omitzero`를 명시했습니다.
+
 ### 변경
 
+- JSON 실행 경로를 Go 1.27 `encoding/json/v2`와 `encoding/json/jsontext`로 전환하고 Sonic
+  직접 의존성을 제거했습니다. `httputil`, `ginjson`, `jsonutil`, `llm`, `promptguard`의 경계
+  어댑터는 크기 제한과 Content-Type 같은 비-JSON 책임만 소유하며 내부 codec은 v2를 사용합니다.
 - Go 툴체인 핀을 `1.27.0`으로, `golangci-lint`를 `v2.13.1`로 올립니다. Go 1.27 `go fix`
   modernizer 재작성(`errors.AsType`, `sync/atomic` 타입, 내장 필드 리터럴)을 적용했고
   `.golangci.yml`의 wrapcheck 키를 v2 스키마(`ignore-sigs`·`ignore-package-globs`)로 고쳤습니다.

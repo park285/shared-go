@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/park285/shared-go/pkg/workerpool"
+	"github.com/park285/shared-go/v2/pkg/workerpool"
 )
 
 func trySubmit(pool *workerpool.ManagedPool, spec workerpool.JobSpec) bool {

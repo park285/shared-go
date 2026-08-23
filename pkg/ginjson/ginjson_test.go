@@ -1,16 +1,17 @@
 package ginjson_test
 
 import (
+	"bytes"
+	jsontext "encoding/json/jsontext"
+	jsonv2 "encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"github.com/bytedance/sonic"
 	"github.com/gin-gonic/gin"
 
-	"github.com/park285/shared-go/pkg/ginjson"
-	sharedjson "github.com/park285/shared-go/pkg/json"
+	"github.com/park285/shared-go/v2/pkg/ginjson"
 )
 
 func init() {
@@ -37,7 +38,7 @@ func TestRespond(t *testing.T) {
 
 	// 유효한 JSON인지 확인
 	var out map[string]string
-	if err := sharedjson.Unmarshal([]byte(strings.TrimSpace(body)), &out); err != nil {
+	if err := jsonv2.Unmarshal([]byte(strings.TrimSpace(body)), &out); err != nil {
 		t.Errorf("응답 바디가 유효한 JSON이 아님: %v (body=%s)", err, body)
 	}
 
@@ -65,7 +66,7 @@ func TestJSON_Render(t *testing.T) {
 
 	body := strings.TrimSpace(w.Body.String())
 	var out map[string]int
-	if err := sharedjson.Unmarshal([]byte(body), &out); err != nil {
+	if err := jsonv2.Unmarshal([]byte(body), &out); err != nil {
 		t.Errorf("응답 바디가 유효한 JSON이 아님: %v (body=%s)", err, body)
 	}
 
@@ -74,7 +75,7 @@ func TestJSON_Render(t *testing.T) {
 	}
 }
 
-func TestJSON_Render_EscapeSemanticsMatchSonicDefault(t *testing.T) {
+func TestJSONRenderUsesV2HTMLBoundary(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -97,36 +98,27 @@ func TestJSON_Render_EscapeSemanticsMatchSonicDefault(t *testing.T) {
 				t.Fatalf("Render 오류: %v", err)
 			}
 
-			var want strings.Builder
-			enc := sonic.ConfigDefault.NewEncoder(&want)
-			enc.SetEscapeHTML(true)
-			if err := enc.Encode(tc.data); err != nil {
-				t.Fatalf("기준 인코더 오류: %v", err)
+			want, err := jsonv2.Marshal(tc.data, jsontext.EscapeForHTML(true))
+			if err != nil {
+				t.Fatalf("jsonv2.Marshal() 오류: %v", err)
 			}
 
-			if got := w.Body.String(); got != want.String() {
-				t.Fatalf("출력 불일치: got %q, want %q", got, want.String())
+			if got := w.Body.Bytes(); !bytes.Equal(got, want) {
+				t.Fatalf("출력 불일치: got %q, want %q", got, want)
 			}
 		})
 	}
 }
 
-func TestJSON_Render_InvalidUTF8IsReplaced(t *testing.T) {
+func TestJSONRenderRejectsInvalidUTF8(t *testing.T) {
 	t.Parallel()
 
 	w := httptest.NewRecorder()
-	if err := (ginjson.JSON{Data: map[string]string{"k": "ok\xff\xfebad"}}).Render(w); err != nil {
-		t.Fatalf("Render 오류: %v", err)
+	if err := (ginjson.JSON{Data: map[string]string{"k": "ok\xff\xfebad"}}).Render(w); err == nil {
+		t.Fatal("Render 오류 = nil, want invalid UTF-8 failure")
 	}
-
-	body := strings.TrimSpace(w.Body.String())
-
-	var out map[string]string
-	if err := sharedjson.Unmarshal([]byte(body), &out); err != nil {
-		t.Fatalf("응답 바디가 유효한 JSON이 아님: %v (body=%q)", err, body)
-	}
-	if got, want := out["k"], "ok��bad"; got != want {
-		t.Fatalf("잘못된 UTF-8 치환 결과 불일치: got %q, want %q (body=%q)", got, want, body)
+	if w.Body.Len() != 0 {
+		t.Fatalf("Render가 실패 후 body를 기록함: %q", w.Body.String())
 	}
 }
 

@@ -2,7 +2,7 @@ package telemetry
 
 import (
 	"bytes"
-	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"log/slog"
 	"strings"
@@ -38,7 +38,7 @@ func TestInstallGlobalProvider_SetsErrorHandler(t *testing.T) {
 		t.Fatal("expected error handler to emit a log record, got none")
 	}
 	rec := map[string]any{}
-	if err := json.Unmarshal([]byte(out), &rec); err != nil {
+	if err := jsonv2.Unmarshal([]byte(out), &rec); err != nil {
 		t.Fatalf("unmarshal log record: %v", err)
 	}
 	if rec["level"] != "WARN" {

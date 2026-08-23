@@ -13,9 +13,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/park285/shared-go/pkg/h3"
-	"github.com/park285/shared-go/pkg/httputil"
-	"github.com/park285/shared-go/pkg/netguard"
+	"github.com/park285/shared-go/v2/pkg/h3"
+	"github.com/park285/shared-go/v2/pkg/httputil"
+	"github.com/park285/shared-go/v2/pkg/netguard"
 )
 
 const (

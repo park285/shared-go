@@ -18,7 +18,7 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"google.golang.org/grpc/credentials"
 
-	"github.com/park285/shared-go/pkg/logging"
+	"github.com/park285/shared-go/v2/pkg/logging"
 )
 
 type Config struct {

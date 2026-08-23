@@ -3,7 +3,7 @@ package logging
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"io"
 	"log/slog"
 	"os"
@@ -51,7 +51,7 @@ func probeJSONRecord(t *testing.T, label, out string) map[string]any {
 			continue
 		}
 		var record map[string]any
-		if err := json.Unmarshal([]byte(line), &record); err != nil {
+		if err := jsonv2.Unmarshal([]byte(line), &record); err != nil {
 			t.Fatalf("%s: line is not valid JSON: %q (%v)", label, line, err)
 		}
 		if msg, ok := record[slog.MessageKey].(string); ok && strings.HasPrefix(msg, "format_probe") {

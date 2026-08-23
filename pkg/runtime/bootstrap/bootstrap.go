@@ -8,8 +8,8 @@ import (
 	"os"
 	"time"
 
-	sharedlogging "github.com/park285/shared-go/pkg/logging"
-	"github.com/park285/shared-go/pkg/runtime/automaxprocs"
+	sharedlogging "github.com/park285/shared-go/v2/pkg/logging"
+	"github.com/park285/shared-go/v2/pkg/runtime/automaxprocs"
 )
 
 // Run이 error를 반환하면 bootstrap.Run은 비-0 exit code로 종료해 supervisor(systemd/Docker)의

@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	sharedllm "github.com/park285/shared-go/pkg/llm"
+	sharedllm "github.com/park285/shared-go/v2/pkg/llm"
 )
 
 type config struct {

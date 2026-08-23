@@ -9,7 +9,7 @@ Iris Stack의 Go 프로젝트들(`hololive-bot`, `chat-bot-go-kakao`, `twentyq-b
 ## 설치 (Installation)
 
 ```bash
-go get github.com/park285/shared-go@latest
+go get github.com/park285/shared-go/v2@latest
 ```
 
 ## 제공 패키지 목록 (Package Catalog)

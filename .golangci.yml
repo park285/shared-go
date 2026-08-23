@@ -146,8 +146,6 @@ linters:
         - github.com/valkey-io/valkey-go
         - github.com/valkey-io/valkey-go/*
         # 외부 라이브러리 에러 직접 반환 허용
-        - github.com/bytedance/sonic
-        - github.com/bytedance/sonic/*
         - github.com/panjf2000/ants/*
         - google.golang.org/grpc
         - google.golang.org/grpc/*
@@ -214,12 +212,12 @@ formatters:
       sections:
         - standard
         - default
-        - prefix(github.com/park285/shared-go)
+        - prefix(github.com/park285/shared-go/v2)
       custom-order: true
 
     goimports:
       local-prefixes:
-        - github.com/park285/shared-go
+        - github.com/park285/shared-go/v2
 
   exclusions:
     paths:

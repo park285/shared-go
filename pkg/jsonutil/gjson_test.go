@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/park285/shared-go/pkg/httputil"
+	"github.com/park285/shared-go/v2/pkg/httputil"
 )
 
 func TestErrBodyTooLargeAliasesHTTPUtilSentinel(t *testing.T) {

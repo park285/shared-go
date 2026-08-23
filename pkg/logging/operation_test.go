@@ -3,7 +3,7 @@ package logging
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"log/slog"
 	"runtime"
@@ -367,7 +367,7 @@ func operationLogRecords(t *testing.T, buf *bytes.Buffer) []map[string]any {
 	records := make([]map[string]any, 0, len(lines))
 	for _, line := range lines {
 		var record map[string]any
-		if err := json.Unmarshal([]byte(line), &record); err != nil {
+		if err := jsonv2.Unmarshal([]byte(line), &record); err != nil {
 			t.Fatalf("unmarshal log record %q: %v", line, err)
 		}
 		records = append(records, record)

@@ -12,7 +12,7 @@ import (
 
 	"golang.org/x/sync/singleflight"
 
-	"github.com/park285/shared-go/pkg/internal/guardtext"
+	"github.com/park285/shared-go/v2/pkg/internal/guardtext"
 )
 
 const (

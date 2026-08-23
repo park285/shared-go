@@ -10,7 +10,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/park285/shared-go/pkg/httputil"
+	"github.com/park285/shared-go/v2/pkg/httputil"
 )
 
 var smokeTimezones = []string{"Asia/Seoul", "Asia/Tokyo", "UTC"}

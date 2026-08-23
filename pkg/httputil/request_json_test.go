@@ -1,6 +1,8 @@
 package httputil
 
 import (
+	jsontext "encoding/json/jsontext"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -69,6 +71,88 @@ func TestDecodeJSONRequestStrictUnknownFields(t *testing.T) {
 	var got decodeJSONRequestSample
 	err := DecodeJSONRequest(httptest.NewRecorder(), req, &got, DecodeJSONRequestOptions{Strict: true})
 	assertJSONRequestStatus(t, err, http.StatusBadRequest)
+}
+
+func TestDecodeJSONRequestRejectsV2InvalidInputs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		body          []byte
+		strict        bool
+		wantSyntactic bool
+	}{
+		{
+			name:          "duplicate object name",
+			body:          []byte(`{"name":"first","name":"second"}`),
+			wantSyntactic: true,
+		},
+		{
+			name:          "invalid UTF-8",
+			body:          append([]byte(`{"name":"`), append([]byte{0xff}, []byte(`"}`)...)...),
+			wantSyntactic: true,
+		},
+		{
+			name:   "case-mismatched field",
+			body:   []byte(`{"Name":"value"}`),
+			strict: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(string(tt.body)))
+			var got decodeJSONRequestSample
+			err := DecodeJSONRequest(httptest.NewRecorder(), req, &got, DecodeJSONRequestOptions{Strict: tt.strict})
+			assertJSONRequestStatus(t, err, http.StatusBadRequest)
+			if tt.wantSyntactic {
+				var syntacticErr *jsontext.SyntacticError
+				if !errors.As(err, &syntacticErr) {
+					t.Fatalf("error type = %T, want *jsontext.SyntacticError in chain", err)
+				}
+				return
+			}
+			var semanticErr *jsonv2.SemanticError
+			if !errors.As(err, &semanticErr) {
+				t.Fatalf("error type = %T, want *jsonv2.SemanticError in chain", err)
+			}
+		})
+	}
+}
+
+func TestDecodeJSONRequestUsesV2FixedByteArrayFormat(t *testing.T) {
+	t.Parallel()
+
+	t.Run("exact decoded length", func(t *testing.T) {
+		t.Parallel()
+
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"digest":"AQI="}`))
+		var got struct {
+			Digest [2]byte `json:"digest"`
+		}
+		if err := DecodeJSONRequest(httptest.NewRecorder(), req, &got, DecodeJSONRequestOptions{}); err != nil {
+			t.Fatalf("DecodeJSONRequest() error = %v", err)
+		}
+		if got.Digest != [2]byte{1, 2} {
+			t.Fatalf("Digest = %v, want [1 2]", got.Digest)
+		}
+	})
+
+	t.Run("wrong decoded length", func(t *testing.T) {
+		t.Parallel()
+
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"digest":"AQ=="}`))
+		var got struct {
+			Digest [2]byte `json:"digest"`
+		}
+		err := DecodeJSONRequest(httptest.NewRecorder(), req, &got, DecodeJSONRequestOptions{})
+		assertJSONRequestStatus(t, err, http.StatusBadRequest)
+		var semanticErr *jsonv2.SemanticError
+		if !errors.As(err, &semanticErr) {
+			t.Fatalf("error type = %T, want *jsonv2.SemanticError in chain", err)
+		}
+	})
 }
 
 func TestDecodeJSONRequestMalformedJSONTaxonomy(t *testing.T) {

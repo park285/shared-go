@@ -2,7 +2,7 @@ package envutil
 
 import (
 	"bytes"
-	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"log/slog"
 	"strings"
 	"testing"
@@ -27,7 +27,7 @@ func captureWarn(t *testing.T, fn func()) []map[string]any {
 			continue
 		}
 		rec := map[string]any{}
-		require.NoError(t, json.Unmarshal([]byte(line), &rec))
+		require.NoError(t, jsonv2.Unmarshal([]byte(line), &rec))
 		records = append(records, rec)
 	}
 	return records

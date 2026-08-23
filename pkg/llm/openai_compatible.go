@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/http"
@@ -13,9 +14,8 @@ import (
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/openai/openai-go/v3/shared"
 
-	sharedjson "github.com/park285/shared-go/pkg/json"
-	"github.com/park285/shared-go/pkg/jsonutil"
-	"github.com/park285/shared-go/pkg/llm/internal/openaidiag"
+	"github.com/park285/shared-go/v2/pkg/jsonutil"
+	"github.com/park285/shared-go/v2/pkg/llm/internal/openaidiag"
 )
 
 var (
@@ -274,7 +274,7 @@ func responsesRole(role string) responses.EasyInputMessageRole {
 }
 
 func chatCompletionsSystemPrompt(systemPrompt string, schema map[string]any) (string, error) {
-	schemaJSON, err := sharedjson.Marshal(schema)
+	schemaJSON, err := jsonv2.Marshal(schema)
 	if err != nil {
 		return "", fmt.Errorf("marshal json schema: %w", err)
 	}

@@ -3,7 +3,7 @@ package openaipreset_test
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"github.com/openai/openai-go/v3/responses"
-	sharedllm "github.com/park285/shared-go/pkg/llm"
-	"github.com/park285/shared-go/pkg/llm/openaipreset"
+	sharedllm "github.com/park285/shared-go/v2/pkg/llm"
+	"github.com/park285/shared-go/v2/pkg/llm/openaipreset"
 )
 
 type contextBlockingTransport struct {
@@ -270,7 +270,7 @@ func TestCompleteResponsesRequest(t *testing.T) {
 				if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
 					t.Fatalf("authorization = %q, want bearer test-key", got)
 				}
-				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				if err := jsonv2.UnmarshalRead(r.Body, &payload); err != nil {
 					t.Fatalf("decode request: %v", err)
 				}
 				writeJSON(t, w, responsesBody)
@@ -526,7 +526,7 @@ func TestCompletionFromResponseTextSelection(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			var resp responses.Response
-			if err := json.Unmarshal([]byte(tc.raw), &resp); err != nil {
+			if err := jsonv2.Unmarshal([]byte(tc.raw), &resp); err != nil {
 				t.Fatalf("unmarshal response: %v", err)
 			}
 

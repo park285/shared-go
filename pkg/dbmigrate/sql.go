@@ -4,7 +4,7 @@ import (
 	"embed"
 	"strings"
 
-	"github.com/park285/shared-go/pkg/sqlutil"
+	"github.com/park285/shared-go/v2/pkg/sqlutil"
 )
 
 //go:embed queries/*.sql queries/*.sql.tpl

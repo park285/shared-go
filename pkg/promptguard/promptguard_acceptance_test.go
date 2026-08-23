@@ -3,7 +3,7 @@ package promptguard_test
 import (
 	"testing"
 
-	"github.com/park285/shared-go/pkg/promptguard"
+	"github.com/park285/shared-go/v2/pkg/promptguard"
 )
 
 func TestGuardBlocksKoreanPromptInjectionFromV3Rulepack(t *testing.T) {

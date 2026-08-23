@@ -2,6 +2,8 @@ package httputil
 
 import (
 	"context"
+	jsonv2 "encoding/json/v2"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -41,12 +43,79 @@ func TestJSONClient_NewJSONRequestSetsHeadersAndBody(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadAll(req.Body) error = %v", err)
 	}
-	bodyText := string(body)
-	if !strings.Contains(bodyText, `"name":"kapu"`) {
-		t.Fatalf("body = %s, expected name field", bodyText)
+	var got map[string]any
+	if err := jsonv2.Unmarshal(body, &got); err != nil {
+		t.Fatalf("jsonv2.Unmarshal(body) error = %v", err)
 	}
-	if !strings.Contains(bodyText, `"id":7`) {
-		t.Fatalf("body = %s, expected id field", bodyText)
+	if got["name"] != "kapu" || got["id"] != float64(7) {
+		t.Fatalf("body payload = %#v, want name=kapu id=7", got)
+	}
+}
+
+func TestJSONClientNewJSONRequestUsesV2WireSemantics(t *testing.T) {
+	t.Parallel()
+
+	type requestPayload struct {
+		Map       map[string]int `json:"map"`
+		Slice     []int          `json:"slice"`
+		Count     int            `json:"count,omitempty"`
+		OmitZero  int            `json:"omitZero,omitzero"`
+		Digest    [2]byte        `json:"digest"`
+		CreatedAt time.Time      `json:"createdAt"`
+	}
+
+	client := NewJSONClient("https://example.com", "", time.Second)
+	req, err := client.NewJSONRequest(t.Context(), http.MethodPost, "/v2", requestPayload{
+		Digest:    [2]byte{1, 2},
+		CreatedAt: time.Date(2026, time.August, 23, 1, 2, 3, 4, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("NewJSONRequest() error = %v", err)
+	}
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		t.Fatalf("ReadAll(req.Body) error = %v", err)
+	}
+	const want = `{"map":{},"slice":[],"count":0,"digest":"AQI=","createdAt":"2026-08-23T01:02:03.000000004Z"}`
+	if string(body) != want {
+		t.Fatalf("body = %s, want %s", body, want)
+	}
+}
+
+func TestJSONClientNewJSONRequestRejectsUnsupportedV2Shapes(t *testing.T) {
+	t.Parallel()
+
+	client := NewJSONClient("https://example.com", "", time.Second)
+	tests := []struct {
+		name    string
+		payload any
+	}{
+		{
+			name: "duration without format",
+			payload: struct {
+				Timeout time.Duration `json:"timeout"`
+			}{Timeout: time.Second},
+		},
+		{
+			name: "malformed struct tag",
+			payload: struct {
+				Value string `json:"value,"`
+			}{Value: "x"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := client.NewJSONRequest(t.Context(), http.MethodPost, "/v2", tt.payload)
+			if err == nil {
+				t.Fatal("NewJSONRequest() error = nil, want v2 semantic failure")
+			}
+			var semanticErr *jsonv2.SemanticError
+			if !errors.As(err, &semanticErr) {
+				t.Fatalf("error type = %T, want *jsonv2.SemanticError in chain", err)
+			}
+		})
 	}
 }
 

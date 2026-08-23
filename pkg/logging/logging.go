@@ -15,7 +15,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"gopkg.in/natefinch/lumberjack.v2"
 
-	"github.com/park285/shared-go/pkg/logging/internal/archive"
+	"github.com/park285/shared-go/v2/pkg/logging/internal/archive"
 )
 
 type Config struct {

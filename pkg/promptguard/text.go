@@ -1,6 +1,6 @@
 package promptguard
 
-import "github.com/park285/shared-go/pkg/internal/guardtext"
+import "github.com/park285/shared-go/v2/pkg/internal/guardtext"
 
 type Views = guardtext.Views
 

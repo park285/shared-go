@@ -1,13 +1,13 @@
 package httputil
 
 import (
+	"encoding/json/jsontext"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
-
-	sharedjson "github.com/park285/shared-go/pkg/json"
 )
 
 type APIError struct {
@@ -90,7 +90,7 @@ func newAPIError(statusCode int, body string) *APIError {
 	}
 
 	var payload errorResponse
-	if err := sharedjson.Unmarshal([]byte(body), &payload); err != nil {
+	if err := jsonv2.Unmarshal([]byte(body), &payload); err != nil {
 		return apiErr
 	}
 	apiErr.Code = strings.TrimSpace(payload.Error)
@@ -115,8 +115,8 @@ func DecodeJSONLimited(resp *http.Response, v any, maxBytes int64) error {
 	}
 	// maxBytes+1까지 읽어 본문이 상한을 실제로 넘었는지 판별한다.
 	counter := &countingReader{r: io.LimitReader(resp.Body, maxBytes+1)}
-	decoder := sharedjson.NewDecoder(counter)
-	decodeErr := decoder.Decode(v)
+	decoder := jsontext.NewDecoder(counter)
+	decodeErr := jsonv2.UnmarshalDecode(decoder, v)
 	if counter.n > maxBytes {
 		return ErrResponseBodyTooLarge
 	}
@@ -125,8 +125,7 @@ func DecodeJSONLimited(resp *http.Response, v any, maxBytes int64) error {
 		return decodeErr
 	}
 
-	var extra any
-	trailingErr := decoder.Decode(&extra)
+	_, trailingErr := decoder.ReadValue()
 	if counter.n > maxBytes {
 		return ErrResponseBodyTooLarge
 	}

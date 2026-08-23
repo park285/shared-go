@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/park285/shared-go/pkg/internal/guardtext"
+	"github.com/park285/shared-go/v2/pkg/internal/guardtext"
 )
 
 func requireBenignDecodeIncompleteReview(t *testing.T, guard *Guard, input string) Evaluation {

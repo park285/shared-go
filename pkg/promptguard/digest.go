@@ -3,10 +3,9 @@ package promptguard
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	jsonv2 "encoding/json/v2"
 	"slices"
 	"sort"
-
-	sharedjson "github.com/park285/shared-go/pkg/json"
 )
 
 const EngineVersion = "promptguard-engine-v3.2.3"
@@ -52,7 +51,7 @@ func computePolicyDigest(set compiledRulepackSet) (string, error) {
 		Policy:        policyForDigest(set.Policy),
 		Rules:         rulesForDigest(allRules(set.Packs)),
 	}
-	encoded, err := sharedjson.Marshal(document)
+	encoded, err := jsonv2.Marshal(document, jsonv2.Deterministic(true))
 	if err != nil {
 		return "", err
 	}

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	sharedjson "github.com/park285/shared-go/pkg/json"
+	jsonv2 "encoding/json/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -32,7 +32,7 @@ func TestOutputGuardCorpus(t *testing.T) {
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		var test outputCorpusCase
-		require.NoError(t, sharedjson.Unmarshal(scanner.Bytes(), &test))
+		require.NoError(t, jsonv2.Unmarshal(scanner.Bytes(), &test))
 		t.Run(test.ID, func(t *testing.T) {
 			text := test.Text
 			if test.TextRepeatCount > 0 {

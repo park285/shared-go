@@ -2,7 +2,8 @@ package workercontract
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -69,7 +70,7 @@ type QueueProfile struct {
 type WorkerProfile struct {
 	Executor ExecutorProfile `json:"executor"`
 	Queue    QueueProfile    `json:"queue"`
-	Settings json.RawMessage `json:"settings"`
+	Settings jsontext.Value  `json:"settings"`
 }
 
 // Profile은 Stack Worker Profile v1의 공통 표현이다.
@@ -117,7 +118,7 @@ type LoadedProfile struct {
 func (p LoadedProfile) Path() string { return p.path }
 
 // DecodeSettings는 service-owned settings를 unknown field와 trailing JSON 없이 해석한다.
-func DecodeSettings(raw json.RawMessage, destination any) error {
+func DecodeSettings(raw jsontext.Value, destination any) error {
 	if destination == nil {
 		return errors.New("worker settings: nil destination")
 	}
@@ -128,13 +129,7 @@ func DecodeSettings(raw json.RawMessage, destination any) error {
 	if len(trimmed) == 0 || trimmed[0] != '{' {
 		return errors.New("worker settings: object required")
 	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	decoder.UseNumber()
-	if err := decoder.Decode(destination); err != nil {
-		return fmt.Errorf("worker settings: %w", err)
-	}
-	if err := requireJSONEOF(decoder); err != nil {
+	if err := jsonv2.Unmarshal(raw, destination, jsonv2.RejectUnknownMembers(true)); err != nil {
 		return fmt.Errorf("worker settings: %w", err)
 	}
 	return nil
@@ -161,7 +156,7 @@ func decodeProfile(raw []byte, identity Identity) (Profile, error) {
 	if err := decodeField(top, "profile_id", &profile.ProfileID); err != nil {
 		return Profile{}, err
 	}
-	workerRaw := map[string]json.RawMessage{}
+	workerRaw := map[string]jsontext.Value{}
 	if err := decodeField(top, "workers", &workerRaw); err != nil {
 		return Profile{}, err
 	}
@@ -179,7 +174,7 @@ func decodeProfile(raw []byte, identity Identity) (Profile, error) {
 	return profile, nil
 }
 
-func decodeWorker(raw json.RawMessage, workerID string) (WorkerProfile, error) {
+func decodeWorker(raw jsontext.Value, workerID string) (WorkerProfile, error) {
 	fields, fieldsErr := decodeExactObject(raw, "workers."+workerID, "executor", "queue", "settings")
 	if fieldsErr != nil {
 		return WorkerProfile{}, fieldsErr
@@ -225,7 +220,7 @@ func decodeWorker(raw json.RawMessage, workerID string) (WorkerProfile, error) {
 	return worker, nil
 }
 
-func decodeDuration(raw json.RawMessage, field string) (DurationPolicy, error) {
+func decodeDuration(raw jsontext.Value, field string) (DurationPolicy, error) {
 	fields, err := decodeExactObject(raw, field, "mode", "milliseconds")
 	if err != nil {
 		return DurationPolicy{}, err
@@ -244,7 +239,7 @@ func decodeDuration(raw json.RawMessage, field string) (DurationPolicy, error) {
 	return policy, nil
 }
 
-func decodeCapacity(raw json.RawMessage, field string) (CapacityPolicy, error) {
+func decodeCapacity(raw jsontext.Value, field string) (CapacityPolicy, error) {
 	fields, err := decodeExactObject(raw, field, "mode", "items")
 	if err != nil {
 		return CapacityPolicy{}, err
@@ -263,9 +258,9 @@ func decodeCapacity(raw json.RawMessage, field string) (CapacityPolicy, error) {
 	return policy, nil
 }
 
-func decodeExactObject(raw json.RawMessage, field string, names ...string) (map[string]json.RawMessage, error) {
-	value := map[string]json.RawMessage{}
-	if err := json.Unmarshal(raw, &value); err != nil {
+func decodeExactObject(raw jsontext.Value, field string, names ...string) (map[string]jsontext.Value, error) {
+	value := map[string]jsontext.Value{}
+	if err := jsonv2.Unmarshal(raw, &value); err != nil || value == nil {
 		return nil, fmt.Errorf("%s: object required", field)
 	}
 	allowed := make(map[string]struct{}, len(names))
@@ -283,8 +278,8 @@ func decodeExactObject(raw json.RawMessage, field string, names ...string) (map[
 	return value, nil
 }
 
-func decodeField(fields map[string]json.RawMessage, name string, destination any) error {
-	if err := json.Unmarshal(fields[name], destination); err != nil {
+func decodeField(fields map[string]jsontext.Value, name string, destination any) error {
+	if err := jsonv2.Unmarshal(fields[name], destination); err != nil {
 		return fmt.Errorf("%s: %w", name, err)
 	}
 	return nil
@@ -366,61 +361,11 @@ func validateDuration(policy DurationPolicy, allowNone bool, field string) error
 }
 
 func validateJSONDocument(raw []byte) error {
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.UseNumber()
-	if err := consumeJSONValue(decoder); err != nil {
+	decoder := jsontext.NewDecoder(bytes.NewReader(raw))
+	if _, err := decoder.ReadValue(); err != nil {
 		return err
 	}
-	return requireJSONEOF(decoder)
-}
-
-func consumeJSONValue(decoder *json.Decoder) error {
-	token, err := decoder.Token()
-	if err != nil {
-		return err
-	}
-	delimiter, ok := token.(json.Delim)
-	if !ok {
-		return nil
-	}
-	switch delimiter {
-	case '{':
-		seen := map[string]struct{}{}
-		for decoder.More() {
-			keyToken, tokenErr := decoder.Token()
-			if tokenErr != nil {
-				return tokenErr
-			}
-			key, keyOK := keyToken.(string)
-			if !keyOK {
-				return errors.New("JSON object key must be a string")
-			}
-			if _, duplicate := seen[key]; duplicate {
-				return fmt.Errorf("duplicate JSON key %q", key)
-			}
-			seen[key] = struct{}{}
-			if valueErr := consumeJSONValue(decoder); valueErr != nil {
-				return valueErr
-			}
-		}
-		_, err = decoder.Token()
-		return err
-	case '[':
-		for decoder.More() {
-			if valueErr := consumeJSONValue(decoder); valueErr != nil {
-				return valueErr
-			}
-		}
-		_, err = decoder.Token()
-		return err
-	default:
-		return errors.New("unexpected JSON delimiter")
-	}
-}
-
-func requireJSONEOF(decoder *json.Decoder) error {
-	var trailing any
-	if err := decoder.Decode(&trailing); errors.Is(err, io.EOF) {
+	if _, err := decoder.ReadValue(); errors.Is(err, io.EOF) {
 		return nil
 	} else if err != nil {
 		return err

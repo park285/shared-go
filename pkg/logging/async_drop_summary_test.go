@@ -2,7 +2,7 @@ package logging
 
 import (
 	"bytes"
-	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -94,7 +94,7 @@ func TestAsyncDropWriter_CloseSummaryKeepsJSONFormat(t *testing.T) {
 			continue
 		}
 		var record map[string]any
-		if err := json.Unmarshal([]byte(line), &record); err != nil {
+		if err := jsonv2.Unmarshal([]byte(line), &record); err != nil {
 			t.Fatalf("non-JSON line in json stdout stream: %q (%v)", line, err)
 		}
 		if msg, ok := record[slog.MessageKey].(string); ok && strings.Contains(msg, "lost lines") {
@@ -150,7 +150,7 @@ func TestEnableFileLogging_AsyncSummaryKeepsJSONFormat(t *testing.T) {
 			continue
 		}
 		var record map[string]any
-		if err := json.Unmarshal([]byte(line), &record); err != nil {
+		if err := jsonv2.Unmarshal([]byte(line), &record); err != nil {
 			t.Fatalf("non-JSON line in json stdout stream: %q (%v)", line, err)
 		}
 		if msg, ok := record[slog.MessageKey].(string); ok && strings.Contains(msg, "lost lines") {

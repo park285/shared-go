@@ -6,7 +6,7 @@ import (
 	"slices"
 	"testing"
 
-	sharedjson "github.com/park285/shared-go/pkg/json"
+	jsonv2 "encoding/json/v2"
 )
 
 type corpusCase struct {
@@ -58,7 +58,7 @@ func readCorpusCases(t *testing.T, path string) []corpusCase {
 	scanner := bufio.NewScanner(file)
 	for line := 1; scanner.Scan(); line++ {
 		var tc corpusCase
-		if err := sharedjson.Unmarshal(scanner.Bytes(), &tc); err != nil {
+		if err := jsonv2.Unmarshal(scanner.Bytes(), &tc); err != nil {
 			t.Fatalf("decode corpus line %d: %v", line, err)
 		}
 		if tc.ID == "" || tc.Input == "" || tc.ExpectedDecision == "" {
