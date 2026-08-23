@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "id": "DEC-20260610-shared-go-telemetry-retention",
+  "title": "소비자가 없는 shared-go/pkg/telemetry를 삭제할지 OTel 대비로 유지할지",
+  "decision_status": "superseded",
+  "delivery_status": "unknown",
+  "scope": [
+    "shared-go"
+  ],
+  "decided_at": "2026-06-10",
+  "summary": "로드맵 게이트 G-1. 제기 시점에는 소비자가 없어 삭제가 후보였다. 사흘 뒤 twentyq-bot이 초기 커밋에서 이 패키지를 소비하며 전제가 무너졌고, 2026-08-05 세 봇이 모두 공용 OTel 런타임으로 수렴하면서 유지로 확정되어 DEC-20260805-shared-go-telemetry-retained가 이 결정을 대체했다.",
+  "sources": [
+    "iris-stack@db3927cf0ed1:docs/agent-workflows/plans/2026-06-10-iris-stack-refactoring-roadmap.md#결정 게이트 요약 (사용자 입력 대기)"
+  ],
+  "evidence": [],
+  "implementation": [],
+  "supersedes": []
+}

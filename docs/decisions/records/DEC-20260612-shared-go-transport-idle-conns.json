@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "id": "DEC-20260612-shared-go-transport-idle-conns",
+  "title": "shared-go TransportProfile MaxIdleConns 기본값은 external 128 / internal 256",
+  "decision_status": "accepted",
+  "delivery_status": "implemented",
+  "scope": [
+    "shared-go"
+  ],
+  "decided_at": "2026-06-12",
+  "summary": "external 128, internal 256을 기본값으로 두고 zero value 호환을 유지한다. 잔여 작업은 BenchmarkNewProfiledClient 추가와 caller 문서 기록이다.",
+  "sources": [
+    "iris-stack@db3927cf0ed1:docs/performance_reliability_program_v2/28_open_decisions.md#OD-3 — shared-go TransportProfile MaxIdleConns 기본값"
+  ],
+  "evidence": [],
+  "implementation": [
+    "shared-go@fb77ddf"
+  ],
+  "supersedes": []
+}
