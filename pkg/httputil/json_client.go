@@ -27,6 +27,7 @@ func NewJSONClientWithHTTPClient(baseURL, apiKey string, httpClient *http.Client
 	if httpClient == nil {
 		httpClient = NewInternalServiceClient(0)
 	}
+
 	return &JSONClient{
 		baseURL:    strings.TrimRight(strings.TrimSpace(baseURL), "/"),
 		apiKey:     strings.TrimSpace(apiKey),
@@ -40,7 +41,9 @@ func (c *JSONClient) NewRequest(ctx context.Context, method, path string) (*http
 	if err != nil {
 		return nil, fmt.Errorf("new request: %w", err)
 	}
+
 	c.applyAPIKey(req)
+
 	return req, nil
 }
 
@@ -55,8 +58,10 @@ func (c *JSONClient) NewJSONRequest(ctx context.Context, method, path string, pa
 	if err != nil {
 		return nil, fmt.Errorf("new request: %w", err)
 	}
+
 	req.Header.Set("Content-Type", "application/json")
 	c.applyAPIKey(req)
+
 	return req, nil
 }
 
@@ -65,24 +70,31 @@ func (c *JSONClient) Do(req *http.Request) (*http.Response, error) {
 	if err != nil {
 		return nil, fmt.Errorf("request: %w", err)
 	}
+
 	return resp, nil
 }
 
 func (c *JSONClient) CheckStatus(resp *http.Response) error {
-	return CheckStatus(resp)
+	if err := CheckStatus(resp); err != nil {
+		return fmt.Errorf("check status: %w", err)
+	}
+
+	return nil
 }
 
-func (c *JSONClient) DecodeJSON(resp *http.Response, out any) error {
-	return DecodeJSON(resp, out)
+func (c *JSONClient) DecodeJSON[T any](resp *http.Response) (T, error) {
+	return DecodeJSON[T](resp)
 }
 
 func (c *JSONClient) DiscardBody(resp *http.Response) error {
 	if resp == nil || resp.Body == nil {
 		return nil
 	}
+
 	if err := DrainAndClose(resp.Body, DefaultDrainLimit); err != nil {
 		return fmt.Errorf("discard body: %w", err)
 	}
+
 	return nil
 }
 
@@ -90,5 +102,6 @@ func (c *JSONClient) applyAPIKey(req *http.Request) {
 	if req == nil || c.apiKey == "" {
 		return
 	}
+
 	req.Header.Set(HeaderAPIKey, c.apiKey)
 }

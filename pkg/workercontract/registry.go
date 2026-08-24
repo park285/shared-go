@@ -81,7 +81,9 @@ func (r *Registry) WorkerProfile(workerID string) (WorkerProfile, bool) {
 	if r == nil {
 		return WorkerProfile{}, false
 	}
+
 	worker, ok := r.loaded.Profile.Workers[workerID]
+
 	return worker, ok
 }
 
@@ -90,9 +92,13 @@ func (r *Registry) Counters(workerID string) (*Counters, bool) {
 	if r == nil {
 		return nil, false
 	}
+
 	r.mu.RLock()
+
 	defer r.mu.RUnlock()
+
 	registration, ok := r.registrations[workerID]
+
 	return registration.Counters, ok
 }
 
@@ -101,37 +107,49 @@ func (r *Registry) Register(registration Registration) error {
 	if r == nil {
 		return errors.New("worker registry: nil registry")
 	}
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
 	if r.sealed {
 		return errors.New("worker registry: already sealed")
 	}
+
 	profileWorker, ok := r.loaded.Profile.Workers[registration.WorkerID]
 	if !ok {
 		return fmt.Errorf("worker registry: unknown worker %q", registration.WorkerID)
 	}
+
 	if _, exists := r.registrations[registration.WorkerID]; exists {
 		return fmt.Errorf("worker registry: duplicate worker %q", registration.WorkerID)
 	}
+
 	if !registration.SettingsValidated {
 		return fmt.Errorf("worker registry: %s settings were not strictly validated", registration.WorkerID)
 	}
+
 	if err := validateRegistrationMetadata(registration); err != nil {
 		return fmt.Errorf("worker registry: %s: %w", registration.WorkerID, err)
 	}
+
 	if profileWorker.Executor.Enabled && registration.ExecutorSnapshot == nil {
 		return fmt.Errorf("worker registry: %s: executor snapshot source required", registration.WorkerID)
 	}
+
 	if registration.QueueSnapshot == nil && (registration.QueueBackend != QueueMemory || profileWorker.Executor.Enabled) {
 		return fmt.Errorf("worker registry: %s: queue snapshot source required", registration.WorkerID)
 	}
+
 	if profileWorker.Executor.AttemptTimeout.Mode == DurationModePerJob && !registration.PerJobDeadlineValidated {
 		return fmt.Errorf("worker registry: %s: per-job deadline storage is not validated", registration.WorkerID)
 	}
+
 	if registration.Counters == nil && registration.TotalsSnapshot == nil {
 		registration.Counters = &Counters{}
 	}
+
 	r.registrations[registration.WorkerID] = registration
+
 	return nil
 }
 
@@ -139,17 +157,21 @@ func validateRegistrationMetadata(registration Registration) error {
 	if registration.Runtime != RuntimeGo && registration.Runtime != RuntimeRust {
 		return errors.New("invalid runtime")
 	}
+
 	switch registration.QueueBackend {
 	case QueueMemory, QueueSQLite, QueuePostgres, QueueValkey:
 	default:
 		return errors.New("invalid queue backend")
 	}
+
 	if registration.QueueScope != QueueScopeProcess && registration.QueueScope != QueueScopeShared {
 		return errors.New("invalid queue scope")
 	}
+
 	if registration.QueueBackend == QueueMemory && registration.QueueScope != QueueScopeProcess {
 		return errors.New("memory queue must use process scope")
 	}
+
 	return nil
 }
 
@@ -158,30 +180,40 @@ func (r *Registry) Seal() error {
 	if r == nil {
 		return errors.New("worker registry: nil registry")
 	}
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
 	if r.sealed {
 		return nil
 	}
+
 	expected := make([]string, 0, len(r.loaded.Profile.Workers))
 	actual := make([]string, 0, len(r.registrations))
+
 	for workerID := range r.loaded.Profile.Workers {
 		expected = append(expected, workerID)
 	}
+
 	for workerID, registration := range r.registrations {
 		actual = append(actual, workerID)
+
 		if r.runtime == "" {
 			r.runtime = registration.Runtime
 		} else if r.runtime != registration.Runtime {
 			return errors.New("worker registry: one process cannot register multiple runtimes")
 		}
 	}
+
 	slices.Sort(expected)
 	slices.Sort(actual)
+
 	if !slices.Equal(expected, actual) {
 		return fmt.Errorf("worker registry: got workers %v, want %v", actual, expected)
 	}
+
 	r.sealed = true
+
 	return nil
 }
 
@@ -190,11 +222,15 @@ func (r *Registry) Diagnostics(observedAt time.Time) (DiagnosticsEnvelope, error
 	if r == nil {
 		return DiagnosticsEnvelope{}, errors.New("worker registry: nil registry")
 	}
+
 	r.mu.RLock()
+
 	defer r.mu.RUnlock()
+
 	if !r.sealed {
 		return DiagnosticsEnvelope{}, errors.New("worker registry: not sealed")
 	}
+
 	fileStatus := r.fileChecker.Status()
 	envelope := DiagnosticsEnvelope{
 		ContractVersion:   ContractVersion,
@@ -211,16 +247,20 @@ func (r *Registry) Diagnostics(observedAt time.Time) (DiagnosticsEnvelope, error
 		},
 		Workers: make(map[string]WorkerDiagnostics, len(r.registrations)),
 	}
+
 	for workerID, registration := range r.registrations {
 		profileWorker := r.loaded.Profile.Workers[workerID]
+
 		executor, err := executorDiagnostics(profileWorker, registration)
 		if err != nil {
 			return DiagnosticsEnvelope{}, fmt.Errorf("worker registry: %s: %w", workerID, err)
 		}
+
 		queue := queueDiagnostics(profileWorker, registration, observedAt)
 		if queue.SnapshotStatus != QueueSnapshotCurrent {
 			envelope.Complete = false
 		}
+
 		envelope.Workers[workerID] = WorkerDiagnostics{
 			Runtime:  registration.Runtime,
 			Executor: executor,
@@ -228,6 +268,7 @@ func (r *Registry) Diagnostics(observedAt time.Time) (DiagnosticsEnvelope, error
 			Totals:   registrationTotals(registration),
 		}
 	}
+
 	return envelope, nil
 }
 
@@ -235,6 +276,7 @@ func registrationTotals(registration Registration) WorkerTotals {
 	if registration.TotalsSnapshot != nil {
 		return registration.TotalsSnapshot()
 	}
+
 	return registration.Counters.Snapshot()
 }
 
@@ -246,13 +288,16 @@ func executorDiagnostics(profile WorkerProfile, registration Registration) (Exec
 	if !profile.Executor.Enabled {
 		return diagnostics, nil
 	}
+
 	snapshot := registration.ExecutorSnapshot()
 	if snapshot.RunningWorkers < 0 || snapshot.InFlight < 0 || snapshot.OldestInFlightAgeMS < 0 {
 		return ExecutorDiagnostics{}, errors.New("invalid executor snapshot")
 	}
+
 	diagnostics.RunningWorkers = snapshot.RunningWorkers
 	diagnostics.InFlight = snapshot.InFlight
 	diagnostics.OldestInFlightAgeMS = snapshot.OldestInFlightAgeMS
+
 	return diagnostics, nil
 }
 
@@ -264,26 +309,33 @@ func queueDiagnostics(profile WorkerProfile, registration Registration, observed
 	}
 	if profile.Queue.Capacity.Items != nil {
 		capacity := *profile.Queue.Capacity.Items
+
 		diagnostics.Capacity = &capacity
 	}
+
 	var snapshot QueueSnapshot
+
 	if registration.QueueSnapshot == nil {
 		snapshot = CurrentQueueSnapshot(0, 0, observedAt)
 	} else {
 		snapshot = registration.QueueSnapshot()
 	}
+
 	if !validQueueSnapshot(snapshot) {
 		code := QueueSnapshotFailed
+
 		snapshot.Status = QueueSnapshotUnavailable
 		snapshot.Depth = nil
 		snapshot.OldestQueuedAgeMS = nil
 		snapshot.ErrorCode = &code
 	}
+
 	diagnostics.Depth = snapshot.Depth
 	diagnostics.OldestQueuedAgeMS = snapshot.OldestQueuedAgeMS
 	diagnostics.SnapshotStatus = snapshot.Status
 	diagnostics.LastSuccessAtEpochMS = snapshot.LastSuccessAtEpochMS
 	diagnostics.ErrorCode = snapshot.ErrorCode
+
 	return diagnostics
 }
 
@@ -305,19 +357,24 @@ func (r *Registry) Handler() http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		envelope, err := r.Diagnostics(time.Now())
 		status := http.StatusOK
+
 		var payload any = envelope
+
 		if err != nil {
 			status = http.StatusServiceUnavailable
 			payload = map[string]string{"errorCode": "worker_registry_unavailable"}
 		} else if !envelope.Complete {
 			status = http.StatusServiceUnavailable
 		}
+
 		body, encodeErr := jsonv2.Marshal(payload)
 		if encodeErr != nil {
 			return
 		}
+
 		writer.Header().Set("Content-Type", "application/json")
 		writer.WriteHeader(status)
+
 		if _, writeErr := writer.Write(body); writeErr != nil {
 			return
 		}

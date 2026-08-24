@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"math/big"
 	"net"
 	"net/http"
@@ -17,6 +18,8 @@ import (
 	"time"
 
 	"github.com/quic-go/quic-go/http3"
+
+	"github.com/park285/shared-go/v2/pkg/internal/testsupport"
 )
 
 func TestCheckURLAcceptsSuccessStatus(t *testing.T) {
@@ -32,7 +35,7 @@ func TestCheckURLAcceptsSuccessStatus(t *testing.T) {
 
 func TestFetchURLReturnsBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"mode":"active-active"}`))
+		testsupport.WriteResponse(t, w, `{"mode":"active-active"}`)
 	}))
 	defer server.Close()
 
@@ -40,6 +43,7 @@ func TestFetchURLReturnsBody(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FetchURLInternal(%q): %v", server.URL, err)
 	}
+
 	if string(body) != `{"mode":"active-active"}` {
 		t.Fatalf("FetchURLInternal body = %q, want active-active json", body)
 	}
@@ -47,11 +51,13 @@ func TestFetchURLReturnsBody(t *testing.T) {
 
 func TestFetchURLWithHeadersSendsConfiguredHeaders(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.Header.Get("X-API-Key"); got != "probe-secret" {
+		if got := r.Header.Get("X-API-Key"); got != testProbeSecret {
 			w.WriteHeader(http.StatusUnauthorized)
+
 			return
 		}
-		_, _ = w.Write([]byte(`ok`))
+
+		testsupport.WriteResponse(t, w, `ok`)
 	}))
 	defer server.Close()
 
@@ -59,10 +65,11 @@ func TestFetchURLWithHeadersSendsConfiguredHeaders(t *testing.T) {
 		t.Fatal("FetchURLInternal() error = nil, want unauthorized without API key header")
 	}
 
-	body, err := FetchURLWithHeadersInternal(server.URL, map[string]string{"X-API-Key": "probe-secret"})
+	body, err := FetchURLWithHeadersInternal(server.URL, map[string]string{"X-API-Key": testProbeSecret})
 	if err != nil {
 		t.Fatalf("FetchURLWithHeadersInternal(%q): %v", server.URL, err)
 	}
+
 	if string(body) != "ok" {
 		t.Fatalf("FetchURLWithHeadersInternal body = %q, want ok", body)
 	}
@@ -71,7 +78,8 @@ func TestFetchURLWithHeadersSendsConfiguredHeaders(t *testing.T) {
 func TestFetchURLRejectsServerErrorWithoutBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("boom"))
+
+		testsupport.WriteResponse(t, w, "boom")
 	}))
 	defer server.Close()
 
@@ -120,22 +128,25 @@ func TestCheckURLRejectsInvalidInputs(t *testing.T) {
 
 func TestCheckURLAcceptsHTTP3LoopbackWithServerNameOverride(t *testing.T) {
 	certFile, keyFile := writeSelfSignedCert(t, "healthprobe-h3.local")
+
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
 		t.Fatalf("load cert: %v", err)
 	}
 
-	listener, err := net.ListenPacket("udp", "127.0.0.1:0")
+	listener, err := (&net.ListenConfig{}).ListenPacket(t.Context(), "udp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = listener.Close() }()
+
+	defer testsupport.CloseNow(t, "listener.Close", listener.Close)
 
 	server := &http3.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path != "/ready" {
 				t.Errorf("path = %q, want /ready", r.URL.Path)
 			}
+
 			w.WriteHeader(http.StatusOK)
 		}),
 		TLSConfig: &tls.Config{
@@ -143,8 +154,18 @@ func TestCheckURLAcceptsHTTP3LoopbackWithServerNameOverride(t *testing.T) {
 			Certificates: []tls.Certificate{cert},
 		},
 	}
-	go func() { _ = server.Serve(listener) }()
-	defer func() { _ = server.Close() }()
+
+	serveErr := make(chan error, 1)
+
+	go func() { serveErr <- server.Serve(listener) }()
+
+	defer func() {
+		testsupport.CloseNow(t, "server.Close", server.Close)
+
+		if err := <-serveErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
+			t.Errorf("Serve() error = %v", err)
+		}
+	}()
 
 	t.Setenv(CACertFileEnv, certFile)
 	t.Setenv(ServerNameEnv, "healthprobe-h3.local")
@@ -162,6 +183,7 @@ func writeSelfSignedCert(t *testing.T, serverName string) (string, string) {
 	if err != nil {
 		t.Fatalf("generate key: %v", err)
 	}
+
 	template := x509.Certificate{
 		SerialNumber:          big.NewInt(time.Now().UnixNano()),
 		Subject:               pkix.Name{CommonName: serverName},
@@ -173,6 +195,7 @@ func writeSelfSignedCert(t *testing.T, serverName string) (string, string) {
 		BasicConstraintsValid: true,
 		IsCA:                  true,
 	}
+
 	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
 	if err != nil {
 		t.Fatalf("create cert: %v", err)

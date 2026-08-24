@@ -6,22 +6,27 @@ func (d *contextDecoder) deferRuleExpansion(current decodeQueueEntry, candidate 
 	if candidate == current.text {
 		return false
 	}
+
 	if _, exists := d.visited[candidate]; exists {
 		return false
 	}
+
 	if !IsReadableString(candidate) {
 		return false
 	}
+
 	if len(candidate) > maxDecodedCandidateLen {
 		d.result.Status |= DecodeByteLimit
 
 		return false
 	}
+
 	if current.depth >= maxDecodeDepth {
 		d.result.Status |= DecodeDepthLimit
 
 		return false
 	}
+
 	if len(d.queue)-d.cursor >= maxDecodeScans {
 		d.result.Status |= DecodeScanLimit
 
@@ -39,6 +44,7 @@ func (d *contextDecoder) observeRuleExpansion(current decodeQueueEntry, candidat
 	if candidate.boundedStandard || candidate.decodedMayContribute || candidate.contextMayContribute {
 		return false
 	}
+
 	if candidate.kind != decodeBase64 && candidate.kind != decodeHex {
 		return false
 	}
@@ -47,6 +53,7 @@ func (d *contextDecoder) observeRuleExpansion(current decodeQueueEntry, candidat
 	if contextual == "" {
 		contextual = replaceDecodedSpan(current.text, candidate.span, candidate.decoded)
 	}
+
 	if hasPlausibleShortRuleDecodeSurface(candidate.decoded) {
 		// depth≥1에서 root의 독립 인코딩 토큰과 동일한 값은 root 레벨 확장이 이미
 		// 책임지므로 status 없이 생략한다. 다른 인코딩 값 내부의 우연한 substring은
@@ -76,22 +83,28 @@ func (d *contextDecoder) ruleExpansionCrossBoundaryMayContribute(input string, r
 }
 
 func (d *contextDecoder) ruleExpansionCrossBoundaryHexMayContribute(input string, replacement encodedSpan) bool {
-	if !containsASCIIFold(input, "hex") {
+	if !containsHexFold(input) {
 		return false
 	}
+
 	for _, span := range shortRuleHexSpans(input) {
-		surface := span
+		surface := span //nolint:copyloopvar // 원본 span은 아래에서 그대로 읽으므로 사본의 start만 조정한다.
+
 		surface.start = contextualHexStart(input, span.start)
+
 		if !encodedSpanCrossesReplacementBoundary(surface, replacement) {
 			continue
 		}
+
 		if !d.consumeRuleExpansionProbe(span.end - span.start) {
 			return false
 		}
+
 		decoded, err := decodeHexPayload(input[span.start:span.end])
 		if err != nil || !IsReadableText(decoded) {
 			continue
 		}
+
 		if d.ruleExpansionCandidateMayContribute(input, surface, string(decoded)) {
 			return true
 		}
@@ -102,21 +115,27 @@ func (d *contextDecoder) ruleExpansionCrossBoundaryHexMayContribute(input string
 
 func (d *contextDecoder) ruleExpansionCrossBoundaryBase64MayContribute(input string, replacement encodedSpan) bool {
 	for position := 0; position < len(input); {
-		start := position
+		start := position //nolint:copyloopvar // 루프 변수가 본문에서 전진하므로 시작 위치를 따로 보존한다.
 		match := nextBase64Candidate(input, position)
+
 		position = match.next
+
 		span := encodedSpan{start: start, end: match.next}
+
 		if !plausibleRuleExpansionBase64(match.value) ||
 			!encodedSpanCrossesReplacementBoundary(span, replacement) {
 			continue
 		}
+
 		if !d.consumeRuleExpansionProbe(len(match.value)) {
 			return false
 		}
+
 		decoded, err := DecodeBase64Candidate(match.value)
 		if err != nil || !IsReadableText(decoded) {
 			continue
 		}
+
 		if d.ruleExpansionCandidateMayContribute(input, span, string(decoded)) {
 			return true
 		}
@@ -141,6 +160,7 @@ func plausibleRuleExpansionBase64(value string) bool {
 	if len(value) < 4 {
 		return false
 	}
+
 	if len(value) <= maxShortBase64CandidateLen {
 		return plausibleShortBase64Value(value)
 	}
@@ -161,17 +181,21 @@ func (d *contextDecoder) rootContainsValue(value string) bool {
 	if value == "" {
 		return false
 	}
+
 	for _, root := range d.roots {
 		for offset := 0; offset+len(value) <= len(root); {
 			relative := strings.Index(root[offset:], value)
 			if relative < 0 {
 				break
 			}
+
 			start := offset + relative
 			end := start + len(value)
+
 			if encodedValueHasTokenBoundaries(root, start, end) {
 				return true
 			}
+
 			offset = start + 1
 		}
 	}

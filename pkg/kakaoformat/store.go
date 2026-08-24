@@ -16,6 +16,7 @@ func newStore(kind string) *store {
 
 func (s *store) Put(value string) string {
 	token := s.token(len(s.values))
+
 	s.values = append(s.values, value)
 
 	return token

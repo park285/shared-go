@@ -52,6 +52,7 @@ func ErrorAttrs(err error) []slog.Attr {
 	if coded != nil && coded.Code() != "" {
 		attrs = append(attrs, slog.String("error_code", coded.Code()))
 	}
+
 	if retryable != nil {
 		attrs = append(attrs, slog.Bool("retryable", retryable.Retryable()))
 	}
@@ -68,7 +69,9 @@ type retryableError interface{ Retryable() bool }
 // 양쪽을 처리해 errors.As와 동일한 분기 의미를 유지한다.
 func probeErrorInterfaces(err error) (codedError, retryableError) {
 	var p errorInterfaceProbe
+
 	p.walk(err)
+
 	return p.coded, p.retryable
 }
 
@@ -87,6 +90,7 @@ func (p *errorInterfaceProbe) inspect(e error) {
 			p.coded = c
 		}
 	}
+
 	if p.retryable == nil {
 		if r, ok := e.(retryableError); ok {
 			p.retryable = r
@@ -97,6 +101,7 @@ func (p *errorInterfaceProbe) inspect(e error) {
 func (p *errorInterfaceProbe) walk(e error) {
 	for e != nil {
 		p.inspect(e)
+
 		if p.done() {
 			return
 		}
@@ -107,10 +112,12 @@ func (p *errorInterfaceProbe) walk(e error) {
 		case interface{ Unwrap() []error }:
 			for _, sub := range x.Unwrap() {
 				p.walk(sub)
+
 				if p.done() {
 					return
 				}
 			}
+
 			return
 		default:
 			return
@@ -127,11 +134,14 @@ func errorType(err error) string {
 	if t == nil {
 		return "error"
 	}
+
 	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
+
 	if t.Name() == "" {
 		return t.String()
 	}
+
 	return t.Name()
 }

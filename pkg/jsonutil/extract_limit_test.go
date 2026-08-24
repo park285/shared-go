@@ -22,6 +22,7 @@ func TestSG03ExtractAcceptsInputAtDefaultLimit_39575489(t *testing.T) {
 	payload := `{"answer":"yes"}`
 	pad := strings.Repeat(" ", DefaultExtractMaxBytes-len(payload))
 	atLimit := pad + payload
+
 	if len(atLimit) != DefaultExtractMaxBytes {
 		t.Fatalf("test setup: input len %d, want exactly %d", len(atLimit), DefaultExtractMaxBytes)
 	}
@@ -30,6 +31,7 @@ func TestSG03ExtractAcceptsInputAtDefaultLimit_39575489(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Extract(at limit) error = %v, want nil", err)
 	}
+
 	if string(got) != payload {
 		t.Fatalf("Extract(at limit) = %q, want %q", got, payload)
 	}
@@ -37,9 +39,13 @@ func TestSG03ExtractAcceptsInputAtDefaultLimit_39575489(t *testing.T) {
 
 func BenchmarkSG03ExtractLargeNoJSONLinear_39575489(b *testing.B) {
 	input := strings.Repeat("x", DefaultExtractMaxBytes)
+
 	b.ReportAllocs()
 	b.ResetTimer()
+
 	for range b.N {
-		_, _ = Extract(input)
+		if _, err := Extract(input); err != nil {
+			b.Fatalf("Extract() error = %v", err)
+		}
 	}
 }

@@ -1,7 +1,6 @@
 package logging
 
 import (
-	"context"
 	"log/slog"
 	"testing"
 )
@@ -35,6 +34,7 @@ func TestSanitizeHandler_ReuseMatchesFullSanitization(t *testing.T) {
 					slog.String("authorization", "Bearer abc123.def456.ghi"),
 					slog.String("c", "3"),
 				)
+
 				return r
 			},
 		},
@@ -47,6 +47,7 @@ func TestSanitizeHandler_ReuseMatchesFullSanitization(t *testing.T) {
 					slog.Any("lv", secretValuer{}),
 					slog.String("password", "hunter2"),
 				)
+
 				return r
 			},
 		},
@@ -57,9 +58,10 @@ func TestSanitizeHandler_ReuseMatchesFullSanitization(t *testing.T) {
 			t.Parallel()
 
 			sink := &recordSink{}
-			if err := newSanitizeHandler(sink).Handle(context.Background(), tt.build()); err != nil {
+			if err := newSanitizeHandler(sink).Handle(t.Context(), tt.build()); err != nil {
 				t.Fatalf("Handle() error = %v", err)
 			}
+
 			if len(sink.records) != 1 {
 				t.Fatalf("captured %d records, want 1", len(sink.records))
 			}
@@ -78,8 +80,10 @@ func fullySanitized(record slog.Record) slog.Record {
 	out := slog.NewRecord(record.Time, record.Level, redactSecrets(record.Message), record.PC)
 	record.Attrs(func(attr slog.Attr) bool {
 		out.AddAttrs(sanitizeAttr(attr))
+
 		return true
 	})
+
 	return out
 }
 
@@ -89,12 +93,14 @@ func assertRecordEqual(t *testing.T, got, want slog.Record) {
 	if got.Message != want.Message {
 		t.Fatalf("message = %q, want %q", got.Message, want.Message)
 	}
+
 	if got.NumAttrs() != want.NumAttrs() {
 		t.Fatalf("attr count = %d, want %d", got.NumAttrs(), want.NumAttrs())
 	}
 
 	gotAttrs := collectAttrStrings(got)
 	wantAttrs := collectAttrStrings(want)
+
 	for i := range wantAttrs {
 		if gotAttrs[i] != wantAttrs[i] {
 			t.Fatalf("attr[%d] = %s, want %s\nall got:  %v\nall want: %v", i, gotAttrs[i], wantAttrs[i], gotAttrs, wantAttrs)
@@ -108,5 +114,6 @@ func collectAttrStrings(record slog.Record) []string {
 		out = append(out, attr.String())
 		return true
 	})
+
 	return out
 }

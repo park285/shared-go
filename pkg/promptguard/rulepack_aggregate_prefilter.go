@@ -1,6 +1,7 @@
 package promptguard
 
 import (
+	"math"
 	"slices"
 )
 
@@ -27,14 +28,21 @@ type aggregateViewPrefilter struct {
 }
 
 func compileAggregatePrefilters(packs []compiledPack) aggregatePrefilterSet {
-	var rawNormLiterals, normLiterals, joinedLiterals []string
-	var rawNormUnfiltered, normUnfiltered, joinedUnfiltered bool
+	var (
+		rawNormLiterals, normLiterals, joinedLiterals       []string
+		rawNormUnfiltered, normUnfiltered, joinedUnfiltered bool
+	)
+
 	for packIndex := range packs {
 		rules := packs[packIndex].Rules
 		for ruleIndex := range rules {
 			rule := &rules[ruleIndex]
-			var literals *[]string
-			var unfiltered *bool
+
+			var (
+				literals   *[]string
+				unfiltered *bool
+			)
+
 			switch rule.View {
 			case viewRaw:
 				literals = &rawNormLiterals
@@ -48,23 +56,29 @@ func compileAggregatePrefilters(packs []compiledPack) aggregatePrefilterSet {
 			default:
 				continue
 			}
+
 			if len(rule.AggregatePrefilter) == 0 {
 				*unfiltered = true
 				continue
 			}
+
 			for _, literal := range rule.AggregatePrefilter {
-				value := literal
+				value := literal //nolint:copyloopvar // 이 사본은 아래에서 변형되므로 루프 변수를 그대로 쓸 수 없다.
+
 				if rule.View == viewAggregateJoined {
 					value = normalizeViews(literal).Joined
 				}
+
 				if value == "" {
 					*unfiltered = true
 					continue
 				}
+
 				*literals = append(*literals, value)
 			}
 		}
 	}
+
 	return aggregatePrefilterSet{
 		rawNorm: newAggregateViewPrefilter(rawNormLiterals, rawNormUnfiltered),
 		norm:    newAggregateViewPrefilter(normLiterals, normUnfiltered),
@@ -74,14 +88,17 @@ func compileAggregatePrefilters(packs []compiledPack) aggregatePrefilterSet {
 
 func newAggregateViewPrefilter(literals []string, unfiltered bool) aggregateViewPrefilter {
 	slices.Sort(literals)
+
 	literals = slices.Compact(literals)
 	if len(literals) == 0 {
 		return aggregateViewPrefilter{hasRules: unfiltered, unfiltered: unfiltered}
 	}
+
 	automaton, complete := newAggregateLiteralAutomaton(literals)
 	if !complete {
 		return aggregateViewPrefilter{hasRules: true, unfiltered: true}
 	}
+
 	return aggregateViewPrefilter{
 		automaton:  automaton,
 		hasRules:   true,
@@ -101,61 +118,81 @@ type aggregateAutomatonNode struct {
 
 func newAggregateLiteralAutomaton(literals []string) (aggregateLiteralAutomaton, bool) {
 	automaton := aggregateLiteralAutomaton{nodes: make([]aggregateAutomatonNode, 1)}
+
 	for _, literal := range literals {
 		state := aggregateAutomatonState(0)
+
 		for index := range len(literal) {
 			value := literal[index]
 			next := automaton.nodes[state].next[value]
+
 			if next == 0 {
 				if len(automaton.nodes) >= maxAggregateAutomatonNodes {
 					return aggregateLiteralAutomaton{}, false
 				}
-				next = aggregateAutomatonState(len(automaton.nodes))
+
+				nodeCount := len(automaton.nodes)
+				if nodeCount < 0 || nodeCount > math.MaxUint16 {
+					return aggregateLiteralAutomaton{}, false
+				}
+
+				next = aggregateAutomatonState(nodeCount)
+
 				automaton.nodes = append(automaton.nodes, aggregateAutomatonNode{})
 				automaton.nodes[state].next[value] = next
 			}
+
 			state = next
 		}
+
 		automaton.nodes[state].output = true
 	}
-	automaton.buildFailureTransitions()
-	automaton.encodeOutputTransitions()
+
+	buildAggregateFailureTransitions(automaton.nodes)
+	encodeAggregateOutputTransitions(automaton.nodes)
+
 	return automaton, true
 }
 
-func (automaton *aggregateLiteralAutomaton) buildFailureTransitions() {
-	queue := make([]aggregateAutomatonState, 0, len(automaton.nodes))
+func buildAggregateFailureTransitions(nodes []aggregateAutomatonNode) {
+	queue := make([]aggregateAutomatonState, 0, len(nodes))
+
 	for value := range 256 {
-		child := automaton.nodes[0].next[byte(value)]
+		child := nodes[0].next[byte(value)]
 		if child != 0 {
 			queue = append(queue, child)
 		}
 	}
+
 	for head := 0; head < len(queue); head++ {
 		state := queue[head]
-		failure := automaton.nodes[state].fail
+		failure := nodes[state].fail
+
 		for value := range 256 {
 			byteValue := byte(value)
-			child := automaton.nodes[state].next[byteValue]
+			child := nodes[state].next[byteValue]
+
 			if child == 0 {
-				automaton.nodes[state].next[byteValue] = automaton.nodes[failure].next[byteValue]
+				nodes[state].next[byteValue] = nodes[failure].next[byteValue]
 				continue
 			}
-			automaton.nodes[child].fail = automaton.nodes[failure].next[byteValue]
-			if automaton.nodes[automaton.nodes[child].fail].output {
-				automaton.nodes[child].output = true
+
+			nodes[child].fail = nodes[failure].next[byteValue]
+			if nodes[nodes[child].fail].output {
+				nodes[child].output = true
 			}
+
 			queue = append(queue, child)
 		}
 	}
 }
 
-func (automaton *aggregateLiteralAutomaton) encodeOutputTransitions() {
-	for nodeIndex := range automaton.nodes {
+func encodeAggregateOutputTransitions(nodes []aggregateAutomatonNode) {
+	for nodeIndex := range nodes {
 		for value := range 256 {
-			target := automaton.nodes[nodeIndex].next[byte(value)]
-			if automaton.nodes[target].output {
-				automaton.nodes[nodeIndex].next[byte(value)] = target | aggregateAutomatonOutput
+			target := nodes[nodeIndex].next[byte(value)]
+			if nodes[target].output {
+				nodes[nodeIndex].next[byte(value)] = target | aggregateAutomatonOutput
 			}
 		}
 	}
@@ -163,25 +200,31 @@ func (automaton *aggregateLiteralAutomaton) encodeOutputTransitions() {
 
 func (automaton aggregateLiteralAutomaton) matches(text []byte) bool {
 	state := aggregateAutomatonState(0)
+
 	for _, value := range text {
 		transition := automaton.nodes[state].next[value]
 		if transition&aggregateAutomatonOutput != 0 {
 			return true
 		}
+
 		state = transition & aggregateAutomatonStateMask
 	}
+
 	return false
 }
 
 func (automaton aggregateLiteralAutomaton) matchesString(text string) bool {
 	state := aggregateAutomatonState(0)
+
 	for index := range len(text) {
 		transition := automaton.nodes[state].next[text[index]]
 		if transition&aggregateAutomatonOutput != 0 {
 			return true
 		}
+
 		state = transition & aggregateAutomatonStateMask
 	}
+
 	return false
 }
 
@@ -189,62 +232,83 @@ func (automaton aggregateLiteralAutomaton) matchesNormalizedASCII(text []byte) (
 	state := aggregateAutomatonState(0)
 	pendingSpace := false
 	wrote := false
+
 	for _, value := range text {
 		replacement, ok := normalizeASCIIByteReplacement(value)
 		if !ok {
 			return false, false
 		}
+
 		if replacement == "" {
 			continue
 		}
+
 		if replacement == " " {
 			pendingSpace = wrote
 			continue
 		}
+
 		if pendingSpace {
 			transition := automaton.nodes[state].next[' ']
 			if transition&aggregateAutomatonOutput != 0 {
 				return true, true
 			}
+
 			state = transition & aggregateAutomatonStateMask
 			pendingSpace = false
 		}
+
 		for index := range len(replacement) {
 			transition := automaton.nodes[state].next[replacement[index]]
 			if transition&aggregateAutomatonOutput != 0 {
 				return true, true
 			}
+
 			state = transition & aggregateAutomatonStateMask
 		}
+
 		wrote = true
 	}
+
 	return false, true
 }
 
 func (filters aggregatePrefilterSet) mayMatch(tail *aggregateTail, right textSegment) bool {
 	var buffer aggregateViewBuffer
-	if filters.rawNorm.hasRules {
-		if filters.rawNorm.unfiltered {
-			return true
-		}
-		raw := buffer.buildRaw(tail, right)
-		if matched, complete := filters.rawNorm.automaton.matchesNormalizedASCII(raw); complete {
-			if matched {
-				return true
-			}
-		} else if filters.rawNorm.automaton.matchesString(normalizeText(string(raw))) {
-			return true
-		}
+
+	if filters.rawNorm.hasRules && filters.rawNorm.mayMatchRawNorm(&buffer, tail, right) {
+		return true
 	}
+
 	if filters.norm.hasRules {
 		if filters.norm.unfiltered || filters.norm.automaton.matches(buffer.buildNorm(tail, right)) {
 			return true
 		}
 	}
+
 	if filters.joined.hasRules {
 		return filters.joined.unfiltered || filters.joined.automaton.matches(buffer.buildJoined(tail, right))
 	}
+
 	return false
+}
+
+func (prefilter aggregateViewPrefilter) mayMatchRawNorm(
+	buffer *aggregateViewBuffer,
+	tail *aggregateTail,
+	right textSegment,
+) bool {
+	if prefilter.unfiltered {
+		return true
+	}
+
+	raw := buffer.buildRaw(tail, right)
+
+	if matched, complete := prefilter.automaton.matchesNormalizedASCII(raw); complete {
+		return matched
+	}
+
+	return prefilter.automaton.matchesString(normalizeText(string(raw)))
 }
 
 type aggregateViewBuffer struct {
@@ -263,6 +327,7 @@ func (buffer *aggregateViewBuffer) buildNorm(tail *aggregateTail, right textSegm
 		guardBoundaryMarker,
 		firstRunes(right.Views.Norm, boundaryWindowRunes),
 	)
+
 	return buffer.data[:length]
 }
 
@@ -271,9 +336,11 @@ func (buffer *aggregateViewBuffer) buildJoined(tail *aggregateTail, right textSe
 	return buffer.data[:length]
 }
 
-func appendAggregateBytes(destination []byte, left []byte, separator, right string) int {
+func appendAggregateBytes(destination, left []byte, separator, right string) int {
 	position := copy(destination, left)
+
 	position += copy(destination[position:], separator)
 	position += copy(destination[position:], right)
+
 	return position
 }

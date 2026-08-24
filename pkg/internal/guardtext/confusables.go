@@ -15,12 +15,16 @@ func confusableSkeleton(value string) string {
 	value = unicode17NFD(value)
 
 	var mapped strings.Builder
+
 	mapped.Grow(len(value))
+
 	for _, current := range value {
 		if replacement, ok := confusablesMap[current]; ok {
 			mapped.WriteString(replacement)
+
 			continue
 		}
+
 		mapped.WriteRune(current)
 	}
 
@@ -38,6 +42,7 @@ func unicode17NFD(value string) string {
 			decomposed = append(decomposed, []rune(replacement)...)
 			continue
 		}
+
 		decomposed = append(decomposed, []rune(norm.NFD.String(string(current)))...)
 	}
 
@@ -45,6 +50,7 @@ func unicode17NFD(value string) string {
 	for index, current := range decomposed {
 		classes[index] = unicode17CanonicalCombiningClass(current)
 	}
+
 	reorderUnicode17CanonicalCombiningClasses(decomposed, classes)
 
 	return string(decomposed)
@@ -52,6 +58,7 @@ func unicode17NFD(value string) string {
 
 func reorderUnicode17CanonicalCombiningClasses(decomposed []rune, classes []uint8) {
 	var scratch []rune
+
 	for segmentStart := 0; segmentStart < len(decomposed); {
 		if classes[segmentStart] == 0 {
 			segmentStart++
@@ -61,12 +68,15 @@ func reorderUnicode17CanonicalCombiningClasses(decomposed []rune, classes []uint
 		segmentEnd := segmentStart + 1
 		previousClass := classes[segmentStart]
 		needsReorder := false
+
 		for segmentEnd < len(decomposed) && classes[segmentEnd] != 0 {
 			currentClass := classes[segmentEnd]
+
 			needsReorder = needsReorder || currentClass < previousClass
 			previousClass = currentClass
 			segmentEnd++
 		}
+
 		if !needsReorder {
 			segmentStart = segmentEnd
 			continue
@@ -77,6 +87,7 @@ func reorderUnicode17CanonicalCombiningClasses(decomposed []rune, classes []uint
 		} else {
 			scratch = stableCountingReorderUnicode17(decomposed, classes, segmentStart, segmentEnd, scratch)
 		}
+
 		segmentStart = segmentEnd
 	}
 }
@@ -85,12 +96,14 @@ func stableInsertionReorderUnicode17(decomposed []rune, classes []uint8, start, 
 	for current := start + 1; current < end; current++ {
 		currentRune := decomposed[current]
 		currentClass := classes[current]
-		position := current
+		position := current //nolint:copyloopvar // 이 사본은 아래에서 변형되므로 루프 변수를 그대로 쓸 수 없다.
+
 		for position > start && classes[position-1] > currentClass {
 			decomposed[position] = decomposed[position-1]
 			classes[position] = classes[position-1]
 			position--
 		}
+
 		decomposed[position] = currentRune
 		classes[position] = currentClass
 	}
@@ -110,21 +123,28 @@ func stableCountingReorderUnicode17(
 	}
 
 	var counts [256]int
+
 	for _, class := range classes[start:end] {
 		counts[class]++
 	}
 
 	var next [256]int
+
 	position := 0
+
 	for class := 1; class < len(counts); class++ {
 		next[class] = position
+
 		position += counts[class]
 	}
+
 	for index, current := range decomposed[start:end] {
 		class := classes[start+index]
+
 		scratch[next[class]] = current
 		next[class]++
 	}
+
 	copy(decomposed[start:end], scratch)
 
 	return scratch
@@ -136,13 +156,16 @@ func needsUnicode17NFDOverlay(value string) bool {
 			offset++
 			continue
 		}
+
 		current, size := utf8.DecodeRuneInString(value[offset:])
 		if _, ok := unicode17CanonicalDecompositionDelta[current]; ok {
 			return true
 		}
+
 		if _, ok := unicode17CanonicalCombiningClassDelta[current]; ok {
 			return true
 		}
+
 		offset += size
 	}
 

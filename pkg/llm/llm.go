@@ -70,27 +70,33 @@ func RunJSON(ctx context.Context, generator JSONGenerator, req JSONRequest, prov
 	if ctx == nil {
 		return JSONResponse{}, ErrNilContext
 	}
+
 	if generator == nil {
 		return JSONResponse{}, ErrNilJSONGenerator
 	}
+
 	if err := ValidateJSONRequest(req); err != nil {
-		return JSONResponse{}, err
+		return JSONResponse{}, fmt.Errorf("validate JSON request: %w", err)
 	}
+
 	if err := ctx.Err(); err != nil {
 		return JSONResponse{}, err
 	}
 
 	resp, err := generator.GenerateJSON(ctx, req)
 	if err != nil {
-		return JSONResponse{}, err
+		return JSONResponse{}, fmt.Errorf("generate JSON: %w", err)
 	}
+
 	if reporter != nil {
 		model := strings.TrimSpace(resp.Model)
 		if model == "" {
 			model = strings.TrimSpace(req.Model)
 		}
+
 		reporter.RecordUsage(ctx, provider, model, resp.Usage)
 	}
+
 	return resp, nil
 }
 
@@ -98,16 +104,20 @@ func ValidateJSONRequest(req JSONRequest) error {
 	if strings.TrimSpace(req.Model) == "" {
 		return fmt.Errorf("%w: model is empty", ErrInvalidJSONRequest)
 	}
+
 	if strings.TrimSpace(req.SchemaName) == "" {
 		return fmt.Errorf("%w: schema name is empty", ErrInvalidJSONRequest)
 	}
+
 	if len(req.Schema) == 0 {
 		return fmt.Errorf("%w: schema is empty", ErrInvalidJSONRequest)
 	}
+
 	if hasPromptLayer(req.SystemPrompt) &&
 		(hasPromptLayer(req.InvariantPrompt) || hasPromptLayer(req.DeveloperPrompt)) {
 		return fmt.Errorf("%w: system prompt cannot be combined with invariant or developer prompt layers", ErrInvalidJSONRequest)
 	}
+
 	return nil
 }
 

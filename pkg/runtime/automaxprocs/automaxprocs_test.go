@@ -1,7 +1,6 @@
 package automaxprocs
 
 import (
-	"io"
 	"log/slog"
 	"testing"
 )
@@ -59,19 +58,19 @@ func TestAutomaxprocsDecision(t *testing.T) {
 	}
 }
 
-func TestLogInfo_NilLogger(t *testing.T) {
+func TestLogInfo_NilLogger(_ *testing.T) {
 	logInfo(nil, "should not panic")
 }
 
-func TestLogInfo_WithLogger(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+func TestLogInfo_WithLogger(_ *testing.T) {
+	logger := slog.New(slog.DiscardHandler)
 	logInfo(logger, "test message", "key", "value")
 }
 
 func TestInit_DisabledByEnv(t *testing.T) {
 	t.Setenv(DisableEnv, "1")
 	t.Setenv(ForceEnv, "")
-	Init(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	Init(slog.New(slog.DiscardHandler))
 }
 
 func TestInit_NilLogger(t *testing.T) {
@@ -83,7 +82,7 @@ func TestInit_NilLogger(t *testing.T) {
 func TestInit_Forced(t *testing.T) {
 	t.Setenv(DisableEnv, "")
 	t.Setenv(ForceEnv, "1")
-	Init(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	Init(slog.New(slog.DiscardHandler))
 }
 
 func TestInit_ForcedNilLogger(t *testing.T) {

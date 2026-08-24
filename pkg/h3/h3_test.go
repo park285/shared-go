@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"math/big"
 	"net"
 	"net/http"
@@ -18,6 +19,8 @@ import (
 	"time"
 
 	"github.com/quic-go/quic-go/http3"
+
+	"github.com/park285/shared-go/v2/pkg/internal/testsupport"
 )
 
 func TestNewClientUsesConstrainedInitialPacketSize(t *testing.T) {
@@ -33,9 +36,11 @@ func TestNewClientUsesConstrainedInitialPacketSize(t *testing.T) {
 	if !ok {
 		t.Fatalf("Transport = %T, want *http3.Transport", client.Transport)
 	}
+
 	if transport.QUICConfig == nil {
 		t.Fatal("QUICConfig = nil")
 	}
+
 	if transport.QUICConfig.InitialPacketSize != initialPacketSize {
 		t.Fatalf("InitialPacketSize = %d, want %d", transport.QUICConfig.InitialPacketSize, initialPacketSize)
 	}
@@ -49,12 +54,15 @@ func TestNewClientQUICConfigMirrorsServerLiveness(t *testing.T) {
 	if cfg.InitialPacketSize != initialPacketSize {
 		t.Errorf("InitialPacketSize = %d, want %d", cfg.InitialPacketSize, initialPacketSize)
 	}
+
 	if cfg.HandshakeIdleTimeout != clientHandshakeIdleTimeout {
 		t.Errorf("HandshakeIdleTimeout = %s, want %s", cfg.HandshakeIdleTimeout, clientHandshakeIdleTimeout)
 	}
+
 	if cfg.MaxIdleTimeout != serverMaxIdleTimeout {
 		t.Errorf("MaxIdleTimeout = %s, want %s (server symmetry)", cfg.MaxIdleTimeout, serverMaxIdleTimeout)
 	}
+
 	if cfg.KeepAlivePeriod != serverKeepAlivePeriod {
 		t.Errorf("KeepAlivePeriod = %s, want %s (server symmetry)", cfg.KeepAlivePeriod, serverKeepAlivePeriod)
 	}
@@ -73,15 +81,19 @@ func TestNewClientAppliesQUICConfig(t *testing.T) {
 	if !ok {
 		t.Fatalf("Transport = %T, want *http3.Transport", client.Transport)
 	}
+
 	if transport.QUICConfig == nil {
 		t.Fatal("QUICConfig = nil")
 	}
+
 	if transport.QUICConfig.KeepAlivePeriod != serverKeepAlivePeriod {
 		t.Fatalf("KeepAlivePeriod = %s, want %s", transport.QUICConfig.KeepAlivePeriod, serverKeepAlivePeriod)
 	}
+
 	if transport.QUICConfig.MaxIdleTimeout != serverMaxIdleTimeout {
 		t.Fatalf("MaxIdleTimeout = %s, want %s", transport.QUICConfig.MaxIdleTimeout, serverMaxIdleTimeout)
 	}
+
 	if transport.QUICConfig.HandshakeIdleTimeout != clientHandshakeIdleTimeout {
 		t.Fatalf("HandshakeIdleTimeout = %s, want %s", transport.QUICConfig.HandshakeIdleTimeout, clientHandshakeIdleTimeout)
 	}
@@ -100,6 +112,7 @@ func TestNewServerRejectsMissingCertPair(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
+
 	_, err := NewServer(":0", nil, filepath.Join(dir, "missing.crt"), filepath.Join(dir, "missing.key"))
 	if err == nil {
 		t.Fatal("NewServer() error = nil, want error for missing cert pair")
@@ -118,6 +131,7 @@ func TestNewServerWithTLSConfigZeroOptionsPreservesDefaultQUICLimits(t *testing.
 	if cfg.MaxIncomingStreams != 0 {
 		t.Fatalf("MaxIncomingStreams = %d, want 0 for quic-go default", cfg.MaxIncomingStreams)
 	}
+
 	if cfg.InitialStreamReceiveWindow != 0 {
 		t.Fatalf("InitialStreamReceiveWindow = %d, want 0 for quic-go default", cfg.InitialStreamReceiveWindow)
 	}
@@ -126,21 +140,31 @@ func TestNewServerWithTLSConfigZeroOptionsPreservesDefaultQUICLimits(t *testing.
 func TestServerClientLoopbackWithServerNameOverride(t *testing.T) {
 	certFile, keyFile := writeSelfSignedCert(t, "h3-test.local")
 
-	server, err := NewServer(":0", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server, err := NewServer(":0", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}), certFile, keyFile)
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
 
-	listener, err := net.ListenPacket("udp", "127.0.0.1:0")
+	listener, err := (&net.ListenConfig{}).ListenPacket(t.Context(), "udp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = listener.Close() }()
 
-	go func() { _ = server.Serve(listener) }()
-	defer func() { _ = server.Close() }()
+	defer testsupport.CloseNow(t, "listener.Close", listener.Close)
+
+	serveErr := make(chan error, 1)
+
+	go func() { serveErr <- server.Serve(listener) }()
+
+	defer func() {
+		testsupport.CloseNow(t, "server.Close", server.Close)
+
+		if serveWaitErr := <-serveErr; serveWaitErr != nil && !errors.Is(serveWaitErr, http.ErrServerClosed) {
+			t.Errorf("Serve() error = %v", serveWaitErr)
+		}
+	}()
 
 	client, closeFn, err := NewClient(5*time.Second, ClientOptions{
 		CACertFile: certFile,
@@ -151,15 +175,22 @@ func TestServerClientLoopbackWithServerNameOverride(t *testing.T) {
 	}
 	defer closeFn()
 
-	resp, err := client.Get("https://" + listener.LocalAddr().String() + "/health")
+	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://"+listener.LocalAddr().String()+"/health", http.NoBody)
+	if err != nil {
+		t.Fatalf("NewRequestWithContext() error = %v", err)
+	}
+
+	resp, err := client.Do(respReq)
 	if err != nil {
 		t.Fatalf("client.Get: %v", err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
+
 	if resp.ProtoMajor != 3 {
 		t.Fatalf("ProtoMajor = %d, want 3 (HTTP/3)", resp.ProtoMajor)
 	}
@@ -172,6 +203,7 @@ func writeSelfSignedCert(t *testing.T, serverName string) (string, string) {
 	if err != nil {
 		t.Fatalf("generate key: %v", err)
 	}
+
 	template := x509.Certificate{
 		SerialNumber:          big.NewInt(time.Now().UnixNano()),
 		Subject:               pkix.Name{CommonName: serverName},
@@ -183,6 +215,7 @@ func writeSelfSignedCert(t *testing.T, serverName string) (string, string) {
 		BasicConstraintsValid: true,
 		IsCA:                  true,
 	}
+
 	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
 	if err != nil {
 		t.Fatalf("create cert: %v", err)
@@ -233,9 +266,15 @@ func TestNewClientDialGuardRejectsUnusableDestination(t *testing.T) {
 
 			defer closeFn()
 
-			resp, err := client.Get(target)
+			respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, target, http.NoBody)
+			if err != nil {
+				t.Fatalf("NewRequestWithContext() error = %v", err)
+			}
+
+			resp, err := client.Do(respReq)
 			if err == nil {
 				_ = resp.Body.Close()
+
 				t.Fatalf("Get(%s) error = nil, want the dial rejected before the guard", target)
 			}
 

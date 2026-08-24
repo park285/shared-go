@@ -3,6 +3,7 @@
 package envutil
 
 import (
+	"fmt"
 	"os"
 	"syscall"
 )
@@ -12,5 +13,10 @@ func openSecretFileNoFollow(filePath string) (*os.File, error) {
 	// O_NONBLOCK은 같은 경쟁에서 경로가 FIFO로 바뀌었을 때 open이 writer를 무기한 기다리는 것을 막습니다.
 	// 두 호출자 모두 open 직후 fstat으로 regular file을 확인하므로 이 flag가 read 의미를 바꾸지 않습니다.
 	//nolint:gosec // *_FILE env vars are intentional operator-supplied secret file paths.
-	return os.OpenFile(filePath, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	out, err := os.OpenFile(filePath, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, fmt.Errorf("open file: %w", err)
+	}
+
+	return out, nil
 }

@@ -125,6 +125,7 @@ func IsBlockedIP(ip net.IP) bool {
 	if !ok {
 		return true
 	}
+
 	return IsBlockedAddr(addr)
 }
 
@@ -133,12 +134,15 @@ func IsBlockedAddr(addr netip.Addr) bool {
 	if !addr.IsValid() {
 		return true
 	}
+
 	// netip.Prefix.Contains는 zone이 붙은 주소에 항상 false를 돌려주므로, zone을 남겨두면 아래 대역
 	// 검사가 통째로 무력화된다. egress 대상에 interface zone이 붙을 이유도 없어 fail-closed로 막는다.
 	if addr.Zone() != "" {
 		return true
 	}
+
 	addr = addr.Unmap()
+
 	for index := range blockedAddressPrefixes {
 		if blockedAddressPrefixes[index].Contains(addr) {
 			return true
@@ -160,10 +164,12 @@ func normalizeHostASCII(host string) string {
 	if isASCII(normalized) {
 		return normalized
 	}
+
 	ascii, err := idna.Lookup.ToASCII(normalized)
 	if err != nil {
 		return normalized
 	}
+
 	return strings.ToLower(ascii)
 }
 
@@ -173,6 +179,7 @@ func isASCII(value string) bool {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -187,28 +194,33 @@ func (p Policy) ValidateURL(ctx context.Context, rawURL string) (*url.URL, error
 	if err != nil {
 		return nil, fmt.Errorf("netguard: parse URL: %w", err)
 	}
+
 	if err := p.ValidateTarget(ctx, parsed); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("validate target: %w", err)
 	}
+
 	return parsed, nil
 }
 
 // ValidateTarget은 파싱된 URL 대상이 정책에 맞는지 검증한다.
 func (p Policy) ValidateTarget(ctx context.Context, target *url.URL) error {
 	if err := p.validateRequestTarget(target); err != nil {
-		return err
+		return fmt.Errorf("validate request target: %w", err)
 	}
 
 	host := normalizeHostASCII(target.Hostname())
+
 	ips, err := p.ResolveHost(ctx, host)
 	if err != nil {
-		return err
+		return fmt.Errorf("resolve host: %w", err)
 	}
+
 	for _, ip := range ips {
 		if !p.allowsIP(ip) {
 			return fmt.Errorf("%w: %s -> %s", ErrBlockedIP, host, ip)
 		}
 	}
+
 	return nil
 }
 
@@ -226,18 +238,22 @@ func (p Policy) ResolveHost(ctx context.Context, host string) ([]net.IP, error) 
 
 	lookupCtx := ctx
 	cancel := func() {}
+
 	if p.Timeout > 0 {
 		lookupCtx, cancel = context.WithTimeout(ctx, p.Timeout)
 	}
+
 	defer cancel()
 
 	ips, err := resolver.LookupIP(lookupCtx, "ip", host)
 	if err != nil {
 		return nil, fmt.Errorf("netguard: resolve host %q: %w", host, err)
 	}
+
 	if len(ips) == 0 {
 		return nil, fmt.Errorf("netguard: resolve host %q: no addresses", host)
 	}
+
 	return ips, nil
 }
 
@@ -248,53 +264,67 @@ func GuardedDialContext(
 ) func(context.Context, string, string) (net.Conn, error) {
 	if base == nil {
 		dialer := &net.Dialer{Timeout: p.Timeout}
+
 		base = dialer.DialContext
 	}
+
 	p = p.prepared()
+
 	return func(ctx context.Context, network, address string) (net.Conn, error) {
 		resolved, err := p.resolveDialAddresses(ctx, address)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("resolve dial addresses: %w", err)
 		}
+
 		var dialErrs []error
+
 		for index, resolvedAddress := range resolved {
 			attemptCtx, cancel, budgetErr := dialAttemptContext(ctx, len(resolved)-index)
 			if budgetErr != nil {
 				dialErrs = append(dialErrs, budgetErr)
 				break
 			}
+
 			conn, err := base(attemptCtx, network, resolvedAddress)
 			// net.Dialer/tls.Dialer 계약상 연결이 성립한 뒤의 context 취소는 conn에 영향이 없다.
 			cancel()
+
 			if err == nil {
 				return conn, nil
 			}
+
 			dialErrs = append(dialErrs, fmt.Errorf("netguard: dial %s: %w", resolvedAddress, err))
 		}
+
 		if len(dialErrs) == 0 {
 			return nil, errors.New("netguard: no resolved dial addresses")
 		}
+
 		return nil, errors.Join(dialErrs...)
 	}
 }
 
 // dialAttemptContext는 ctx에 남은 시간을 남은 후보 수로 나눠 첫 후보가 예산을 모두 쓰고
 // 나머지 후보의 failover 기회를 없애는 것을 막는다. 마지막 후보는 남은 예산을 그대로 쓴다.
-// ctx에 deadline이 없으면 base dialer의 자체 timeout이 그대로 적용된다.
+// Ctx에 deadline이 없으면 base dialer의 자체 timeout이 그대로 적용된다.
 func dialAttemptContext(ctx context.Context, remaining int) (context.Context, context.CancelFunc, error) {
 	deadline, ok := ctx.Deadline()
 	if !ok || remaining <= 1 {
 		return ctx, func() {}, nil
 	}
+
 	budget := time.Until(deadline)
 	if budget <= 0 {
 		return nil, nil, fmt.Errorf("netguard: dial budget exhausted: %w", context.DeadlineExceeded)
 	}
+
 	timeout := budget / time.Duration(remaining)
 	if timeout < minDialAttemptTimeout {
 		timeout = min(budget, minDialAttemptTimeout)
 	}
+
 	attemptCtx, cancel := context.WithTimeout(ctx, timeout)
+
 	return attemptCtx, cancel, nil
 }
 
@@ -309,6 +339,7 @@ func GuardedTransport(base *http.Transport, p Policy) *http.Transport {
 	} else {
 		base = base.Clone()
 	}
+
 	p = p.prepared()
 	base.Proxy = nil
 	//lint:ignore SA1019 deprecated DialTLS를 비워 소비자 제공 unguarded DialTLS 우회를 막는다.
@@ -317,43 +348,54 @@ func GuardedTransport(base *http.Transport, p Policy) *http.Transport {
 	baseDialContext := base.DialContext
 	if baseDialContext == nil {
 		dialer := &net.Dialer{Timeout: p.Timeout}
+
 		baseDialContext = dialer.DialContext
 	}
+
 	base.DialContext = GuardedDialContext(baseDialContext, p)
 	if base.DialTLSContext != nil {
 		base.DialTLSContext = GuardedDialContext(base.DialTLSContext, p)
 	}
+
 	return base
 }
 
 // GuardedClient는 http.Client transport에 Policy 검증을 적용한 복사본을 반환한다.
-// opaque RoundTripper 경로는 dial을 통제하지 못해 request 시점 resolve 결과만 검사하며,
+// Opaque RoundTripper 경로는 dial을 통제하지 못해 request 시점 resolve 결과만 검사하며,
 // 반환 client의 Transport는 더 이상 *http.Transport로 단언되지 않는다.
 func GuardedClient(client *http.Client, p Policy) *http.Client {
 	if client == nil {
 		client = &http.Client{}
 	}
+
 	p = p.prepared()
+
 	cloned := *client
+
 	if cloned.Transport == nil {
 		cloned.Transport = guardedRoundTripper{base: GuardedTransport(nil, p), policy: p, dialGuarded: true}
 		return &cloned
 	}
+
 	if transport, ok := cloned.Transport.(*http.Transport); ok {
 		cloned.Transport = guardedRoundTripper{base: GuardedTransport(transport, p), policy: p, dialGuarded: true}
 		return &cloned
 	}
 
 	declaredDialGuarded := false
+
 	if capable, ok := cloned.Transport.(DialGuardedRoundTripper); ok {
 		declaredDialGuarded = capable.NetguardDialGuarded()
 	}
+
 	if !declaredDialGuarded && p.RequireGuardedDial {
 		cloned.Transport = unguardedRoundTripper{}
 		return &cloned
 	}
+
 	// 선언은 RequireGuardedDial 요구를 충족할 뿐이며 검증 강도를 낮추지 않는다.
 	cloned.Transport = guardedRoundTripper{base: cloned.Transport, policy: p}
+
 	return &cloned
 }
 
@@ -366,20 +408,37 @@ type guardedRoundTripper struct {
 func (g guardedRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req == nil || req.URL == nil {
 		closeRequestBody(req)
+
 		return nil, errors.New("netguard: request URL is nil")
 	}
+
 	if g.dialGuarded {
 		if err := g.policy.validateRequestTarget(req.URL); err != nil {
 			closeRequestBody(req)
-			return nil, err
+
+			return nil, fmt.Errorf("validate request target: %w", err)
 		}
-		return g.base.RoundTrip(req)
+
+		out, err := g.base.RoundTrip(req)
+		if err != nil {
+			return nil, fmt.Errorf("round trip: %w", err)
+		}
+
+		return out, nil
 	}
+
 	if err := g.policy.ValidateTarget(req.Context(), req.URL); err != nil {
 		closeRequestBody(req)
-		return nil, err
+
+		return nil, fmt.Errorf("validate target: %w", err)
 	}
-	return g.base.RoundTrip(req)
+
+	out, err := g.base.RoundTrip(req)
+	if err != nil {
+		return nil, fmt.Errorf("round trip: %w", err)
+	}
+
+	return out, nil
 }
 
 // RoundTripper 계약상 거부 경로에서도 body를 닫아야 한다.
@@ -399,37 +458,46 @@ type unguardedRoundTripper struct{}
 
 func (unguardedRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	closeRequestBody(req)
+
 	return nil, ErrUnguardedTransport
 }
 
 // RedirectPolicy는 redirect 대상도 Policy로 검증하는 CheckRedirect 함수다.
 func RedirectPolicy(cfg RedirectConfig) func(req *http.Request, via []*http.Request) error {
 	cfg.Policy = cfg.Policy.prepared()
+
 	return func(req *http.Request, via []*http.Request) error {
 		if cfg.DisableFollow {
 			return http.ErrUseLastResponse
 		}
+
 		maxRedirects := cfg.MaxRedirects
 		if maxRedirects <= 0 {
 			maxRedirects = 10
 		}
+
 		if len(via) > maxRedirects {
 			return ErrTooManyRedirects
 		}
+
 		if req == nil || req.URL == nil {
 			return errors.New("netguard: redirect target is nil")
 		}
+
 		if err := cfg.Policy.ValidateTarget(req.Context(), req.URL); err != nil {
-			return err
+			return fmt.Errorf("validate target: %w", err)
 		}
+
 		// net/http는 hop마다 최초 요청 header 사본을 복원하므로 직전 hop이 아니라 최초 요청 origin과
 		// 비교해야 한다. 직전 hop과 비교하면 hop1에서 지운 header가 hop2에서 되살아난다.
 		if !cfg.ForwardHeaders && len(via) > 0 && !sameOrigin(via[0].URL, req.URL) {
 			stripHeaders(req)
 		}
+
 		if cfg.CheckRedirect != nil {
 			return cfg.CheckRedirect(req, via)
 		}
+
 		return nil
 	}
 }
@@ -438,18 +506,25 @@ func (p Policy) validateRequestTarget(target *url.URL) error {
 	if target == nil {
 		return errors.New("netguard: target URL is nil")
 	}
+
 	if err := p.validateScheme(target.Scheme); err != nil {
-		return err
+		return fmt.Errorf("validate scheme: %w", err)
 	}
 
 	host := NormalizeHost(target.Hostname())
 	if host == "" {
 		return errors.New("netguard: URL missing host")
 	}
+
 	if err := p.validateHost(host); err != nil {
-		return err
+		return fmt.Errorf("validate host: %w", err)
 	}
-	return p.validatePort(target)
+
+	if err := p.validatePort(target); err != nil {
+		return fmt.Errorf("validate port: %w", err)
+	}
+
+	return nil
 }
 
 func (p Policy) validateScheme(scheme string) error {
@@ -462,11 +537,13 @@ func (p Policy) validateScheme(scheme string) error {
 	if len(schemes) == 0 {
 		schemes = []string{"http", "https"}
 	}
+
 	for _, allowed := range schemes {
 		if normalized == strings.ToLower(strings.TrimSpace(allowed)) {
 			return nil
 		}
 	}
+
 	return fmt.Errorf("%w: %s", ErrUnsupportedScheme, scheme)
 }
 
@@ -475,25 +552,33 @@ func (p Policy) validateHost(host string) error {
 	if len(p.AllowedHosts) > 0 && !slices.Contains(p.allowedHostsASCII(), candidate) {
 		return fmt.Errorf("%w: %s", ErrHostNotAllowed, candidate)
 	}
+
 	if p.AllowHost != nil && !p.AllowHost(candidate) {
 		return fmt.Errorf("%w: %s", ErrHostNotAllowed, candidate)
 	}
+
 	return nil
 }
 
 func (p Policy) validatePort(target *url.URL) error {
-	return p.validatePortString(effectivePort(target))
+	if err := p.validatePortString(effectivePort(target)); err != nil {
+		return fmt.Errorf("validate port string: %w", err)
+	}
+
+	return nil
 }
 
 func (p Policy) validatePortString(port string) error {
 	if len(p.AllowedPorts) == 0 {
 		return nil
 	}
+
 	for _, allowed := range p.AllowedPorts {
 		if port == strings.TrimSpace(allowed) {
 			return nil
 		}
 	}
+
 	return fmt.Errorf("netguard: port %q is not allowed", port)
 }
 
@@ -502,17 +587,20 @@ func (p Policy) resolveDialAddresses(ctx context.Context, address string) ([]str
 	if err != nil {
 		return nil, fmt.Errorf("netguard: split dial address: %w", err)
 	}
+
 	if portErr := p.validatePortString(port); portErr != nil {
-		return nil, portErr
+		return nil, fmt.Errorf("validate port string: %w", portErr)
 	}
+
 	if hostErr := p.validateHost(host); hostErr != nil {
-		return nil, hostErr
+		return nil, fmt.Errorf("validate host: %w", hostErr)
 	}
 
 	ips, err := p.ResolveHost(ctx, host)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("resolve host: %w", err)
 	}
+
 	for _, ip := range ips {
 		if !p.allowsIP(ip) {
 			return nil, fmt.Errorf("%w: %s -> %s", ErrBlockedIP, host, ip)
@@ -523,6 +611,7 @@ func (p Policy) resolveDialAddresses(ctx context.Context, address string) ([]str
 	for _, ip := range ips {
 		resolved = append(resolved, net.JoinHostPort(ip.String(), port))
 	}
+
 	return resolved, nil
 }
 
@@ -531,10 +620,12 @@ func (p Policy) allowsIP(ip net.IP) bool {
 	if !ok {
 		return false
 	}
+
 	addr = addr.Unmap()
 	if !IsBlockedAddr(addr) {
 		return true
 	}
+
 	for _, prefix := range p.AllowedIPPrefixes {
 		if prefix.IsValid() && prefix.Contains(addr) {
 			return true
@@ -549,7 +640,9 @@ func (p Policy) prepared() Policy {
 	if len(p.AllowedHosts) == 0 || p.normalizedAllowedHosts != nil {
 		return p
 	}
+
 	p.normalizedAllowedHosts = normalizeHostListASCII(p.AllowedHosts)
+
 	return p
 }
 
@@ -557,6 +650,7 @@ func (p Policy) allowedHostsASCII() []string {
 	if p.normalizedAllowedHosts != nil {
 		return p.normalizedAllowedHosts
 	}
+
 	return normalizeHostListASCII(p.AllowedHosts)
 }
 
@@ -565,6 +659,7 @@ func normalizeHostListASCII(hosts []string) []string {
 	for _, host := range hosts {
 		normalized = append(normalized, normalizeHostASCII(host))
 	}
+
 	return normalized
 }
 
@@ -572,6 +667,7 @@ func effectivePort(target *url.URL) string {
 	if port := target.Port(); port != "" {
 		return port
 	}
+
 	switch strings.ToLower(target.Scheme) {
 	case "http":
 		return "80"
@@ -586,12 +682,15 @@ func sameOrigin(a, b *url.URL) bool {
 	if a == nil || b == nil {
 		return false
 	}
+
 	if !strings.EqualFold(strings.TrimSpace(a.Scheme), strings.TrimSpace(b.Scheme)) {
 		return false
 	}
+
 	if normalizeHostASCII(a.Hostname()) != normalizeHostASCII(b.Hostname()) {
 		return false
 	}
+
 	return effectivePort(a) == effectivePort(b)
 }
 

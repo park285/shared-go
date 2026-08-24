@@ -52,31 +52,54 @@ func defaultFetchOptions() FetchOptions {
 
 func internalFetchOptions() FetchOptions {
 	opts := defaultFetchOptions()
+
 	opts.AllowPrivateNetworks = true
+
 	return opts
 }
 
 // https는 H3(QUIC)로, http는 HTTP/1.1로 1회 GET 후 2xx 여부를 검사한다.
 func CheckURL(rawURL string) error {
-	_, err := FetchURL(rawURL)
-	return err
+	if _, err := FetchURL(rawURL); err != nil {
+		return fmt.Errorf("fetch URL: %w", err)
+	}
+
+	return nil
 }
 
 func FetchURL(rawURL string) ([]byte, error) {
-	return fetchURL(context.Background(), rawURL, nil, defaultFetchOptions())
+	out, err := fetchURL(context.Background(), rawURL, nil, defaultFetchOptions())
+	if err != nil {
+		return out, fmt.Errorf("fetch URL: %w", err)
+	}
+
+	return out, nil
 }
 
 func CheckURLInternal(rawURL string) error {
-	_, err := FetchURLInternal(rawURL)
-	return err
+	if _, err := FetchURLInternal(rawURL); err != nil {
+		return fmt.Errorf("fetch internal URL: %w", err)
+	}
+
+	return nil
 }
 
 func FetchURLInternal(rawURL string) ([]byte, error) {
-	return fetchURL(context.Background(), rawURL, nil, internalFetchOptions())
+	out, err := fetchURL(context.Background(), rawURL, nil, internalFetchOptions())
+	if err != nil {
+		return out, fmt.Errorf("fetch URL: %w", err)
+	}
+
+	return out, nil
 }
 
 func FetchURLWithHeadersInternal(rawURL string, headers map[string]string) ([]byte, error) {
-	return fetchURL(context.Background(), rawURL, headers, internalFetchOptions())
+	out, err := fetchURL(context.Background(), rawURL, headers, internalFetchOptions())
+	if err != nil {
+		return out, fmt.Errorf("fetch URL: %w", err)
+	}
+
+	return out, nil
 }
 
 func fetchURL(parent context.Context, rawURL string, headers map[string]string, opts FetchOptions) ([]byte, error) {
@@ -85,19 +108,17 @@ func fetchURL(parent context.Context, rawURL string, headers map[string]string, 
 		return nil, fmt.Errorf("validate url: %w", err)
 	}
 
-	if parent == nil {
-		parent = context.Background()
-	}
 	ctx, cancel := context.WithTimeout(parent, requestTimeout)
+
 	defer cancel()
 
 	if authErr := authorizeTarget(ctx, parsed, opts); authErr != nil {
-		return nil, authErr
+		return nil, fmt.Errorf("authorize target: %w", authErr)
 	}
 
 	client, closeFn, err := newClient(parsed, opts)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("client: %w", err)
 	}
 	defer closeFn()
 
@@ -105,10 +126,12 @@ func fetchURL(parent context.Context, rawURL string, headers map[string]string, 
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
+
 	for name, value := range headers {
 		if name == "" {
 			continue
 		}
+
 		req.Header.Set(name, value)
 	}
 
@@ -134,6 +157,7 @@ func fetchURL(parent context.Context, rawURL string, headers map[string]string, 
 
 func newClient(parsed *url.URL, opts FetchOptions) (*http.Client, func(), error) {
 	var guard func(net.IP) error
+
 	if !opts.AllowPrivateNetworks {
 		guard = dialGuard
 	}
@@ -145,9 +169,11 @@ func newClient(parsed *url.URL, opts FetchOptions) (*http.Client, func(), error)
 			DialGuard:  guard,
 		})
 		if clientErr != nil {
-			return nil, nil, clientErr
+			return nil, nil, fmt.Errorf("client: %w", clientErr)
 		}
+
 		h3Client.CheckRedirect = redirectPolicy(opts)
+
 		return h3Client, closeFn, nil
 	}
 
@@ -155,12 +181,16 @@ func newClient(parsed *url.URL, opts FetchOptions) (*http.Client, func(), error)
 		Timeout:       requestTimeout,
 		CheckRedirect: redirectPolicy(opts),
 	}
+
 	if guard == nil {
 		// 공유 http.DefaultTransport의 pool은 다른 소비자 것이므로 여기서 닫지 않는다.
 		return client, func() {}, nil
 	}
+
 	transport := guardedHTTPTransport(guard)
+
 	client.Transport = transport
+
 	return client, transport.CloseIdleConnections, nil
 }
 
@@ -168,25 +198,32 @@ func dialGuard(ip net.IP) error {
 	if netguard.IsBlockedIP(ip) {
 		return fmt.Errorf("%w: %w: dialed %s", ErrPrivateNetwork, netguard.ErrBlockedIP, ip)
 	}
+
 	return nil
 }
 
 func guardedHTTPTransport(guard func(net.IP) error) *http.Transport {
 	dialer := &net.Dialer{Timeout: requestTimeout}
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+
 	dialer.Control = func(_, address string, _ syscall.RawConn) error {
 		host, _, err := net.SplitHostPort(address)
 		if err != nil {
 			return fmt.Errorf("%w: parse dial addr %q: %w", ErrPrivateNetwork, address, err)
 		}
+
 		ip := net.ParseIP(host)
 		if ip == nil {
 			return fmt.Errorf("%w: unresolved dial addr %q", ErrPrivateNetwork, address)
 		}
+
 		return guard(ip)
 	}
+
 	return &http.Transport{
 		DialContext:           dialer.DialContext,
-		ForceAttemptHTTP2:     true,
+		Protocols:             protocols,
 		MaxIdleConns:          10,
 		IdleConnTimeout:       30 * time.Second,
 		TLSHandshakeTimeout:   requestTimeout,
@@ -201,6 +238,7 @@ func redirectPolicy(opts FetchOptions) func(req *http.Request, via []*http.Reque
 		DisableFollow:  !opts.FollowRedirects,
 		ForwardHeaders: opts.ForwardHeadersOnRedirect,
 	})
+
 	return func(req *http.Request, via []*http.Request) error {
 		return mapPolicyError(policy(req, via))
 	}
@@ -211,18 +249,25 @@ func readCappedBody(body io.ReadCloser, maxBytes int64) ([]byte, error) {
 	if maxBytes <= 0 {
 		maxBytes = DefaultMaxBodyBytes
 	}
+
 	data, err := httputil.ReadAllAndClose(body, maxBytes)
 	if errors.Is(err, httputil.ErrResponseBodyTooLarge) {
 		return nil, ErrBodyTooLarge
 	}
+
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read all and close: %w", err)
 	}
+
 	return data, nil
 }
 
 func authorizeTarget(ctx context.Context, parsed *url.URL, opts FetchOptions) error {
-	return mapPolicyError(networkPolicy(opts).ValidateTarget(ctx, parsed))
+	if err := mapPolicyError(networkPolicy(opts).ValidateTarget(ctx, parsed)); err != nil {
+		return fmt.Errorf("map policy error: %w", err)
+	}
+
+	return nil
 }
 
 func networkPolicy(opts FetchOptions) netguard.Policy {
@@ -238,6 +283,7 @@ func networkPolicy(opts FetchOptions) netguard.Policy {
 			netip.MustParsePrefix("::/0"),
 		}
 	}
+
 	return policy
 }
 
@@ -258,15 +304,17 @@ var lookupIPAddr = net.DefaultResolver.LookupIPAddr
 
 type healthprobeResolver struct{}
 
-func (healthprobeResolver) LookupIP(ctx context.Context, _ string, host string) ([]net.IP, error) {
+func (healthprobeResolver) LookupIP(ctx context.Context, _, host string) ([]net.IP, error) {
 	addrs, err := lookupIPAddr(ctx, host)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("lookup IP addr: %w", err)
 	}
+
 	ips := make([]net.IP, 0, len(addrs))
 	for _, addr := range addrs {
 		ips = append(ips, addr.IP)
 	}
+
 	return ips, nil
 }
 

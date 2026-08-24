@@ -41,6 +41,7 @@ func (g *Guard) Check(req CheckRequest) Evaluation {
 	}
 
 	checkOutputSurfaces(req.Text, nil, &evaluation)
+
 	if len(evaluation.ReasonCodes) > 0 {
 		evaluation.Decision = DecisionBlock
 	}
@@ -81,44 +82,55 @@ func checkOutputSurfaces(text string, index *protectedIndex, evaluation *Evaluat
 	collectRestrictedMatches(restrictedSurfaces, evaluation)
 
 	protectedIncomplete := false
+
 	if index != nil {
-		if protectedOverlap(restrictedSurfaces, index) {
+		matched, incomplete := matchProtectedSurfaces(text, restrictedSurfaces, index)
+		if matched {
 			appendReason(evaluation, ReasonProtectedTextOverlap)
-		} else {
-			protectedMatched := false
-			mayContribute := func(candidate string) bool {
-				if isProtectedContextSeparator(candidate) {
-					return true
-				}
-				candidateSurfaces, _ := outputSurfacesFromDecoded(candidate, true, guardtext.DecodeResult{})
-				if protectedOverlap(candidateSurfaces, index) {
-					protectedMatched = true
-
-					return true
-				}
-
-				return index.mayContainFragment(candidateSurfaces)
-			}
-			protectedSurfaces, incomplete := outputSurfacesFromDecoded(
-				text,
-				true,
-				guardtext.DecodeCandidatesWithContextForProtected(
-					text,
-					mayContribute,
-					func(input string, encodedStart, encodedEnd int, decoded string) bool {
-						return mayContribute(protectedDecodeContextWindow(input, encodedStart, encodedEnd, decoded))
-					},
-				),
-			)
-			protectedIncomplete = incomplete
-			if protectedMatched || protectedOverlap(protectedSurfaces, index) {
-				appendReason(evaluation, ReasonProtectedTextOverlap)
-			}
 		}
+
+		protectedIncomplete = incomplete
 	}
+
 	if restrictedIncomplete || protectedIncomplete {
 		appendReason(evaluation, ReasonDecodeIncomplete)
 	}
+}
+
+func matchProtectedSurfaces(text string, restrictedSurfaces []string, index *protectedIndex) (matched, decodeIncomplete bool) {
+	if protectedOverlap(restrictedSurfaces, index) {
+		return true, false
+	}
+
+	protectedMatched := false
+	mayContribute := func(candidate string) bool {
+		if isProtectedContextSeparator(candidate) {
+			return true
+		}
+
+		candidateSurfaces, _ := outputSurfacesFromDecoded(candidate, true, guardtext.DecodeResult{})
+		if protectedOverlap(candidateSurfaces, index) {
+			protectedMatched = true
+
+			return true
+		}
+
+		return index.mayContainFragment(candidateSurfaces)
+	}
+
+	protectedSurfaces, incomplete := outputSurfacesFromDecoded(
+		text,
+		true,
+		guardtext.DecodeCandidatesWithContextForProtected(
+			text,
+			mayContribute,
+			func(input string, encodedStart, encodedEnd int, decoded string) bool {
+				return mayContribute(protectedDecodeContextWindow(input, encodedStart, encodedEnd, decoded))
+			},
+		),
+	)
+
+	return protectedMatched || protectedOverlap(protectedSurfaces, index), incomplete
 }
 
 func protectedDecodeContextWindow(input string, encodedStart, encodedEnd int, decoded string) string {
@@ -128,12 +140,14 @@ func protectedDecodeContextWindow(input string, encodedStart, encodedEnd int, de
 	for windowStart < encodedStart && !utf8.RuneStart(input[windowStart]) {
 		windowStart++
 	}
+
 	windowEnd := min(len(input), encodedEnd+contextBytes)
 	for windowEnd < len(input) && !utf8.RuneStart(input[windowEnd]) {
 		windowEnd--
 	}
 
 	var contextual strings.Builder
+
 	contextual.Grow(windowEnd - windowStart - (encodedEnd - encodedStart) + len(decoded))
 	contextual.WriteString(input[windowStart:encodedStart])
 	contextual.WriteString(decoded)
@@ -144,6 +158,7 @@ func protectedDecodeContextWindow(input string, encodedStart, encodedEnd int, de
 
 func matchesRestrictedCandidate(candidate string) bool {
 	surfaces, _ := outputSurfacesFromDecoded(candidate, false, guardtext.DecodeResult{})
+
 	for _, rule := range restrictedRules {
 		if slices.ContainsFunc(surfaces, rule.pattern.MatchString) {
 			return true
@@ -157,6 +172,7 @@ func isProtectedContextSeparator(candidate string) bool {
 	if candidate == "" || len(candidate) > 16 {
 		return false
 	}
+
 	for _, value := range candidate {
 		if value > ' ' && !strings.ContainsRune("-_:;,.|/\\()[]{}<>'\"`~!@#$%^&*+=?", value) {
 			return false
@@ -170,18 +186,25 @@ func outputSurfacesFromDecoded(text string, includeProtectedProjection bool, dec
 	views := guardtext.NormalizeViews(text)
 	stripped := guardtext.StripFormatAndCombining(text)
 	viewsPerCandidate := 4
+
 	if includeProtectedProjection {
 		viewsPerCandidate++
 	}
+
 	surfaces := make([]string, 0, viewsPerCandidate*(1+len(decoded.Candidates)))
+
 	surfaces = append(surfaces, views.Raw, views.Norm, views.Joined, guardtext.Normalize(stripped))
+
 	if includeProtectedProjection {
 		surfaces = append(surfaces, exactProtectedOutputProjection(text, views))
 	}
+
 	for _, candidate := range decoded.Candidates {
 		decodedViews := guardtext.NormalizeViews(candidate)
 		decodedStripped := guardtext.StripFormatAndCombining(candidate)
+
 		surfaces = append(surfaces, decodedViews.Raw, decodedViews.Norm, decodedViews.Joined, guardtext.Normalize(decodedStripped))
+
 		if includeProtectedProjection {
 			surfaces = append(surfaces, exactProtectedOutputProjection(candidate, decodedViews))
 		}
@@ -197,10 +220,12 @@ func collectRestrictedMatches(surfaces []string, evaluation *Evaluation) {
 			if !rule.pattern.MatchString(surface) {
 				continue
 			}
+
 			if _, exists := seenRules[rule.id]; !exists {
 				evaluation.RuleIDs = append(evaluation.RuleIDs, rule.id)
 				seenRules[rule.id] = struct{}{}
 			}
+
 			appendReason(evaluation, rule.reason)
 
 			break
@@ -217,13 +242,16 @@ func appendReason(evaluation *Evaluation, reason ReasonCode) {
 func compactStrings(values []string) []string {
 	seen := make(map[string]struct{}, len(values))
 	result := make([]string, 0, len(values))
+
 	for _, value := range values {
 		if strings.TrimSpace(value) == "" {
 			continue
 		}
+
 		if _, exists := seen[value]; exists {
 			continue
 		}
+
 		seen[value] = struct{}{}
 		result = append(result, value)
 	}

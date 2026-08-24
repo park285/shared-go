@@ -1,6 +1,10 @@
 package promptguard
 
-import "github.com/park285/shared-go/v2/pkg/internal/guardtext"
+import (
+	"fmt"
+
+	"github.com/park285/shared-go/v2/pkg/internal/guardtext"
+)
 
 type Views = guardtext.Views
 
@@ -37,5 +41,10 @@ func containsSuspiciousBase64(input string) bool {
 }
 
 func decodeBase64Candidate(input string) ([]byte, error) {
-	return guardtext.DecodeBase64Candidate(input)
+	out, err := guardtext.DecodeBase64Candidate(input)
+	if err != nil {
+		return out, fmt.Errorf("decode base64 candidate: %w", err)
+	}
+
+	return out, nil
 }

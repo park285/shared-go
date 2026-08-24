@@ -13,7 +13,7 @@
 //
 // runtime error는 OnError에 관측용으로 전달하면서 Run 반환값에도 보존합니다. shutdown도 실패하면
 // 두 error를 errors.Is/As로 각각 식별할 수 있도록 함께 반환합니다. runtime error 없이 signal이나
-// BaseContext 취소로 정상 종료하면 기존과 같이 shutdown 결과만 반환합니다.
+// Run에 넘긴 ctx의 취소로 정상 종료하면 기존과 같이 shutdown 결과만 반환합니다.
 //
 // # 순서 있는 종료(RunCloseSteps) 계약
 //

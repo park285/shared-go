@@ -4,7 +4,6 @@ package promptguard
 
 import (
 	"encoding/base64"
-	"io"
 	"log/slog"
 	"net/url"
 	"testing"
@@ -40,6 +39,7 @@ func TestPromptGuardAllocationCeilings(t *testing.T) {
 			allocs := testing.AllocsPerRun(20, func() {
 				_ = guard.evaluateRaw(tt.input)
 			})
+
 			if allocs > tt.maxAllocs {
 				t.Fatalf("evaluateRaw() allocations = %.0f, want <= %.0f", allocs, tt.maxAllocs)
 			}
@@ -50,10 +50,12 @@ func TestPromptGuardAllocationCeilings(t *testing.T) {
 func newAllocationTestGuard(t *testing.T) *Guard {
 	t.Helper()
 
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
+
 	guard, err := NewGuard(Config{Enabled: true, UseEmbeddedDefaults: true}, logger)
 	if err != nil {
 		t.Fatalf("NewGuard() error = %v", err)
 	}
+
 	return guard
 }

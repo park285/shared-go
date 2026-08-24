@@ -9,14 +9,15 @@ import (
 )
 
 func TestSleepReturnsTrueAfterDuration(t *testing.T) {
-	if !Sleep(context.Background(), time.Millisecond) {
+	if !Sleep(t.Context(), time.Millisecond) {
 		t.Fatal("Sleep() = false, want true")
 	}
 }
 
 func TestSleepReturnsFalseWhenContextCanceled(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
+
 	if Sleep(ctx, time.Hour) {
 		t.Fatal("Sleep() = true, want false")
 	}
@@ -26,10 +27,11 @@ func TestWithRetry_SuccessOnFirstAttempt(t *testing.T) {
 	callCount := 0
 	fakeSleep := func(_ context.Context, _ time.Duration) bool {
 		t.Error("sleep should not be called on first success")
+
 		return true
 	}
 
-	err := WithRetry(context.Background(), RetryOptions{
+	err := WithRetry(t.Context(), RetryOptions{
 		MaxAttempts: 3,
 		BaseDelay:   time.Second,
 		Sleep:       fakeSleep,
@@ -37,10 +39,10 @@ func TestWithRetry_SuccessOnFirstAttempt(t *testing.T) {
 		callCount++
 		return nil
 	})
-
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
+
 	if callCount != 1 {
 		t.Errorf("expected 1 call, got %d", callCount)
 	}
@@ -51,7 +53,7 @@ func TestWithRetry_SuccessAfterRetries(t *testing.T) {
 	sleepCount := 0
 	targetErr := errors.New("transient error")
 
-	err := WithRetry(context.Background(), RetryOptions{
+	err := WithRetry(t.Context(), RetryOptions{
 		MaxAttempts: 3,
 		BaseDelay:   time.Millisecond,
 		Sleep: func(_ context.Context, _ time.Duration) bool {
@@ -63,15 +65,17 @@ func TestWithRetry_SuccessAfterRetries(t *testing.T) {
 		if callCount < 3 {
 			return targetErr
 		}
+
 		return nil
 	})
-
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
+
 	if callCount != 3 {
 		t.Errorf("expected 3 calls, got %d", callCount)
 	}
+
 	if sleepCount != 2 {
 		t.Errorf("expected 2 sleeps, got %d", sleepCount)
 	}
@@ -81,7 +85,7 @@ func TestWithRetry_AllAttemptsFail(t *testing.T) {
 	callCount := 0
 	targetErr := errors.New("persistent error")
 
-	err := WithRetry(context.Background(), RetryOptions{
+	err := WithRetry(t.Context(), RetryOptions{
 		MaxAttempts: 3,
 		BaseDelay:   time.Millisecond,
 		Sleep: func(_ context.Context, _ time.Duration) bool {
@@ -95,6 +99,7 @@ func TestWithRetry_AllAttemptsFail(t *testing.T) {
 	if !errors.Is(err, targetErr) {
 		t.Errorf("expected targetErr, got %v", err)
 	}
+
 	if callCount != 3 {
 		t.Errorf("expected 3 calls, got %d", callCount)
 	}
@@ -104,7 +109,7 @@ func TestWithRetry_ShouldRetryFalse(t *testing.T) {
 	callCount := 0
 	permanentErr := errors.New("permanent error")
 
-	err := WithRetry(context.Background(), RetryOptions{
+	err := WithRetry(t.Context(), RetryOptions{
 		MaxAttempts: 3,
 		BaseDelay:   time.Millisecond,
 		ShouldRetry: func(_ error) bool {
@@ -112,6 +117,7 @@ func TestWithRetry_ShouldRetryFalse(t *testing.T) {
 		},
 		Sleep: func(_ context.Context, _ time.Duration) bool {
 			t.Error("sleep should not be called when ShouldRetry returns false")
+
 			return true
 		},
 	}, func(_ context.Context) error {
@@ -122,13 +128,14 @@ func TestWithRetry_ShouldRetryFalse(t *testing.T) {
 	if !errors.Is(err, permanentErr) {
 		t.Errorf("expected permanentErr, got %v", err)
 	}
+
 	if callCount != 1 {
 		t.Errorf("expected 1 call, got %d", callCount)
 	}
 }
 
 func TestWithRetry_ContextCancelled(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	callCount := 0
 
 	err := WithRetry(ctx, RetryOptions{
@@ -137,18 +144,20 @@ func TestWithRetry_ContextCancelled(t *testing.T) {
 		Sleep: func(_ context.Context, _ time.Duration) bool {
 			if callCount >= 2 {
 				cancel()
+
 				return false
 			}
+
 			return true
 		},
 	}, func(_ context.Context) error {
 		callCount++
 		return errors.New("error")
 	})
-
 	if err == nil {
 		t.Error("expected error after context cancellation")
 	}
+
 	if callCount > 3 {
 		t.Errorf("too many calls after cancellation: %d", callCount)
 	}
@@ -157,7 +166,7 @@ func TestWithRetry_ContextCancelled(t *testing.T) {
 func TestWithRetry_OnRetryCallback(t *testing.T) {
 	retryAttempts := []int{}
 
-	err := WithRetry(context.Background(), RetryOptions{
+	err := WithRetry(t.Context(), RetryOptions{
 		MaxAttempts: 3,
 		BaseDelay:   time.Millisecond,
 		OnRetry: func(attempt int, _ error, _ time.Duration) {
@@ -176,6 +185,7 @@ func TestWithRetry_OnRetryCallback(t *testing.T) {
 	if len(retryAttempts) != 2 {
 		t.Errorf("expected 2 OnRetry calls, got %d", len(retryAttempts))
 	}
+
 	if retryAttempts[0] != 1 || retryAttempts[1] != 2 {
 		t.Errorf("unexpected retry attempts: %v", retryAttempts)
 	}
@@ -183,9 +193,10 @@ func TestWithRetry_OnRetryCallback(t *testing.T) {
 
 func TestWithRetry_Jitter0IsDeterministic(t *testing.T) {
 	targetErr := errors.New("transient")
+
 	var slept []time.Duration
 
-	err := WithRetry(context.Background(), RetryOptions{
+	err := WithRetry(t.Context(), RetryOptions{
 		MaxAttempts: 4,
 		BaseDelay:   100 * time.Millisecond,
 		Jitter:      0,
@@ -200,10 +211,12 @@ func TestWithRetry_Jitter0IsDeterministic(t *testing.T) {
 	if !errors.Is(err, targetErr) {
 		t.Fatalf("expected target error, got %v", err)
 	}
+
 	want := []time.Duration{100 * time.Millisecond, 200 * time.Millisecond, 400 * time.Millisecond}
 	if len(slept) != len(want) {
 		t.Fatalf("expected %d sleeps, got %d (%v)", len(want), len(slept), slept)
 	}
+
 	for i, w := range want {
 		if slept[i] != w {
 			t.Errorf("sleep[%d] = %v, want %v", i, slept[i], w)
@@ -215,9 +228,10 @@ func TestWithRetry_JitterWidensDelayWithinRange(t *testing.T) {
 	targetErr := errors.New("transient")
 	base := 100 * time.Millisecond
 	jitter := 50 * time.Millisecond
+
 	var slept []time.Duration
 
-	err := WithRetry(context.Background(), RetryOptions{
+	err := WithRetry(t.Context(), RetryOptions{
 		MaxAttempts: 4,
 		BaseDelay:   base,
 		Jitter:      jitter,
@@ -232,9 +246,11 @@ func TestWithRetry_JitterWidensDelayWithinRange(t *testing.T) {
 	if !errors.Is(err, targetErr) {
 		t.Fatalf("expected target error, got %v", err)
 	}
+
 	if len(slept) != 3 {
 		t.Fatalf("expected 3 sleeps, got %d", len(slept))
 	}
+
 	for attempt, d := range slept {
 		lo := base << attempt
 		if d < lo || d >= lo+jitter {
@@ -245,9 +261,10 @@ func TestWithRetry_JitterWidensDelayWithinRange(t *testing.T) {
 
 func TestWithRetry_MaxDelayCapsComputedDelay(t *testing.T) {
 	targetErr := errors.New("transient")
+
 	var slept []time.Duration
 
-	err := WithRetry(context.Background(), RetryOptions{
+	err := WithRetry(t.Context(), RetryOptions{
 		MaxAttempts: 3,
 		BaseDelay:   time.Second,
 		MaxDelay:    1500 * time.Millisecond,
@@ -262,12 +279,15 @@ func TestWithRetry_MaxDelayCapsComputedDelay(t *testing.T) {
 	if !errors.Is(err, targetErr) {
 		t.Fatalf("expected target error, got %v", err)
 	}
+
 	if len(slept) != 2 {
 		t.Fatalf("expected 2 sleeps, got %d", len(slept))
 	}
+
 	if slept[0] != time.Second {
 		t.Fatalf("first delay = %v, want 1s", slept[0])
 	}
+
 	if slept[1] != 1500*time.Millisecond {
 		t.Fatalf("second delay = %v, want capped 1.5s", slept[1])
 	}
@@ -275,9 +295,10 @@ func TestWithRetry_MaxDelayCapsComputedDelay(t *testing.T) {
 
 func TestWithRetry_DelayOverrideWinsBeforeMaxDelay(t *testing.T) {
 	targetErr := errors.New("retry-after")
+
 	var slept time.Duration
 
-	err := WithRetry(context.Background(), RetryOptions{
+	err := WithRetry(t.Context(), RetryOptions{
 		MaxAttempts: 2,
 		BaseDelay:   time.Second,
 		MaxDelay:    3 * time.Second,
@@ -285,6 +306,7 @@ func TestWithRetry_DelayOverrideWinsBeforeMaxDelay(t *testing.T) {
 			if errors.Is(err, targetErr) {
 				return 10 * time.Second, true
 			}
+
 			return 0, false
 		},
 		Sleep: func(_ context.Context, d time.Duration) bool {
@@ -298,6 +320,7 @@ func TestWithRetry_DelayOverrideWinsBeforeMaxDelay(t *testing.T) {
 	if !errors.Is(err, targetErr) {
 		t.Fatalf("expected target error, got %v", err)
 	}
+
 	if slept != 3*time.Second {
 		t.Fatalf("delay = %v, want max-delay capped 3s", slept)
 	}
@@ -305,9 +328,10 @@ func TestWithRetry_DelayOverrideWinsBeforeMaxDelay(t *testing.T) {
 
 func TestWithRetry_DelayOverrideUsedWhenBelowMaxDelay(t *testing.T) {
 	targetErr := errors.New("retry-after")
+
 	var slept time.Duration
 
-	err := WithRetry(context.Background(), RetryOptions{
+	err := WithRetry(t.Context(), RetryOptions{
 		MaxAttempts: 2,
 		BaseDelay:   5 * time.Second,
 		MaxDelay:    10 * time.Second,
@@ -325,13 +349,14 @@ func TestWithRetry_DelayOverrideUsedWhenBelowMaxDelay(t *testing.T) {
 	if !errors.Is(err, targetErr) {
 		t.Fatalf("expected target error, got %v", err)
 	}
+
 	if slept != 250*time.Millisecond {
 		t.Fatalf("delay = %v, want override 250ms", slept)
 	}
 }
 
 func TestWithRetry_ContextCancelPropagatesViaSleep(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	callCount := 0
 	targetErr := errors.New("transient")
 
@@ -340,6 +365,7 @@ func TestWithRetry_ContextCancelPropagatesViaSleep(t *testing.T) {
 		BaseDelay:   time.Second,
 		Sleep: func(_ context.Context, _ time.Duration) bool {
 			cancel()
+
 			return false
 		},
 	}, func(_ context.Context) error {
@@ -350,14 +376,16 @@ func TestWithRetry_ContextCancelPropagatesViaSleep(t *testing.T) {
 	if !errors.Is(err, targetErr) {
 		t.Fatalf("expected last error, got %v", err)
 	}
+
 	if callCount != 1 {
 		t.Errorf("expected 1 call before cancel-aborted sleep, got %d", callCount)
 	}
 }
 
 func TestWithRetry_ContextErrorReturnedWhenNoPriorError(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
+
 	callCount := 0
 
 	err := WithRetry(ctx, RetryOptions{
@@ -374,8 +402,9 @@ func TestWithRetry_ContextErrorReturnedWhenNoPriorError(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled, got %v", err)
 	}
+
 	if callCount != 0 {
-		t.Errorf("fn should not run under a cancelled context, got %d calls", callCount)
+		t.Errorf("fn should not run under a canceled context, got %d calls", callCount)
 	}
 }
 
@@ -383,11 +412,12 @@ func TestWithRetry_MaxAttemptsNormalizedToOne(t *testing.T) {
 	callCount := 0
 	targetErr := errors.New("boom")
 
-	err := WithRetry(context.Background(), RetryOptions{
+	err := WithRetry(t.Context(), RetryOptions{
 		MaxAttempts: 0,
 		BaseDelay:   time.Millisecond,
 		Sleep: func(_ context.Context, _ time.Duration) bool {
 			t.Error("sleep should not run with a single normalized attempt")
+
 			return true
 		},
 	}, func(_ context.Context) error {
@@ -398,18 +428,19 @@ func TestWithRetry_MaxAttemptsNormalizedToOne(t *testing.T) {
 	if !errors.Is(err, targetErr) {
 		t.Fatalf("expected target error, got %v", err)
 	}
+
 	if callCount != 1 {
 		t.Errorf("expected 1 call, got %d", callCount)
 	}
 }
 
 func TestSleepReportsCancellationForNonPositiveDuration(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
 	for range 200 {
 		if Sleep(ctx, 0) {
-			t.Fatal("Sleep(cancelled, 0) = true, want false")
+			t.Fatal("Sleep(canceled, 0) = true, want false")
 		}
 	}
 }
@@ -418,7 +449,7 @@ func TestWithRetryRejectsNegativeDelayOverride(t *testing.T) {
 	targetErr := errors.New("boom")
 	attempts := 0
 
-	err := WithRetry(context.Background(), RetryOptions{
+	err := WithRetry(t.Context(), RetryOptions{
 		MaxAttempts: 3,
 		BaseDelay:   time.Millisecond,
 		DelayOverride: func(error, time.Duration) (time.Duration, bool) {
@@ -429,6 +460,7 @@ func TestWithRetryRejectsNegativeDelayOverride(t *testing.T) {
 		},
 		Sleep: func(context.Context, time.Duration) bool {
 			t.Fatal("Sleep called for an invalid delay override")
+
 			return true
 		},
 	}, func(_ context.Context) error {
@@ -439,9 +471,11 @@ func TestWithRetryRejectsNegativeDelayOverride(t *testing.T) {
 	if !errors.Is(err, targetErr) {
 		t.Fatalf("WithRetry() error = %v, want original error preserved", err)
 	}
+
 	if err == nil || !strings.Contains(err.Error(), "negative duration") {
 		t.Fatalf("WithRetry() error = %v, want invalid delay reason", err)
 	}
+
 	if attempts != 1 {
 		t.Fatalf("attempts = %d, want 1", attempts)
 	}
@@ -452,6 +486,7 @@ func TestRetryDelayWithoutMaxDelayKeepsUnboundedGrowth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("retryDelay() error = %v", err)
 	}
+
 	if delay < 64*time.Second {
 		t.Fatalf("retryDelay() = %v, want unbounded exponential growth without MaxDelay", delay)
 	}

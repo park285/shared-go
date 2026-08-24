@@ -34,7 +34,7 @@ const (
 type JobSpec struct {
 	// Context는 값(trace, logger 등)만 전달한다. pool이 취소 신호를 끊고 자체 budget을 붙이므로
 	// 이 context를 취소해도 Run이나 Finalize는 중단되지 않는다.
-	Context     context.Context
+	Context     context.Context //nolint:containedctx // JobSpec은 queue에 적재된 뒤 dequeue 시점에 실행되는 작업 명세라, 값 전용 context를 필드로 운반해야 한다.
 	Kind        string
 	Timeout     time.Duration
 	MaxQueueAge time.Duration
@@ -73,7 +73,7 @@ const (
 
 // ManagedSubmitResult는 admission과 pool의 Finalize callback ownership을 함께 제공한다.
 // FinalizerClaimed가 true이면 callback lifecycle은 pool이 소유하며 호출자는 직접 Finalize하지 않는다.
-// false인 rejected 결과는 callback이 전혀 예약되지 않았으므로 호출자가 durable claim을 직접 복구해야 한다.
+// False인 rejected 결과는 callback이 전혀 예약되지 않았으므로 호출자가 durable claim을 직접 복구해야 한다.
 type ManagedSubmitResult struct {
 	Accepted         bool
 	FinalizerClaimed bool
@@ -166,23 +166,29 @@ type ManagedPool struct {
 // NewManagedPool은 explicit config를 검증한 뒤 ManagedPool을 시작한다.
 func NewManagedPool(config ManagedConfig) (*ManagedPool, error) {
 	if config.Workers < 1 || config.Workers > 4096 {
-		return nil, fmt.Errorf("managed worker pool: workers must be in 1..4096")
+		return nil, errors.New("managed worker pool: workers must be in 1..4096")
 	}
+
 	if config.QueueSize < 1 || config.QueueSize > 1_048_576 {
-		return nil, fmt.Errorf("managed worker pool: queue size must be in 1..1048576")
+		return nil, errors.New("managed worker pool: queue size must be in 1..1048576")
 	}
+
 	if config.FinalizeTimeout <= 0 {
-		return nil, fmt.Errorf("managed worker pool: finalize timeout must be positive")
+		return nil, errors.New("managed worker pool: finalize timeout must be positive")
 	}
+
 	if config.FinalizeConcurrency < 1 || config.FinalizeConcurrency > 4096 {
-		return nil, fmt.Errorf("managed worker pool: finalize concurrency must be in 1..4096")
+		return nil, errors.New("managed worker pool: finalize concurrency must be in 1..4096")
 	}
+
 	if config.FinalizeQueueSize < config.FinalizeConcurrency || config.FinalizeQueueSize > 1_048_576 {
-		return nil, fmt.Errorf("managed worker pool: finalize queue size must be in finalize concurrency..1048576")
+		return nil, errors.New("managed worker pool: finalize queue size must be in finalize concurrency..1048576")
 	}
+
 	if config.Logger == nil {
 		config.Logger = slog.Default()
 	}
+
 	return newManagedPool(config), nil
 }
 
@@ -206,13 +212,19 @@ func newManagedPool(config ManagedConfig) *ManagedPool {
 		),
 		logger: config.Logger,
 	}
+
 	pool.workAvailable = sync.NewCond(&pool.mu)
+
 	for range config.Workers {
 		pool.workerWG.Add(1)
+
 		go pool.worker()
 	}
+
 	pool.reaperWG.Add(1)
+
 	go pool.reaper()
+
 	return pool
 }
 
@@ -221,8 +233,10 @@ func (p *ManagedPool) Snapshot() ManagedSnapshot {
 	if p == nil {
 		return ManagedSnapshot{Outcomes: map[JobOutcome]uint64{}}
 	}
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
 	snapshot := ManagedSnapshot{
 		ConfiguredWorkers:  p.configuredWorkers,
 		RunningWorkers:     p.runningWorkers,
@@ -237,16 +251,20 @@ func (p *ManagedPool) Snapshot() ManagedSnapshot {
 	if len(p.queue) > 0 {
 		snapshot.OldestQueueAge = max(time.Since(p.queue[0].enqueuedAt), 0)
 	}
+
 	for _, inFlight := range p.inFlight {
 		age := max(time.Since(inFlight.startedAt), 0)
 		if age > snapshot.OldestInFlightAge {
 			snapshot.OldestInFlightAge = age
 		}
 	}
+
 	maps.Copy(snapshot.Outcomes, p.outcomes)
 	maps.Copy(snapshot.Attempts, p.attempts)
 	maps.Copy(snapshot.Discarded, p.discarded)
+
 	snapshot.Finalizer = p.finalizer.Snapshot()
+
 	return snapshot
 }
 
@@ -259,37 +277,49 @@ func (p *ManagedPool) trySubmit(spec JobSpec) ManagedSubmitResult {
 	if p == nil {
 		return ManagedSubmitResult{Reason: ManagedSubmitRejected}
 	}
+
 	job := &managedJob{spec: spec, enqueuedAt: time.Now()}
 	if spec.MaxQueueAge > 0 {
 		job.expiresAt = job.enqueuedAt.Add(spec.MaxQueueAge)
 	}
+
 	if p.shuttingDown() {
 		return p.rejectClosedSubmission(job)
 	}
+
 	if spec.Finalize != nil {
 		reserved, reserveReason := p.finalizer.Reserve(spec.Kind)
+
 		job.finalizerReserved = reserved
+
 		if !reserved {
 			p.finalizeJob(job, JobOutcomeRejected)
+
 			return ManagedSubmitResult{Reason: submitReasonForReserve(reserveReason)}
 		}
 	}
+
 	if spec.Run == nil {
 		return p.rejectSubmission(job)
 	}
 
 	p.mu.Lock()
+
 	if p.closed || len(p.queue) >= p.queueSize {
 		p.mu.Unlock()
+
 		return p.rejectSubmission(job)
 	}
+
 	p.queue = append(p.queue, job)
 	p.admissionsAccepted++
 	p.workAvailable.Signal()
 	p.mu.Unlock()
+
 	if !job.expiresAt.IsZero() {
 		signalManagedPool(p.reaperNotify)
 	}
+
 	return ManagedSubmitResult{
 		Accepted:         true,
 		FinalizerClaimed: job.finalizerReserved,
@@ -310,14 +340,17 @@ func (p *ManagedPool) shuttingDown() bool {
 // 그 사이 제출이 아직 열린 finalizer의 reservation을 소진한 뒤 재시도 가능한 capacity 신호를 돌려준다.
 func (p *ManagedPool) rejectClosedSubmission(job *managedJob) ManagedSubmitResult {
 	p.finalizeJob(job, JobOutcomeRejected)
+
 	if job.spec.Finalize != nil {
 		return ManagedSubmitResult{Reason: ManagedSubmitRejectedFinalizerClosed}
 	}
+
 	return ManagedSubmitResult{Reason: ManagedSubmitRejected}
 }
 
 func (p *ManagedPool) rejectSubmission(job *managedJob) ManagedSubmitResult {
 	p.finalizeJob(job, JobOutcomeRejected)
+
 	return rejectedSubmitResult(job.finalizerReserved)
 }
 
@@ -328,6 +361,7 @@ func rejectedSubmitResult(finalizerClaimed bool) ManagedSubmitResult {
 			Reason:           ManagedSubmitRejectedFinalizerScheduled,
 		}
 	}
+
 	return ManagedSubmitResult{Reason: ManagedSubmitRejected}
 }
 
@@ -337,23 +371,28 @@ func submitReasonForReserve(reason finalizerReserveReason) ManagedSubmitReason {
 		return ManagedSubmitRejectedFinalizerCapacity
 	case finalizerReserveRejectedClosed:
 		return ManagedSubmitRejectedFinalizerClosed
+	// Reserve가 성공한 경로는 이 함수를 호출하지 않으므로, accepted는 알 수 없는 값과 같은 일반 거부로 떨어뜨린다.
+	case finalizerReserveAccepted:
+		return ManagedSubmitRejected
 	default:
 		return ManagedSubmitRejected
 	}
 }
 
 // CloseContext는 admission을 닫고 queued job을 drop하며 in-flight job을 취소한다.
-// nil을 반환하면 pool이 소유한 accepted/rejected Finalize callback이 모두 실제로 반환했고
-// finalizer reservation도 모두 해제된 상태다. callback이 context를 무시하면 호출자 context로
+// Nil을 반환하면 pool이 소유한 accepted/rejected Finalize callback이 모두 실제로 반환했고
+// finalizer reservation도 모두 해제된 상태다. Callback이 context를 무시하면 호출자 context로
 // bounded하게 반환하되 성공을 보고하지 않는다.
 func (p *ManagedPool) CloseContext(ctx context.Context) error {
 	if p == nil {
 		return nil
 	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
+
+	ctx = contextOrBackground(ctx)
+
+	//nolint:contextcheck // shutdown은 호출자 context와 독립적으로 완주해야 finalizer reservation이 새지 않는다. ctx는 대기 시간만 제한한다.
 	p.shutdownOnce.Do(func() { go p.shutdown() })
+
 	select {
 	case <-p.shutdownDone:
 		return nil
@@ -364,13 +403,19 @@ func (p *ManagedPool) CloseContext(ctx context.Context) error {
 
 func (p *ManagedPool) shutdown() {
 	p.mu.Lock()
+
 	p.closed = true
+
 	queued := p.queue
+
 	p.queue = nil
+
 	cancels := make([]context.CancelCauseFunc, 0, len(p.inFlight))
+
 	for _, inFlight := range p.inFlight {
 		cancels = append(cancels, inFlight.cancel)
 	}
+
 	close(p.stopCh)
 	p.workAvailable.Broadcast()
 	p.mu.Unlock()
@@ -378,9 +423,11 @@ func (p *ManagedPool) shutdown() {
 	for _, cancel := range cancels {
 		cancel(ErrPoolShutdown)
 	}
+
 	for _, job := range queued {
 		p.finalizeJob(job, JobOutcomeShutdown)
 	}
+
 	p.workerWG.Wait()
 	p.reaperWG.Wait()
 	<-p.finalizer.Close()
@@ -389,19 +436,24 @@ func (p *ManagedPool) shutdown() {
 
 func (p *ManagedPool) worker() {
 	p.mu.Lock()
+
 	p.runningWorkers++
 	p.mu.Unlock()
+
 	defer func() {
 		p.mu.Lock()
+
 		p.runningWorkers--
 		p.mu.Unlock()
 		p.workerWG.Done()
 	}()
+
 	for {
 		job, ok := p.take()
 		if !ok {
 			return
 		}
+
 		p.run(job)
 	}
 }
@@ -409,21 +461,29 @@ func (p *ManagedPool) worker() {
 func (p *ManagedPool) take() (*managedJob, bool) {
 	for {
 		p.mu.Lock()
+
 		for !p.closed && len(p.queue) == 0 {
 			p.workAvailable.Wait()
 		}
+
 		if p.closed {
 			p.mu.Unlock()
+
 			return nil, false
 		}
+
 		job := p.queue[0]
+
 		p.queue[0] = nil
 		p.queue = p.queue[1:]
 		p.mu.Unlock()
+
 		if !job.expiresAt.IsZero() && !time.Now().Before(job.expiresAt) {
 			p.finalizeJob(job, JobOutcomeStale)
+
 			continue
 		}
+
 		return job, true
 	}
 }
@@ -433,30 +493,37 @@ func (p *ManagedPool) run(job *managedJob) {
 	if base == nil {
 		base = context.Background()
 	}
+
 	shutdownCtx, shutdownCancel := context.WithCancelCause(context.WithoutCancel(base))
 	jobCtx := shutdownCtx
 	timeoutCancel := func() {}
+
 	if job.spec.Timeout > 0 {
 		jobCtx, timeoutCancel = context.WithTimeoutCause(shutdownCtx, job.spec.Timeout, ErrJobTimeout)
 	}
 
 	p.mu.Lock()
+
 	if p.closed {
 		p.mu.Unlock()
 		shutdownCancel(ErrPoolShutdown)
 		timeoutCancel()
 		p.finalizeJob(job, JobOutcomeShutdown)
+
 		return
 	}
+
 	job.started = true
 	p.inFlight[job] = managedInFlight{cancel: shutdownCancel, startedAt: time.Now()}
 	p.mu.Unlock()
 
 	outcome := JobOutcomeSuccess
+
 	func() {
 		defer func() {
 			if recovered := recover(); recovered != nil {
 				outcome = JobOutcomePanic
+
 				p.logger.Error(
 					"managed_worker_job_panicked",
 					slog.String("kind", job.spec.Kind),
@@ -465,8 +532,10 @@ func (p *ManagedPool) run(job *managedJob) {
 				)
 			}
 		}()
+
 		job.spec.Run(jobCtx)
 	}()
+
 	if outcome == JobOutcomeSuccess {
 		cause := context.Cause(jobCtx)
 		switch {
@@ -479,6 +548,7 @@ func (p *ManagedPool) run(job *managedJob) {
 			outcome = JobOutcomeCanceled
 		}
 	}
+
 	timeoutCancel()
 	shutdownCancel(nil)
 	p.mu.Lock()
@@ -489,6 +559,7 @@ func (p *ManagedPool) run(job *managedJob) {
 
 func (p *ManagedPool) reaper() {
 	defer p.reaperWG.Done()
+
 	for {
 		deadline, ok := p.nextExpiry()
 		if !ok {
@@ -497,10 +568,13 @@ func (p *ManagedPool) reaper() {
 			case <-p.stopCh:
 				return
 			}
+
 			continue
 		}
+
 		delay := max(time.Until(deadline), 0)
 		timer := time.NewTimer(delay)
+
 		select {
 		case <-timer.C:
 			p.expireStale(time.Now())
@@ -508,6 +582,7 @@ func (p *ManagedPool) reaper() {
 			stopManagedTimer(timer)
 		case <-p.stopCh:
 			stopManagedTimer(timer)
+
 			return
 		}
 	}
@@ -517,6 +592,7 @@ func stopManagedTimer(timer *time.Timer) {
 	if timer == nil || timer.Stop() {
 		return
 	}
+
 	select {
 	case <-timer.C:
 	default:
@@ -526,32 +602,42 @@ func stopManagedTimer(timer *time.Timer) {
 func (p *ManagedPool) nextExpiry() (time.Time, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
 	var earliest time.Time
+
 	for _, job := range p.queue {
 		if job.expiresAt.IsZero() || (!earliest.IsZero() && !job.expiresAt.Before(earliest)) {
 			continue
 		}
+
 		earliest = job.expiresAt
 	}
+
 	return earliest, !earliest.IsZero()
 }
 
 func (p *ManagedPool) expireStale(now time.Time) {
 	p.mu.Lock()
+
 	stale := make([]*managedJob, 0)
 	kept := p.queue[:0]
+
 	for _, job := range p.queue {
 		if !job.expiresAt.IsZero() && !now.Before(job.expiresAt) {
 			stale = append(stale, job)
 			continue
 		}
+
 		kept = append(kept, job)
 	}
+
 	for index := len(kept); index < len(p.queue); index++ {
 		p.queue[index] = nil
 	}
+
 	p.queue = kept
 	p.mu.Unlock()
+
 	for _, job := range stale {
 		p.finalizeJob(job, JobOutcomeStale)
 	}
@@ -560,7 +646,9 @@ func (p *ManagedPool) expireStale(now time.Time) {
 func (p *ManagedPool) finalizeJob(job *managedJob, outcome JobOutcome) {
 	job.finalizeOnce.Do(func() {
 		p.mu.Lock()
+
 		p.outcomes[outcome]++
+
 		if job.started {
 			p.attempts[outcome]++
 		} else {
@@ -569,8 +657,11 @@ func (p *ManagedPool) finalizeJob(job *managedJob, outcome JobOutcome) {
 				p.admissionsRejected++
 			case JobOutcomeStale, JobOutcomeShutdown:
 				p.discarded[outcome]++
+			// 아래 outcome들은 run이 job.started를 세운 뒤에만 나오므로 이 분기에 도달하지 않는다.
+			case JobOutcomeSuccess, JobOutcomePanic, JobOutcomeTimeout, JobOutcomeCanceled:
 			}
 		}
+
 		p.mu.Unlock()
 		p.finalizer.Schedule(job.spec, outcome, job.finalizerReserved)
 	})
@@ -581,4 +672,12 @@ func signalManagedPool(ch chan struct{}) {
 	case ch <- struct{}{}:
 	default:
 	}
+}
+
+func contextOrBackground(ctx context.Context) context.Context {
+	if ctx == nil {
+		return context.Background()
+	}
+
+	return ctx
 }

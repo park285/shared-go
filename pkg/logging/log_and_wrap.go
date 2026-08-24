@@ -13,5 +13,6 @@ func LogAndWrapError(ctx context.Context, logger *slog.Logger, op string, err er
 	}
 
 	logWith(ctx, logger, slog.LevelError, op+".failed", op+": "+err.Error(), callerSkipViaHelper, ErrorAttrs(err), attrs)
+
 	return fmt.Errorf("%s: %w", op, err)
 }

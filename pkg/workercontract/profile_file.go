@@ -36,15 +36,19 @@ func LoadProfileFile(path string, identity Identity) (LoadedProfile, error) {
 	if path == "" {
 		return LoadedProfile{}, profileFileError{code: ProfileFileMissing}
 	}
+
 	raw, err := readRegularProfile(path)
 	if err != nil {
-		return LoadedProfile{}, err
+		return LoadedProfile{}, fmt.Errorf("read regular profile: %w", err)
 	}
+
 	profile, err := decodeProfile(raw, identity)
 	if err != nil {
 		return LoadedProfile{}, fmt.Errorf("worker profile: %w", err)
 	}
+
 	digest := sha256.Sum256(raw)
+
 	return LoadedProfile{Profile: profile, Hash: hex.EncodeToString(digest[:]), path: path}, nil
 }
 
@@ -54,30 +58,38 @@ func readRegularProfile(path string) ([]byte, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, profileFileError{code: ProfileFileMissing}
 		}
+
 		return nil, profileFileError{code: ProfileFileUnreadable}
 	}
+
 	if !before.Mode().IsRegular() {
 		return nil, profileFileError{code: ProfileFileTypeInvalid}
 	}
+
 	// #nosec G304 -- path is the explicit operator-owned profile source; Lstat/File.Stat inode checks reject substitution.
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, profileFileError{code: ProfileFileUnreadable}
 	}
 	defer file.Close()
+
 	after, lstatErr := os.Lstat(path)
 	opened, statErr := file.Stat()
+
 	if lstatErr != nil || statErr != nil || !after.Mode().IsRegular() || !opened.Mode().IsRegular() ||
 		!os.SameFile(before, after) || !os.SameFile(after, opened) {
 		return nil, profileFileError{code: ProfileFileTypeInvalid}
 	}
+
 	raw, err := io.ReadAll(io.LimitReader(file, MaxProfileBytes+1))
 	if err != nil {
 		return nil, profileFileError{code: ProfileFileUnreadable}
 	}
+
 	if len(raw) == 0 || len(raw) > MaxProfileBytes || bytes.HasPrefix(raw, []byte{0xef, 0xbb, 0xbf}) {
 		return nil, profileFileError{code: ProfileFileTypeInvalid}
 	}
+
 	return raw, nil
 }
 
@@ -114,27 +126,46 @@ func (c *ProfileFileChecker) Check(now time.Time) ProfileFileStatus {
 		code := ProfileFileMissing
 		return ProfileFileStatus{CheckedAtEpochMS: now.UnixMilli(), ErrorCode: &code}
 	}
-	raw, err := readRegularProfile(c.path)
+
+	status := c.observeStatus(now)
+
+	c.mu.Lock()
+
+	c.status = status
+	c.mu.Unlock()
+
+	return status
+}
+
+func (c *ProfileFileChecker) observeStatus(now time.Time) ProfileFileStatus {
 	status := ProfileFileStatus{CheckedAtEpochMS: now.UnixMilli()}
+
+	raw, err := readRegularProfile(c.path)
 	if err != nil {
 		if fileErr, ok := errors.AsType[profileFileError](err); ok {
 			status.ErrorCode = &fileErr.code
-		} else {
-			code := ProfileFileUnreadable
-			status.ErrorCode = &code
+
+			return status
 		}
-	} else {
-		digest := sha256.Sum256(raw)
-		if hex.EncodeToString(digest[:]) == c.loadedHash {
-			status.Match = true
-		} else {
-			code := ProfileFileChanged
-			status.ErrorCode = &code
-		}
+
+		code := ProfileFileUnreadable
+
+		status.ErrorCode = &code
+
+		return status
 	}
-	c.mu.Lock()
-	c.status = status
-	c.mu.Unlock()
+
+	digest := sha256.Sum256(raw)
+	if hex.EncodeToString(digest[:]) == c.loadedHash {
+		status.Match = true
+
+		return status
+	}
+
+	code := ProfileFileChanged
+
+	status.ErrorCode = &code
+
 	return status
 }
 
@@ -143,8 +174,11 @@ func (c *ProfileFileChecker) Status() ProfileFileStatus {
 	if c == nil {
 		return ProfileFileStatus{}
 	}
+
 	c.mu.RLock()
+
 	defer c.mu.RUnlock()
+
 	return c.status
 }
 
@@ -153,8 +187,11 @@ func (c *ProfileFileChecker) Run(ctx context.Context) {
 	if c == nil {
 		return
 	}
+
 	ticker := time.NewTicker(ProfileFileCheckInterval)
+
 	defer ticker.Stop()
+
 	for {
 		select {
 		case checkedAt := <-ticker.C:

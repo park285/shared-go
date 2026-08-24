@@ -19,16 +19,19 @@ func (c SessionConfig) Configure(ctx context.Context, exec Execer) error {
 	if exec == nil {
 		return errors.New("dbmigrate: exec is required")
 	}
+
 	if c.LockTimeout > 0 {
 		if err := exec(ctx, querySetLockTimeout, timeoutSetting(c.LockTimeout)); err != nil {
 			return fmt.Errorf("dbmigrate: set lock_timeout: %w", err)
 		}
 	}
+
 	if c.StatementTimeout > 0 {
 		if err := exec(ctx, querySetStatementTimeout, timeoutSetting(c.StatementTimeout)); err != nil {
 			return fmt.Errorf("dbmigrate: set statement_timeout: %w", err)
 		}
 	}
+
 	return nil
 }
 
@@ -43,5 +46,6 @@ func timeoutSetting(d time.Duration) string {
 	if d%time.Millisecond != 0 {
 		ms++
 	}
+
 	return fmt.Sprintf("%dms", ms)
 }

@@ -64,12 +64,15 @@ func newSeriesLimiter(options VecOptions) seriesLimiter {
 	if options.MaxSeries <= 0 {
 		options.MaxSeries = DefaultMaxMetricSeries
 	}
+
 	if options.MaxLabels <= 0 {
 		options.MaxLabels = DefaultMaxMetricLabels
 	}
+
 	if options.MaxLabelNameBytes <= 0 {
 		options.MaxLabelNameBytes = DefaultMaxMetricLabelNameBytes
 	}
+
 	if options.MaxLabelValueBytes <= 0 {
 		options.MaxLabelValueBytes = DefaultMaxMetricLabelValueBytes
 	}
@@ -85,16 +88,20 @@ func newSeriesLimiter(options VecOptions) seriesLimiter {
 func (l *seriesLimiter) canonicalize(labels Labels) (string, []labelPair, bool) {
 	if len(labels) > l.maxLabels {
 		l.dropped.Add(1)
+
 		return "", nil, false
 	}
+
 	for name, value := range labels {
 		if len(name) > l.maxLabelNameBytes || len(value) > l.maxLabelValueBytes {
 			l.dropped.Add(1)
+
 			return "", nil, false
 		}
 	}
 
 	key, pairs := canonicalLabels(labels)
+
 	return key, pairs, true
 }
 
@@ -103,8 +110,10 @@ func (l *seriesLimiter) reserve() bool {
 		current := l.count.Load()
 		if current >= l.maxSeries {
 			l.dropped.Add(1)
+
 			return false
 		}
+
 		if l.count.CompareAndSwap(current, current+1) {
 			return true
 		}
@@ -123,47 +132,70 @@ func (l *seriesLimiter) droppedSeries() uint64 {
 	return l.dropped.Load()
 }
 
-func loadOrCreateSeries[T any](
-	series *sync.Map,
-	limiter *seriesLimiter,
-	key string,
-	labels []labelPair,
-	create func() T,
-) (T, bool) {
+type seriesStore struct {
+	series  sync.Map
+	limiter seriesLimiter
+}
+
+func (s *seriesStore) loadOrCreate[T any](key string, labels []labelPair, create func() T) (T, bool) {
 	var zero T
-	if actual, ok := series.Load(key); ok {
+
+	if actual, ok := s.series.Load(key); ok {
 		stored, typed := actual.(*seriesEntry[T])
 		if !typed {
 			return zero, false
 		}
+
 		return stored.value, true
 	}
-	if !limiter.reserve() {
+
+	if !s.limiter.reserve() {
 		return zero, false
 	}
 
 	entry := &seriesEntry[T]{key: key, labels: labels, value: create()}
-	actual, loaded := series.LoadOrStore(key, entry)
+	actual, loaded := s.series.LoadOrStore(key, entry)
+
 	if loaded {
-		limiter.release()
+		s.limiter.release()
 	}
+
 	stored, ok := actual.(*seriesEntry[T])
 	if !ok {
 		if !loaded {
-			series.Delete(key)
-			limiter.release()
+			s.series.Delete(key)
+			s.limiter.release()
 		}
+
 		return zero, false
 	}
+
 	return stored.value, true
+}
+
+func (s *seriesStore) collect[T any]() []*seriesEntry[T] {
+	entries := make([]*seriesEntry[T], 0)
+
+	s.series.Range(func(_, value any) bool {
+		if entry, ok := value.(*seriesEntry[T]); ok {
+			entries = append(entries, entry)
+		}
+
+		return true
+	})
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].key < entries[j].key
+	})
+
+	return entries
 }
 
 // CounterVec는 동일 metric name/help를 공유하는 label-set별 counter 집합입니다.
 type CounterVec struct {
-	name    string
-	help    string
-	series  sync.Map // map[string]*seriesEntry[*Counter]
-	limiter seriesLimiter
+	seriesStore
+
+	name string
+	help string
 }
 
 // Counter는 원자적으로 증가하는 단일 counter series입니다.
@@ -183,14 +215,17 @@ func (v *CounterVec) With(labels Labels) *Counter {
 	if v == nil {
 		return nil
 	}
+
 	key, labelPairs, ok := v.limiter.canonicalize(labels)
 	if !ok {
 		return nil
 	}
-	counter, ok := loadOrCreateSeries(&v.series, &v.limiter, key, labelPairs, func() *Counter { return &Counter{} })
+
+	counter, ok := v.loadOrCreate(key, labelPairs, func() *Counter { return &Counter{} })
 	if !ok {
 		return nil
 	}
+
 	return counter
 }
 
@@ -209,6 +244,7 @@ func (v *CounterVec) SeriesCount() int {
 	if v == nil {
 		return 0
 	}
+
 	return v.limiter.seriesCount()
 }
 
@@ -216,6 +252,7 @@ func (v *CounterVec) DroppedSeries() uint64 {
 	if v == nil {
 		return 0
 	}
+
 	return v.limiter.droppedSeries()
 }
 
@@ -223,14 +260,17 @@ func (v *CounterVec) WriteExposition(w io.Writer) bool {
 	if v == nil {
 		return true
 	}
+
 	if !writeMetricHeader(w, v.name, v.help, "counter") {
 		return false
 	}
-	for _, entry := range collectSeries[*Counter](&v.series) {
+
+	for _, entry := range v.collect[*Counter]() {
 		if !writeMetricSample(w, v.name, entry.labels, strconv.FormatUint(entry.value.Value(), 10)) {
 			return false
 		}
 	}
+
 	return writeDroppedSeries(w, v.name, v.limiter.droppedSeries())
 }
 
@@ -248,15 +288,16 @@ func (c *Counter) Value() uint64 {
 	if c == nil {
 		return 0
 	}
+
 	return c.value.Load()
 }
 
 // GaugeVec는 동일 metric name/help를 공유하는 label-set별 float64 gauge 집합입니다.
 type GaugeVec struct {
-	name    string
-	help    string
-	series  sync.Map // map[string]*seriesEntry[*Gauge]
-	limiter seriesLimiter
+	seriesStore
+
+	name string
+	help string
 }
 
 // Gauge는 원자적으로 설정되는 단일 gauge series입니다.
@@ -276,14 +317,17 @@ func (v *GaugeVec) With(labels Labels) *Gauge {
 	if v == nil {
 		return nil
 	}
+
 	key, labelPairs, ok := v.limiter.canonicalize(labels)
 	if !ok {
 		return nil
 	}
-	gauge, ok := loadOrCreateSeries(&v.series, &v.limiter, key, labelPairs, func() *Gauge { return &Gauge{} })
+
+	gauge, ok := v.loadOrCreate(key, labelPairs, func() *Gauge { return &Gauge{} })
 	if !ok {
 		return nil
 	}
+
 	return gauge
 }
 
@@ -298,6 +342,7 @@ func (v *GaugeVec) SeriesCount() int {
 	if v == nil {
 		return 0
 	}
+
 	return v.limiter.seriesCount()
 }
 
@@ -305,6 +350,7 @@ func (v *GaugeVec) DroppedSeries() uint64 {
 	if v == nil {
 		return 0
 	}
+
 	return v.limiter.droppedSeries()
 }
 
@@ -312,14 +358,17 @@ func (v *GaugeVec) WriteExposition(w io.Writer) bool {
 	if v == nil {
 		return true
 	}
+
 	if !writeMetricHeader(w, v.name, v.help, "gauge") {
 		return false
 	}
-	for _, entry := range collectSeries[*Gauge](&v.series) {
+
+	for _, entry := range v.collect[*Gauge]() {
 		if !writeMetricSample(w, v.name, entry.labels, strconv.FormatFloat(entry.value.Value(), 'g', -1, 64)) {
 			return false
 		}
 	}
+
 	return writeDroppedSeries(w, v.name, v.limiter.droppedSeries())
 }
 
@@ -333,16 +382,17 @@ func (g *Gauge) Value() float64 {
 	if g == nil {
 		return 0
 	}
+
 	return math.Float64frombits(g.bits.Load())
 }
 
 // HistogramVec는 동일 metric name/help/bucket을 공유하는 label-set별 histogram 집합입니다.
 type HistogramVec struct {
+	seriesStore
+
 	name    string
 	help    string
 	buckets []float64
-	series  sync.Map // map[string]*seriesEntry[*Histogram]
-	limiter seriesLimiter
 }
 
 func NewHistogramVec(name, help string, buckets []float64) *HistogramVec {
@@ -352,6 +402,7 @@ func NewHistogramVec(name, help string, buckets []float64) *HistogramVec {
 func NewHistogramVecWithOptions(name, help string, buckets []float64, options VecOptions) *HistogramVec {
 	bounds := make([]float64, len(buckets))
 	copy(bounds, buckets)
+
 	return &HistogramVec{name: name, help: help, buckets: bounds, limiter: newSeriesLimiter(options)}
 }
 
@@ -359,16 +410,19 @@ func (v *HistogramVec) With(labels Labels) *Histogram {
 	if v == nil {
 		return nil
 	}
+
 	key, labelPairs, ok := v.limiter.canonicalize(labels)
 	if !ok {
 		return nil
 	}
-	histogram, ok := loadOrCreateSeries(&v.series, &v.limiter, key, labelPairs, func() *Histogram {
+
+	histogram, ok := v.loadOrCreate(key, labelPairs, func() *Histogram {
 		return NewHistogram(v.buckets)
 	})
 	if !ok {
 		return nil
 	}
+
 	return histogram
 }
 
@@ -383,6 +437,7 @@ func (v *HistogramVec) SeriesCount() int {
 	if v == nil {
 		return 0
 	}
+
 	return v.limiter.seriesCount()
 }
 
@@ -390,6 +445,7 @@ func (v *HistogramVec) DroppedSeries() uint64 {
 	if v == nil {
 		return 0
 	}
+
 	return v.limiter.droppedSeries()
 }
 
@@ -397,31 +453,38 @@ func (v *HistogramVec) WriteExposition(w io.Writer) bool {
 	if v == nil {
 		return true
 	}
+
 	if !writeMetricHeader(w, v.name, v.help, "histogram") {
 		return false
 	}
-	for _, entry := range collectSeries[*Histogram](&v.series) {
+
+	for _, entry := range v.collect[*Histogram]() {
 		snap := entry.value.Snapshot()
 		if len(snap.UpperBounds) != len(snap.Cumulative) {
 			return false
 		}
+
 		for i, ub := range snap.UpperBounds {
 			bucketLabels := appendLabel(entry.labels, labelPair{name: "le", value: strconv.FormatFloat(ub, 'g', -1, 64)})
 			if !writeMetricSample(w, v.name+"_bucket", bucketLabels, strconv.FormatUint(snap.Cumulative[i], 10)) {
 				return false
 			}
 		}
+
 		infLabels := appendLabel(entry.labels, labelPair{name: "le", value: "+Inf"})
 		if !writeMetricSample(w, v.name+"_bucket", infLabels, strconv.FormatUint(snap.Total, 10)) {
 			return false
 		}
+
 		if !writeMetricSample(w, v.name+"_sum", entry.labels, strconv.FormatFloat(snap.Sum, 'g', -1, 64)) {
 			return false
 		}
+
 		if !writeMetricSample(w, v.name+"_count", entry.labels, strconv.FormatUint(snap.Total, 10)) {
 			return false
 		}
 	}
+
 	return writeDroppedSeries(w, v.name, v.limiter.droppedSeries())
 }
 
@@ -432,21 +495,8 @@ func writeDroppedSeries(w io.Writer, name string, dropped uint64) bool {
 	if !writeMetricHeader(w, droppedName, droppedSeriesHelp, "counter") {
 		return false
 	}
-	return writeMetricSample(w, droppedName, nil, strconv.FormatUint(dropped, 10))
-}
 
-func collectSeries[T any](series *sync.Map) []*seriesEntry[T] {
-	entries := make([]*seriesEntry[T], 0)
-	series.Range(func(_, value any) bool {
-		if entry, ok := value.(*seriesEntry[T]); ok {
-			entries = append(entries, entry)
-		}
-		return true
-	})
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].key < entries[j].key
-	})
-	return entries
+	return writeMetricSample(w, droppedName, nil, strconv.FormatUint(dropped, 10))
 }
 
 // 길이 접두사는 name/value에 구분자가 섞여도 키가 겹치지 않게 하는 장치다. 형식을 바꾸면
@@ -458,13 +508,17 @@ func canonicalLabels(labels Labels) (string, []labelPair) {
 	}
 
 	size := 0
+
 	for _, pair := range pairs {
 		size += len(pair.name) + len(pair.value) + canonicalLabelPairOverhead
 	}
 
 	var key strings.Builder
+
 	key.Grow(size)
+
 	var lenBuf [20]byte
+
 	for _, pair := range pairs {
 		key.Write(strconv.AppendInt(lenBuf[:0], int64(len(pair.name)), 10))
 		key.WriteByte(':')
@@ -475,6 +529,7 @@ func canonicalLabels(labels Labels) (string, []labelPair) {
 		key.WriteString(pair.value)
 		key.WriteByte(';')
 	}
+
 	return key.String(), pairs
 }
 
@@ -482,12 +537,15 @@ func labelsFromMap(labels Labels) []labelPair {
 	if len(labels) == 0 {
 		return nil
 	}
+
 	pairs := make([]labelPair, 0, len(labels))
 	for name, value := range labels {
 		pairs = append(pairs, labelPair{name: name, value: value})
 	}
+
 	sort.Slice(pairs, func(i, j int) bool {
 		return pairs[i].name < pairs[j].name
 	})
+
 	return pairs
 }

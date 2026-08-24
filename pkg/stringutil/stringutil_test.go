@@ -109,22 +109,22 @@ func TestTrimSpace(t *testing.T) {
 		{
 			name:  "앞뒤 공백",
 			input: "  hello  ",
-			want:  "hello",
+			want:  testHello,
 		},
 		{
 			name:  "탭 포함",
 			input: "\thello\t",
-			want:  "hello",
+			want:  testHello,
 		},
 		{
 			name:  "개행 포함",
 			input: "\nhello\n",
-			want:  "hello",
+			want:  testHello,
 		},
 		{
 			name:  "공백 없음",
-			input: "hello",
-			want:  "hello",
+			input: testHello,
+			want:  testHello,
 		},
 	}
 
@@ -147,12 +147,12 @@ func TestNormalize(t *testing.T) {
 		{
 			name:  "대문자 변환",
 			input: "HELLO",
-			want:  "hello",
+			want:  testHello,
 		},
 		{
 			name:  "공백 제거",
 			input: "  Hello  ",
-			want:  "hello",
+			want:  testHello,
 		},
 		{
 			name:  "혼합",
@@ -185,27 +185,27 @@ func TestNormalizeKey(t *testing.T) {
 		{
 			name:  "공백 제거",
 			input: "Hello World",
-			want:  "helloworld",
+			want:  testHelloworld,
 		},
 		{
 			name:  "하이픈 제거",
-			input: "hello-world",
-			want:  "helloworld",
+			input: testHelloWorld,
+			want:  testHelloworld,
 		},
 		{
 			name:  "언더스코어 제거",
 			input: "hello_world",
-			want:  "helloworld",
+			want:  testHelloworld,
 		},
 		{
 			name:  "점 제거",
 			input: "hello.world",
-			want:  "helloworld",
+			want:  testHelloworld,
 		},
 		{
 			name:  "느낌표 제거",
 			input: "hello!world",
-			want:  "helloworld",
+			want:  testHelloworld,
 		},
 		{
 			name:  "특수문자 혼합",
@@ -215,27 +215,27 @@ func TestNormalizeKey(t *testing.T) {
 		{
 			name:  "Unicode 별표",
 			input: "test☆example",
-			want:  "testexample",
+			want:  testTestexample,
 		},
 		{
 			name:  "Unicode 중점",
 			input: "test・example",
-			want:  "testexample",
+			want:  testTestexample,
 		},
 		{
 			name:  "Unicode 따옴표",
 			input: "test'example'",
-			want:  "testexample",
+			want:  testTestexample,
 		},
 		{
 			name:  "일본어 장음",
 			input: "testーexample",
-			want:  "testexample",
+			want:  testTestexample,
 		},
 		{
 			name:  "em dash",
 			input: "test—example",
-			want:  "testexample",
+			want:  testTestexample,
 		},
 		{
 			name:  "한글 보존",
@@ -278,12 +278,12 @@ func TestSlugify(t *testing.T) {
 		{
 			name:  "공백을 하이픈으로",
 			input: "hello world",
-			want:  "hello-world",
+			want:  testHelloWorld,
 		},
 		{
 			name:  "대문자 소문자 변환",
 			input: "Hello World",
-			want:  "hello-world",
+			want:  testHelloWorld,
 		},
 		{
 			name:  "따옴표 제거",
@@ -293,17 +293,17 @@ func TestSlugify(t *testing.T) {
 		{
 			name:  "점 제거",
 			input: "hello.world",
-			want:  "helloworld",
+			want:  testHelloworld,
 		},
 		{
 			name:  "느낌표 제거",
 			input: "hello!world",
-			want:  "helloworld",
+			want:  testHelloworld,
 		},
 		{
 			name:  "복합 특수문자",
 			input: "Hello World!",
-			want:  "hello-world",
+			want:  testHelloWorld,
 		},
 		{
 			name:  "여러 공백",
@@ -313,7 +313,7 @@ func TestSlugify(t *testing.T) {
 		{
 			name:  "앞뒤 공백 제거",
 			input: "  hello world  ",
-			want:  "hello-world",
+			want:  testHelloWorld,
 		},
 		{
 			name:  "한글 보존",

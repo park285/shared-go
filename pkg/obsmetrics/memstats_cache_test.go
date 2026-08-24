@@ -13,6 +13,7 @@ func resetMemStatsCache(t *testing.T) {
 	t.Helper()
 
 	memStats.mu.Lock()
+
 	memStats.readAt = time.Time{}
 	memStats.snapshot = runtime.MemStats{}
 	memStats.mu.Unlock()
@@ -23,6 +24,7 @@ func TestCachedMemStats_ReusesSnapshotWithinTTL(t *testing.T) {
 
 	base := time.Now()
 	first := cachedMemStats(base)
+
 	if first.NextGC == 0 {
 		t.Fatal("first read returned an empty snapshot")
 	}
@@ -32,6 +34,7 @@ func TestCachedMemStats_ReusesSnapshotWithinTTL(t *testing.T) {
 	for i := range sink {
 		sink[i] = byte(i)
 	}
+
 	t.Cleanup(func() { _ = sink[0] })
 
 	cached := cachedMemStats(base.Add(memStatsTTL - time.Millisecond))
@@ -50,21 +53,27 @@ func TestCachedMemStats_ConcurrentScrapersAreSafe(t *testing.T) {
 	resetMemStatsCache(t)
 
 	const scrapers = 32
+
 	var wg sync.WaitGroup
+
 	wg.Add(scrapers)
+
 	start := make(chan struct{})
 	now := time.Now()
 
 	for i := range scrapers {
 		go func(i int) {
 			defer wg.Done()
+
 			<-start
+
 			got := cachedMemStats(now.Add(time.Duration(i) * time.Millisecond))
 			if got.NextGC == 0 {
 				t.Errorf("scraper %d got an empty snapshot", i)
 			}
 		}(i)
 	}
+
 	close(start)
 	wg.Wait()
 }
@@ -73,11 +82,13 @@ func TestWriteRuntimeMetrics_EmitsMemStatsFamilies(t *testing.T) {
 	resetMemStatsCache(t)
 
 	var buf bytes.Buffer
+
 	if !WriteRuntimeMetrics(&buf) {
 		t.Fatal("WriteRuntimeMetrics() = false")
 	}
 
 	body := buf.String()
+
 	for _, want := range []string{
 		"# TYPE go_goroutines gauge",
 		"# TYPE go_heap_alloc_bytes gauge",

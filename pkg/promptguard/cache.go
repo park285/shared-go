@@ -26,6 +26,7 @@ func newTTLCache[K comparable, V any](maxSize int, ttl time.Duration, now func()
 	if maxSize <= 0 {
 		maxSize = 1024
 	}
+
 	if now == nil {
 		now = time.Now
 	}
@@ -164,6 +165,7 @@ func (c *TTLCache[K, V]) resolveExpired(key K) (V, bool) {
 
 		return zero, false
 	}
+
 	if !entry.expired(c.now()) {
 		return entry.value, true
 	}

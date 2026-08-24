@@ -42,16 +42,17 @@ func TestLayeredPromptLenSelectsActiveLayers(t *testing.T) {
 		systemPrompt, invariantPrompt, developerPrompt, user string
 		want                                                 int
 	}{
-		{name: "no layers falls back to system", systemPrompt: "sys", user: "usr", want: len("sys\nusr")},
-		{name: "blank layers ignored", systemPrompt: "sys", invariantPrompt: "  ", developerPrompt: "\n", user: "usr", want: len("sys\nusr")},
-		{name: "invariant only", invariantPrompt: "inv", user: "usr", want: len("inv\nusr")},
-		{name: "developer only", developerPrompt: "dev", user: "usr", want: len("dev\nusr")},
-		{name: "both layers", invariantPrompt: "inv", developerPrompt: "dev", user: "usr", want: len("inv\ndev\nusr")},
+		{name: "no layers falls back to system", systemPrompt: "sys", user: testShortRoleUser, want: len("sys\nusr")},
+		{name: "blank layers ignored", systemPrompt: "sys", invariantPrompt: "  ", developerPrompt: "\n", user: testShortRoleUser, want: len("sys\nusr")},
+		{name: "invariant only", invariantPrompt: "inv", user: testShortRoleUser, want: len("inv\nusr")},
+		{name: "developer only", developerPrompt: "dev", user: testShortRoleUser, want: len("dev\nusr")},
+		{name: "both layers", invariantPrompt: "inv", developerPrompt: "dev", user: testShortRoleUser, want: len("inv\ndev\nusr")},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			got := layeredPromptLen(tt.systemPrompt, tt.invariantPrompt, tt.developerPrompt, tt.user)
 			if got != tt.want {
 				t.Fatalf("layeredPromptLen() = %d, want %d", got, tt.want)
@@ -64,16 +65,19 @@ func TestCompletionPromptLenMatchesJoinedTrimmedMessages(t *testing.T) {
 	t.Parallel()
 
 	const roleUser = "user"
+
 	messages := []Message{
 		{Role: "system", Content: "  sys  "},
 		{Role: roleUser, Content: ""},
 		{Role: "developer", Content: "\n"},
 		{Role: roleUser, Content: " usr "},
 	}
-	want := len("sys" + "\n" + "usr")
+	want := len("sys" + "\n" + testShortRoleUser)
+
 	if got := completionPromptLen(messages); got != want {
 		t.Fatalf("completionPromptLen() = %d, want %d", got, want)
 	}
+
 	if got := completionPromptLen(nil); got != 0 {
 		t.Fatalf("completionPromptLen(nil) = %d, want 0", got)
 	}
@@ -81,6 +85,7 @@ func TestCompletionPromptLenMatchesJoinedTrimmedMessages(t *testing.T) {
 
 func TestJoinedPromptLenAllocatesNothing(t *testing.T) {
 	parts := []string{"  invariant layer  ", "developer layer", "user layer  "}
+
 	if allocs := testing.AllocsPerRun(50, func() { _ = joinedPromptLen(parts...) }); allocs != 0 {
 		t.Fatalf("joinedPromptLen allocations = %.0f, want 0", allocs)
 	}

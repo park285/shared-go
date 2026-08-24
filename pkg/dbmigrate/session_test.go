@@ -21,6 +21,7 @@ func recordingExec(calls *[]recordedExec, failOn string) Execer {
 		if failOn != "" && strings.Contains(query, failOn) {
 			return errors.New("boom")
 		}
+
 		return nil
 	}
 }
@@ -29,26 +30,32 @@ func TestSessionConfigConfigureAppliesTimeouts(t *testing.T) {
 	t.Parallel()
 
 	var calls []recordedExec
+
 	cfg := SessionConfig{
 		LockTimeout:      10 * time.Second,
 		StatementTimeout: 4 * time.Minute,
 	}
-	if err := cfg.Configure(context.Background(), recordingExec(&calls, "")); err != nil {
+
+	if err := cfg.Configure(t.Context(), recordingExec(&calls, "")); err != nil {
 		t.Fatalf("Configure() error = %v", err)
 	}
 
 	if len(calls) != 2 {
 		t.Fatalf("exec calls = %d, want 2", len(calls))
 	}
+
 	if calls[0].query != querySetLockTimeout {
 		t.Errorf("first query = %q, want set lock_timeout", calls[0].query)
 	}
+
 	if calls[1].query != querySetStatementTimeout {
 		t.Errorf("second query = %q, want set statement_timeout", calls[1].query)
 	}
+
 	if want := []any{"10000ms"}; !slices.Equal(calls[0].args, want) {
 		t.Errorf("lock_timeout args = %v, want %v", calls[0].args, want)
 	}
+
 	if want := []any{"240000ms"}; !slices.Equal(calls[1].args, want) {
 		t.Errorf("statement_timeout args = %v, want %v", calls[1].args, want)
 	}
@@ -72,9 +79,11 @@ func TestSessionConfigConfigureSkipsNonPositive(t *testing.T) {
 			t.Parallel()
 
 			var calls []recordedExec
-			if err := tt.cfg.Configure(context.Background(), recordingExec(&calls, "")); err != nil {
+
+			if err := tt.cfg.Configure(t.Context(), recordingExec(&calls, "")); err != nil {
 				t.Fatalf("Configure() error = %v", err)
 			}
+
 			if len(calls) != tt.want {
 				t.Fatalf("exec calls = %d, want %d", len(calls), tt.want)
 			}
@@ -86,18 +95,21 @@ func TestSessionConfigConfigureErrors(t *testing.T) {
 	t.Parallel()
 
 	cfg := SessionConfig{LockTimeout: time.Second, StatementTimeout: time.Minute}
-	if err := cfg.Configure(context.Background(), nil); err == nil || !strings.Contains(err.Error(), "exec is required") {
+	if err := cfg.Configure(t.Context(), nil); err == nil || !strings.Contains(err.Error(), "exec is required") {
 		t.Fatalf("Configure(nil exec) error = %v, want exec required", err)
 	}
 
 	var calls []recordedExec
-	err := cfg.Configure(context.Background(), recordingExec(&calls, "lock_timeout"))
+
+	err := cfg.Configure(t.Context(), recordingExec(&calls, "lock_timeout"))
+
 	if err == nil || !strings.Contains(err.Error(), "set lock_timeout") {
 		t.Fatalf("Configure() error = %v, want wrapped set lock_timeout", err)
 	}
 
 	calls = nil
-	err = cfg.Configure(context.Background(), recordingExec(&calls, "statement_timeout"))
+	err = cfg.Configure(t.Context(), recordingExec(&calls, "statement_timeout"))
+
 	if err == nil || !strings.Contains(err.Error(), "set statement_timeout") {
 		t.Fatalf("Configure() error = %v, want wrapped set statement_timeout", err)
 	}
@@ -127,11 +139,12 @@ func TestApplyWithSessionConfiguresBeforeMigrations(t *testing.T) {
 
 	fsys := fstest.MapFS{
 		ManifestName: {Data: []byte("001 first.sql\n")},
-		"first.sql":  {Data: []byte("select 1")},
+		testFirstSQL: {Data: []byte("select 1")},
 	}
 
 	var calls []recordedExec
-	err := Apply(context.Background(), fsys, recordingExec(&calls, ""), WithSession(SessionConfig{
+
+	err := Apply(t.Context(), fsys, recordingExec(&calls, ""), WithSession(SessionConfig{
 		LockTimeout:      10 * time.Second,
 		StatementTimeout: 4 * time.Minute,
 	}))
@@ -143,6 +156,7 @@ func TestApplyWithSessionConfiguresBeforeMigrations(t *testing.T) {
 	for _, call := range calls {
 		got = append(got, call.query)
 	}
+
 	want := []string{querySetLockTimeout, querySetStatementTimeout, "select 1"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("executed queries = %v, want %v", got, want)

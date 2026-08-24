@@ -18,6 +18,7 @@ func render(input string) string {
 	inline := newStore("INLINE")
 
 	text := protectWrappedCode(input, code)
+
 	text = protectCodeBlocks(text, code)
 	text = protectInlineCode(text, inline)
 	text = renderLines(text)

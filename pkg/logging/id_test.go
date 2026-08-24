@@ -8,10 +8,12 @@ import (
 
 func TestNewIDFormat(t *testing.T) {
 	got := newID("job")
+
 	matched, err := regexp.MatchString(`^job_[0-9]+_[0-9a-f]{12}$`, got)
 	if err != nil {
 		t.Fatalf("compile newID regex: %v", err)
 	}
+
 	if !matched {
 		t.Fatalf("newID() = %q, want <prefix>_<unixMillis>_<hex>", got)
 	}
@@ -20,10 +22,12 @@ func TestNewIDFormat(t *testing.T) {
 func TestNewIDUsesSanitizedPrefix(t *testing.T) {
 	input := "__Video.Job-01__"
 	got := newID(input)
-	matches := regexp.MustCompile(`^(.+)_([0-9]+)_([0-9a-f]{12})$`).FindStringSubmatch(got)
+	matches := regexp.MustCompile(`^(.+)_(\d+)_([0-9a-f]{12})$`).FindStringSubmatch(got)
+
 	if matches == nil {
 		t.Fatalf("newID(%q) = %q, want sanitized prefix, timestamp, and hex suffix", input, got)
 	}
+
 	if matches[1] != sanitizeIDPrefix(input) {
 		t.Fatalf("newID prefix = %q, want %q", matches[1], sanitizeIDPrefix(input))
 	}
@@ -38,7 +42,7 @@ func TestSanitizeIDPrefix(t *testing.T) {
 		{name: "uppercase lowercased", in: "BatchJob", want: "batchjob"},
 		{name: "spaces and specials removed while separators normalize", in: " Foo Bar/@Baz-QuX._9 ", want: "foobarbaz_qux__9"},
 		{name: "empty falls back", in: "", want: "id"},
-		{name: "blank falls back", in: " \t\n ", want: "id"},
+		{name: "blank falls back", in: testBlankInput, want: "id"},
 		{name: "all disallowed falls back", in: " /@#$%^&*() ", want: "id"},
 		{name: "trims surrounding underscores", in: "__Job.Name__", want: "job_name"},
 		{name: "keeps alphanumeric", in: "Job123", want: "job123"},
@@ -112,6 +116,7 @@ func TestSanitizedIDPrefixRune(t *testing.T) {
 			if ok != tt.ok {
 				t.Fatalf("sanitizedIDPrefixRune(%q) ok = %v, want %v", tt.in, ok, tt.ok)
 			}
+
 			if got != tt.want {
 				t.Fatalf("sanitizedIDPrefixRune(%q) = %q, want %q", tt.in, got, tt.want)
 			}

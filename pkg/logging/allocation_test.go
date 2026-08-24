@@ -11,7 +11,7 @@ import (
 
 func TestLoggingAllocationCeilings(t *testing.T) {
 	logger := slog.New(newFormatHandler(slog.LevelInfo, io.Discard))
-	ctx := WithRequestID(WithRuntime(context.Background(), "bot"), "req-1")
+	ctx := WithRequestID(WithRuntime(t.Context(), "bot"), "req-1")
 
 	tests := []struct {
 		name      string
@@ -30,7 +30,9 @@ func TestLoggingAllocationCeilings(t *testing.T) {
 			name:      "log and wrap error",
 			maxAllocs: 11,
 			call: func() {
-				_ = LogAndWrapError(ctx, logger, "op", context.DeadlineExceeded, slog.String("a", "b"))
+				if err := LogAndWrapError(ctx, logger, "op", context.DeadlineExceeded, slog.String("a", "b")); err == nil {
+					t.Fatal("LogAndWrapError() = nil, want error")
+				}
 			},
 		},
 		{

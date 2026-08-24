@@ -148,6 +148,7 @@ func TestComputeExponentialBackoff_ZeroMaxIntervalDoesNotOverflow(t *testing.T) 
 		if got <= 0 {
 			t.Fatalf("ComputeExponentialBackoff(%d, %v, 0, 0) = %v, want > 0", attempt, base, got)
 		}
+
 		if got > time.Duration(math.MaxInt64) {
 			t.Fatalf("ComputeExponentialBackoff(%d, %v, 0, 0) = %v, want <= MaxInt64", attempt, base, got)
 		}
@@ -158,14 +159,17 @@ func TestComputeExponentialBackoff_ZeroMaxIntervalMonotonicNonDecreasing(t *test
 	base := 100 * time.Millisecond
 
 	prev := time.Duration(-1)
+
 	for attempt := 50; attempt <= 200; attempt++ {
 		got := ComputeExponentialBackoff(attempt, base, 0, 0)
 		if got <= 0 {
 			t.Fatalf("ComputeExponentialBackoff(%d, %v, 0, 0) = %v, want > 0", attempt, base, got)
 		}
+
 		if got < prev {
 			t.Fatalf("ComputeExponentialBackoff(%d) = %v decreased below prev %v", attempt, got, prev)
 		}
+
 		prev = got
 	}
 }
@@ -184,6 +188,7 @@ func TestComputeExponentialBackoff_ZeroMaxIntervalWithJitter(t *testing.T) {
 	for range 100 {
 		got := ComputeExponentialBackoff(2, base, 0, jitter)
 		expected := 400 * time.Millisecond
+
 		if got < expected || got >= expected+jitter {
 			t.Fatalf("ComputeExponentialBackoff() = %v, want in [%v, %v)", got, expected, expected+jitter)
 		}
@@ -200,6 +205,7 @@ func TestComputeExponentialBackoff_ZeroMaxIntervalSaturatedWithJitterDoesNotOver
 			if got <= 0 {
 				t.Fatalf("ComputeExponentialBackoff(%d, %v, 0, %v) = %v, want > 0", attempt, base, jitter, got)
 			}
+
 			if got < base {
 				t.Fatalf("ComputeExponentialBackoff(%d, %v, 0, %v) = %v, want >= base %v", attempt, base, jitter, got, base)
 			}
@@ -224,6 +230,7 @@ func TestComputeExponentialBackoffHalfJitter_RangeIsHalfToFullOfCappedBase(t *te
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			lowerBound := tt.expectedCap / 2
+
 			for range 1000 {
 				got := ComputeExponentialBackoffHalfJitter(tt.attempt, base, maxInterval)
 				if got < lowerBound || got >= tt.expectedCap {
@@ -245,6 +252,7 @@ func TestComputeExponentialBackoffHalfJitter_OddCapCoversFullRange(t *testing.T)
 		if got < expectedCap/2 || got >= expectedCap {
 			t.Fatalf("ComputeExponentialBackoffHalfJitter() = %v, want in [%v, %v)", got, expectedCap/2, expectedCap)
 		}
+
 		seen[got] = true
 	}
 
@@ -333,6 +341,7 @@ func TestComputeExponentialBackoffCapBoundsOnlyTheExponentialTerm(t *testing.T) 
 	)
 
 	highest := time.Duration(0)
+
 	for range 5000 {
 		highest = max(highest, ComputeExponentialBackoff(20, time.Millisecond, maxInterval, jitter))
 	}

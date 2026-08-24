@@ -31,13 +31,16 @@ func TestCheckStatus(t *testing.T) {
 			StatusCode: http.StatusBadGateway,
 			Body:       io.NopCloser(strings.NewReader("upstream failed")),
 		}
+
 		err := CheckStatus(resp)
 		if err == nil {
 			t.Fatal("CheckStatus() expected error")
 		}
+
 		if !strings.Contains(err.Error(), "status 502") {
 			t.Fatalf("error = %q, expected status 502", err.Error())
 		}
+
 		if !strings.Contains(err.Error(), "upstream failed") {
 			t.Fatalf("error = %q, expected body text", err.Error())
 		}
@@ -48,12 +51,14 @@ func TestCheckStatus(t *testing.T) {
 
 		resp := &http.Response{
 			StatusCode: http.StatusInternalServerError,
-			Body:       &errorReadCloser{err: fmt.Errorf("read fail")},
+			Body:       &errorReadCloser{err: errors.New("read fail")},
 		}
+
 		err := CheckStatus(resp)
 		if err == nil {
 			t.Fatal("CheckStatus() expected error")
 		}
+
 		if !strings.Contains(err.Error(), "read body") {
 			t.Fatalf("error = %q, expected read body message", err.Error())
 		}
@@ -79,21 +84,27 @@ func TestCheckStatusReturnsTypedAPIError(t *testing.T) {
 	}
 
 	var apiErr *APIError
+
 	if !errors.As(err, &apiErr) {
 		t.Fatalf("CheckStatus() error type = %T, want *APIError", err)
 	}
+
 	if apiErr.StatusCode != http.StatusConflict {
 		t.Fatalf("StatusCode = %d, want %d", apiErr.StatusCode, http.StatusConflict)
 	}
+
 	if apiErr.Code != "notification_in_progress" {
 		t.Fatalf("Code = %q, want notification_in_progress", apiErr.Code)
 	}
+
 	if apiErr.Message != "notification is already running" {
 		t.Fatalf("Message = %q, want notification is already running", apiErr.Message)
 	}
+
 	if apiErr.RequestID != "req-123" {
 		t.Fatalf("RequestID = %q, want req-123", apiErr.RequestID)
 	}
+
 	if apiErr.Details["trigger"] != "weekly" {
 		t.Fatalf("Details[trigger] = %v, want weekly", apiErr.Details["trigger"])
 	}
@@ -111,6 +122,7 @@ func TestAPIErrorHelpersMatchWrappedErrors(t *testing.T) {
 	if !IsStatus(err, http.StatusNotFound) {
 		t.Fatal("IsStatus() = false, want true")
 	}
+
 	if IsStatus(err, http.StatusConflict) {
 		t.Fatal("IsStatus() = true for wrong status")
 	}
@@ -122,15 +134,15 @@ func TestDecodeJSON(t *testing.T) {
 	rc := &trackCloseReadCloser{Reader: strings.NewReader(`{"name":"test"}`)}
 	resp := &http.Response{Body: rc}
 
-	var out struct {
-		Name string `json:"name"`
-	}
-	if err := DecodeJSON(resp, &out); err != nil {
+	out, err := DecodeJSON[namedPayload](resp)
+	if err != nil {
 		t.Fatalf("DecodeJSON() error = %v", err)
 	}
+
 	if out.Name != "test" {
 		t.Fatalf("DecodeJSON() name = %q, want test", out.Name)
 	}
+
 	if !rc.closed {
 		t.Fatal("DecodeJSON() expected body close")
 	}
@@ -153,7 +165,7 @@ func (e *errorReadCloser) Close() error {
 func TestCheckStatus_ClosesBodyOnReadFailure(t *testing.T) {
 	t.Parallel()
 
-	rc := &errorReadCloser{err: fmt.Errorf("read fail")}
+	rc := &errorReadCloser{err: errors.New("read fail")}
 	resp := &http.Response{
 		StatusCode: http.StatusInternalServerError,
 		Body:       rc,
@@ -162,6 +174,7 @@ func TestCheckStatus_ClosesBodyOnReadFailure(t *testing.T) {
 	if err := CheckStatus(resp); err == nil {
 		t.Fatal("CheckStatus() expected error")
 	}
+
 	if !rc.closed {
 		t.Fatal("CheckStatus() did not close body on read failure")
 	}
@@ -169,6 +182,7 @@ func TestCheckStatus_ClosesBodyOnReadFailure(t *testing.T) {
 
 type trackCloseReadCloser struct {
 	*strings.Reader
+
 	closed bool
 }
 
@@ -187,8 +201,12 @@ func (r *byteByByteReadCloser) Read(p []byte) (int, error) {
 	if len(p) > 1 {
 		p = p[:1]
 	}
+
 	n, err := r.reader.Read(p)
+
 	r.readBytes += n
+
+	//nolint:wrapcheck // io.Reader 계약상 io.EOF를 포함한 하위 reader의 오류를 감싸지 않고 그대로 전달해야 한다.
 	return n, err
 }
 
@@ -200,14 +218,14 @@ func (r *byteByByteReadCloser) Close() error {
 func TestAPIError_UnwrapReturnsInnerError(t *testing.T) {
 	t.Parallel()
 
-	inner := fmt.Errorf("connection refused")
+	inner := errors.New("connection refused")
 	apiErr := &APIError{
 		StatusCode: http.StatusBadGateway,
 		Err:        inner,
 	}
 
 	got := apiErr.Unwrap()
-	if got != inner {
+	if !errors.Is(got, inner) {
 		t.Fatalf("Unwrap() = %v, want %v", got, inner)
 	}
 }
@@ -216,6 +234,7 @@ func TestAPIError_UnwrapNilReceiver(t *testing.T) {
 	t.Parallel()
 
 	var apiErr *APIError
+
 	got := apiErr.Unwrap()
 	if got != nil {
 		t.Fatalf("Unwrap() on nil receiver = %v, want nil", got)
@@ -242,11 +261,11 @@ func TestDecodeJSON_MalformedJSON(t *testing.T) {
 	rc := &trackCloseReadCloser{Reader: strings.NewReader(`{not json`)}
 	resp := &http.Response{Body: rc}
 
-	var out struct{ Name string }
-	err := DecodeJSON(resp, &out)
+	_, err := DecodeJSON[namedPayload](resp)
 	if err == nil {
 		t.Fatal("DecodeJSON() expected error for malformed JSON")
 	}
+
 	if !rc.closed {
 		t.Fatal("DecodeJSON() expected body close even on error")
 	}
@@ -259,13 +278,11 @@ func TestDecodeJSONLimited_OverLimitErrors(t *testing.T) {
 	rc := &trackCloseReadCloser{Reader: strings.NewReader(payload)}
 	resp := &http.Response{Body: rc}
 
-	var out struct {
-		Name string `json:"name"`
-	}
-	err := DecodeJSONLimited(resp, &out, 64)
+	_, err := DecodeJSONLimited[namedPayload](resp, 64)
 	if !errors.Is(err, ErrResponseBodyTooLarge) {
 		t.Fatalf("DecodeJSONLimited() error = %v, want ErrResponseBodyTooLarge", err)
 	}
+
 	if !rc.closed {
 		t.Fatal("DecodeJSONLimited() expected body close on over-limit")
 	}
@@ -278,15 +295,15 @@ func TestDecodeJSONLimited_AtLimitDecodes(t *testing.T) {
 	rc := &trackCloseReadCloser{Reader: strings.NewReader(payload)}
 	resp := &http.Response{Body: rc}
 
-	var out struct {
-		Name string `json:"name"`
-	}
-	if err := DecodeJSONLimited(resp, &out, int64(len(payload))); err != nil {
+	out, err := DecodeJSONLimited[namedPayload](resp, int64(len(payload)))
+	if err != nil {
 		t.Fatalf("DecodeJSONLimited() error = %v", err)
 	}
+
 	if out.Name != "test" {
 		t.Fatalf("DecodeJSONLimited() name = %q, want test", out.Name)
 	}
+
 	if !rc.closed {
 		t.Fatal("DecodeJSONLimited() expected body close")
 	}
@@ -299,15 +316,15 @@ func TestDecodeJSONLimited_TrailingWhitespaceWithinLimitDecodes(t *testing.T) {
 	rc := &trackCloseReadCloser{Reader: strings.NewReader(payload)}
 	resp := &http.Response{Body: rc}
 
-	var out struct {
-		Name string `json:"name"`
-	}
-	if err := DecodeJSONLimited(resp, &out, int64(len(payload))); err != nil {
+	out, err := DecodeJSONLimited[namedPayload](resp, int64(len(payload)))
+	if err != nil {
 		t.Fatalf("DecodeJSONLimited() error = %v", err)
 	}
+
 	if out.Name != "test" {
 		t.Fatalf("DecodeJSONLimited() name = %q, want test", out.Name)
 	}
+
 	if !rc.closed {
 		t.Fatal("DecodeJSONLimited() expected body close")
 	}
@@ -319,10 +336,7 @@ func TestDecodeJSONLimited_RejectsMultipleJSONValues(t *testing.T) {
 	payload := `{"name":"first"}{"name":"second"}`
 	resp := &http.Response{Body: io.NopCloser(strings.NewReader(payload))}
 
-	var out struct {
-		Name string `json:"name"`
-	}
-	err := DecodeJSONLimited(resp, &out, int64(len(payload)))
+	_, err := DecodeJSONLimited[namedPayload](resp, int64(len(payload)))
 	if !errors.Is(err, ErrMultipleJSONValues) {
 		t.Fatalf("DecodeJSONLimited() error = %v, want ErrMultipleJSONValues", err)
 	}
@@ -336,16 +350,15 @@ func TestDecodeJSONLimited_RejectsTrailingWhitespaceOverLimit(t *testing.T) {
 	rc := &byteByByteReadCloser{reader: strings.NewReader(payload)}
 	resp := &http.Response{Body: rc}
 
-	var out struct {
-		Name string `json:"name"`
-	}
-	err := DecodeJSONLimited(resp, &out, int64(len(jsonValue)))
+	_, err := DecodeJSONLimited[namedPayload](resp, int64(len(jsonValue)))
 	if !errors.Is(err, ErrResponseBodyTooLarge) {
 		t.Fatalf("DecodeJSONLimited() error = %v, want ErrResponseBodyTooLarge", err)
 	}
+
 	if rc.readBytes != len(jsonValue)+1 {
 		t.Fatalf("DecodeJSONLimited() read bytes = %d, want %d", rc.readBytes, len(jsonValue)+1)
 	}
+
 	if !rc.closed {
 		t.Fatal("DecodeJSONLimited() expected body close")
 	}
@@ -361,12 +374,11 @@ func TestDecodeJSON_UsesDefaultLimit(t *testing.T) {
 	rc := &trackCloseReadCloser{Reader: strings.NewReader(`{"name":"ok"}`)}
 	resp := &http.Response{Body: rc}
 
-	var out struct {
-		Name string `json:"name"`
-	}
-	if err := DecodeJSON(resp, &out); err != nil {
+	out, err := DecodeJSON[namedPayload](resp)
+	if err != nil {
 		t.Fatalf("DecodeJSON() error = %v", err)
 	}
+
 	if out.Name != "ok" {
 		t.Fatalf("DecodeJSON() name = %q, want ok", out.Name)
 	}
@@ -374,13 +386,17 @@ func TestDecodeJSON_UsesDefaultLimit(t *testing.T) {
 
 type drainTrackReadCloser struct {
 	*strings.Reader
+
 	closed    bool
 	readBytes int
 }
 
 func (d *drainTrackReadCloser) Read(p []byte) (int, error) {
 	n, err := d.Reader.Read(p)
+
 	d.readBytes += n
+
+	//nolint:wrapcheck // io.Reader 계약상 io.EOF를 포함한 하위 reader의 오류를 감싸지 않고 그대로 전달해야 한다.
 	return n, err
 }
 
@@ -402,9 +418,11 @@ func TestCheckStatus_DrainsAndClosesBodyOnError(t *testing.T) {
 	if err := CheckStatus(resp); err == nil {
 		t.Fatal("CheckStatus() expected error")
 	}
+
 	if !rc.closed {
 		t.Fatal("CheckStatus() did not close body on error")
 	}
+
 	if rc.readBytes < bodyLen {
 		t.Fatalf("CheckStatus() drained %d bytes, want full body %d", rc.readBytes, bodyLen)
 	}
@@ -414,6 +432,7 @@ func TestCheckStatus_DrainCapAndClose(t *testing.T) {
 	t.Parallel()
 
 	const drainCap = 256 * 1024
+
 	bodyLen := 4096 + drainCap + 100000
 	rc := &drainTrackReadCloser{Reader: strings.NewReader(strings.Repeat("z", bodyLen))}
 	resp := &http.Response{
@@ -424,9 +443,11 @@ func TestCheckStatus_DrainCapAndClose(t *testing.T) {
 	if err := CheckStatus(resp); err == nil {
 		t.Fatal("CheckStatus() expected error")
 	}
+
 	if !rc.closed {
 		t.Fatal("CheckStatus() did not close body when over drain cap")
 	}
+
 	// drain은 상한 바이트 + EOF 확인용 1바이트까지만 읽는다.
 	if want := 4096 + drainCap + 1; rc.readBytes > want {
 		t.Fatalf("CheckStatus() drained %d bytes, want <= %d (bounded drain + EOF probe)", rc.readBytes, want)
@@ -446,11 +467,18 @@ func TestCheckStatus_TruncatesLargeBody(t *testing.T) {
 	if err == nil {
 		t.Fatal("CheckStatus() expected error")
 	}
+
 	var apiErr *APIError
+
 	if !errors.As(err, &apiErr) {
 		t.Fatalf("error type = %T, want *APIError", err)
 	}
+
 	if len(apiErr.Body) > 4096 {
 		t.Fatalf("Body len = %d, want <= 4096", len(apiErr.Body))
 	}
+}
+
+type namedPayload struct {
+	Name string `json:"name"`
 }

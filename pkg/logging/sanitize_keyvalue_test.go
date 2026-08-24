@@ -25,6 +25,7 @@ func TestSanitizeKey_SecretLikeLiteralKeyValuesMasked_8e92058d(t *testing.T) {
 		if strings.Contains(out, v) {
 			t.Errorf("secret-like literal key field value %q must be masked, got: %s", v, out)
 		}
+
 		if !strings.Contains(out, "***REDACTED***") {
 			t.Errorf("expected literal key field value %q to be redacted, got: %s", v, out)
 		}
@@ -51,6 +52,7 @@ func TestSanitizeKey_NonSecretLiteralKeyValuesNotMasked_8e92058d(t *testing.T) {
 		if strings.Contains(out, "***REDACTED***") {
 			t.Errorf("non-secret literal key field value %q must not be masked, got: %s", v, out)
 		}
+
 		if !strings.Contains(out, v) {
 			t.Errorf("non-secret literal key field value %q must be preserved, got: %s", v, out)
 		}
@@ -59,8 +61,11 @@ func TestSanitizeKey_NonSecretLiteralKeyValuesNotMasked_8e92058d(t *testing.T) {
 
 func keyFieldOutput(t *testing.T, key, value string) string {
 	t.Helper()
+
 	var buf bytes.Buffer
+
 	h := newSanitizeHandler(slog.NewTextHandler(&buf, nil))
 	slog.New(h).Info("m", slog.String(key, value))
+
 	return buf.String()
 }

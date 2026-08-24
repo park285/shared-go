@@ -40,12 +40,14 @@ func TestRun_ReturnsExitCodeOneWhenLoadConfigFails(t *testing.T) {
 	t.Parallel()
 
 	loadErr := errors.New("load boom")
+
 	var stderr bytes.Buffer
+
 	initCalled := false
 	loggerCalled := false
 	buildCalled := false
 
-	exitCode := Run(Options[*testConfig, *testRuntime]{
+	exitCode := Options[*testConfig, *testRuntime]{
 		Version:                "test-version",
 		Initialize:             func(string) { initCalled = true },
 		LoadConfig:             func() (*testConfig, error) { return nil, loadErr },
@@ -59,20 +61,24 @@ func TestRun_ReturnsExitCodeOneWhenLoadConfigFails(t *testing.T) {
 			return &testRuntime{}, nil
 		},
 		Stderr: &stderr,
-	})
+	}.Run()
 
 	if exitCode != 1 {
 		t.Fatalf("Run() exitCode = %d, want 1", exitCode)
 	}
+
 	if !initCalled {
 		t.Fatal("Initialize() was not called")
 	}
+
 	if loggerCalled {
 		t.Fatal("NewLogger() should not be called on config load failure")
 	}
+
 	if buildCalled {
 		t.Fatal("BuildRuntime() should not be called on config load failure")
 	}
+
 	if got := stderr.String(); !strings.Contains(got, "Failed to load test config: load boom") {
 		t.Fatalf("stderr = %q, want load failure message", got)
 	}
@@ -82,21 +88,25 @@ func TestRun_RedactsLoadConfigErrorBeforeLoggerExists(t *testing.T) {
 	t.Parallel()
 
 	const canary = "load-config-secret"
+
 	var stderr bytes.Buffer
-	exitCode := Run(Options[*testConfig, *testRuntime]{
+
+	exitCode := Options[*testConfig, *testRuntime]{
 		Initialize: func(string) {},
 		LoadConfig: func() (*testConfig, error) {
 			return nil, errors.New("password: " + canary)
 		},
 		Stderr: &stderr,
-	})
+	}.Run()
 
 	if exitCode != 1 {
 		t.Fatalf("Run() exitCode = %d, want 1", exitCode)
 	}
+
 	if strings.Contains(stderr.String(), canary) {
 		t.Fatalf("bootstrap stderr leaked config credential: %q", stderr.String())
 	}
+
 	if !strings.Contains(stderr.String(), "***REDACTED***") {
 		t.Fatalf("bootstrap stderr = %q, want redaction marker", stderr.String())
 	}
@@ -106,10 +116,12 @@ func TestRun_ReturnsExitCodeOneWhenLoggerInitFails(t *testing.T) {
 	t.Parallel()
 
 	loggerErr := errors.New("logger boom")
+
 	var stderr bytes.Buffer
+
 	buildCalled := false
 
-	exitCode := Run(Options[*testConfig, *testRuntime]{
+	exitCode := Options[*testConfig, *testRuntime]{
 		Version:                "test-version",
 		Initialize:             func(string) {},
 		LoadConfig:             func() (*testConfig, error) { return &testConfig{}, nil },
@@ -122,15 +134,17 @@ func TestRun_ReturnsExitCodeOneWhenLoggerInitFails(t *testing.T) {
 			return &testRuntime{}, nil
 		},
 		Stderr: &stderr,
-	})
+	}.Run()
 
 	if exitCode != 1 {
 		t.Fatalf("Run() exitCode = %d, want 1", exitCode)
 	}
+
 	if buildCalled {
 		t.Fatal("BuildRuntime() should not be called on logger init failure")
 	}
-	if got := stderr.String(); !strings.Contains(got, "Failed to initialize logger: logger boom") {
+
+	if got := stderr.String(); !strings.Contains(got, "Failed to initialize logger: logger hook: logger boom") {
 		t.Fatalf("stderr = %q, want logger init failure message", got)
 	}
 }
@@ -139,22 +153,26 @@ func TestRun_RedactsLoggerInitializationError(t *testing.T) {
 	t.Parallel()
 
 	const canary = "logger-init-secret"
+
 	var stderr bytes.Buffer
-	exitCode := Run(Options[*testConfig, *testRuntime]{
+
+	exitCode := Options[*testConfig, *testRuntime]{
 		Initialize: func(string) {},
 		LoadConfig: func() (*testConfig, error) { return &testConfig{}, nil },
 		NewLogger: func(*testConfig) (*slog.Logger, error) {
 			return nil, errors.New("postgres://user:" + canary + "@db.example/app")
 		},
 		Stderr: &stderr,
-	})
+	}.Run()
 
 	if exitCode != 1 {
 		t.Fatalf("Run() exitCode = %d, want 1", exitCode)
 	}
+
 	if strings.Contains(stderr.String(), canary) {
 		t.Fatalf("bootstrap stderr leaked logger credential: %q", stderr.String())
 	}
+
 	if !strings.Contains(stderr.String(), "***REDACTED***") {
 		t.Fatalf("bootstrap stderr = %q, want redaction marker", stderr.String())
 	}
@@ -164,12 +182,16 @@ func TestRun_BuildsRunsAndClosesRuntime(t *testing.T) {
 	t.Parallel()
 
 	runtime := &testRuntime{}
-	var initializedVersion string
-	var builtConfig *testConfig
-	var buildCtxDeadline time.Time
+
+	var (
+		initializedVersion string
+		builtConfig        *testConfig
+		buildCtxDeadline   time.Time
+	)
+
 	buildStartedAt := time.Now()
 
-	exitCode := Run(Options[*testConfig, *testRuntime]{
+	exitCode := Options[*testConfig, *testRuntime]{
 		Version:                "test-version",
 		Initialize:             func(version string) { initializedVersion = version },
 		LoadConfig:             func() (*testConfig, error) { return &testConfig{Port: 30001}, nil },
@@ -186,33 +208,43 @@ func TestRun_BuildsRunsAndClosesRuntime(t *testing.T) {
 			if logger == nil {
 				t.Fatal("BuildRuntime() logger = nil")
 			}
+
 			builtConfig = config
+
 			var ok bool
+
 			buildCtxDeadline, ok = ctx.Deadline()
+
 			if !ok {
 				t.Fatal("BuildRuntime() context missing deadline")
 			}
+
 			return runtime, nil
 		},
 		BuildErrorMessage: "Failed to build test runtime",
-	})
+	}.Run()
 
 	if exitCode != 0 {
 		t.Fatalf("Run() exitCode = %d, want 0", exitCode)
 	}
+
 	if initializedVersion != "test-version" {
 		t.Fatalf("Initialize() version = %q, want %q", initializedVersion, "test-version")
 	}
+
 	if builtConfig == nil || builtConfig.Port != 30001 {
 		t.Fatalf("BuildRuntime() config = %#v, want port 30001", builtConfig)
 	}
+
 	buildTimeout := buildCtxDeadline.Sub(buildStartedAt)
 	if buildTimeout <= 0 || buildTimeout > time.Second {
 		t.Fatalf("BuildRuntime() timeout window = %v, want positive bounded timeout", buildTimeout)
 	}
+
 	if runtime.runCalls != 1 {
 		t.Fatalf("runtime.Run() calls = %d, want 1", runtime.runCalls)
 	}
+
 	if runtime.closeCalls != 1 {
 		t.Fatalf("runtime.Close() calls = %d, want 1", runtime.closeCalls)
 	}
@@ -222,9 +254,10 @@ func TestRun_ReturnsExitCodeOneWhenRuntimeRunFails(t *testing.T) {
 	t.Parallel()
 
 	rt := &testRuntime{runErr: errors.New("runtime boom")}
+
 	var logs bytes.Buffer
 
-	exitCode := Run(Options[*testConfig, *testRuntime]{
+	exitCode := Options[*testConfig, *testRuntime]{
 		Version:    "v1",
 		Initialize: func(string) {},
 		LoadConfig: func() (*testConfig, error) { return &testConfig{}, nil },
@@ -236,17 +269,20 @@ func TestRun_ReturnsExitCodeOneWhenRuntimeRunFails(t *testing.T) {
 		},
 		RunErrorMessage: "Test runtime stopped",
 		Stderr:          &bytes.Buffer{},
-	})
+	}.Run()
 
 	if exitCode != 1 {
 		t.Fatalf("Run() exitCode = %d, want 1", exitCode)
 	}
+
 	if rt.runCalls != 1 {
 		t.Fatalf("runtime.Run() calls = %d, want 1", rt.runCalls)
 	}
+
 	if rt.closeCalls != 1 {
 		t.Fatalf("runtime.Close() calls = %d, want 1 even when Run fails", rt.closeCalls)
 	}
+
 	if got := logs.String(); !strings.Contains(got, "Test runtime stopped") {
 		t.Fatalf("logs = %q, want run failure message", got)
 	}
@@ -256,9 +292,10 @@ func TestRun_RedactsRuntimeRunError(t *testing.T) {
 	t.Parallel()
 
 	const canary = "runtime-run-secret"
+
 	var logs bytes.Buffer
 
-	exitCode := Run(Options[*testConfig, *testRuntime]{
+	exitCode := Options[*testConfig, *testRuntime]{
 		Initialize: func(string) {},
 		LoadConfig: func() (*testConfig, error) { return &testConfig{}, nil },
 		NewLogger: func(*testConfig) (*slog.Logger, error) {
@@ -268,14 +305,16 @@ func TestRun_RedactsRuntimeRunError(t *testing.T) {
 			return &testRuntime{runErr: errors.New("API_TOKEN=" + canary)}, nil
 		},
 		Stderr: &bytes.Buffer{},
-	})
+	}.Run()
 
 	if exitCode != 1 {
 		t.Fatalf("Run() exitCode = %d, want 1", exitCode)
 	}
+
 	if strings.Contains(logs.String(), canary) {
 		t.Fatalf("bootstrap log leaked runtime credential: %q", logs.String())
 	}
+
 	if !strings.Contains(logs.String(), "***REDACTED***") {
 		t.Fatalf("bootstrap log = %q, want redaction marker", logs.String())
 	}
@@ -285,9 +324,10 @@ func TestRun_ZeroBuildTimeoutMeansNoDeadline(t *testing.T) {
 	t.Parallel()
 
 	rt := &testRuntime{}
+
 	var hadDeadline bool
 
-	exitCode := Run(Options[*testConfig, *testRuntime]{
+	exitCode := Options[*testConfig, *testRuntime]{
 		Version:    "v1",
 		Initialize: func(string) {},
 		LoadConfig: func() (*testConfig, error) { return &testConfig{}, nil },
@@ -300,17 +340,20 @@ func TestRun_ZeroBuildTimeoutMeansNoDeadline(t *testing.T) {
 			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
+
 			return rt, nil
 		},
 		Stderr: &bytes.Buffer{},
-	})
+	}.Run()
 
 	if exitCode != 0 {
 		t.Fatalf("Run() exitCode = %d, want 0", exitCode)
 	}
+
 	if hadDeadline {
 		t.Fatal("BuildRuntime() context should not have a deadline when BuildTimeout is zero")
 	}
+
 	if rt.runCalls != 1 {
 		t.Fatalf("runtime.Run() calls = %d, want 1", rt.runCalls)
 	}
@@ -321,7 +364,7 @@ func TestRun_ReturnsExitCodeOneWhenBuildRuntimeFails(t *testing.T) {
 
 	buildErr := errors.New("build boom")
 
-	exitCode := Run(Options[*testConfig, *testRuntime]{
+	exitCode := Options[*testConfig, *testRuntime]{
 		Version:    "v1",
 		Initialize: func(string) {},
 		LoadConfig: func() (*testConfig, error) { return &testConfig{}, nil },
@@ -334,7 +377,7 @@ func TestRun_ReturnsExitCodeOneWhenBuildRuntimeFails(t *testing.T) {
 		},
 		BuildErrorMessage: "Failed to build test runtime",
 		Stderr:            &bytes.Buffer{},
-	})
+	}.Run()
 
 	if exitCode != 1 {
 		t.Fatalf("Run() exitCode = %d, want 1", exitCode)
@@ -345,8 +388,10 @@ func TestRun_RedactsBuildRuntimeErrorObject(t *testing.T) {
 	t.Parallel()
 
 	const canary = "build-runtime-secret"
+
 	var logs bytes.Buffer
-	exitCode := Run(Options[*testConfig, *testRuntime]{
+
+	exitCode := Options[*testConfig, *testRuntime]{
 		Initialize: func(string) {},
 		LoadConfig: func() (*testConfig, error) { return &testConfig{}, nil },
 		NewLogger: func(*testConfig) (*slog.Logger, error) {
@@ -355,14 +400,16 @@ func TestRun_RedactsBuildRuntimeErrorObject(t *testing.T) {
 		BuildRuntime: func(context.Context, *testConfig, *slog.Logger) (*testRuntime, error) {
 			return nil, errors.New("API_TOKEN=" + canary)
 		},
-	})
+	}.Run()
 
 	if exitCode != 1 {
 		t.Fatalf("Run() exitCode = %d, want 1", exitCode)
 	}
+
 	if strings.Contains(logs.String(), canary) {
 		t.Fatalf("bootstrap log leaked runtime credential: %q", logs.String())
 	}
+
 	if !strings.Contains(logs.String(), "***REDACTED***") {
 		t.Fatalf("bootstrap log = %q, want redaction marker", logs.String())
 	}
@@ -371,7 +418,7 @@ func TestRun_RedactsBuildRuntimeErrorObject(t *testing.T) {
 func TestRun_BuildRuntimeFailUsesDefaultErrorMessage(t *testing.T) {
 	t.Parallel()
 
-	exitCode := Run(Options[*testConfig, *testRuntime]{
+	exitCode := Options[*testConfig, *testRuntime]{
 		Version:    "v1",
 		Initialize: func(string) {},
 		LoadConfig: func() (*testConfig, error) { return &testConfig{}, nil },
@@ -383,7 +430,7 @@ func TestRun_BuildRuntimeFailUsesDefaultErrorMessage(t *testing.T) {
 			return nil, errors.New("fail")
 		},
 		Stderr: &bytes.Buffer{},
-	})
+	}.Run()
 
 	if exitCode != 1 {
 		t.Fatalf("Run() exitCode = %d, want 1", exitCode)
@@ -394,7 +441,7 @@ func TestRun_SkipsStartupMessageWhenEmpty(t *testing.T) {
 	t.Parallel()
 
 	rt := &testRuntime{}
-	exitCode := Run(Options[*testConfig, *testRuntime]{
+	exitCode := Options[*testConfig, *testRuntime]{
 		Version:    "v1",
 		Initialize: func(string) {},
 		LoadConfig: func() (*testConfig, error) { return &testConfig{}, nil },
@@ -406,11 +453,12 @@ func TestRun_SkipsStartupMessageWhenEmpty(t *testing.T) {
 			return rt, nil
 		},
 		Stderr: &bytes.Buffer{},
-	})
+	}.Run()
 
 	if exitCode != 0 {
 		t.Fatalf("Run() exitCode = %d, want 0", exitCode)
 	}
+
 	if rt.runCalls != 1 {
 		t.Fatalf("runtime.Run() calls = %d, want 1", rt.runCalls)
 	}
@@ -420,7 +468,8 @@ func TestRun_DefaultLoadConfigErrorMessage(t *testing.T) {
 	t.Parallel()
 
 	var stderr bytes.Buffer
-	exitCode := Run(Options[*testConfig, *testRuntime]{
+
+	exitCode := Options[*testConfig, *testRuntime]{
 		Version:    "v1",
 		Initialize: func(string) {},
 		LoadConfig: func() (*testConfig, error) { return nil, errors.New("oops") },
@@ -432,11 +481,12 @@ func TestRun_DefaultLoadConfigErrorMessage(t *testing.T) {
 			return &testRuntime{}, nil
 		},
 		Stderr: &stderr,
-	})
+	}.Run()
 
 	if exitCode != 1 {
 		t.Fatalf("Run() exitCode = %d, want 1", exitCode)
 	}
+
 	if got := stderr.String(); !strings.Contains(got, "Failed to load config: oops") {
 		t.Fatalf("stderr = %q, want default config error message", got)
 	}
@@ -446,7 +496,7 @@ func TestRun_NilInitializeUsesDefault(t *testing.T) {
 	t.Parallel()
 
 	rt := &testRuntime{}
-	exitCode := Run(Options[*testConfig, *testRuntime]{
+	exitCode := Options[*testConfig, *testRuntime]{
 		LoadConfig: func() (*testConfig, error) { return &testConfig{}, nil },
 		NewLogger: func(*testConfig) (*slog.Logger, error) {
 			return slog.New(slog.DiscardHandler), nil
@@ -456,7 +506,7 @@ func TestRun_NilInitializeUsesDefault(t *testing.T) {
 			return rt, nil
 		},
 		Stderr: &bytes.Buffer{},
-	})
+	}.Run()
 
 	if exitCode != 0 {
 		t.Fatalf("Run() exitCode = %d, want 0", exitCode)
@@ -467,19 +517,20 @@ func TestNewLogger_DefaultPathWithLoggerConfig(t *testing.T) {
 	t.Parallel()
 
 	cfg := &testConfig{}
-	logger, err := newLogger(Options[*testConfig, *testRuntime]{
-		LoggerConfig: func(c *testConfig) sharedlogging.Config {
+
+	logger, err := Options[*testConfig, *testRuntime]{
+		LoggerConfig: func(_ *testConfig) sharedlogging.Config {
 			return sharedlogging.Config{}
 		},
-		LoggerLevel: func(c *testConfig) string {
+		LoggerLevel: func(_ *testConfig) string {
 			return "debug"
 		},
 		LoggerFileName: "test.log",
-	}, cfg)
-
+	}.newLogger(cfg)
 	if err != nil {
 		t.Fatalf("newLogger() error = %v", err)
 	}
+
 	if logger == nil {
 		t.Fatal("newLogger() returned nil logger")
 	}
@@ -489,13 +540,14 @@ func TestNewLogger_DefaultPathAllNil(t *testing.T) {
 	t.Parallel()
 
 	cfg := &testConfig{}
-	logger, err := newLogger(Options[*testConfig, *testRuntime]{
-		LoggerFileName: "test.log",
-	}, cfg)
 
+	logger, err := Options[*testConfig, *testRuntime]{
+		LoggerFileName: "test.log",
+	}.newLogger(cfg)
 	if err != nil {
 		t.Fatalf("newLogger() error = %v", err)
 	}
+
 	if logger == nil {
 		t.Fatal("newLogger() returned nil logger")
 	}
@@ -505,9 +557,9 @@ func TestStartupFields_NilLoggerLevelAndNilStartupFields(t *testing.T) {
 	t.Parallel()
 
 	cfg := &testConfig{}
-	fields := startupFields(Options[*testConfig, *testRuntime]{
+	fields := Options[*testConfig, *testRuntime]{
 		Version: "v1",
-	}, cfg)
+	}.startupFields(cfg)
 
 	if len(fields) != 1 {
 		t.Fatalf("startupFields() len = %d, want 1", len(fields))
@@ -518,10 +570,10 @@ func TestStartupFields_WithLoggerLevelNoStartupFields(t *testing.T) {
 	t.Parallel()
 
 	cfg := &testConfig{}
-	fields := startupFields(Options[*testConfig, *testRuntime]{
+	fields := Options[*testConfig, *testRuntime]{
 		Version:     "v1",
-		LoggerLevel: func(c *testConfig) string { return "info" },
-	}, cfg)
+		LoggerLevel: func(_ *testConfig) string { return "info" },
+	}.startupFields(cfg)
 
 	if len(fields) != 2 {
 		t.Fatalf("startupFields() len = %d, want 2", len(fields))
@@ -550,7 +602,9 @@ func TestRuntimeStderr_ReturnsProvidedWriter(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
+
 	got := runtimeStderr(&buf)
+
 	if got != &buf {
 		t.Fatal("runtimeStderr() did not return provided writer")
 	}
@@ -569,10 +623,13 @@ func TestPrintBootstrapError_AlwaysReturnsOne(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
+
 	code := printBootstrapError(&buf, "test error", errors.New("boom"))
+
 	if code != 1 {
 		t.Fatalf("printBootstrapError() = %d, want 1", code)
 	}
+
 	if got := buf.String(); got != "test error: boom\n" {
 		t.Fatalf("printBootstrapError() output = %q, want %q", got, "test error: boom\n")
 	}

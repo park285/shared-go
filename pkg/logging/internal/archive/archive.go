@@ -29,9 +29,11 @@ func (w *AwareWriter) Write(p []byte) (int, error) {
 	if w.Archiver != nil {
 		w.Archiver.Trigger()
 	}
+
 	if err != nil {
 		return n, fmt.Errorf("archive aware writer: write: %w", err)
 	}
+
 	return n, nil
 }
 
@@ -66,10 +68,13 @@ func (a *CompressedLogArchiver) Trigger() {
 	}
 
 	a.mu.Lock()
+
 	if a.closed || a.running || (!a.lastRun.IsZero() && time.Since(a.lastRun) < ScanInterval) {
 		a.mu.Unlock()
+
 		return
 	}
+
 	a.running = true
 	a.lastRun = time.Now()
 	a.inflight.Add(1)
@@ -84,6 +89,7 @@ func (a *CompressedLogArchiver) run() {
 	err := MoveAndPrune(a.logPath, a.maxBackups, a.maxAgeDays)
 
 	a.mu.Lock()
+
 	a.running = false
 	a.mu.Unlock()
 
@@ -96,6 +102,7 @@ func (a *CompressedLogArchiver) wait() {
 	if a == nil {
 		return
 	}
+
 	a.inflight.Wait()
 }
 
@@ -103,17 +110,21 @@ func (a *CompressedLogArchiver) Close() error {
 	if a == nil {
 		return nil
 	}
+
 	// closed를 wait 전에 세워야 진행 중 run은 join하고 이후 Trigger는 차단된다(close 후 archive dir 재생성 방지).
 	a.mu.Lock()
+
 	a.closed = true
 	a.mu.Unlock()
 	a.wait()
+
 	return nil
 }
 
 func MoveAndPrune(logPath string, maxBackups, maxAgeDays int) error {
 	logDir := filepath.Dir(logPath)
 	archiveDir := filepath.Join(logDir, DirName)
+
 	if err := EnsureLogDirPerm(archiveDir); err != nil {
 		return fmt.Errorf("prepare archive dir: %w", err)
 	}
@@ -136,8 +147,10 @@ func MoveAndPrune(logPath string, maxBackups, maxAgeDays int) error {
 			if os.IsNotExist(err) {
 				continue
 			}
+
 			return fmt.Errorf("move compressed backup %s: %w", name, err)
 		}
+
 		if ok, err := removeIfUnsafeCompressedBackup(target); err != nil {
 			return fmt.Errorf("check moved compressed backup %s: %w", name, err)
 		} else if !ok {
@@ -162,13 +175,17 @@ func removeIfUnsafeCompressedBackup(path string) (bool, error) {
 		if os.IsNotExist(err) {
 			return false, nil
 		}
-		return false, err
+
+		return false, fmt.Errorf("lstat: %w", err)
 	}
+
 	if info.Mode().IsRegular() {
 		return true, nil
 	}
+
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		return false, err
+		return false, fmt.Errorf("remove unsafe backup: %w", err)
 	}
+
 	return false, nil
 }

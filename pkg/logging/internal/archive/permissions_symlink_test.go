@@ -12,6 +12,7 @@ func TestSG05EnsureLogFilePermRejectsSymlink_efb56f99(t *testing.T) {
 
 	dir := t.TempDir()
 	victim := filepath.Join(dir, "victim.txt")
+
 	if err := os.WriteFile(victim, []byte("sensitive"), 0o600); err != nil {
 		t.Fatalf("write victim: %v", err)
 	}
@@ -30,6 +31,7 @@ func TestSG05EnsureLogFilePermRejectsSymlink_efb56f99(t *testing.T) {
 	if statErr != nil {
 		t.Fatalf("stat victim: %v", statErr)
 	}
+
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("victim perm = %o, want 0600 (chmod must not have followed symlink)", info.Mode().Perm())
 	}
@@ -40,6 +42,7 @@ func TestSG05EnsureLogDirPermRejectsSymlink_efb56f99(t *testing.T) {
 
 	dir := t.TempDir()
 	victimDir := filepath.Join(dir, "victim-dir")
+
 	if err := os.Mkdir(victimDir, 0o700); err != nil {
 		t.Fatalf("mkdir victim: %v", err)
 	}
@@ -58,6 +61,7 @@ func TestSG05EnsureLogDirPermRejectsSymlink_efb56f99(t *testing.T) {
 	if statErr != nil {
 		t.Fatalf("stat victim dir: %v", statErr)
 	}
+
 	if info.Mode().Perm() != 0o700 {
 		t.Fatalf("victim dir perm = %o, want 0700 (chmod must not have followed symlink)", info.Mode().Perm())
 	}

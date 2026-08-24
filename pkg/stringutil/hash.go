@@ -17,6 +17,7 @@ func logHash(input string) string {
 	if normalized == "" {
 		return ""
 	}
+
 	return hash(normalized)
 }
 
@@ -25,6 +26,7 @@ func TruncatedLogHash(input string) string {
 	if value == "" {
 		return ""
 	}
+
 	return value[:truncatedHashHexChars]
 }
 

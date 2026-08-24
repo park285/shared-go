@@ -13,14 +13,18 @@ func TestSG05AsyncWriterCapsPerLineBytes_38e7cbe7(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
+
 	writer := newAsyncDropWriter(&buf, 64)
+
 	writer.maxLineBytes = 32
 
 	oversize := bytes.Repeat([]byte("A"), 4096)
+
 	n, err := writer.Write(oversize)
 	if err != nil {
 		t.Fatalf("Write(oversize) error = %v, want nil", err)
 	}
+
 	if n != len(oversize) {
 		t.Fatalf("Write(oversize) n = %d, want %d (io.Writer contract reports full length)", n, len(oversize))
 	}
@@ -34,9 +38,11 @@ func TestSG05AsyncWriterCapsPerLineBytes_38e7cbe7(t *testing.T) {
 	if !found {
 		t.Fatalf("forwarded payload has no record separator: %q", buf.String())
 	}
+
 	if got := len(forwarded) + 1; got > writer.maxLineBytes {
 		t.Fatalf("forwarded bytes = %d, want <= cap %d (line must be truncated before queuing)", got, writer.maxLineBytes)
 	}
+
 	if writer.truncatedCount() != 1 {
 		t.Fatalf("truncatedCount() = %d, want 1", writer.truncatedCount())
 	}
@@ -47,15 +53,19 @@ func TestAsyncDropWriterTruncationKeepsRecordBoundary(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
+
 	writer := newAsyncDropWriter(&buf, 64)
+
 	writer.maxLineBytes = 32
 
 	if _, err := writer.Write(append(bytes.Repeat([]byte("A"), 4096), '\n')); err != nil {
 		t.Fatalf("Write(oversize) error = %v", err)
 	}
+
 	if _, err := writer.Write([]byte("survivor\n")); err != nil {
 		t.Fatalf("Write(survivor) error = %v", err)
 	}
+
 	if err := writer.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)
 	}
@@ -64,9 +74,11 @@ func TestAsyncDropWriterTruncationKeepsRecordBoundary(t *testing.T) {
 	if len(lines) < 2 {
 		t.Fatalf("truncated record swallowed the next one: %q", buf.String())
 	}
+
 	if got := lines[0]; got != strings.Repeat("A", writer.maxLineBytes-1) {
 		t.Fatalf("truncated line = %q, want %d A's followed by a newline", got, writer.maxLineBytes-1)
 	}
+
 	if lines[1] != "survivor" {
 		t.Fatalf("line after truncation = %q, want %q", lines[1], "survivor")
 	}
@@ -77,12 +89,15 @@ func TestAsyncDropWriterCloseReportsTruncationWithoutDrops(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
+
 	writer := newAsyncDropWriter(&buf, 64)
+
 	writer.maxLineBytes = 32
 
 	if _, err := writer.Write(bytes.Repeat([]byte("A"), 4096)); err != nil {
 		t.Fatalf("Write(oversize) error = %v", err)
 	}
+
 	if err := writer.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)
 	}
@@ -90,6 +105,7 @@ func TestAsyncDropWriterCloseReportsTruncationWithoutDrops(t *testing.T) {
 	if writer.droppedCount() != 0 {
 		t.Fatalf("droppedCount() = %d, want 0 (queue never overflowed)", writer.droppedCount())
 	}
+
 	if !strings.Contains(buf.String(), `"truncated":1`) {
 		t.Fatalf("close summary must report truncation, got: %q", buf.String())
 	}
@@ -103,15 +119,19 @@ func TestAsyncDropWriterTruncationCountsOnlyDeliveredLines(t *testing.T) {
 	t.Cleanup(releaseTarget)
 
 	writer := newAsyncDropWriter(target, 1)
+
 	writer.maxLineBytes = 16
 
 	const writes = 20
+
 	oversize := bytes.Repeat([]byte("A"), 1024)
 
 	if _, err := writer.Write(oversize); err != nil {
 		t.Fatalf("Write() error = %v", err)
 	}
+
 	<-target.started
+
 	for range writes - 1 {
 		if _, err := writer.Write(oversize); err != nil {
 			t.Fatalf("Write() error = %v", err)
@@ -123,6 +143,7 @@ func TestAsyncDropWriterTruncationCountsOnlyDeliveredLines(t *testing.T) {
 	}
 
 	releaseTarget()
+
 	if err := writer.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)
 	}
@@ -133,7 +154,10 @@ func TestAsyncDropWriterTruncationCountsOnlyDeliveredLines(t *testing.T) {
 	}
 
 	reached := strings.Count(target.String(), strings.Repeat("A", writer.maxLineBytes-1))
-	if uint64(reached) != writer.truncatedCount() {
+	switch {
+	case reached < 0 || reached > writes:
+		t.Fatalf("truncated lines reaching target = %d, want within [0, %d]", reached, writes)
+	case uint64(reached) != writer.truncatedCount():
 		t.Fatalf("truncatedCount() = %d but %d truncated lines reached the target", writer.truncatedCount(), reached)
 	}
 }
@@ -148,14 +172,17 @@ func TestAsyncDropWriterTruncationExcludesLinesTargetRejected(t *testing.T) {
 	t.Parallel()
 
 	writer := newAsyncDropWriter(failingWriter{}, 64)
+
 	writer.maxLineBytes = 16
 
 	const writes = 5
+
 	for range writes {
 		if _, err := writer.Write(bytes.Repeat([]byte("A"), 1024)); err != nil {
 			t.Fatalf("Write() error = %v", err)
 		}
 	}
+
 	if err := writer.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)
 	}
@@ -163,23 +190,27 @@ func TestAsyncDropWriterTruncationExcludesLinesTargetRejected(t *testing.T) {
 	if got := writer.truncatedCount(); got != 0 {
 		t.Fatalf("truncatedCount() = %d, want 0 (no truncated line reached the target)", got)
 	}
+
 	if got := writer.droppedCount(); got != writes {
 		t.Fatalf("droppedCount() = %d, want %d", got, writes)
 	}
 }
 
-// '한'은 3바이트라 cap 17의 절단 경계(16)가 rune을 쪼갠다. cap 16이면 경계가 rune에 맞아떨어져
+// '한'은 3바이트라 cap 17의 절단 경계(16)가 rune을 쪼갠다. Cap 16이면 경계가 rune에 맞아떨어져
 // 절단 로직을 되돌려도 통과한다.
 func TestAsyncDropWriterTruncationKeepsRuneBoundary(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
+
 	writer := newAsyncDropWriter(&buf, 64)
+
 	writer.maxLineBytes = 17
 
 	if _, err := writer.Write([]byte(strings.Repeat("한", 64))); err != nil {
 		t.Fatalf("Write(oversize) error = %v", err)
 	}
+
 	if err := writer.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)
 	}
@@ -188,9 +219,11 @@ func TestAsyncDropWriterTruncationKeepsRuneBoundary(t *testing.T) {
 	if !found {
 		t.Fatalf("forwarded payload has no record separator: %q", buf.String())
 	}
+
 	if !utf8.ValidString(line) {
 		t.Fatalf("truncated line is not valid UTF-8: %q", line)
 	}
+
 	if want := strings.Repeat("한", 5); line != want {
 		t.Fatalf("truncated line = %q, want %q", line, want)
 	}
@@ -200,9 +233,13 @@ func TestSG05AsyncWriterBoundsQueuedMemory_38e7cbe7(t *testing.T) {
 	t.Parallel()
 
 	target := &stallingWriter{started: make(chan struct{}), release: make(chan struct{})}
+
 	const depth = 8
+
 	writer := newAsyncDropWriter(target, depth)
+
 	writer.maxLineBytes = 16
+
 	releaseTarget := sync.OnceFunc(func() { close(target.release) })
 	t.Cleanup(releaseTarget)
 
@@ -210,6 +247,7 @@ func TestSG05AsyncWriterBoundsQueuedMemory_38e7cbe7(t *testing.T) {
 	if writer.maxLineBytes >= len(huge) {
 		t.Fatalf("test setup: cap %d must be smaller than line %d", writer.maxLineBytes, len(huge))
 	}
+
 	for range 100 {
 		if _, err := writer.Write(huge); err != nil {
 			t.Fatalf("Write() error = %v", err)
@@ -221,6 +259,7 @@ func TestSG05AsyncWriterBoundsQueuedMemory_38e7cbe7(t *testing.T) {
 	}
 
 	releaseTarget()
+
 	if err := writer.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)
 	}

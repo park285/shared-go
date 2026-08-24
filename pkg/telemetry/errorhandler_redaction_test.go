@@ -38,7 +38,9 @@ func TestSlogErrorHandler_RedactsCredentialsInExporterError(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
+
 			old := slog.Default()
+
 			t.Cleanup(func() { slog.SetDefault(old) })
 			slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
 
@@ -48,14 +50,17 @@ func TestSlogErrorHandler_RedactsCredentialsInExporterError(t *testing.T) {
 			if out == "" {
 				t.Fatal("expected a log record, got none")
 			}
+
 			for _, secret := range tt.mustAbsent {
 				if strings.Contains(out, secret) {
 					t.Fatalf("credential %q leaked into log: %s", secret, out)
 				}
 			}
+
 			if !strings.Contains(out, tt.mustHave) {
 				t.Fatalf("redaction removed diagnostic context %q: %s", tt.mustHave, out)
 			}
+
 			if !strings.Contains(out, "REDACTED") {
 				t.Fatalf("expected a redaction marker in log: %s", out)
 			}
@@ -65,7 +70,9 @@ func TestSlogErrorHandler_RedactsCredentialsInExporterError(t *testing.T) {
 
 func TestSlogErrorHandler_NilErrorEmitsNothing(t *testing.T) {
 	var buf bytes.Buffer
+
 	old := slog.Default()
+
 	t.Cleanup(func() { slog.SetDefault(old) })
 	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
 

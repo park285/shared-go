@@ -25,9 +25,11 @@ func warnParse(key, value, kind string, err error, def any) {
 		"kind", kind,
 		"returning_default", def,
 	}
+
 	if err != nil {
 		attrs = append(attrs, "error", parseErrorKind(err))
 	}
+
 	slog.Warn("invalid value for environment variable", attrs...)
 }
 
@@ -40,6 +42,7 @@ func parseErrorKind(err error) string {
 			return "out_of_range"
 		}
 	}
+
 	return "parse_failed"
 }
 
@@ -48,6 +51,7 @@ func String(key, def string) string {
 	if value == "" {
 		return def
 	}
+
 	return value
 }
 
@@ -56,6 +60,7 @@ func StringRaw(key, def string) string {
 	if value == "" {
 		return def
 	}
+
 	return value
 }
 
@@ -64,11 +69,14 @@ func Int(key string, def int) int {
 	if value == "" {
 		return def
 	}
+
 	parsed, err := strconv.Atoi(value)
 	if err != nil {
 		warnParse(key, value, "int", err, def)
+
 		return def
 	}
+
 	return parsed
 }
 
@@ -77,10 +85,12 @@ func IntE(key string, def int) (int, error) {
 	if value == "" {
 		return def, nil
 	}
+
 	parsed, err := strconv.Atoi(value)
 	if err != nil {
-		return 0, strictParseError(key, "int", err)
+		return 0, fmt.Errorf("invalid int env %s (%w)", key, strictParseCause(err))
 	}
+
 	return parsed, nil
 }
 
@@ -89,10 +99,12 @@ func Int64E(key string, def int64) (int64, error) {
 	if value == "" {
 		return def, nil
 	}
+
 	parsed, err := strconv.ParseInt(value, 10, 64)
 	if err != nil {
-		return 0, strictParseError(key, "int64", err)
+		return 0, fmt.Errorf("invalid int64 env %s (%w)", key, strictParseCause(err))
 	}
+
 	return parsed, nil
 }
 
@@ -101,11 +113,14 @@ func Bool(key string, def bool) bool {
 	if value == "" {
 		return def
 	}
+
 	parsed, ok := lookupBool(value)
 	if !ok {
 		warnParse(key, value, "bool", nil, def)
+
 		return def
 	}
+
 	return parsed
 }
 
@@ -114,7 +129,13 @@ func BoolE(key string, def bool) (bool, error) {
 	if value == "" {
 		return def, nil
 	}
-	return parseBoolE(key, value)
+
+	out, err := parseBoolE(key, value)
+	if err != nil {
+		return out, fmt.Errorf("parse bool e: %w", err)
+	}
+
+	return out, nil
 }
 
 func Float(key string, def float64) float64 {
@@ -122,11 +143,14 @@ func Float(key string, def float64) float64 {
 	if value == "" {
 		return def
 	}
+
 	parsed, err := strconv.ParseFloat(value, 64)
 	if err != nil {
 		warnParse(key, value, "float", err, def)
+
 		return def
 	}
+
 	return parsed
 }
 
@@ -135,28 +159,33 @@ func FloatE(key string, def float64) (float64, error) {
 	if value == "" {
 		return def, nil
 	}
+
 	parsed, err := strconv.ParseFloat(value, 64)
 	if err != nil {
-		return 0, strictParseError(key, "float64", err)
+		return 0, fmt.Errorf("invalid float64 env %s (%w)", key, strictParseCause(err))
 	}
+
 	return parsed, nil
 }
 
 // BoolExplicit은 값과 함께 "명시적으로 설정되었는지"를 반환한다. 미설정과 공백-only는
 // 모두 explicit=false로 접어 unset과 동일하게 다룬다(String/Bool의 trim 규칙과 일치).
-func BoolExplicit(key string) (value bool, explicit bool, err error) {
+func BoolExplicit(key string) (value, explicit bool, err error) {
 	raw, found := os.LookupEnv(key)
 	if !found {
 		return false, false, nil
 	}
+
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
 		return false, false, nil
 	}
+
 	parsed, ok := lookupBool(trimmed)
 	if !ok {
-		return false, true, strictParseError(key, "bool", strconv.ErrSyntax)
+		return false, true, fmt.Errorf("invalid bool env %s (%w)", key, strconv.ErrSyntax)
 	}
+
 	return parsed, true, nil
 }
 
@@ -165,11 +194,14 @@ func Duration(key string, def time.Duration) time.Duration {
 	if value == "" {
 		return def
 	}
+
 	parsed, err := time.ParseDuration(value)
 	if err != nil {
 		warnParse(key, value, "duration", err, def)
+
 		return def
 	}
+
 	return parsed
 }
 
@@ -178,10 +210,12 @@ func DurationE(key string, def time.Duration) (time.Duration, error) {
 	if value == "" {
 		return def, nil
 	}
+
 	parsed, err := time.ParseDuration(value)
 	if err != nil {
-		return 0, strictParseError(key, "duration", err)
+		return 0, fmt.Errorf("invalid duration env %s (%w)", key, strictParseCause(err))
 	}
+
 	return parsed, nil
 }
 
@@ -192,12 +226,13 @@ func StringAny(keys ...string) string {
 			return value
 		}
 	}
+
 	return ""
 }
 
 // lookupBool은 Bool/BoolE/BoolExplicit/dotenv 로더가 공유하는 유일한 bool 수용 집합이다.
-// strict 변형은 미수용 값에 대한 반환(기본값 vs 에러)만 다르고 수용 집합은 같다.
-func lookupBool(value string) (parsed bool, ok bool) {
+// Strict 변형은 미수용 값에 대한 반환(기본값 vs 에러)만 다르고 수용 집합은 같다.
+func lookupBool(value string) (parsed, ok bool) {
 	switch strings.ToLower(value) {
 	case "1", boolTrue, boolYes, "y", boolOn:
 		return true, true
@@ -211,17 +246,18 @@ func lookupBool(value string) (parsed bool, ok bool) {
 func parseBoolE(key, value string) (bool, error) {
 	parsed, ok := lookupBool(value)
 	if !ok {
-		return false, strictParseError(key, "bool", strconv.ErrSyntax)
+		return false, fmt.Errorf("invalid bool env %s (%w)", key, strconv.ErrSyntax)
 	}
+
 	return parsed, nil
 }
 
-func strictParseError(key, kind string, err error) error {
-	cause := strconv.ErrSyntax
+func strictParseCause(err error) error {
 	if errors.Is(err, strconv.ErrRange) {
-		cause = strconv.ErrRange
+		return strconv.ErrRange
 	}
-	return fmt.Errorf("invalid %s env %s (%w)", kind, key, cause)
+
+	return strconv.ErrSyntax
 }
 
 func List(key string) []string {

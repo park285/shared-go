@@ -20,17 +20,21 @@ func renderTables(input string) string {
 		if !looksLikeTable(lines, i) {
 			out = append(out, lines[i])
 			i++
+
 			continue
 		}
 
 		headers := parseTableRow(lines[i])
+
 		i += 2
 
 		rows := make([][]string, 0, 4)
+
 		for i < len(lines) && strings.Count(lines[i], "|") >= 2 {
 			if len(rows) < maxTableRows {
 				rows = append(rows, parseTableRow(lines[i]))
 			}
+
 			i++
 		}
 
@@ -38,24 +42,32 @@ func renderTables(input string) string {
 			if hi >= maxTableColumns || len(out) >= maxTableOutputLines {
 				break
 			}
+
 			header = strings.TrimSpace(header)
 			if header == "" {
 				continue
 			}
 
 			out = append(out, "【"+header+"】")
+
 			n := 0
+
 			for _, row := range rows {
 				if len(out) >= maxTableOutputLines {
 					break
 				}
+
 				value := ""
+
 				if hi < len(row) {
 					value = strings.TrimSpace(row[hi])
 				}
+
 				n++
+
 				out = append(out, "    《"+strconv.Itoa(n)+"》 "+value)
 			}
+
 			out = append(out, "-------------------------")
 			wroteTable = true
 		}
@@ -101,23 +113,28 @@ func parseTableRow(line string) []string {
 		switch r {
 		case '`':
 			code = !code
+
 			b.WriteRune(r)
 		case '|':
 			if code {
 				b.WriteRune(r)
+
 				continue
 			}
+
 			parts = append(parts, b.String())
 			b.Reset()
 		default:
 			b.WriteRune(r)
 		}
 	}
+
 	parts = append(parts, b.String())
 
 	if len(parts) > 0 && strings.TrimSpace(parts[0]) == "" {
 		parts = parts[1:]
 	}
+
 	if len(parts) > 0 && strings.TrimSpace(parts[len(parts)-1]) == "" {
 		parts = parts[:len(parts)-1]
 	}

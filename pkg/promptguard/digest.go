@@ -51,10 +51,12 @@ func computePolicyDigest(set compiledRulepackSet) (string, error) {
 		Policy:        policyForDigest(set.Policy),
 		Rules:         rulesForDigest(allRules(set.Packs)),
 	}
+
 	encoded, err := jsonv2.Marshal(document, jsonv2.Deterministic(true))
 	if err != nil {
 		return "", err
 	}
+
 	sum := sha256.Sum256(encoded)
 
 	return hex.EncodeToString(sum[:]), nil
@@ -73,11 +75,14 @@ func policyForDigest(policy compiledPolicy) digestPolicy {
 func floatMapForDigest[K ~string](values map[K]float64) []digestEntry[float64] {
 	keys := make([]string, 0, len(values))
 	byKey := make(map[string]float64, len(values))
+
 	for key, value := range values {
 		name := string(key)
+
 		keys = append(keys, name)
 		byKey[name] = value
 	}
+
 	sort.Strings(keys)
 
 	entries := make([]digestEntry[float64], 0, len(keys))
@@ -93,16 +98,22 @@ func rulesForDigest(rules []compiledRule) []digestRule {
 	for i := range rules {
 		rule := &rules[i]
 		segments := make([]string, 0, len(rule.Segments))
+
 		for segment := range rule.Segments {
 			segments = append(segments, string(segment))
 		}
+
 		sort.Strings(segments)
+
 		phrases := slices.Clone(rule.Phrases)
 		sort.Strings(phrases)
+
 		pattern := ""
+
 		if rule.Pattern != nil {
 			pattern = rule.Pattern.String()
 		}
+
 		result = append(result, digestRule{
 			ID:             rule.ID,
 			Family:         rule.Family,
@@ -117,10 +128,12 @@ func rulesForDigest(rules []compiledRule) []digestRule {
 			MaxOccurrences: rule.MaxOccurrences,
 		})
 	}
+
 	slices.SortFunc(result, func(left, right digestRule) int {
 		if left.ID < right.ID {
 			return -1
 		}
+
 		if left.ID > right.ID {
 			return 1
 		}

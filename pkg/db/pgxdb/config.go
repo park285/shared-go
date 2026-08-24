@@ -1,6 +1,7 @@
 package pgxdb
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -34,35 +35,42 @@ type Config struct {
 
 func (c *Config) Validate() error {
 	if c == nil {
-		return fmt.Errorf("pgxdb: config is nil")
+		return errors.New("pgxdb: config is nil")
 	}
+
 	if c.SocketPath == "" && c.Host == "" {
-		return fmt.Errorf("pgxdb: host or socket path is required")
+		return errors.New("pgxdb: host or socket path is required")
 	}
+
 	if strings.TrimSpace(c.SSLMode) == "" {
-		return fmt.Errorf("pgxdb: sslmode is required (no default; caller must set it explicitly)")
+		return errors.New("pgxdb: sslmode is required (no default; caller must set it explicitly)")
 	}
+
 	if c.QueryExecMode != "" && normalizeQueryExecMode(c.QueryExecMode) == "" {
 		return fmt.Errorf("pgxdb: invalid query exec mode %q (allowed: cache_statement, cache_describe, describe_exec, exec, simple_protocol)", c.QueryExecMode)
 	}
+
 	return nil
 }
 
 func (c *Config) DSN() (string, error) {
 	if err := c.Validate(); err != nil {
-		return "", err
+		return "", fmt.Errorf("validate: %w", err)
 	}
+
 	return c.buildDSN(c.Password), nil
 }
 
 func (c *Config) SafeDSN() (string, error) {
 	if err := c.Validate(); err != nil {
-		return "", err
+		return "", fmt.Errorf("validate: %w", err)
 	}
+
 	password := c.Password
 	if password != "" {
 		password = "***"
 	}
+
 	return c.buildDSN(password), nil
 }
 
@@ -71,9 +79,11 @@ func (c *Config) buildDSN(password string) string {
 	if sslRootCert == "" {
 		sslRootCert = strings.TrimSpace(envutil.String("POSTGRES_SSLROOTCERT", ""))
 	}
+
 	queryExecMode := normalizeQueryExecMode(c.QueryExecMode)
 
 	parts := make([]string, 0, 8)
+
 	if c.SocketPath != "" {
 		parts = append(parts, libpqKeywordValue("host", c.SocketPath))
 	} else {
@@ -82,18 +92,22 @@ func (c *Config) buildDSN(password string) string {
 			"port="+strconv.Itoa(c.Port),
 		)
 	}
+
 	parts = append(parts,
 		libpqKeywordValue("user", c.User),
 		libpqKeywordValue("password", password),
 		libpqKeywordValue("dbname", c.Name),
 		libpqKeywordValue("sslmode", c.SSLMode),
 	)
+
 	if sslRootCert != "" {
 		parts = append(parts, libpqKeywordValue("sslrootcert", sslRootCert))
 	}
+
 	if queryExecMode != "" {
 		parts = append(parts, libpqKeywordValue("default_query_exec_mode", queryExecMode))
 	}
+
 	return strings.Join(parts, " ")
 }
 
@@ -103,15 +117,20 @@ func libpqKeywordValue(key, value string) string {
 
 func libpqQuote(value string) string {
 	var builder strings.Builder
+
 	builder.Grow(len(value) + 2)
 	builder.WriteByte('\'')
+
 	for _, char := range value {
 		if char == '\\' || char == '\'' {
 			builder.WriteByte('\\')
 		}
+
 		builder.WriteRune(char)
 	}
+
 	builder.WriteByte('\'')
+
 	return builder.String()
 }
 
@@ -122,16 +141,19 @@ func normalizeQueryExecMode(mode string) string {
 func validateExplicitSSLMode(rawDSN string) error {
 	values, err := explicitSSLModeValues(rawDSN)
 	if err != nil {
-		return err
+		return fmt.Errorf("explicit SSL mode values: %w", err)
 	}
+
 	if len(values) == 0 {
-		return fmt.Errorf("pgxdb: sslmode is required in dsn (no implicit default)")
+		return errors.New("pgxdb: sslmode is required in dsn (no implicit default)")
 	}
+
 	if len(values) != 1 {
-		return fmt.Errorf("pgxdb: sslmode must be specified exactly once in dsn")
+		return errors.New("pgxdb: sslmode must be specified exactly once in dsn")
 	}
+
 	if strings.TrimSpace(values[0]) == "" {
-		return fmt.Errorf("pgxdb: sslmode must not be empty in dsn")
+		return errors.New("pgxdb: sslmode must not be empty in dsn")
 	}
 
 	return nil
@@ -143,6 +165,7 @@ func explicitSSLModeValues(rawDSN string) ([]string, error) {
 		if err != nil {
 			return nil, fmt.Errorf("pgxdb: parse dsn URL: %w", err)
 		}
+
 		query, err := url.ParseQuery(parsed.RawQuery)
 		if err != nil {
 			return nil, fmt.Errorf("pgxdb: parse dsn query: %w", err)
@@ -151,29 +174,39 @@ func explicitSSLModeValues(rawDSN string) ([]string, error) {
 		return query["sslmode"], nil
 	}
 
-	return keywordSSLModeValues(rawDSN)
+	out, err := keywordSSLModeValues(rawDSN)
+	if err != nil {
+		return out, fmt.Errorf("keyword SSL mode values: %w", err)
+	}
+
+	return out, nil
 }
 
 func keywordSSLModeValues(rawDSN string) ([]string, error) {
 	remaining := strings.TrimLeft(rawDSN, dsnASCIISpaces)
+
 	var values []string
+
 	for remaining != "" {
 		equals := strings.IndexByte(remaining, '=')
 		if equals < 0 {
-			return nil, fmt.Errorf("pgxdb: invalid keyword/value dsn")
+			return nil, errors.New("pgxdb: invalid keyword/value dsn")
 		}
+
 		key := strings.Trim(remaining[:equals], dsnASCIISpaces)
 		if key == "" {
-			return nil, fmt.Errorf("pgxdb: invalid keyword/value dsn")
+			return nil, errors.New("pgxdb: invalid keyword/value dsn")
 		}
 
 		value, rest, err := consumeKeywordDSNValue(strings.TrimLeft(remaining[equals+1:], dsnASCIISpaces))
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("consume keyword DSN value: %w", err)
 		}
+
 		if key == "sslmode" {
 			values = append(values, value)
 		}
+
 		remaining = rest
 	}
 
@@ -187,33 +220,44 @@ func consumeKeywordDSNValue(input string) (string, string, error) {
 
 	quoted := input[0] == '\''
 	start := 0
+
 	if quoted {
 		start = 1
 	}
+
 	var value strings.Builder
+
 	for i := start; i < len(input); i++ {
 		if input[i] == '\\' {
 			i++
 			if i == len(input) {
-				return "", "", fmt.Errorf("pgxdb: invalid backslash in keyword/value dsn")
+				return "", "", errors.New("pgxdb: invalid backslash in keyword/value dsn")
 			}
+
 			value.WriteByte(input[i])
+
 			continue
 		}
+
 		if quoted {
 			if input[i] == '\'' {
 				return value.String(), strings.TrimLeft(input[i+1:], dsnASCIISpaces), nil
 			}
+
 			value.WriteByte(input[i])
+
 			continue
 		}
+
 		if strings.ContainsRune(dsnASCIISpaces, rune(input[i])) {
 			return value.String(), strings.TrimLeft(input[i:], dsnASCIISpaces), nil
 		}
+
 		value.WriteByte(input[i])
 	}
+
 	if quoted {
-		return "", "", fmt.Errorf("pgxdb: unterminated quoted value in dsn")
+		return "", "", errors.New("pgxdb: unterminated quoted value in dsn")
 	}
 
 	return value.String(), "", nil

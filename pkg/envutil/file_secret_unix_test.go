@@ -14,7 +14,7 @@ func TestSecretFile_GroupReadableFile(t *testing.T) {
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "secret")
 	require.NoError(t, os.WriteFile(filePath, []byte("  from-file\n"), 0o600))
-	require.NoError(t, os.Chmod(filePath, 0o640))
+	require.NoError(t, os.Chmod(filePath, 0o640)) //nolint:gosec // 허용적인 권한을 감지하는 동작을 검증하려고 일부러 그 권한을 만든다.
 
 	t.Setenv("TEST_SECRET_FILE_FILE", filePath)
 	t.Setenv("TEST_SECRET_FILE", "from-env")
@@ -70,6 +70,7 @@ func TestSecretFile_RejectsSymlink(t *testing.T) {
 	dir := t.TempDir()
 	targetPath := filepath.Join(dir, "target")
 	linkPath := filepath.Join(dir, "secret")
+
 	require.NoError(t, os.WriteFile(targetPath, []byte("topsecret"), 0o600))
 	require.NoError(t, os.Symlink(targetPath, linkPath))
 
@@ -97,7 +98,7 @@ func TestSecretFile_RejectsWorldAccessibleFile(t *testing.T) {
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "secret")
 	require.NoError(t, os.WriteFile(filePath, []byte("topsecret"), 0o600))
-	require.NoError(t, os.Chmod(filePath, 0o644))
+	require.NoError(t, os.Chmod(filePath, 0o644)) //nolint:gosec // 허용적인 권한을 감지하는 동작을 검증하려고 일부러 그 권한을 만든다.
 
 	t.Setenv("TEST_SECRET_FILE_FILE", filePath)
 
@@ -146,7 +147,7 @@ func TestSecretFile_ErrorsDoNotLeakSecretContents(t *testing.T) {
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "secret")
 	require.NoError(t, os.WriteFile(filePath, []byte("do-not-leak-this-secret"), 0o600))
-	require.NoError(t, os.Chmod(filePath, 0o644))
+	require.NoError(t, os.Chmod(filePath, 0o644)) //nolint:gosec // 허용적인 권한을 감지하는 동작을 검증하려고 일부러 그 권한을 만든다.
 
 	t.Setenv("TEST_SECRET_FILE_FILE", filePath)
 
@@ -173,7 +174,7 @@ func TestStringOrSecretFile_FailClosedOnInsecureFile(t *testing.T) {
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "secret")
 	require.NoError(t, os.WriteFile(filePath, []byte("topsecret"), 0o600))
-	require.NoError(t, os.Chmod(filePath, 0o644))
+	require.NoError(t, os.Chmod(filePath, 0o644)) //nolint:gosec // 허용적인 권한을 감지하는 동작을 검증하려고 일부러 그 권한을 만든다.
 
 	require.NoError(t, os.Unsetenv("TEST_SOSF_UNIX"))
 	t.Setenv("TEST_SOSF_UNIX_FILE", filePath)

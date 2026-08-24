@@ -20,12 +20,14 @@ func flattenRef(match string) string {
 	if parts == nil {
 		parts = reLink.FindStringSubmatch(match)
 	}
+
 	if len(parts) < 3 {
 		return match
 	}
 
 	label := strings.TrimSpace(parts[1])
 	url := strings.TrimSpace(parts[2])
+
 	if label == "" || strings.EqualFold(label, url) {
 		return url
 	}

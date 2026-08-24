@@ -28,7 +28,9 @@ func cachedMemStats(now time.Time) runtime.MemStats {
 	if !memStats.readAt.IsZero() && now.Sub(memStats.readAt) < memStatsTTL {
 		return memStats.snapshot
 	}
+
 	runtime.ReadMemStats(&memStats.snapshot)
+
 	memStats.readAt = now
 
 	return memStats.snapshot
@@ -107,5 +109,10 @@ func readResidentMemoryBytes() (uint64, bool) {
 		return 0, false
 	}
 
-	return pages * uint64(os.Getpagesize()), true
+	pageSize := os.Getpagesize()
+	if pageSize <= 0 {
+		return 0, false
+	}
+
+	return pages * uint64(pageSize), true
 }

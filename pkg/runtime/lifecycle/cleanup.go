@@ -15,9 +15,12 @@ func (c *CleanupCloser) Close() {
 	if c == nil || c.cleanup == nil {
 		return
 	}
+
 	if c.once == nil {
 		c.cleanup()
+
 		return
 	}
+
 	c.once.Do(c.cleanup)
 }

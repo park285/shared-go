@@ -19,9 +19,11 @@ func resolveMaxIdleConns(cfg PoolConfig) (int, bool) {
 	if cfg.MaxIdleConnsSet {
 		return cfg.MaxIdleConns, true
 	}
+
 	if cfg.MaxIdleConns > 0 {
 		return cfg.MaxIdleConns, true
 	}
+
 	return 0, false
 }
 
@@ -33,12 +35,15 @@ func Configure(db *sql.DB, cfg PoolConfig) {
 	if cfg.MaxOpenConns > 0 {
 		db.SetMaxOpenConns(cfg.MaxOpenConns)
 	}
+
 	if value, apply := resolveMaxIdleConns(cfg); apply {
 		db.SetMaxIdleConns(value)
 	}
+
 	if cfg.ConnMaxLifetime > 0 {
 		db.SetConnMaxLifetime(cfg.ConnMaxLifetime)
 	}
+
 	if cfg.ConnMaxIdleTime > 0 {
 		db.SetConnMaxIdleTime(cfg.ConnMaxIdleTime)
 	}

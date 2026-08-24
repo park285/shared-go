@@ -12,12 +12,15 @@ func TestGuardBlocksNestedBase64RoleHeaderWithoutIncompleteFallback(t *testing.T
 	if evaluation.Decision != DecisionBlock {
 		t.Fatalf("evaluation = %+v, want block", evaluation)
 	}
+
 	if !slices.Contains(evaluation.ReasonCodes, ReasonRoleBlock) {
 		t.Fatalf("reasons = %v, want role block", evaluation.ReasonCodes)
 	}
+
 	if slices.Contains(evaluation.ReasonCodes, ReasonDecodeIncomplete) {
 		t.Fatalf("reasons = %v, nested role decode must complete", evaluation.ReasonCodes)
 	}
+
 	if !slices.Contains(evaluation.RuleIDs, "role_header_en") {
 		t.Fatalf("rules = %v, want role_header_en", evaluation.RuleIDs)
 	}
@@ -32,6 +35,7 @@ func TestGuardFailsClosedOnTripleNestedShortBase64RoleHeader(t *testing.T) {
 	if evaluation.Decision != DecisionBlock {
 		t.Fatalf("evaluation = %+v, want block", evaluation)
 	}
+
 	if !slices.Contains(evaluation.ReasonCodes, ReasonDecodeIncomplete) {
 		t.Fatalf("reasons = %v, want decode incomplete fail-closed", evaluation.ReasonCodes)
 	}

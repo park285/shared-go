@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json/jsontext"
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 )
@@ -23,11 +24,11 @@ const (
 	jsonEscape      byte = 92
 )
 
-// 코드펜스 정규식
+// 코드펜스 정규식.
 var fenceRe = regexp.MustCompile("(?s)```(?:json)?\\s*([\\s\\S]*?)```")
 
 // 1. 코드펜스 내 JSON 우선 시도
-// 2. 브라켓 매칭으로 폴백
+// 2. 브라켓 매칭으로 폴백.
 func Extract(text string) ([]byte, error) {
 	if len(text) > DefaultExtractMaxBytes {
 		return nil, ErrInputTooLarge
@@ -50,7 +51,12 @@ func Extract(text string) ([]byte, error) {
 	}
 
 	// 2. 브라켓 매칭 폴백
-	return extractFirstJSON(text)
+	out, err := extractFirstJSON(text)
+	if err != nil {
+		return out, fmt.Errorf("extract first JSON: %w", err)
+	}
+
+	return out, nil
 }
 
 // extractFirstJSON: 텍스트에서 첫 번째 유효한 JSON object/array를 추출합니다.
@@ -73,26 +79,32 @@ func extractFirstJSON(text string) ([]byte, error) {
 		default:
 			continue
 		}
+
 		end := findMatchingEnd(b, i)
 		if end == -1 {
 			continue
 		}
+
 		candidate := b[i : end+1]
 		if jsontext.Value(candidate).IsValid() {
 			// candidate는 입력 전체 복사본(b)을 alias하므로 그대로 반환하면 입력 전체가 GC되지 않는다.
 			return bytes.Clone(candidate), nil
 		}
 	}
+
 	return nil, ErrNoJSONFound
 }
 
 func suffixCloseCounts(b []byte) (obj, arr []int) {
 	n := len(b)
+
 	obj = make([]int, n+1)
 	arr = make([]int, n+1)
+
 	for i := n - 1; i >= 0; i-- {
 		obj[i] = obj[i+1]
 		arr[i] = arr[i+1]
+
 		switch b[i] {
 		case jsonObjectClose:
 			obj[i]++
@@ -100,6 +112,7 @@ func suffixCloseCounts(b []byte) (obj, arr []int) {
 			arr[i]++
 		}
 	}
+
 	return obj, arr
 }
 
@@ -111,12 +124,13 @@ func findMatchingEnd(b []byte, start int) int {
 			return i
 		}
 	}
+
 	return -1
 }
 
 type jsonBracketMatcher struct {
 	open     byte
-	close    byte
+	closing  byte
 	depth    int
 	inString bool
 	escape   bool
@@ -124,17 +138,21 @@ type jsonBracketMatcher struct {
 
 func newJSONBracketMatcher(open byte) jsonBracketMatcher {
 	closeBracket := jsonArrayClose
+
 	if open == jsonObjectOpen {
 		closeBracket = jsonObjectClose
 	}
-	return jsonBracketMatcher{open: open, close: closeBracket}
+
+	return jsonBracketMatcher{open: open, closing: closeBracket}
 }
 
 func (m *jsonBracketMatcher) consume(c byte) bool {
 	if m.inString {
 		m.consumeStringByte(c)
+
 		return false
 	}
+
 	return m.consumeStructuralByte(c)
 }
 
@@ -143,10 +161,12 @@ func (m *jsonBracketMatcher) consumeStringByte(c byte) {
 		m.escape = false
 		return
 	}
+
 	if c == jsonEscape {
 		m.escape = true
 		return
 	}
+
 	if c == jsonQuote {
 		m.inString = false
 	}
@@ -157,14 +177,17 @@ func (m *jsonBracketMatcher) consumeStructuralByte(c byte) bool {
 		m.inString = true
 		return false
 	}
+
 	if c == m.open {
 		m.depth++
 		return false
 	}
-	if c != m.close {
+
+	if c != m.closing {
 		return false
 	}
 
 	m.depth--
+
 	return m.depth == 0
 }

@@ -34,6 +34,7 @@ func WithRetry(ctx context.Context, opts RetryOptions, fn func(ctx context.Conte
 		if outcome.done {
 			return outcome.err
 		}
+
 		lastErr = outcome.lastErr
 	}
 
@@ -69,16 +70,20 @@ func handleRetryFailure(ctx context.Context, opts RetryOptions, attempt int, err
 	if !shouldContinueRetry(opts, err) {
 		return retryAttemptOutcome{done: true, err: fmt.Errorf("retry aborted by ShouldRetry predicate: %w", err)}
 	}
+
 	if attempt >= opts.MaxAttempts-1 {
 		return retryAttemptOutcome{done: true, err: err}
 	}
+
 	slept, delayErr := sleepBeforeRetry(ctx, opts, attempt, err)
 	if delayErr != nil {
 		return retryAttemptOutcome{done: true, err: errors.Join(err, delayErr)}
 	}
+
 	if !slept {
 		return retryAttemptOutcome{done: true, err: err}
 	}
+
 	return retryAttemptOutcome{lastErr: err}
 }
 
@@ -86,9 +91,11 @@ func normalizeRetryOptions(opts RetryOptions) RetryOptions {
 	if opts.MaxAttempts < 1 {
 		opts.MaxAttempts = 1
 	}
+
 	if opts.Sleep == nil {
 		opts.Sleep = sleepWithContext
 	}
+
 	return opts
 }
 
@@ -96,9 +103,11 @@ func retryContextError(ctx context.Context, lastErr error) error {
 	if ctx.Err() == nil {
 		return nil
 	}
+
 	if lastErr != nil {
 		return lastErr
 	}
+
 	return fmt.Errorf("context error: %w", ctx.Err())
 }
 
@@ -109,11 +118,13 @@ func shouldContinueRetry(opts RetryOptions, err error) bool {
 func sleepBeforeRetry(ctx context.Context, opts RetryOptions, attempt int, err error) (bool, error) {
 	delay, delayErr := retryDelay(opts, attempt, err)
 	if delayErr != nil {
-		return false, delayErr
+		return false, fmt.Errorf("retry delay: %w", delayErr)
 	}
+
 	if opts.OnRetry != nil {
 		opts.OnRetry(attempt+1, err, delay)
 	}
+
 	return opts.Sleep(ctx, delay), nil
 }
 
@@ -124,12 +135,15 @@ func retryDelay(opts RetryOptions, attempt int, err error) (time.Duration, error
 			if override < 0 {
 				return 0, fmt.Errorf("retry delay override returned negative duration %s", override)
 			}
+
 			delay = override
 		}
 	}
+
 	if opts.MaxDelay > 0 && delay > opts.MaxDelay {
 		return opts.MaxDelay, nil
 	}
+
 	return delay, nil
 }
 
@@ -139,12 +153,14 @@ func sleepWithContext(ctx context.Context, d time.Duration) bool {
 	if ctx.Err() != nil {
 		return false
 	}
+
 	if d <= 0 {
 		return true
 	}
 
 	timer := time.NewTimer(d)
 	defer timer.Stop()
+
 	select {
 	case <-timer.C:
 		return true

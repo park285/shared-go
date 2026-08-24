@@ -3,6 +3,7 @@ package promptguard
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -100,6 +101,7 @@ func (g *Guard) Check(req CheckRequest) (Evaluation, error) {
 	if !validCheckRequest(req) {
 		return Evaluation{}, ErrInvalidCheckRequest
 	}
+
 	if g == nil || !g.cfg.Enabled {
 		return Evaluation{}, ErrGuardUnavailable
 	}
@@ -117,14 +119,18 @@ func blockedErrorFromEvaluation(evaluation Evaluation) *BlockedError {
 	if evaluation.OversizeBlocked {
 		rules = append(rules, ruleInputOversize)
 	}
+
 	if evaluation.FallbackBlocked {
 		rules = append(rules, ruleEvaluationFallback)
 	}
+
 	if evaluation.SegmentBudgetExceeded {
 		rules = append(rules, ruleSegmentBudgetExceeded)
 	}
+
 	if evaluation.DecodeIncomplete {
 		rules = append(rules, ruleDecodeIncomplete)
+
 		for _, limit := range evaluation.DecodeLimits {
 			rules = append(rules, ruleDecodeIncomplete+":"+limit)
 		}
@@ -153,12 +159,14 @@ func (g *Guard) evaluate(input string, source Source) Evaluation {
 	}
 
 	key := cacheKey(input)
+
 	if g.cache == nil {
 		evaluation := g.fallbackEvaluation(g.policy(), source, ruleEvaluationFallback)
 		g.observeEvaluation(evaluation, false, len(input))
 
 		return cloneEvaluation(evaluation)
 	}
+
 	if cached, ok := g.cache.Get(key); ok {
 		cached.Source = source
 		g.observeEvaluation(cached, true, len(input))
@@ -173,8 +181,9 @@ func (g *Guard) evaluate(input string, source Source) Evaluation {
 
 		result, detectErr := g.detectEvaluation(input)
 		if detectErr != nil {
-			return nil, detectErr
+			return nil, fmt.Errorf("detect evaluation: %w", detectErr)
 		}
+
 		result.Source = ""
 		g.cache.Set(key, cloneEvaluation(result))
 
@@ -240,6 +249,7 @@ func (g *Guard) inputOversizeEvaluation(policy compiledPolicy, source Source, si
 			slog.Int("size", size),
 			slog.Int("max", g.maxInputBytes),
 		}
+
 		if source != "" {
 			attrs = append(attrs, slog.String("source", string(source)))
 		}
@@ -262,6 +272,7 @@ func (g *Guard) policy() compiledPolicy {
 	if g.effectivePolicy.BlockThreshold > 0 {
 		return g.effectivePolicy
 	}
+
 	if len(g.packs) > 0 {
 		return g.packs[0].Policy
 	}
@@ -282,16 +293,19 @@ func (g *Guard) detectEvaluation(input string) (Evaluation, error) {
 		evaluation Evaluation
 		err        error
 	)
+
 	if g.evaluateInputFn != nil {
 		evaluation, err = g.evaluateInputFn(input)
 	} else {
 		evaluation = g.evaluateRaw(input)
 	}
+
 	if err != nil {
-		return Evaluation{}, err
+		return Evaluation{}, fmt.Errorf("evaluate input fn: %w", err)
 	}
+
 	if !validDecision(evaluation.Decision) {
-		return Evaluation{}, fmt.Errorf("invalid detector decision")
+		return Evaluation{}, errors.New("invalid detector decision")
 	}
 
 	return evaluation, nil
@@ -300,6 +314,7 @@ func (g *Guard) detectEvaluation(input string) (Evaluation, error) {
 func (g *Guard) evaluateRaw(input string) Evaluation {
 	policy := g.policy()
 	segments, budgetExceeded := buildEvaluationSegmentsFiltered(input, g.aggregateMayMatch)
+
 	if budgetExceeded {
 		return Evaluation{
 			Decision:              DecisionBlock,
@@ -309,33 +324,44 @@ func (g *Guard) evaluateRaw(input string) Evaluation {
 			SegmentBudgetExceeded: true,
 		}
 	}
+
 	decoded, status := g.decodedTextSegmentsWithRaw(input, segments)
+
 	segments = append(segments, decoded...)
+
 	evaluation := g.evaluateSegments(policy, segments)
+
 	if status != 0 {
 		evaluation.DecodeIncomplete = true
 		evaluation.DecodeLimits = decodeLimitLabels(status)
+
 		if evaluation.Decision == DecisionAllow {
 			evaluation.Decision = DecisionReview
 		}
 	}
+
 	return evaluation
 }
 
 func decodeLimitLabels(status guardtext.DecodeStatus) []string {
 	labels := make([]string, 0, 4)
+
 	if status&guardtext.DecodeCandidateLimit != 0 {
 		labels = append(labels, "candidates")
 	}
+
 	if status&guardtext.DecodeByteLimit != 0 {
 		labels = append(labels, "bytes")
 	}
+
 	if status&guardtext.DecodeDepthLimit != 0 {
 		labels = append(labels, "depth")
 	}
+
 	if status&guardtext.DecodeScanLimit != 0 {
 		labels = append(labels, "scans")
 	}
+
 	return labels
 }
 
@@ -370,46 +396,21 @@ func (g *Guard) observeEvaluation(evaluation Evaluation, cacheHit bool, inputByt
 	}
 
 	if evaluation.Decision == DecisionReview && g.logger != nil {
-		families, truncatedFamilies := boundedLogValues(distinctPositiveFamilies(evaluation.Hits))
-		ruleList := matchedRuleIDs(evaluation.Hits)
-		if evaluation.DecodeIncomplete {
-			ruleList = append(ruleList, ruleDecodeIncomplete)
-			for _, limit := range evaluation.DecodeLimits {
-				ruleList = append(ruleList, ruleDecodeIncomplete+":"+limit)
-			}
-		}
-		rules, truncatedRules := boundedLogValues(ruleList)
-		attrs := []any{
-			slog.Float64("score", evaluation.Score),
-			slog.Float64("review_threshold", evaluation.ReviewThreshold),
-			slog.Float64("block_threshold", evaluation.Threshold),
-			slog.Int("distinct_families", evaluation.DistinctFamilies),
-			slog.Any("families", families),
-			slog.Any("rules", rules),
-			slog.Bool("cache_hit", cacheHit),
-		}
-		if truncatedFamilies > 0 {
-			attrs = append(attrs, slog.Int("families_truncated", truncatedFamilies))
-		}
-		if truncatedRules > 0 {
-			attrs = append(attrs, slog.Int("rules_truncated", truncatedRules))
-		}
-		if evaluation.Source != "" {
-			attrs = append(attrs, slog.String("source", string(evaluation.Source)))
-		}
-
-		g.logger.Warn("guard_review_detected", attrs...)
+		g.logReviewEvaluation(evaluation, cacheHit)
 	}
 
 	if g.onEvaluation != nil {
 		families := distinctPositiveFamilies(evaluation.Hits)
 		rules := matchedRuleIDs(evaluation.Hits)
+
 		if evaluation.DecodeIncomplete {
 			rules = append(rules, ruleDecodeIncomplete)
+
 			for _, limit := range evaluation.DecodeLimits {
 				rules = append(rules, ruleDecodeIncomplete+":"+limit)
 			}
 		}
+
 		slices.Sort(rules)
 		g.onEvaluation(EvaluationEvent{
 			Source:           evaluation.Source,
@@ -425,6 +426,44 @@ func (g *Guard) observeEvaluation(evaluation Evaluation, cacheHit bool, inputByt
 	}
 }
 
+func (g *Guard) logReviewEvaluation(evaluation Evaluation, cacheHit bool) {
+	families, truncatedFamilies := boundedLogValues(distinctPositiveFamilies(evaluation.Hits))
+	ruleList := matchedRuleIDs(evaluation.Hits)
+
+	if evaluation.DecodeIncomplete {
+		ruleList = append(ruleList, ruleDecodeIncomplete)
+
+		for _, limit := range evaluation.DecodeLimits {
+			ruleList = append(ruleList, ruleDecodeIncomplete+":"+limit)
+		}
+	}
+
+	rules, truncatedRules := boundedLogValues(ruleList)
+	attrs := []any{
+		slog.Float64("score", evaluation.Score),
+		slog.Float64("review_threshold", evaluation.ReviewThreshold),
+		slog.Float64("block_threshold", evaluation.Threshold),
+		slog.Int("distinct_families", evaluation.DistinctFamilies),
+		slog.Any("families", families),
+		slog.Any("rules", rules),
+		slog.Bool("cache_hit", cacheHit),
+	}
+
+	if truncatedFamilies > 0 {
+		attrs = append(attrs, slog.Int("families_truncated", truncatedFamilies))
+	}
+
+	if truncatedRules > 0 {
+		attrs = append(attrs, slog.Int("rules_truncated", truncatedRules))
+	}
+
+	if evaluation.Source != "" {
+		attrs = append(attrs, slog.String("source", string(evaluation.Source)))
+	}
+
+	g.logger.Warn("guard_review_detected", attrs...)
+}
+
 func validCheckRequest(req CheckRequest) bool {
 	if !validSource(req.Source) {
 		return false
@@ -433,6 +472,8 @@ func validCheckRequest(req CheckRequest) bool {
 	switch req.Enforcement {
 	case EnforcementObserve, EnforcementInteractive, EnforcementPersistent:
 		return true
+	case EnforcementUnspecified:
+		return false
 	default:
 		return false
 	}
@@ -465,6 +506,8 @@ func enforcementRejects(enforcement Enforcement, decision Decision) bool {
 		return decision == DecisionBlock
 	case EnforcementPersistent:
 		return decision == DecisionReview || decision == DecisionBlock
+	case EnforcementUnspecified:
+		return true
 	default:
 		return true
 	}
@@ -489,6 +532,7 @@ func cloneEvaluation(evaluation Evaluation) Evaluation {
 func boundedLogValues(values []string) ([]string, int) {
 	values = slices.Clone(values)
 	slices.Sort(values)
+
 	values = slices.Compact(values)
 	if len(values) <= maxLoggedMatchValues {
 		return values, 0
@@ -535,13 +579,16 @@ func (s *evaluationState) collectPackHits(pack compiledPack, segments []textSegm
 
 func (s *evaluationState) collectRuleHits(rule *compiledRule, segments []textSegment, policy compiledPolicy) {
 	remaining := rule.MaxOccurrences
+
 	for _, segment := range segments {
 		segmentLimit := remaining
 		if segmentLimit <= 0 {
 			segmentLimit = 1
 		}
+
 		matched := rule.matchSegment(segment, policy, segmentLimit)
 		s.applyHits(rule, matched)
+
 		if remaining > 0 {
 			remaining -= len(matched)
 			if remaining == 0 {
@@ -551,10 +598,12 @@ func (s *evaluationState) collectRuleHits(rule *compiledRule, segments []textSeg
 	}
 }
 
-func (s *evaluationState) applyHits(rule *compiledRule, matched []Match) {
+func (s *evaluationState) applyHits(_ *compiledRule, matched []Match) {
 	for _, hit := range matched {
 		s.hits = append(s.hits, hit)
+
 		s.positiveTotal += hit.Weight
+
 		if hit.Action == hitActionBlock {
 			s.hardBlockHit = true
 		}

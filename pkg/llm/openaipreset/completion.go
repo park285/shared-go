@@ -45,61 +45,80 @@ func (c *Client) Complete(ctx context.Context, req CompletionRequest) (Completio
 	if c == nil {
 		return CompletionResponse{}, errClientNil
 	}
+
 	if ctx == nil {
 		return CompletionResponse{}, sharedllm.ErrNilContext
 	}
+
 	if err := ctx.Err(); err != nil {
-		return CompletionResponse{}, err
+		return CompletionResponse{}, fmt.Errorf("context error: %w", err)
 	}
 
 	params, requestedModel, err := c.completionParams(req)
 	if err != nil {
-		return CompletionResponse{}, err
+		return CompletionResponse{}, fmt.Errorf("completion params: %w", err)
 	}
+
 	attrs := promptSummaryAttrs(requestedModel, completionPromptLen(req.Messages))
-	return runRequest(ctx, c.logger, attrs, func() (CompletionResponse, error) {
-		resp, err := c.openai.Responses.New(ctx, params)
-		if err != nil {
-			return CompletionResponse{}, fmt.Errorf("openai responses API: %w", openaidiag.SafeError(err))
+
+	out, err := runRequest(ctx, c.logger, attrs, func() (CompletionResponse, error) {
+		resp, respErr := c.openai.Responses.New(ctx, params)
+		if respErr != nil {
+			return CompletionResponse{}, fmt.Errorf("openai responses API: %w", openaidiag.SafeError(respErr))
 		}
 
 		completion := CompletionFromResponse(resp, requestedModel)
+
 		completion.Text, err = openaidiag.PreferredText(resp, completion.Text)
 		if err != nil {
-			return CompletionResponse{}, err
+			return CompletionResponse{}, fmt.Errorf("preferred text: %w", err)
 		}
+
 		c.usageReporter.RecordUsage(ctx, providerLabel, completion.Model, completion.Usage)
+
 		return completion, nil
 	})
+	if err != nil {
+		return CompletionResponse{}, fmt.Errorf("run request: %w", err)
+	}
+
+	return out, nil
 }
 
 func completionPromptLen(messages []Message) int {
 	total := 0
+
 	for i := range messages {
 		content := strings.TrimSpace(messages[i].Content)
 		if content == "" {
 			continue
 		}
+
 		if total > 0 {
 			total++
 		}
+
 		total += len(content)
 	}
+
 	return total
 }
 
 func (c *Client) completionParams(req CompletionRequest) (responses.ResponseNewParams, string, error) {
 	model := c.completionModel(req.Model)
 	temperature := c.temperature
+
 	if req.Temperature != nil {
 		temperature = req.Temperature
 	}
+
 	messages := req.Messages
 	if req.InstructionProfile != nil {
 		adapted, err := sharedllm.AdaptInstructionMessages(messages, *req.InstructionProfile)
 		if err != nil {
-			return responses.ResponseNewParams{}, model, err
+			return responses.ResponseNewParams{}, model, fmt.Errorf("adapt instruction messages: %w", err)
 		}
+
 		messages = adapted
 	}
 
@@ -109,13 +128,16 @@ func (c *Client) completionParams(req CompletionRequest) (responses.ResponseNewP
 			OfInputItemList: completionInput(messages),
 		},
 	}
+
 	if temperature != nil {
 		params.Temperature = openai.Float(*temperature)
 	}
+
 	if req.WebSearch || c.webSearch {
 		params.ToolChoice = responses.ResponseNewParamsToolChoiceUnion{OfToolChoiceMode: openai.Opt(responses.ToolChoiceOptionsAuto)}
 		params.Tools = []responses.ToolUnionParam{responses.ToolParamOfWebSearch(responses.WebSearchToolTypeWebSearch)}
 	}
+
 	if req.ResponseFormat != nil {
 		params.Text = responses.ResponseTextConfigParam{
 			Format: responses.ResponseFormatTextConfigUnionParam{
@@ -127,12 +149,15 @@ func (c *Client) completionParams(req CompletionRequest) (responses.ResponseNewP
 			},
 		}
 	}
+
 	if effort := c.completionReasoningEffort(req.ReasoningEffort); effort != "" {
 		params.Reasoning = shared.ReasoningParam{Effort: shared.ReasoningEffort(effort)}
 	}
+
 	if cacheKey := strings.TrimSpace(req.CacheKey); cacheKey != "" {
 		params.PromptCacheKey = openai.String(cacheKey)
 	}
+
 	if cacheMode := strings.TrimSpace(req.CacheMode); cacheMode != "" {
 		params.PromptCacheOptions = responses.ResponseNewParamsPromptCacheOptions{Mode: cacheMode}
 	}
@@ -144,6 +169,7 @@ func (c *Client) completionModel(model string) string {
 	if override := strings.TrimSpace(model); override != "" {
 		return override
 	}
+
 	return strings.TrimSpace(c.model)
 }
 
@@ -151,6 +177,7 @@ func (c *Client) completionReasoningEffort(effort string) string {
 	if override := strings.TrimSpace(effort); override != "" {
 		return override
 	}
+
 	return strings.TrimSpace(c.reasoningEffort)
 }
 
@@ -161,12 +188,15 @@ func completionInput(messages []Message) responses.ResponseInputParam {
 		if content == "" {
 			continue
 		}
+
 		if message.CacheBreakpoint {
 			out = append(out, cacheBreakpointMessage(content, message.Role))
 			continue
 		}
+
 		out = append(out, responses.ResponseInputItemParamOfMessage(content, CompletionRole(message.Role)))
 	}
+
 	return out
 }
 
@@ -228,6 +258,7 @@ func completionText(resp *responses.Response) string {
 	if resp == nil {
 		return ""
 	}
+
 	if text := preferredMessageText(resp.Output); text != "" {
 		return text
 	}
@@ -236,6 +267,7 @@ func completionText(resp *responses.Response) string {
 	if LooksLikeToolCallEnvelope(text) {
 		return ""
 	}
+
 	return text
 }
 
@@ -252,9 +284,11 @@ func preferredMessageText(items []responses.ResponseOutputItemUnion) string {
 		if text == "" || LooksLikeToolCallEnvelope(text) {
 			continue
 		}
+
 		if item.Phase == responses.ResponseOutputMessagePhaseFinalAnswer {
 			return text
 		}
+
 		fallback = text
 	}
 
@@ -263,12 +297,15 @@ func preferredMessageText(items []responses.ResponseOutputItemUnion) string {
 
 func messageContentText(content []responses.ResponseOutputMessageContentUnion) string {
 	var builder strings.Builder
+
 	for i := range content {
 		if content[i].Type != "output_text" {
 			continue
 		}
+
 		builder.WriteString(content[i].Text)
 	}
+
 	return strings.TrimSpace(builder.String())
 }
 
@@ -285,18 +322,22 @@ func LooksLikeToolCallEnvelope(text string) bool {
 	if token, err := decoder.ReadToken(); err != nil || token.Kind() != jsontext.KindBeginObject {
 		return false
 	}
+
 	for decoder.PeekKind() != jsontext.KindEndObject {
 		token, err := decoder.ReadToken()
 		if err != nil {
 			return false
 		}
+
 		if token.Kind() != jsontext.KindString {
 			return false
 		}
+
 		key := token.String()
 		if key == "tool_calls" || key == "function_call" || key == "tool_call" {
 			return true
 		}
+
 		if err := decoder.SkipValue(); err != nil {
 			return false
 		}
@@ -309,6 +350,7 @@ func UsageFromResponseUsage(usage *responses.ResponseUsage) sharedllm.Usage {
 	if usage == nil {
 		return sharedllm.Usage{}
 	}
+
 	return sharedllm.Usage{
 		InputTokens:           int(usage.InputTokens),
 		OutputTokens:          int(usage.OutputTokens),

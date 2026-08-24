@@ -10,6 +10,7 @@ func TruncateString(s string, maxRunes int) string {
 	if len(runes) <= maxRunes {
 		return s
 	}
+
 	return string(runes[:maxRunes]) + "..."
 }
 
@@ -32,6 +33,7 @@ func NormalizeKey(s string) string {
 	}
 
 	var builder strings.Builder
+
 	for _, r := range s {
 		switch r {
 		case ' ', '-', '_', '.', '!', '☆', '・', '\u2018', '\u2019', '\'', 'ー', '—':
@@ -40,6 +42,7 @@ func NormalizeKey(s string) string {
 			builder.WriteRune(r)
 		}
 	}
+
 	return builder.String()
 }
 
@@ -50,5 +53,6 @@ func Slugify(s string) string {
 	s = strings.ReplaceAll(s, "'", "")
 	s = strings.ReplaceAll(s, ".", "")
 	s = strings.ReplaceAll(s, "!", "")
+
 	return s
 }

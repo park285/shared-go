@@ -5,6 +5,55 @@
 
 ## 미출시
 
+### 호환성이 깨지는 변경
+
+- `httputil.DecodeJSON`과 `JSONClient.DecodeJSON`이 out 파라미터 대신 타입 매개변수를 받습니다.
+  `httputil.DecodeJSON(resp, &out)`은 `out, err := httputil.DecodeJSON[T](resp)`로,
+  `DecodeJSONLimited(resp, &out, max)`는 `DecodeJSONLimited[T](resp, max)`로 바꿔야 합니다.
+  `JSONClient.DecodeJSON`도 같은 형태이며, 인터페이스 메서드는 타입 매개변수를 가질 수 없으므로
+  제네릭 메서드를 쓰려면 구현 타입을 직접 참조해야 합니다.
+- `openaipreset.Client.GenerateJSONInto`를 제네릭 메서드 `GenerateJSONAs[T]`로 대체합니다.
+  out 파라미터에 포인터를 넘기던 호출부는 반환값을 받는 형태로 바꿔야 하며, nil 대상 검사에
+  쓰던 reflect 경로가 사라져 타입 오류가 컴파일 시점에 드러납니다.
+- `bootstrap.Options[Config, Runtime]`의 실행 진입점이 자유 함수 `Run(opts)`에서 제네릭 메서드
+  `opts.Run()`으로 바뀝니다. 호출부는 `bootstrap.Options[...]{...}.Run()` 형태로 갱신해야 합니다.
+- `lifecycle.Options.BaseContext` 필드를 삭제하고 `lifecycle.Run(ctx, opts)`가 부모 context를
+  첫 인자로 받습니다. `lifecycle.Run(lifecycle.Options{BaseContext: ctx, ...})`는
+  `lifecycle.Run(ctx, lifecycle.Options{...})`로 바꿔야 합니다. nil을 넘기면 종전처럼
+  `context.Background()`로 대체합니다.
+- 오류 메시지가 바뀝니다. 패키지 내부 오류까지 호출 지점에서 감싸도록 `wrapcheck`를
+  `report-internal-errors: true`로 올린 결과, 상당수 exported 함수의 반환 오류에 연산 이름
+  접두사가 붙습니다. `errors.Is`·`errors.As` 판정은 그대로이지만 문자열 비교에 의존하던 검사는
+  깨집니다. 특히 `healthprobe` CLI의 실패 stderr가 `check <url>: <원인>` 형태로,
+  `bootstrap`의 로거 초기화 실패가 `Failed to initialize logger: logger hook: <원인>` 형태로
+  바뀝니다.
+- `logging.EnableFileLoggingWithOptions`가 오류를 반환할 때 logger와 Closer를 모두 nil로
+  돌려줍니다. 이전에는 내부 함수의 반환값을 그대로 전달했습니다.
+
+### 추가
+
+- `pkg/reflectutil` 패키지와 `reflectutil.IsNil`을 추가합니다. `bootstrap`이 자체적으로 쓰던
+  nil 판정 헬퍼를 대체하며, 인터페이스에 담긴 nil 포인터·map·slice·channel·func를 함께 봅니다.
+- `pgxdb.RollbackDeferred(ctx, tx, &err)`를 추가합니다. `defer`에서 rollback을 수행하고
+  `pgx.ErrTxClosed`가 아닌 실패만 호출자의 named return error에 join합니다.
+
+### 변경
+
+- `golangci-lint` 설정에서 `exclusions.rules`와 `exclusions.paths`를 전부 제거했습니다.
+  `exclusions`에는 `generated: strict`와 `warn-unused: true`만 남아 세 Go 저장소의 구조가
+  동일해집니다. 전역 `text` 예외는 대상 지점을 지정하지 않아 앞으로 생기는 같은 종류의 진짜
+  위반까지 함께 삼키기 때문입니다. 그 예외들이 가리던 위반은 코드 수정으로 해소하고, 실제
+  오탐만 해당 줄의 `//nolint`·`#nosec` 주석에 사유를 적어 남겼습니다.
+- 제네릭 메서드를 도입해 타입별 중복 구현을 제거했습니다. `obsmetrics`의 CounterVec·GaugeVec·
+  HistogramVec가 공통 `seriesStore`를 embed하고 series 조회·수집을 제네릭 메서드로 공유합니다.
+- `golangci-lint` 설정을 스택 전체에서 통일했습니다. `errcheck`의 타입 단언·blank 할당 검사,
+  `wrapcheck`의 패키지 내부 오류 보고, `nolintlint`의 사유·대상 강제, `exhaustive`의 default
+  불인정, `copyloopvar`의 별칭 검사, `_test.go` 예외 제거를 포함하며 어떤 linter도 끄거나
+  임계값을 완화하지 않았습니다.
+- 위 설정에서 드러난 위반을 전부 해소했습니다. 복잡도가 임계값을 넘던 함수는 억제 대신 실제로
+  분해했고, 병렬 실행이 공유 상태를 깨뜨리는 테스트는 부모의 `t.Parallel()`을 제거했습니다.
+  `io.Reader` 구현부처럼 감싸면 계약이 깨지는 자리만 사유를 명시한 `//nolint`로 남겼습니다.
+
 ## v2.0.0 - 2026-08-23
 
 ### 호환성이 깨지는 변경

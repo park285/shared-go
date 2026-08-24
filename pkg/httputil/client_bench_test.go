@@ -16,7 +16,9 @@ func BenchmarkNewProfiledClient(b *testing.B) {
 		MaxConnsPerHost:       32,
 		MaxIdleConnsPerHost:   16,
 	}
+
 	b.ReportAllocs()
+
 	for b.Loop() {
 		_ = NewProfiledClient(profile)
 	}

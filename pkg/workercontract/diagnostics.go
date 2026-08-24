@@ -45,11 +45,14 @@ func (c *Counters) RecordAdmission(result AdmissionResult) bool {
 	if c == nil {
 		return false
 	}
+
 	index, ok := admissionIndex(result)
 	if !ok {
 		return false
 	}
+
 	c.admissions[index].Add(1)
+
 	return true
 }
 
@@ -58,11 +61,14 @@ func (c *Counters) RecordAttempt(outcome AttemptOutcome) bool {
 	if c == nil {
 		return false
 	}
+
 	index, ok := attemptIndex(outcome)
 	if !ok {
 		return false
 	}
+
 	c.attempts[index].Add(1)
+
 	return true
 }
 
@@ -71,11 +77,14 @@ func (c *Counters) RecordDiscard(reason DiscardReason) bool {
 	if c == nil {
 		return false
 	}
+
 	index, ok := discardIndex(reason)
 	if !ok {
 		return false
 	}
+
 	c.discarded[index].Add(1)
+
 	return true
 }
 
@@ -163,6 +172,7 @@ func (c *Counters) Snapshot() WorkerTotals {
 	if c == nil {
 		return WorkerTotals{}
 	}
+
 	return WorkerTotals{
 		Admissions: AdmissionTotals{
 			Accepted:       c.admissions[0].Load(),

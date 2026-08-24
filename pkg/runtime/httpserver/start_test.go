@@ -3,7 +3,6 @@ package httpserver
 import (
 	"context"
 	"errors"
-	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -27,6 +26,7 @@ func newFakeServer(listenErr, shutdownErr error) *fakeServer {
 
 func (s *fakeServer) ListenAndServe() error {
 	close(s.listenDone)
+
 	return s.listenErr
 }
 
@@ -38,7 +38,7 @@ func TestStart_NormalStartup(t *testing.T) {
 	server := newFakeServer(http.ErrServerClosed, nil)
 	errCh := make(chan error, 1)
 
-	Start(server, slog.New(slog.NewTextHandler(io.Discard, nil)), errCh)
+	Start(server, slog.New(slog.DiscardHandler), errCh)
 	waitForListen(t, server)
 
 	select {
@@ -53,13 +53,14 @@ func TestStart_ListenError(t *testing.T) {
 	server := newFakeServer(wantErr, nil)
 	errCh := make(chan error, 1)
 
-	Start(server, slog.New(slog.NewTextHandler(io.Discard, nil)), errCh)
+	Start(server, slog.New(slog.DiscardHandler), errCh)
 
 	select {
 	case err := <-errCh:
 		if !errors.Is(err, wantErr) {
 			t.Fatalf("errCh error = %v, want wrapped %v", err, wantErr)
 		}
+
 		if !strings.Contains(err.Error(), "http server listen") {
 			t.Fatalf("errCh error = %q, want listen context", err)
 		}
@@ -88,7 +89,7 @@ func TestStart_NilLogger(t *testing.T) {
 func TestStart_NilErrCh(t *testing.T) {
 	server := newFakeServer(errors.New("listen failed"), nil)
 
-	Start(server, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	Start(server, slog.New(slog.DiscardHandler), nil)
 	waitForListen(t, server)
 }
 

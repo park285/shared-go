@@ -99,6 +99,7 @@ func TestFallbackEvaluationBlocksAndLogsFixedReason(t *testing.T) {
 	if !ok || sourceValue.String() != string(SourceUserPrompt) {
 		t.Fatalf("fallbackEvaluation() log source = %q (found=%v), want %q", sourceValue.String(), ok, SourceUserPrompt)
 	}
+
 	if strings.Contains(record.Message, "SENSITIVE_INTERNAL_ERROR") || strings.Contains(reasonValue.String(), "SENSITIVE_INTERNAL_ERROR") {
 		t.Fatal("fallbackEvaluation() leaked internal detector error")
 	}

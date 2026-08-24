@@ -73,66 +73,86 @@ func NormalizeEncodingSyntax(text string) string {
 
 func EncodingSyntaxNeedsNormalization(text string) bool {
 	requiresCompatibilityCheck := false
+
 	for _, value := range text {
 		if unicode.Is(unicode.Cf, value) || unicode.Is(unicode.Cc, value) {
 			return true
 		}
+
 		if value >= utf8.RuneSelf && (value < 0xAC00 || value > 0xD7A3) {
 			requiresCompatibilityCheck = true
 		}
 	}
+
 	return requiresCompatibilityCheck && norm.NFKC.QuickSpanString(text) != len(text)
 }
 
 func normalizeFastASCIIText(text string) (string, bool) {
 	needsRewrite := false
 	lastSpace := false
+
 	for i := range len(text) {
 		value := text[i]
 		if value >= utf8.RuneSelf {
 			return "", false
 		}
+
 		replacement := normalizeASCIIReplacement[value]
 		if replacement == "" {
 			needsRewrite = true
 			continue
 		}
+
 		if len(replacement) != 1 || replacement[0] != value {
 			needsRewrite = true
 		}
+
 		if replacement == " " {
 			if i == 0 || lastSpace {
 				needsRewrite = true
 			}
+
 			lastSpace = true
+
 			continue
 		}
+
 		lastSpace = false
 	}
+
 	if lastSpace {
 		needsRewrite = true
 	}
+
 	if !needsRewrite {
 		return text, true
 	}
 
 	var normalized strings.Builder
+
 	normalized.Grow(len(text))
+
 	pendingSpace := false
+
 	for i := range len(text) {
 		value := text[i]
 		replacement := normalizeASCIIReplacement[value]
+
 		if replacement == "" {
 			continue
 		}
+
 		if replacement == " " {
 			pendingSpace = normalized.Len() > 0
 			continue
 		}
+
 		if pendingSpace {
 			normalized.WriteByte(' ')
+
 			pendingSpace = false
 		}
+
 		normalized.WriteString(replacement)
 	}
 
@@ -141,16 +161,20 @@ func normalizeFastASCIIText(text string) (string, bool) {
 
 func buildNormalizeASCIIReplacement() [utf8.RuneSelf]string {
 	var replacements [utf8.RuneSelf]string
+
 	for value := range utf8.RuneSelf {
 		if value == ' ' {
 			replacements[value] = " "
 			continue
 		}
+
 		text := string(rune(value))
 		nfkcText := norm.NFKC.String(text)
 		normalized := normalizeWithKoreanPreserved(nfkcText)
+
 		replacements[value] = NormalizePostProcess(normalized)
 	}
+
 	return replacements
 }
 
@@ -159,6 +183,7 @@ func normalizeWithKoreanPreserved(text string) string {
 		result          strings.Builder
 		nonKoreanBuffer strings.Builder
 	)
+
 	result.Grow(len(text))
 
 	flushNonKorean := func() {
@@ -189,6 +214,7 @@ func normalizeWithKoreanPreserved(text string) string {
 
 		nonKoreanBuffer.WriteRune(r)
 	}
+
 	flushNonKorean()
 
 	return result.String()
@@ -196,9 +222,11 @@ func normalizeWithKoreanPreserved(text string) string {
 
 func NormalizePostProcess(text string) string {
 	var builder strings.Builder
+
 	builder.Grow(len(text))
 
 	lastSpace := false
+
 	for _, r := range text {
 		if unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Cc, r) {
 			continue
@@ -208,6 +236,7 @@ func NormalizePostProcess(text string) string {
 		if unicode.IsSpace(r) || unicode.Is(unicode.Z, r) {
 			if !lastSpace {
 				builder.WriteByte(' ')
+
 				lastSpace = true
 			}
 
@@ -215,6 +244,7 @@ func NormalizePostProcess(text string) string {
 		}
 
 		builder.WriteRune(r)
+
 		lastSpace = false
 	}
 
@@ -223,12 +253,14 @@ func NormalizePostProcess(text string) string {
 
 func StripControlChars(text string) string {
 	var builder strings.Builder
+
 	builder.Grow(len(text))
 
 	for _, r := range text {
 		if unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Cc, r) {
 			continue
 		}
+
 		builder.WriteRune(r)
 	}
 
@@ -238,32 +270,38 @@ func StripControlChars(text string) string {
 func StripFormatAndCombining(text string) string {
 	needsStrip := false
 	allASCII := true
+
 	for i := range len(text) {
 		if text[i] >= utf8.RuneSelf {
 			allASCII = false
 			break
 		}
 	}
+
 	if allASCII {
 		return text
 	}
+
 	for _, r := range text {
 		if unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Mn, r) {
 			needsStrip = true
 			break
 		}
 	}
+
 	if !needsStrip {
 		return text
 	}
 
 	var builder strings.Builder
+
 	builder.Grow(len(text))
 
 	for _, r := range text {
 		if unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Mn, r) {
 			continue
 		}
+
 		builder.WriteRune(r)
 	}
 
@@ -272,13 +310,16 @@ func StripFormatAndCombining(text string) string {
 
 func CollapseWhitespace(text string) string {
 	var builder strings.Builder
+
 	builder.Grow(len(text))
 
 	lastSpace := false
+
 	for _, r := range text {
 		if unicode.IsSpace(r) || unicode.Is(unicode.Z, r) {
 			if !lastSpace {
 				builder.WriteByte(' ')
+
 				lastSpace = true
 			}
 
@@ -286,6 +327,7 @@ func CollapseWhitespace(text string) string {
 		}
 
 		builder.WriteRune(r)
+
 		lastSpace = false
 	}
 
@@ -298,10 +340,13 @@ func SanitizeUTF8(text string) string {
 	}
 
 	var builder strings.Builder
+
 	builder.Grow(len(text))
+
 	for text != "" {
 		r, size := utf8.DecodeRuneInString(text)
 		builder.WriteRune(r)
+
 		text = text[size:]
 	}
 
@@ -312,6 +357,7 @@ func JoinShortSeparators(text string, maxRun int) string {
 	if joined, ok := joinShortSeparatorsASCII(text, maxRun); ok {
 		return joined
 	}
+
 	return joinShortSeparatorsRunes(text, maxRun)
 }
 
@@ -334,14 +380,17 @@ func joinShortSeparatorsRunes(text string, maxRun int) string {
 		for end < len(runes) && isJoinSeparator(runes[end]) {
 			end++
 		}
+
 		if shouldJoinSeparatorRun(runes, i, end, maxRun) {
 			i = end
 
 			continue
 		}
+
 		if len(out) == 0 || out[len(out)-1] != ' ' {
 			out = append(out, ' ')
 		}
+
 		i = end
 	}
 
@@ -350,29 +399,39 @@ func joinShortSeparatorsRunes(text string, maxRun int) string {
 
 func joinShortSeparatorsASCII(text string, maxRun int) (string, bool) {
 	hasSeparator := false
+
 	for i := range len(text) {
 		if text[i] >= utf8.RuneSelf {
 			return "", false
 		}
+
 		if isASCIIJoinSeparator(text[i]) {
 			hasSeparator = true
 		}
 	}
+
 	if !hasSeparator {
 		return text, true
 	}
 
 	var joined strings.Builder
+
 	joined.Grow(len(text))
+
 	pendingSpace := false
+
 	for i := 0; i < len(text); {
 		if !isASCIIJoinSeparator(text[i]) {
 			if pendingSpace {
 				joined.WriteByte(' ')
+
 				pendingSpace = false
 			}
+
 			joined.WriteByte(text[i])
+
 			i++
+
 			continue
 		}
 
@@ -380,11 +439,14 @@ func joinShortSeparatorsASCII(text string, maxRun int) (string, bool) {
 		for end < len(text) && isASCIIJoinSeparator(text[end]) {
 			end++
 		}
+
 		previousWord := i > 0 && isASCIIWordish(text[i-1])
 		nextWord := end < len(text) && isASCIIWordish(text[end])
+
 		if !previousWord || !nextWord || end-i > maxRun {
 			pendingSpace = joined.Len() > 0
 		}
+
 		i = end
 	}
 
@@ -420,23 +482,27 @@ func isWordish(r rune) bool {
 
 func ComposeJamoSequences(text string) string {
 	allASCII := true
+
 	for i := range len(text) {
 		if text[i] >= utf8.RuneSelf {
 			allASCII = false
 			break
 		}
 	}
+
 	if allASCII {
 		return text
 	}
 
 	hasJamo := false
+
 	for _, r := range text {
 		if unicode.Is(jamoTable, r) {
 			hasJamo = true
 			break
 		}
 	}
+
 	if !hasJamo {
 		return text
 	}
@@ -445,6 +511,7 @@ func ComposeJamoSequences(text string) string {
 		result     strings.Builder
 		jamoBuffer strings.Builder
 	)
+
 	result.Grow(len(text))
 
 	flushJamo := func() {
@@ -454,11 +521,13 @@ func ComposeJamoSequences(text string) string {
 
 		jamoText := jamoBuffer.String()
 		composed, err := safeComposeHangeul(jamoText)
+
 		if err == nil && len(composed) > 0 && len([]rune(composed[0])) > 0 {
 			result.WriteString(composed[0])
 		} else {
 			result.WriteString(jamoText)
 		}
+
 		jamoBuffer.Reset()
 	}
 
@@ -468,9 +537,11 @@ func ComposeJamoSequences(text string) string {
 
 			continue
 		}
+
 		flushJamo()
 		result.WriteRune(r)
 	}
+
 	flushJamo()
 
 	return result.String()
@@ -478,6 +549,7 @@ func ComposeJamoSequences(text string) string {
 
 func buildNormalizeFastPathASCII() [utf8.RuneSelf]bool {
 	var allowed [utf8.RuneSelf]bool
+
 	for r := range utf8.RuneSelf {
 		allowed[r] = isNormalizeFastPathRune(rune(r))
 	}

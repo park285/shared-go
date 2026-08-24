@@ -3,70 +3,112 @@ version: "2"
 run:
   timeout: 5m
   tests: true
+  modules-download-mode: readonly
+  relative-path-mode: gomod
 
-# v2: linters + formatters are configured separately.
 linters:
   default: none
   enable:
+    # correctness
     - errcheck
     - govet
     - ineffassign
     - staticcheck
     - unused
 
+    # resources / context / concurrency
     - bodyclose
     - rowserrcheck
     - sqlclosecheck
-
+    - containedctx
     - contextcheck
     - noctx
+    - fatcontext
+    - copyloopvar
 
-    - errorlint
-    - errname
-    # wrapcheck disabled: 공용 라이브러리는 외부 에러를 직접 반환하는 것이 의도적 설계
-    # - wrapcheck
-
-    - dupl
-    - goconst
-    - gocritic
+    # modern Go / stdlib / simplification
+    - durationcheck
+    - embeddedstructfieldcheck
+    - exptostd
     - intrange
+    - makezero
+    - mirror
     - modernize
+    - recvcheck
+    - unconvert
+    - unqueryvet
+    - usestdlibvars
+
+    # errors
+    - errchkjson
+    - errname
+    - errorlint
+    - nilerr
+    - nilnesserr
+    - nilnil
+    - wrapcheck
+
+    # style / docs / suppression hygiene
+    - godot
     - misspell
+    - nakedret
+    - nlreturn
+    - nolintlint
     - predeclared
     - revive
-    - wastedassign
+    - sloglint
     - whitespace
+    - wsl_v5
+    - wastedassign
 
-    - gocyclo
-    - gocognit
+    # maintainability
+    - dupl
+    - exhaustive
     - funlen
-
+    - gocognit
+    - goconst
+    - gocritic
+    - gocyclo
+    - interfacebloat
+    - maintidx
+    - nestif
     - prealloc
+    - unparam
 
+    # tests
+    - testifylint
+    - thelper
+    - tparallel
+    - usetesting
+
+    # security / text safety
     - bidichk
     - gosec
 
-    - sloglint
-
-    - durationcheck
-    - unconvert
-    - nakedret
-
   settings:
     errcheck:
-      # 공용 라이브러리는 엄격한 에러 검사 필요
       check-type-assertions: true
       check-blank: true
       exclude-functions:
+        - (*database/sql.Rows).Close
+        - (*database/sql.DB).Close
+        - (*net/http.Response).Body.Close
         - (*os.File).Close
         - (io.Closer).Close
-        # errors.AsType의 첫 반환값은 typed target이라 blank 할당이 의도적(ok만 검사)이다.
         - errors.AsType
 
     govet:
       enable-all: true
       disable:
         - fieldalignment
+
+    staticcheck:
+      checks:
+        - all
+        - -ST1000
+        - -ST1020
+        - -ST1021
+        - -ST1022
 
     gocyclo:
       min-complexity: 17
@@ -114,15 +156,71 @@ linters:
     funlen:
       lines: 90
       statements: 45
+      ignore-comments: true
 
     revive:
+      severity: error
+      enable-default-rules: true
+      directives:
+        - name: specify-disable-reason
+          severity: error
       rules:
         - name: exported
           disabled: true
         - name: package-comments
           disabled: true
+        - name: use-any
+        - name: use-errors-new
+        - name: use-fmt-print
+        - name: time-date
+        - name: time-equal
+        - name: error-naming
+        - name: error-return
+        - name: unexported-naming
+        - name: unnecessary-format
+        - name: unnecessary-if
+        - name: unsecure-url-scheme
+        - name: use-waitgroup-go
+
+    nolintlint:
+      allow-unused: false
+      require-explanation: true
+      require-specific: true
+
+    wsl_v5:
+      default: all
+      allow-first-in-block: false
+      allow-whole-block: false
+      branch-max-lines: 2
+      case-max-lines: 0
+
+    godot:
+      scope: declarations
+      capital: true
+      period: true
+
+    copyloopvar:
+      check-alias: true
+
+    fatcontext:
+      check-struct-pointers: true
+
+    embeddedstructfieldcheck:
+      empty-line: true
+      forbid-mutex: true
+
+    nilnil:
+      only-two: false
+      detect-opposite: true
+
+    nlreturn:
+      block-size: 2
+
+    predeclared:
+      qualified-name: true
 
     wrapcheck:
+      report-internal-errors: true
       ignore-sigs:
         - .Errorf(
         - errors.New(
@@ -142,10 +240,8 @@ linters:
       ignore-package-globs:
         - encoding/*
         - github.com/stretchr/testify/*
-        # Valkey 클라이언트 에러는 직접 반환
         - github.com/valkey-io/valkey-go
         - github.com/valkey-io/valkey-go/*
-        # 외부 라이브러리 에러 직접 반환 허용
         - github.com/panjf2000/ants/*
         - google.golang.org/grpc
         - google.golang.org/grpc/*
@@ -153,58 +249,50 @@ linters:
         - net/http
         - context
 
+    usestdlibvars:
+      http-method: true
+      http-status-code: true
+      time-date-month: true
+      time-weekday: true
+      time-month: true
+      time-layout: true
+      crypto-hash: true
+      default-rpc-path: true
+      sql-isolation-level: true
+      tls-signature-scheme: true
+      constant-kind: true
+
+    interfacebloat:
+      max: 5
+
+    maintidx:
+      under: 35
+
+    nestif:
+      min-complexity: 4
+
+    testifylint:
+      enable-all: true
+
+    usetesting:
+      os-temp-dir: true
+      context-background: true
+      context-todo: true
+
   exclusions:
-    rules:
-      - linters:
-          - contextcheck
-        text: 'Non-inherited new context'
+    generated: strict
+    warn-unused: true
 
-      - linters:
-          - gocyclo
-          - errcheck
-          - dupl
-          - funlen
-        path: _test\.go
-
-      - linters:
-          - gosec
-        text: "G115:"
-
-      - linters:
-          - gosec
-        text: "G117:"
-
-      - linters:
-          - gosec
-        text: "G704:"
-
-      # comma-ok 타입 단언에서 ok를 버리는 것이 의도적 설계 (zero-value fallback)
-      - linters:
-          - errcheck
-        path: pkg/logging/context\.go
-        source: 'ctx\.Value\('
-
-      # backoff jitter는 보안 목적이 아닌 분산 지연용 — math/rand 사용이 의도적
-      - linters:
-          - gosec
-        path: pkg/backoff/
-        text: "G404:"
-
-      # 내부 로그 파일 경로로 os.OpenFile 호출 — 외부 입력이 아님
-      - linters:
-          - gosec
-        path: pkg/logging/internal/archive/
-        text: "G304:"
-
-    paths:
-      - '.*\.pb\.go$'
-      - '.*_test\.go$'
-      - vendor
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  uniq-by-line: false
+  new: false
 
 formatters:
   enable:
     - gci
-    - gofmt
+    - gofumpt
     - goimports
 
   settings:
@@ -214,19 +302,18 @@ formatters:
         - default
         - prefix(github.com/park285/shared-go/v2)
       custom-order: true
+      no-inline-comments: true
+      no-prefix-comments: true
+
+    gofumpt:
+      module-path: github.com/park285/shared-go/v2
+      extra:
+        group-params: true
 
     goimports:
       local-prefixes:
         - github.com/park285/shared-go/v2
 
   exclusions:
-    paths:
-      - '.*\.pb\.go$'
-      - '.*_test\.go$'
-      - vendor
-
-issues:
-  max-issues-per-linter: 0
-  max-same-issues: 0
-  uniq-by-line: true
-  new: false
+    generated: strict
+    warn-unused: true

@@ -62,6 +62,6 @@ func TestConfigure_AppliesMaxOpenConns(t *testing.T) {
 	}
 }
 
-func TestConfigure_NilDBNoPanic(t *testing.T) {
+func TestConfigure_NilDBNoPanic(_ *testing.T) {
 	Configure(nil, PoolConfig{MaxOpenConns: 5})
 }

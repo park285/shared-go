@@ -13,10 +13,12 @@ func BenchmarkOutputGuardContextualDecodeMaximumOutput(b *testing.B) {
 
 	fragment := base64.StdEncoding.EncodeToString([]byte("readable contextual fragment"))
 	text := strings.Repeat("!", maxOutputBytes-fragments*(len(fragment)+1)) + strings.Repeat(fragment+"!", fragments)
-	bound, err := NewGuard().Bind([]string{"internal application rules"})
+
+	bound, err := NewGuard().Bind([]string{protected})
 	if err != nil {
 		b.Fatalf("Bind() error = %v", err)
 	}
+
 	if evaluation := bound.Check(text); evaluation.Decision != DecisionBlock || !slices.Contains(evaluation.ReasonCodes, ReasonDecodeIncomplete) {
 		b.Fatalf("Check() evaluation = %+v, want bounded incomplete decode", evaluation)
 	}
@@ -24,6 +26,7 @@ func BenchmarkOutputGuardContextualDecodeMaximumOutput(b *testing.B) {
 	b.ReportAllocs()
 	b.SetBytes(int64(len(text)))
 	b.ResetTimer()
+
 	for range b.N {
 		_ = bound.Check(text)
 	}
@@ -31,10 +34,12 @@ func BenchmarkOutputGuardContextualDecodeMaximumOutput(b *testing.B) {
 
 func BenchmarkOutputGuardProtectedOversizeContext(b *testing.B) {
 	text := strings.Repeat("!", (8<<10)+1) + "internal IA== policy"
-	bound, err := NewGuard().Bind([]string{"internal policy"})
+
+	bound, err := NewGuard().Bind([]string{testInternalPolicy})
 	if err != nil {
 		b.Fatalf("Bind() error = %v", err)
 	}
+
 	if evaluation := bound.Check(text); evaluation.Decision != DecisionBlock || !slices.Contains(evaluation.ReasonCodes, ReasonDecodeIncomplete) {
 		b.Fatalf("Check() evaluation = %+v, want pre-allocation byte-limit block", evaluation)
 	}
@@ -42,6 +47,7 @@ func BenchmarkOutputGuardProtectedOversizeContext(b *testing.B) {
 	b.ReportAllocs()
 	b.SetBytes(int64(len(text)))
 	b.ResetTimer()
+
 	for range b.N {
 		_ = bound.Check(text)
 	}
@@ -49,15 +55,19 @@ func BenchmarkOutputGuardProtectedOversizeContext(b *testing.B) {
 
 func BenchmarkOutputGuardReadableFlood(b *testing.B) {
 	var builder strings.Builder
+
 	for index := range 400 {
 		builder.WriteString(base64.StdEncoding.EncodeToString([]byte("distinct readable payload " + strconv.Itoa(index))))
 		builder.WriteByte(' ')
 	}
+
 	text := builder.String()
+
 	bound, err := NewGuard().Bind([]string{longformSystemPrompt})
 	if err != nil {
 		b.Fatalf("Bind() error = %v", err)
 	}
+
 	if evaluation := bound.Check(text); evaluation.Decision != DecisionBlock || !slices.Contains(evaluation.ReasonCodes, ReasonDecodeIncomplete) {
 		b.Fatalf("Check() evaluation = %+v, want budget-exhausted incomplete decode", evaluation)
 	}
@@ -65,6 +75,7 @@ func BenchmarkOutputGuardReadableFlood(b *testing.B) {
 	b.ReportAllocs()
 	b.SetBytes(int64(len(text)))
 	b.ResetTimer()
+
 	for range b.N {
 		_ = bound.Check(text)
 	}
@@ -75,8 +86,10 @@ func BenchmarkOutputGuardStructuredCitationsWithEncodedMetadata(b *testing.B) {
 	if err != nil {
 		b.Fatalf("Bind() error = %v", err)
 	}
+
 	encoded := base64.StdEncoding.EncodeToString([]byte("readable citation metadata"))
 	text := structuredCitationOutput(encoded, 4)
+
 	if evaluation := bound.Check(text); evaluation.Decision != DecisionAllow {
 		b.Fatalf("Check() evaluation = %+v, want allow", evaluation)
 	}
@@ -84,6 +97,7 @@ func BenchmarkOutputGuardStructuredCitationsWithEncodedMetadata(b *testing.B) {
 	b.ReportAllocs()
 	b.SetBytes(int64(len(text)))
 	b.ResetTimer()
+
 	for range b.N {
 		_ = bound.Check(text)
 	}

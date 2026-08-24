@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"bytes"
+	"context"
 	jsonv2 "encoding/json/v2"
 	"errors"
 	"log/slog"
@@ -17,15 +18,21 @@ func TestInstallGlobalProvider_SetsErrorHandler(t *testing.T) {
 	prevProp := otel.GetTextMapPropagator()
 	prevHandler := otel.GetErrorHandler()
 	sentinelTP := sdktrace.NewTracerProvider()
+
 	t.Cleanup(func() {
 		otel.SetTracerProvider(prevTP)
 		otel.SetTextMapPropagator(prevProp)
 		otel.SetErrorHandler(prevHandler)
-		_ = sentinelTP.Shutdown(t.Context())
+
+		if err := sentinelTP.Shutdown(context.WithoutCancel(t.Context())); err != nil {
+			t.Fatalf("Shutdown() error = %v", err)
+		}
 	})
 
 	var buf bytes.Buffer
+
 	oldLogger := slog.Default()
+
 	t.Cleanup(func() { slog.SetDefault(oldLogger) })
 	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
 
@@ -37,13 +44,16 @@ func TestInstallGlobalProvider_SetsErrorHandler(t *testing.T) {
 	if out == "" {
 		t.Fatal("expected error handler to emit a log record, got none")
 	}
+
 	rec := map[string]any{}
 	if err := jsonv2.Unmarshal([]byte(out), &rec); err != nil {
 		t.Fatalf("unmarshal log record: %v", err)
 	}
+
 	if rec["level"] != "WARN" {
 		t.Fatalf("expected WARN level, got %v", rec["level"])
 	}
+
 	if !strings.Contains(out, "collector unreachable") {
 		t.Fatalf("expected error message in log, got %q", out)
 	}

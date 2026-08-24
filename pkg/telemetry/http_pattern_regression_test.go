@@ -31,6 +31,7 @@ func TestNewPublicHTTPHandlerPropagatesPatternToOriginalRequest(t *testing.T) {
 
 			handler := NewPublicHTTPHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				r.Pattern = pattern
+
 				w.WriteHeader(http.StatusNoContent)
 			}), "public.pattern", HTTPHandlerOptions{
 				Filter:           test.filter,
@@ -43,6 +44,7 @@ func TestNewPublicHTTPHandlerPropagatesPatternToOriginalRequest(t *testing.T) {
 			if req.Pattern != pattern {
 				t.Fatalf("original request Pattern = %q, want %q", req.Pattern, pattern)
 			}
+
 			if got := len(recorder.Ended()); got != test.wantSpans {
 				t.Fatalf("ended spans = %d, want %d", got, test.wantSpans)
 			}

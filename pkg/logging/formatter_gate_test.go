@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -41,6 +42,7 @@ func TestFormatterConstructorsStayInsideFormatHandler(t *testing.T) {
 	found := collectFormatterCalls(t, root)
 
 	seen := make(map[string]bool, len(formatterCallAllowlist))
+
 	for _, call := range found {
 		if _, ok := formatterCallAllowlist[call.site]; !ok {
 			t.Errorf("formatter 생성자가 허용 지점 밖에서 참조된다: %s (%s)\n"+
@@ -48,8 +50,10 @@ func TestFormatterConstructorsStayInsideFormatHandler(t *testing.T) {
 				"비정제 record를 받는다. newFormatHandler를 경유하거나, 의도된 예외면 "+
 				"formatterCallAllowlist에 사유와 함께 등록하라.",
 				call.site, call.pos)
+
 			continue
 		}
+
 		seen[call.site] = true
 	}
 
@@ -78,6 +82,7 @@ func shortenSource() {}
 `
 
 	fset := token.NewFileSet()
+
 	parsed, err := parser.ParseFile(fset, "format.go", src, 0)
 	if err != nil {
 		t.Fatalf("parse synthetic source: %v", err)
@@ -87,9 +92,11 @@ func shortenSource() {}
 	if len(calls) != 1 {
 		t.Fatalf("formatterCallsInFile() found %d calls, want 1: %v", len(calls), calls)
 	}
+
 	if _, allowed := formatterCallAllowlist[calls[0].site]; allowed {
 		t.Fatalf("file-scope call inherited an allowlisted function name: %s", calls[0].site)
 	}
+
 	if want := strings.Join([]string{"format.go", fileScopeOwner, "log/slog.NewJSONHandler"}, "|"); calls[0].site != want {
 		t.Fatalf("site = %q, want %q", calls[0].site, want)
 	}
@@ -118,9 +125,11 @@ func newFormatHandler() slog.Handler {
 	if len(calls) != 1 {
 		t.Fatalf("formatterCallsInFile() found %d calls, want 1: %v", len(calls), calls)
 	}
+
 	if _, allowed := formatterCallAllowlist[calls[0].site]; allowed {
 		t.Fatalf("func literal inherited an allowlisted owner: %s", calls[0].site)
 	}
+
 	if want := strings.Join([]string{"format.go", "newFormatHandler" + funcLitOwnerTag, "log/slog.NewJSONHandler"}, "|"); calls[0].site != want {
 		t.Fatalf("site = %q, want %q", calls[0].site, want)
 	}
@@ -147,6 +156,7 @@ func functionValue() {
 
 	calls := parseFormatterCalls(t, "probe.go", src)
 	got := make(map[string]bool, len(calls))
+
 	for _, call := range calls {
 		got[call.site] = true
 	}
@@ -159,6 +169,7 @@ func functionValue() {
 			t.Errorf("gate missed %s; found %v", want, calls)
 		}
 	}
+
 	if len(calls) != 2 {
 		t.Errorf("formatterCallsInFile() found %d refs, want 2: %v", len(calls), calls)
 	}
@@ -187,9 +198,11 @@ func (b *beta) build() slog.Handler { return slog.NewJSONHandler(io.Discard, nil
 	if len(calls) != 2 {
 		t.Fatalf("formatterCallsInFile() found %d refs, want 2: %v", len(calls), calls)
 	}
+
 	if calls[0].site == calls[1].site {
 		t.Fatalf("same-named methods on different receivers collapsed to one site key: %s", calls[0].site)
 	}
+
 	for i, want := range []string{"probe.go|alpha.build|", "probe.go|*beta.build|"} {
 		if !strings.HasPrefix(calls[i].site, want) {
 			t.Errorf("site[%d] = %q, want prefix %q", i, calls[i].site, want)
@@ -201,6 +214,7 @@ func parseFormatterCalls(t *testing.T, name, src string) []formatterCall {
 	t.Helper()
 
 	fset := token.NewFileSet()
+
 	parsed, err := parser.ParseFile(fset, name, src, 0)
 	if err != nil {
 		t.Fatalf("parse synthetic source: %v", err)
@@ -224,24 +238,26 @@ func collectFormatterCalls(t *testing.T, root string) []formatterCall {
 	t.Helper()
 
 	var calls []formatterCall
+
 	fset := token.NewFileSet()
 
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
+
 		if entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
 
 		parsed, parseErr := parser.ParseFile(fset, path, nil, 0)
 		if parseErr != nil {
-			return parseErr
+			return fmt.Errorf("parse file: %w", parseErr)
 		}
 
 		rel, relErr := filepath.Rel(root, path)
 		if relErr != nil {
-			return relErr
+			return fmt.Errorf("rel: %w", relErr)
 		}
 
 		calls = append(calls, formatterCallsInFile(fset, parsed, rel)...)
@@ -261,7 +277,7 @@ func collectFormatterCalls(t *testing.T, root string) []formatterCall {
 func formatterCallsInFile(fset *token.FileSet, file *ast.File, rel string) []formatterCall {
 	imports, dotImports := importPathsByName(file)
 
-	var calls []formatterCall
+	calls := make([]formatterCall, 0, len(file.Decls))
 
 	for _, decl := range file.Decls {
 		calls = append(calls, formatterRefsUnder(fset, decl, rel, declOwner(decl), imports, dotImports)...)
@@ -270,7 +286,7 @@ func formatterCallsInFile(fset *token.FileSet, file *ast.File, rel string) []for
 	return calls
 }
 
-// 함수 리터럴은 소유자를 물려받으면 안 된다. allowlist된 함수 안에서 리터럴로 raw formatter를
+// 함수 리터럴은 소유자를 물려받으면 안 된다. Allowlist된 함수 안에서 리터럴로 raw formatter를
 // 만들어 package var로 반출하면 site key가 allowlist 항목과 같아져 그대로 통과한다.
 func formatterRefsUnder(
 	fset *token.FileSet,
@@ -318,6 +334,7 @@ func formatterRefName(node ast.Node, imports map[string]string, dotImports []str
 		if !ok {
 			return "", true
 		}
+
 		path, ok := imports[pkg.Name]
 		if !ok {
 			return "", true
@@ -348,6 +365,7 @@ func declOwner(decl ast.Decl) string {
 	if !ok {
 		return fileScopeOwner
 	}
+
 	if fn.Recv == nil || len(fn.Recv.List) == 0 {
 		return fn.Name.Name
 	}
@@ -365,6 +383,7 @@ func importPathsByName(file *ast.File) (map[string]string, []string) {
 		if err != nil {
 			continue
 		}
+
 		if spec.Name != nil && spec.Name.Name == "." {
 			dotImports = append(dotImports, path)
 
@@ -372,6 +391,7 @@ func importPathsByName(file *ast.File) (map[string]string, []string) {
 		}
 
 		name := path[strings.LastIndex(path, "/")+1:]
+
 		if spec.Name != nil {
 			name = spec.Name.Name
 		}

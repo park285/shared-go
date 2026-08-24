@@ -24,7 +24,7 @@ type LockSession interface {
 }
 
 // WithAdvisoryLock은 unlock이 에러이거나 released=false(lock 미보유)로 끝나면 세션 lock
-// 상태가 불확실하다고 보고 이 메서드를 호출한다. pooled conn 구현체는 여기서 conn을 hijack 후
+// 상태가 불확실하다고 보고 이 메서드를 호출한다. Pooled conn 구현체는 여기서 conn을 hijack 후
 // close해, lock을 쥔 채 풀로 반환·재사용되는 것을 막아야 한다.
 type UnlockFailureEvicter interface {
 	EvictAfterUnlockFailure() error
@@ -49,13 +49,14 @@ func WithAdvisoryLock(ctx context.Context, s LockSession, cfg LockConfig, fn fun
 	if s == nil {
 		return errors.New("dbmigrate: lock session is required")
 	}
+
 	if fn == nil {
 		return errors.New("dbmigrate: lock function is required")
 	}
 
 	cfg = cfg.withDefaults()
 	if acquireErr := acquireAdvisoryLock(ctx, s, cfg); acquireErr != nil {
-		return acquireErr
+		return fmt.Errorf("acquire advisory lock: %w", acquireErr)
 	}
 
 	defer func() {
@@ -63,23 +64,32 @@ func WithAdvisoryLock(ctx context.Context, s LockSession, cfg LockConfig, fn fun
 		if unlockErr == nil {
 			return
 		}
+
 		if evicter, ok := s.(UnlockFailureEvicter); ok {
 			if evictErr := evictAfterUnlockFailure(evicter); evictErr != nil {
 				unlockErr = errors.Join(unlockErr, evictErr)
 			}
 		}
+
 		if cfg.OnUnlockError != nil {
 			cfg.OnUnlockError(unlockErr)
+
 			return
 		}
+
 		if err != nil {
 			err = errors.Join(err, unlockErr)
 			return
 		}
+
 		err = unlockErr
 	}()
 
-	return fn(ctx)
+	if err := fn(ctx); err != nil {
+		return fmt.Errorf("fn: %w", err)
+	}
+
+	return nil
 }
 
 // fn의 panic unwinding 중 defer 안에서 evict가 다시 panic하면 원 panic을 대체하고
@@ -90,7 +100,12 @@ func evictAfterUnlockFailure(e UnlockFailureEvicter) (err error) {
 			err = fmt.Errorf("dbmigrate: evict conn after unlock failure panicked: %v", r)
 		}
 	}()
-	return e.EvictAfterUnlockFailure()
+
+	if err := e.EvictAfterUnlockFailure(); err != nil {
+		return fmt.Errorf("evict after unlock failure: %w", err)
+	}
+
+	return nil
 }
 
 // SQLLockSession은 database/sql 연결을 LockSession으로 감싼다.
@@ -106,12 +121,14 @@ func (s sqlLockSession) EvictAfterUnlockFailure() error {
 	if s.conn == nil {
 		return errors.New("dbmigrate: sql lock connection is nil")
 	}
+
 	err := s.conn.Raw(func(any) error {
 		return driver.ErrBadConn
 	})
 	if err != nil && !errors.Is(err, driver.ErrBadConn) {
 		return fmt.Errorf("dbmigrate: evict sql lock connection: %w", err)
 	}
+
 	return nil
 }
 
@@ -119,10 +136,13 @@ func (s sqlLockSession) TryAdvisoryLock(ctx context.Context, key int64) (bool, e
 	if s.conn == nil {
 		return false, errors.New("dbmigrate: sql lock connection is nil")
 	}
+
 	var acquired bool
+
 	if err := s.conn.QueryRowContext(ctx, queryTryAdvisoryLock, key).Scan(&acquired); err != nil {
-		return false, err
+		return false, fmt.Errorf("scan: %w", err)
 	}
+
 	return acquired, nil
 }
 
@@ -130,10 +150,13 @@ func (s sqlLockSession) AdvisoryUnlock(ctx context.Context, key int64) (bool, er
 	if s.conn == nil {
 		return false, errors.New("dbmigrate: sql lock connection is nil")
 	}
+
 	var released bool
+
 	if err := s.conn.QueryRowContext(ctx, queryAdvisoryUnlock, key).Scan(&released); err != nil {
-		return false, err
+		return false, fmt.Errorf("scan: %w", err)
 	}
+
 	return released, nil
 }
 
@@ -141,12 +164,15 @@ func (c LockConfig) withDefaults() LockConfig {
 	if c.Acquire <= 0 {
 		c.Acquire = defaultLockAcquire
 	}
+
 	if c.Poll <= 0 {
 		c.Poll = defaultLockPoll
 	}
+
 	if c.Release <= 0 {
 		c.Release = defaultLockRelease
 	}
+
 	return c
 }
 
@@ -162,6 +188,7 @@ func acquireAdvisoryLock(ctx context.Context, s LockSession, cfg LockConfig) err
 		if err != nil {
 			return fmt.Errorf("dbmigrate: try acquire migration advisory lock: %w", err)
 		}
+
 		if acquired {
 			return nil
 		}
@@ -171,6 +198,7 @@ func acquireAdvisoryLock(ctx context.Context, s LockSession, cfg LockConfig) err
 			if errors.Is(ctx.Err(), context.Canceled) {
 				return fmt.Errorf("dbmigrate: wait for migration advisory lock canceled: %w", ctx.Err())
 			}
+
 			return fmt.Errorf("dbmigrate: wait for migration advisory lock timed out after %s: %w", cfg.Acquire, lockCtx.Err())
 		case <-ticker.C:
 		}
@@ -185,8 +213,10 @@ func releaseAdvisoryLock(ctx context.Context, s LockSession, cfg LockConfig) err
 	if err != nil {
 		return fmt.Errorf("dbmigrate: release migration advisory lock: %w", err)
 	}
+
 	if !released {
 		return errors.New("dbmigrate: release migration advisory lock: lock was not held by session")
 	}
+
 	return nil
 }

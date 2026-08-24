@@ -2,6 +2,7 @@ package llm
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -12,19 +13,27 @@ import (
 )
 
 func extractResponsesOutputText(resp *responses.Response) (string, error) {
-	return openaidiag.Text(resp)
+	out, err := openaidiag.Text(resp)
+	if err != nil {
+		return out, fmt.Errorf("text: %w", err)
+	}
+
+	return out, nil
 }
 
 func shouldFallbackToChatCompletions(err error) bool {
 	if err == nil {
 		return false
 	}
+
 	if errors.Is(err, ErrOpenAIRefusalOutput) {
 		return false
 	}
+
 	if shouldFallbackOpenAIError(err) {
 		return true
 	}
+
 	return false
 }
 
@@ -32,6 +41,7 @@ func shouldFallbackOpenAIError(err error) bool {
 	if apiErr, ok := errors.AsType[*openai.Error](err); ok {
 		return shouldFallbackOpenAIStatus(apiErr.StatusCode) || shouldFallbackOpenAICode(apiErr.Code)
 	}
+
 	return false
 }
 
@@ -54,5 +64,9 @@ func shouldFallbackOpenAICode(code string) bool {
 }
 
 func safeOpenAICompatibleError(err error) error {
-	return openaidiag.SafeError(err)
+	if safeErr := openaidiag.SafeError(err); safeErr != nil {
+		return fmt.Errorf("safe error: %w", safeErr)
+	}
+
+	return nil
 }

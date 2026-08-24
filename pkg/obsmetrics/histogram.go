@@ -47,6 +47,7 @@ func atomicAddFloat64(bits *atomic.Uint64, delta float64) {
 	for {
 		oldBits := bits.Load()
 		newBits := math.Float64bits(math.Float64frombits(oldBits) + delta)
+
 		if bits.CompareAndSwap(oldBits, newBits) {
 			return
 		}
@@ -66,9 +67,12 @@ func (h *Histogram) Snapshot() HistogramSnapshot {
 	}
 
 	cumulative := make([]uint64, len(h.counts))
+
 	var running uint64
+
 	for i := range h.counts {
 		running += h.counts[i].Load()
+
 		cumulative[i] = running
 	}
 

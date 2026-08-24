@@ -13,36 +13,50 @@ type base64Candidate struct {
 }
 
 func base64SpansAtLeast(input string, minimum int) []encodedSpan {
-	var spans []encodedSpan
-	var seenValues map[string]struct{}
-	var scratch []byte
+	var (
+		spans      []encodedSpan
+		seenValues map[string]struct{}
+		scratch    []byte
+	)
+
 	dedup := len(input) >= spanContextDedupMinInputBytes
+
 	for i := 0; i < len(input) && len(spans) <= maxDecodeScans; {
-		start := i
+		start := i //nolint:copyloopvar // 루프 변수가 본문에서 전진하므로 시작 위치를 따로 보존한다.
 		match := nextBase64Candidate(input, i)
+
 		i = match.next
+
 		if len(match.value) < minimum || declaredNonTextDataPayload(input, start) {
 			continue
 		}
+
 		if dedup {
 			if _, duplicate := seenValues[match.value]; duplicate {
 				continue
 			}
+
 			if seenValues == nil {
 				seenValues = make(map[string]struct{}, 8)
 			}
+
 			seenValues[match.value] = struct{}{}
 		}
+
 		// 판정을 마친(디코드 불가·비가독) 스팬의 기각은 예산 소진이 아니라 완결이다:
 		// 소비 단계에서도 동일하게 버려질 스팬을 목록에 남기면 scan 예산만 태워
 		// 무해한 해시·숫자열 장문이 decode_incomplete로 오차단된다.
 		scratch = growBase64Scratch(scratch, len(match.value))
+
 		decoded, err := decodeBase64CandidateInto(scratch, match.value)
+
 		if err != nil || !IsReadableText(decoded) {
 			continue
 		}
+
 		spans = append(spans, encodedSpan{start: start, end: match.next})
 	}
+
 	return spans
 }
 
@@ -84,15 +98,18 @@ func (s *spanContextSeen) duplicate(text string, span encodedSpan) bool {
 	if s == nil {
 		return false
 	}
+
 	value := text[span.start:span.end]
 	for _, prior := range s.entries[value] {
 		if sameSpanContext(prior, spanContextRef{text: text, span: span}) {
 			return true
 		}
 	}
+
 	if s.entries == nil {
 		s.entries = make(map[string][]spanContextRef, 8)
 	}
+
 	s.entries[value] = append(s.entries[value], spanContextRef{text: text, span: span})
 
 	return false
@@ -111,10 +128,13 @@ func contextualBase64SpansAtLeast(input string, minimum int) []encodedSpan {
 	spans := make([]encodedSpan, 0, min(maxDecodeScans+1, len(input)/minimum))
 	work := protectedDecodeWork{}
 	seenWholes := newSpanContextSeen(input)
+
 	for i := 0; i < len(input) && len(spans) <= maxDecodeScans; {
-		start := i
+		start := i //nolint:copyloopvar // 루프 변수가 본문에서 전진하므로 시작 위치를 따로 보존한다.
 		match := nextBase64Candidate(input, i)
+
 		i = match.next
+
 		if len(match.value) < minimum {
 			continue
 		}
@@ -123,16 +143,21 @@ func contextualBase64SpansAtLeast(input string, minimum int) []encodedSpan {
 		if pathSegments, ok := httpURLPathBase64Segments(input, whole, minimum); ok {
 			for _, segment := range pathSegments {
 				var complete bool
+
 				spans, complete = appendContextualBase64Whole(spans, input, segment, minimum, &work, seenWholes)
+
 				if !complete {
 					return appendDecodeScanOverflow(spans, segment)
 				}
 			}
+
 			continue
 		}
 
 		var complete bool
+
 		spans, complete = appendContextualBase64Whole(spans, input, whole, minimum, &work, seenWholes)
+
 		if !complete {
 			return appendDecodeScanOverflow(spans, whole)
 		}
@@ -152,14 +177,18 @@ func appendContextualBase64Whole(
 	if declaredNonTextDataPayload(input, whole.start) {
 		return spans, true
 	}
+
 	if seenWholes.duplicate(input, whole) {
 		return spans, true
 	}
+
 	value := input[whole.start:whole.end]
 	decoded, err := DecodeBase64Candidate(value)
+
 	if err == nil && IsReadableText(decoded) {
 		return append(spans, whole), true
 	}
+
 	if !looksLikeEmbeddedBase64(value) {
 		return spans, true
 	}
@@ -181,14 +210,18 @@ func appendReadableBase64Subspans(
 				start: whole.start + leftTrim,
 				end:   whole.end - (trimmed - leftTrim),
 			}
+
 			var status DecodeStatus
+
 			if !consumeProtectedDecodeWork(work, &status, span.end-span.start) {
 				return spans, false
 			}
+
 			decoded, err := DecodeBase64Candidate(input[span.start:span.end])
 			if err != nil || !IsReadableText(decoded) {
 				continue
 			}
+
 			spans = append(spans, span)
 		}
 	}
@@ -206,15 +239,19 @@ func appendDecodeScanOverflow(spans []encodedSpan, fallback encodedSpan) []encod
 
 func ContainsSuspiciousBase64(input string) bool {
 	for i := 0; i < len(input); {
-		start := i
+		start := i //nolint:copyloopvar // 루프 변수가 본문에서 전진하므로 시작 위치를 따로 보존한다.
 		match := nextBase64Candidate(input, i)
+
 		i = match.next
+
 		if len(match.value) < minBase64CandidateLen {
 			continue
 		}
+
 		if declaredNonTextDataPayload(input, start) {
 			continue
 		}
+
 		decoded, err := DecodeBase64Candidate(match.value)
 		if err == nil && IsReadableText(decoded) {
 			return true
@@ -230,13 +267,16 @@ func DecodeBase64Candidate(input string) ([]byte, error) {
 	}
 
 	var lastErr error
+
 	for _, encoding := range candidateBase64Encodings(input) {
 		decoded, err := encoding.DecodeString(input)
 		if err == nil {
 			return decoded, nil
 		}
+
 		lastErr = err
 	}
+
 	return nil, lastErr
 }
 
@@ -257,14 +297,18 @@ func decodeBase64CandidateInto(destination []byte, input string) ([]byte, error)
 	}
 
 	source := []byte(input)
+
 	var lastErr error
+
 	for _, encoding := range candidateBase64Encodings(input) {
 		decodedBytes, err := encoding.Decode(destination, source)
 		if err == nil {
 			return destination[:decodedBytes], nil
 		}
+
 		lastErr = err
 	}
+
 	return nil, lastErr
 }
 
@@ -275,13 +319,16 @@ func IsReadableText(data []byte) bool {
 
 	printable := 0
 	total := 0
+
 	for len(data) > 0 {
 		r, size := utf8.DecodeRune(data)
 		if r == utf8.RuneError && size == 1 {
 			return false
 		}
+
 		data = data[size:]
 		total++
+
 		if unicode.IsPrint(r) || unicode.IsSpace(r) {
 			printable++
 		}
@@ -298,13 +345,16 @@ func IsReadableString(data string) bool {
 
 	printable := 0
 	total := 0
+
 	for index := 0; index < len(data); {
 		r, size := utf8.DecodeRuneInString(data[index:])
 		if r == utf8.RuneError && size == 1 {
 			return false
 		}
+
 		index += size
 		total++
+
 		if unicode.IsPrint(r) || unicode.IsSpace(r) {
 			printable++
 		}
@@ -322,6 +372,7 @@ func nextBase64Candidate(input string, start int) base64Candidate {
 	for next < len(input) && isBase64Char(input[next]) {
 		next++
 	}
+
 	for padding := 0; next < len(input) && input[next] == '=' && padding < 2; padding++ {
 		next++
 	}
@@ -340,6 +391,7 @@ func candidateBase64Encodings(input string) []*base64.Encoding {
 	hasPadding := false
 	hasURLAlphabet := false
 	hasStandardAlphabet := false
+
 	for i := range len(input) {
 		switch input[i] {
 		case '=':
@@ -355,10 +407,13 @@ func candidateBase64Encodings(input string) []*base64.Encoding {
 		if hasURLAlphabet && !hasStandardAlphabet {
 			return base64PaddedURL[:]
 		}
+
 		return base64PaddedStd[:]
 	}
+
 	if hasURLAlphabet && !hasStandardAlphabet {
 		return base64RawURL[:]
 	}
+
 	return base64RawStd[:]
 }

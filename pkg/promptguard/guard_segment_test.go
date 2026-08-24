@@ -15,7 +15,7 @@ func TestGuardBlocks_EnglishComboAcrossSegments(t *testing.T) {
 
 	g := newTestGuardFromRulepacks(t)
 
-	require.Error(t, checkInteractiveForTest(t, g, englishScoreCombo), "plain")
+	require.Error(t, checkInteractiveForTest(t, g, englishScoreCombo), segmentPlain)
 	require.Error(t, checkInteractiveForTest(t, g, "```\n"+englishScoreCombo+"\n```"), "codefence")
 	require.Error(t, checkInteractiveForTest(t, g, "> "+englishScoreCombo), "quote")
 	require.Error(t, checkInteractiveForTest(t, g, "`"+englishScoreCombo+"`"), "inline code")

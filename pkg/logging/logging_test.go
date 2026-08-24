@@ -2,7 +2,6 @@ package logging
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"log/slog"
 	"os"
@@ -32,7 +31,9 @@ func TestNewTestLogger(t *testing.T) {
 
 func TestUnsanitizedTestLoggerWritesOutput(t *testing.T) {
 	var buf bytes.Buffer
+
 	logger := newUnsanitizedTestLogger(&buf)
+
 	if logger == nil {
 		t.Fatal("newUnsanitizedTestLogger returned nil")
 	}
@@ -43,6 +44,7 @@ func TestUnsanitizedTestLoggerWritesOutput(t *testing.T) {
 	if !strings.Contains(output, "test message") {
 		t.Errorf("expected log output to contain 'test message', got: %s", output)
 	}
+
 	if !strings.Contains(output, "key=value") {
 		t.Errorf("expected log output to contain 'key=value', got: %s", output)
 	}
@@ -52,7 +54,7 @@ func newUnsanitizedTestLogger(buf *bytes.Buffer) *slog.Logger {
 	return slog.New(slog.NewTextHandler(buf, nil))
 }
 
-func TestNewTestLoggerDiscardsOutput(t *testing.T) {
+func TestNewTestLoggerDiscardsOutput(_ *testing.T) {
 	logger := NewTestLogger()
 
 	logger.Info("this should be discarded")
@@ -61,6 +63,7 @@ func TestNewTestLoggerDiscardsOutput(t *testing.T) {
 
 func TestOTelHandler_WithoutSpan(t *testing.T) {
 	var buf bytes.Buffer
+
 	baseHandler := slog.NewTextHandler(&buf, nil)
 	handler := newOTelHandler(baseHandler)
 
@@ -79,12 +82,12 @@ func TestOTelHandler_Enabled(t *testing.T) {
 	handler := newOTelHandler(baseHandler)
 
 	// Info 레벨은 비활성화되어야 함
-	if handler.Enabled(context.Background(), slog.LevelInfo) {
+	if handler.Enabled(t.Context(), slog.LevelInfo) {
 		t.Error("expected Info level to be disabled")
 	}
 
 	// Warn 레벨은 활성화되어야 함
-	if !handler.Enabled(context.Background(), slog.LevelWarn) {
+	if !handler.Enabled(t.Context(), slog.LevelWarn) {
 		t.Error("expected Warn level to be enabled")
 	}
 }
@@ -97,6 +100,7 @@ func TestOTelHandler_WithAttrs(t *testing.T) {
 	if newHandler == nil {
 		t.Fatal("WithAttrs returned nil")
 	}
+
 	_, ok := newHandler.(*otelHandler)
 	if !ok {
 		t.Error("WithAttrs did not return otelHandler")
@@ -111,6 +115,7 @@ func TestOTelHandler_WithGroup(t *testing.T) {
 	if newHandler == nil {
 		t.Fatal("WithGroup returned nil")
 	}
+
 	_, ok := newHandler.(*otelHandler)
 	if !ok {
 		t.Error("WithGroup did not return otelHandler")
@@ -151,6 +156,7 @@ func TestConfig_Validation(t *testing.T) {
 			if tt.wantErr && err == nil {
 				t.Error("expected error but got nil")
 			}
+
 			if !tt.wantErr && err != nil {
 				t.Errorf("unexpected error: %v", err)
 			}
@@ -161,12 +167,13 @@ func TestConfig_Validation(t *testing.T) {
 func TestEnableFileLogging_UsesRestrictedFileAndDirectoryPerms(t *testing.T) {
 	logDir := t.TempDir()
 	serviceLogPath := filepath.Join(logDir, "service.log")
+
 	if err := os.WriteFile(serviceLogPath, []byte("preexisting\n"), 0o600); err != nil {
 		t.Fatalf("write preexisting log failed: %v", err)
 	}
 
 	config := Config{
-		Level:      "info",
+		Level:      testInfo,
 		Dir:        logDir,
 		MaxSizeMB:  10,
 		MaxBackups: 5,
@@ -181,6 +188,7 @@ func TestEnableFileLogging_UsesRestrictedFileAndDirectoryPerms(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat %s failed: %v", serviceLogPath, err)
 	}
+
 	if got := fileInfo.Mode().Perm(); got != 0o640 {
 		t.Fatalf("unexpected perm for %s: got %o want %o", serviceLogPath, got, 0o640)
 	}
@@ -189,6 +197,7 @@ func TestEnableFileLogging_UsesRestrictedFileAndDirectoryPerms(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat %s failed: %v", logDir, err)
 	}
+
 	if got := dirInfo.Mode().Perm(); got != 0o750 {
 		t.Fatalf("unexpected perm for %s: got %o want %o", logDir, got, 0o750)
 	}
@@ -208,6 +217,7 @@ func TestEnableFileLoggingWithLevel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnableFileLoggingWithLevel failed: %v", err)
 	}
+
 	if logger == nil {
 		t.Fatal("EnableFileLoggingWithLevel returned nil")
 	}
@@ -218,7 +228,7 @@ func TestEnableFileLogging_DoesNotCreateCombinedLog(t *testing.T) {
 
 	logDir := t.TempDir()
 	config := Config{
-		Level:      "info",
+		Level:      testInfo,
 		Dir:        logDir,
 		MaxSizeMB:  10,
 		MaxBackups: 5,
@@ -240,6 +250,7 @@ func TestEnableFileLogging_UsesArchiveConstants(t *testing.T) {
 	if archive.LogFilePerm != 0o640 {
 		t.Fatalf("LogFilePerm = %o, want 0640", archive.LogFilePerm)
 	}
+
 	if archive.LogDirPerm != 0o750 {
 		t.Fatalf("LogDirPerm = %o, want 0750", archive.LogDirPerm)
 	}
@@ -257,12 +268,12 @@ func TestEnableFileLoggingDoesNotSetDefault(t *testing.T) {
 	}{
 		{
 			name:   "console only",
-			config: Config{Level: "info"},
+			config: Config{Level: testInfo},
 		},
 		{
 			name: "file backed",
 			config: Config{
-				Level:      "info",
+				Level:      testInfo,
 				Dir:        t.TempDir(),
 				MaxSizeMB:  10,
 				MaxBackups: 5,
@@ -277,12 +288,15 @@ func TestEnableFileLoggingDoesNotSetDefault(t *testing.T) {
 			if err != nil {
 				t.Fatalf("EnableFileLoggingWithOptions() error = %v", err)
 			}
+
 			if closer != nil {
 				t.Cleanup(func() { _ = closer.Close() })
 			}
+
 			if logger == nil {
 				t.Fatal("EnableFileLoggingWithOptions() logger = nil")
 			}
+
 			if slog.Default() != sentinel {
 				t.Fatal("EnableFileLoggingWithOptions() changed slog default")
 			}

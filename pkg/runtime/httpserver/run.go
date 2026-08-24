@@ -17,19 +17,28 @@ type forceCloser interface {
 	Close() error
 }
 
-// Run 은 ctx 취소 시 server 를 종료합니다. shutdownTimeout 이 0 이하이면 무기한 대기 대신
+// Run 은 ctx 취소 시 server 를 종료합니다. ShutdownTimeout 이 0 이하이면 무기한 대기 대신
 // DefaultShutdownTimeout 을 적용해 process 종료가 멈추지 않도록 합니다.
 func Run(ctx context.Context, server Server, shutdownTimeout time.Duration) error {
 	errCh := make(chan error, 1)
+
 	go func() {
 		errCh <- server.ListenAndServe()
 	}()
 
 	select {
 	case err := <-errCh:
-		return normalizeListenError(err, "http server listen failed")
+		if listenErr := normalizeListenError(err, "http server listen failed"); listenErr != nil {
+			return fmt.Errorf("normalize listen error: %w", listenErr)
+		}
+
+		return nil
 	case <-ctx.Done():
-		return shutdownAndWait(ctx, server, errCh, shutdownTimeout)
+		if err := shutdownAndWait(ctx, server, errCh, shutdownTimeout); err != nil {
+			return fmt.Errorf("shutdown and wait: %w", err)
+		}
+
+		return nil
 	}
 }
 
@@ -41,20 +50,34 @@ func shutdownAndWait(
 ) error {
 	hardCtx, hardCancel := shutdownContext(parent, shutdownTimeout)
 	defer hardCancel()
+
 	gracefulCtx, gracefulCancel := gracefulShutdownContext(hardCtx)
+
 	defer gracefulCancel()
 
 	if err := server.Shutdown(gracefulCtx); err != nil {
 		cause := fmt.Errorf("http server shutdown failed: %w", err)
-		return forceCloseAndWait(hardCtx, server, errCh, cause)
+		if err := forceCloseAndWait(hardCtx, server, errCh, cause); err != nil {
+			return fmt.Errorf("force close and wait: %w", err)
+		}
+
+		return nil
 	}
 
 	select {
 	case err := <-errCh:
-		return normalizeListenError(err, "http server stopped with error")
+		if stopErr := normalizeListenError(err, "http server stopped with error"); stopErr != nil {
+			return fmt.Errorf("normalize listen error: %w", stopErr)
+		}
+
+		return nil
 	case <-gracefulCtx.Done():
 		cause := fmt.Errorf("http server stop wait: %w", gracefulCtx.Err())
-		return forceCloseAndWait(hardCtx, server, errCh, cause)
+		if err := forceCloseAndWait(hardCtx, server, errCh, cause); err != nil {
+			return fmt.Errorf("force close and wait: %w", err)
+		}
+
+		return nil
 	}
 }
 
@@ -63,8 +86,10 @@ func gracefulShutdownContext(hardCtx context.Context) (context.Context, context.
 	if !ok {
 		return context.WithCancel(hardCtx)
 	}
+
 	remaining := max(time.Until(deadline), 0)
 	reserve := min(remaining/5, maxForceCloseReserve)
+
 	return context.WithDeadline(hardCtx, deadline.Add(-reserve))
 }
 
@@ -75,9 +100,12 @@ func forceCloseAndWait(
 	cause error,
 ) error {
 	var closeCh <-chan error
+
 	closeDone := true
+
 	if closer, ok := server.(forceCloser); ok {
 		resultCh := make(chan error, 1)
+
 		closeCh = resultCh
 		closeDone = false
 		// Close 에는 context 경계가 없으므로, 이 호출이 소유하는 단일 goroutine과
@@ -89,11 +117,14 @@ func forceCloseAndWait(
 	}
 
 	var closeErr, stopErr error
-	stopErr, stopDone := readServerStop(errCh)
+
+	stopDone, stopErr := readServerStop(errCh)
+
 	for !closeDone || !stopDone {
 		select {
 		case err := <-closeCh:
 			closeDone = true
+
 			if err != nil && !errors.Is(err, http.ErrServerClosed) {
 				closeErr = fmt.Errorf("http server force close failed: %w", err)
 			}
@@ -102,26 +133,41 @@ func forceCloseAndWait(
 			stopErr = normalizeListenError(err, "http server force close stopped with error")
 		case <-ctx.Done():
 			waitErr := fmt.Errorf("http server force close wait: %w", ctx.Err())
-			return errors.Join(cause, closeErr, stopErr, waitErr)
+			if err := errors.Join(cause, closeErr, stopErr, waitErr); err != nil {
+				return fmt.Errorf("force close and wait: %w", err)
+			}
+
+			return nil
 		}
 	}
-	return errors.Join(cause, closeErr, stopErr)
+
+	if err := errors.Join(cause, closeErr, stopErr); err != nil {
+		return fmt.Errorf("force close and wait: %w", err)
+	}
+
+	return nil
 }
 
-func readServerStop(errCh <-chan error) (error, bool) {
+func readServerStop(errCh <-chan error) (bool, error) {
 	select {
 	case err := <-errCh:
-		return normalizeListenError(err, "http server force close stopped with error"), true
+		if forceCloseErr := normalizeListenError(err, "http server force close stopped with error"); forceCloseErr != nil {
+			return true, fmt.Errorf("normalize listen error: %w", forceCloseErr)
+		}
+
+		return true, nil
 	default:
-		return nil, false
+		return false, nil
 	}
 }
 
 func shutdownContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
 	parent := context.WithoutCancel(ctx)
+
 	if timeout <= 0 {
 		timeout = DefaultShutdownTimeout
 	}
+
 	return context.WithTimeout(parent, timeout)
 }
 
@@ -129,5 +175,6 @@ func normalizeListenError(err error, text string) error {
 	if err == nil || errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}
+
 	return fmt.Errorf("%s: %w", text, err)
 }

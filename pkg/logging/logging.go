@@ -61,38 +61,62 @@ type Options struct {
 }
 
 func EnableFileLogging(config Config, fileName string) (*slog.Logger, error) {
-	return EnableFileLoggingWithOTel(config, fileName, false)
+	logger, err := EnableFileLoggingWithOTel(config, fileName, false)
+	if err != nil {
+		return nil, fmt.Errorf("enable file logging with otel: %w", err)
+	}
+
+	return logger, nil
 }
 
 func EnableFileLoggingWithLevel(config Config, fileName, level string) (*slog.Logger, error) {
 	config.Level = level
-	return EnableFileLogging(config, fileName)
+
+	logger, err := EnableFileLogging(config, fileName)
+	if err != nil {
+		return nil, fmt.Errorf("enable file logging: %w", err)
+	}
+
+	return logger, nil
 }
 
 func EnableFileLoggingWithOTel(config Config, fileName string, enableOTel bool) (*slog.Logger, error) {
 	logger, _, err := EnableFileLoggingWithOptions(config, fileName, Options{OTel: enableOTel})
-	return logger, err
+	if err != nil {
+		return nil, fmt.Errorf("enable file logging with options: %w", err)
+	}
+
+	return logger, nil
 }
 
 // EnableFileLoggingWithOptions는 io.Closer를 함께 반환한다. Closer는 비동기 stdout lane의
 // 잔여 드레인과 lumberjack 파일 핸들 정리를 담당하며, 콘솔 전용 구성에서는 nil이다.
 //
-// lumberjack은 첫 로테이션에서 millRun 고루틴을 띄우지만 Close()는 파일 핸들만 닫고 그
+// Lumberjack은 첫 로테이션에서 millRun 고루틴을 띄우지만 Close()는 파일 핸들만 닫고 그
 // 고루틴을 회수하지 않는다(라이브러리 한계). 프로세스당 1회만 호출하고 재초기화는 피하라.
 func EnableFileLoggingWithOptions(config Config, fileName string, opts Options) (*slog.Logger, io.Closer, error) {
-	return enableFileLoggingWithStdout(os.Stdout, config, fileName, opts)
+	logger, closer, err := enableFileLoggingWithStdout(os.Stdout, config, fileName, opts)
+	if err != nil {
+		return nil, nil, fmt.Errorf("enable file logging with stdout: %w", err)
+	}
+
+	return logger, closer, nil
 }
 
 func enableFileLoggingWithStdout(stdout io.Writer, config Config, fileName string, opts Options) (*slog.Logger, io.Closer, error) {
 	level := parseLevel(config.Level)
 	if err := parseLogFormat(config.Format); err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("parse log format: %w", err)
 	}
+
 	logDir := strings.TrimSpace(config.Dir)
 	if logDir == "" {
 		logger := slog.New(newConsoleHandler(level, stdout, opts.OTel))
+
+		//nolint:nilnil // 콘솔 전용 구성에서 Closer가 nil인 것은 문서화된 반환 계약이다.
 		return logger, nil, nil
 	}
+
 	if config.MaxSizeMB <= 0 || config.MaxBackups <= 0 || config.MaxAgeDays <= 0 {
 		return nil, nil, fmt.Errorf("invalid log config: size=%d backups=%d age_days=%d", config.MaxSizeMB, config.MaxBackups, config.MaxAgeDays)
 	}
@@ -107,33 +131,12 @@ func enableFileLoggingWithStdout(stdout io.Writer, config Config, fileName strin
 	}
 
 	logArchiver := archive.NewCompressedLogArchiver(logPath, config.MaxBackups, config.MaxAgeDays, config.Compress)
-	logFile := &lumberjack.Logger{
-		Filename:   logPath,
-		MaxSize:    config.MaxSizeMB,
-		MaxBackups: config.MaxBackups,
-		MaxAge:     config.MaxAgeDays,
-		Compress:   config.Compress,
-	}
+	logFile := newRotatingFile(config, logPath)
 
-	stdoutLane := stdout
-	closers := make(multiCloser, 0, 4)
-	if opts.AsyncStdout {
-		asyncStdout := newAsyncDropWriter(stdout, asyncStdoutQueueDepth)
-		stdoutLane = asyncStdout
-		closers = append(closers, asyncStdout)
-	}
-
-	fileLane := &archive.AwareWriter{Inner: logFile, Archiver: logArchiver}
-	// 요약은 stdout lane 종료 뒤 파일에 남아야 하므로 logFile Close보다 앞서 실행된다.
-	stdoutGuard := &bestEffortWriter{target: stdoutLane, summary: fileLane}
-	closers = append(closers, stdoutGuard, logFile)
-	if logArchiver != nil {
-		closers = append(closers, logArchiver)
-	}
-
-	w := io.MultiWriter(stdoutGuard, fileLane)
+	w, closers := buildLogLanes(stdout, logFile, logArchiver, opts)
 
 	handler := newFormatHandler(level, w)
+
 	if opts.OTel {
 		handler = newOTelHandler(handler)
 	}
@@ -146,10 +149,45 @@ func enableFileLoggingWithStdout(stdout io.Writer, config Config, fileName strin
 		slog.Bool("async_stdout", opts.AsyncStdout),
 	)
 	logArchiver.Trigger()
+
 	return logger, closers, nil
 }
 
-// io.MultiWriter는 첫 writer가 실패하면 나머지를 건너뛴다. stdout이 EPIPE·ENOSPC로 죽었을 때
+func newRotatingFile(config Config, logPath string) *lumberjack.Logger {
+	return &lumberjack.Logger{
+		Filename:   logPath,
+		MaxSize:    config.MaxSizeMB,
+		MaxBackups: config.MaxBackups,
+		MaxAge:     config.MaxAgeDays,
+		Compress:   config.Compress,
+	}
+}
+
+func buildLogLanes(stdout io.Writer, logFile *lumberjack.Logger, logArchiver *archive.CompressedLogArchiver, opts Options) (io.Writer, multiCloser) {
+	stdoutLane := stdout
+	closers := make(multiCloser, 0, 4)
+
+	if opts.AsyncStdout {
+		asyncStdout := newAsyncDropWriter(stdout, asyncStdoutQueueDepth)
+
+		stdoutLane = asyncStdout
+		closers = append(closers, asyncStdout)
+	}
+
+	fileLane := &archive.AwareWriter{Inner: logFile, Archiver: logArchiver}
+	// 요약은 stdout lane 종료 뒤 파일에 남아야 하므로 logFile Close보다 앞서 실행된다.
+	stdoutGuard := &bestEffortWriter{target: stdoutLane, summary: fileLane}
+
+	closers = append(closers, stdoutGuard, logFile)
+
+	if logArchiver != nil {
+		closers = append(closers, logArchiver)
+	}
+
+	return io.MultiWriter(stdoutGuard, fileLane), closers
+}
+
+// io.MultiWriter는 첫 writer가 실패하면 나머지를 건너뛴다. Stdout이 EPIPE·ENOSPC로 죽었을 때
 // 그 뒤의 파일 lane까지 함께 멈추면 내구 기록이 사라지므로, stdout 사본의 실패는 삼키고
 // 유실 건수만 세어 Close에서 파일 lane으로 요약한다. 파일 lane은 감싸지 않아 실패가 전파된다.
 type bestEffortWriter struct {
@@ -182,6 +220,7 @@ func (w *bestEffortWriter) writeLossSummary() {
 
 	record := slog.NewRecord(time.Now(), slog.LevelWarn, "stdout lane write failed", 0)
 	record.AddAttrs(slog.Uint64("dropped", dropped))
+
 	if err := newFormatHandler(record.Level, w.summary).Handle(context.Background(), record); err != nil {
 		return
 	}
@@ -189,9 +228,11 @@ func (w *bestEffortWriter) writeLossSummary() {
 
 func newConsoleHandler(level slog.Level, w io.Writer, enableOTel bool) slog.Handler {
 	handler := newFormatHandler(level, w)
+
 	if enableOTel {
 		handler = newOTelHandler(handler)
 	}
+
 	return handler
 }
 
@@ -216,7 +257,12 @@ func (h *otelHandler) Handle(ctx context.Context, record slog.Record) error {
 			slog.String("span_id", spanCtx.SpanID().String()),
 		)
 	}
-	return h.inner.Handle(ctx, record)
+
+	if err := h.inner.Handle(ctx, record); err != nil {
+		return fmt.Errorf("handle: %w", err)
+	}
+
+	return nil
 }
 
 func (h *otelHandler) WithAttrs(attrs []slog.Attr) slog.Handler {

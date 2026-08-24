@@ -15,9 +15,11 @@ func TestNormalizeViewsPreservesLegacyBehavior(t *testing.T) {
 	if strings.ContainsRune(views.Norm, '\u200b') || strings.ContainsRune(views.Norm, 'Ｓ') {
 		t.Fatalf("NormalizeViews() = %#v", views)
 	}
+
 	if !strings.Contains(NormalizeViews("시 스 템  프 롬 프 트").Joined, "시스템프롬프트") {
 		t.Fatal("NormalizeViews() did not collapse short separators")
 	}
+
 	if got := NormalizeViews("alpha-----beta").Joined; got != "alpha beta" {
 		t.Fatalf("NormalizeViews() long separator behavior = %q, want %q", got, "alpha beta")
 	}
@@ -54,17 +56,19 @@ func TestNormalizeUsesUnicode17ConfusableMapping(t *testing.T) {
 func TestNormalizeFastPathASCIIAllowlistMatchesPredicate(t *testing.T) {
 	t.Parallel()
 
-	for r := range len(normalizeFastPathASCII) {
+	for r := range normalizeFastPathASCII {
 		want := isNormalizeFastPathRune(rune(r))
 		if got := normalizeFastPathASCII[r]; got != want {
 			t.Fatalf("normalizeFastPathASCII[%#x] = %v, want %v", r, got, want)
 		}
 	}
+
 	for _, r := range []rune{'0', '1', '"', '`', '%', '|'} {
 		if normalizeFastPathASCII[r] {
 			t.Fatalf("normalizeFastPathASCII[%q] = true, want false", r)
 		}
 	}
+
 	if !normalizeFastPathASCII[' '] {
 		t.Fatal("normalizeFastPathASCII[' '] = false, want true")
 	}
@@ -74,11 +78,13 @@ func TestNormalizeFastASCIIEqualsCanonicalPipeline(t *testing.T) {
 	t.Parallel()
 
 	inputs := make([]string, 0, 128*128+4)
+
 	for first := range 128 {
 		for second := range 128 {
 			inputs = append(inputs, string([]byte{byte(first), byte(second)}))
 		}
 	}
+
 	inputs = append(inputs,
 		" ordinary synthetic payload 0 1 2 ",
 		"API_KEY:\tSYNTHETIC\nVALUE",
@@ -101,6 +107,7 @@ func TestJoinShortSeparatorsASCIIMatchesRunePath(t *testing.T) {
 			input := "a" + string([]byte{byte(first), byte(second)}) + "b"
 			want := joinShortSeparatorsRunes(input, 4)
 			got, ok := joinShortSeparatorsASCII(input, 4)
+
 			if !ok || got != want {
 				t.Fatalf("joinShortSeparatorsASCII(%q) = (%q, %v), want %q", input, got, ok, want)
 			}

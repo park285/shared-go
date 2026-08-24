@@ -33,8 +33,10 @@ func Init(logger *slog.Logger) {
 	decision := decideAutomaxprocs()
 	if !decision.run {
 		logInfo(logger, decision.message, decision.fields...)
+
 		return
 	}
+
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -60,6 +62,7 @@ func decideAutomaxprocs() automaxprocsDecision {
 			fields:  []any{"env", DisableEnv},
 		}
 	}
+
 	if isTruthy(os.Getenv(ForceEnv)) {
 		return automaxprocsDecision{
 			run:    true,
@@ -78,6 +81,7 @@ func decideAutomaxprocs() automaxprocsDecision {
 func isTruthy(v string) bool {
 	v = strings.TrimSpace(v)
 	v = strings.ToLower(v)
+
 	return v == "1" || v == "true" || v == "yes" || v == "y"
 }
 

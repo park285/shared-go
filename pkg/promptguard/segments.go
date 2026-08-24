@@ -57,6 +57,7 @@ func splitTextSegmentsBounded(text string, limit int) ([]textSegment, bool) {
 	if exceeded {
 		return nil, true
 	}
+
 	if len(segments) == 0 {
 		return []textSegment{{Kind: segmentPlain, Views: normalizeViews(raw)}}, false
 	}
@@ -68,16 +69,21 @@ func firstRunes(text string, limit int) string {
 	if limit <= 0 {
 		return ""
 	}
+
 	if len(text) <= limit {
 		return text
 	}
+
 	count := 0
+
 	for index := range text {
 		if count == limit {
 			return text[:index]
 		}
+
 		count++
 	}
+
 	return text
 }
 
@@ -85,20 +91,25 @@ func lastRunes(text string, limit int) string {
 	if limit <= 0 {
 		return ""
 	}
+
 	if len(text) <= limit {
 		return text
 	}
+
 	start := len(text)
+
 	for range limit {
 		_, size := utf8.DecodeLastRuneInString(text[:start])
 		if size == 0 {
 			return text
 		}
+
 		start -= size
 		if start == 0 {
 			return text
 		}
 	}
+
 	return text[start:]
 }
 
@@ -125,75 +136,105 @@ func segmentKindBit(kind segmentKind) segmentKindSet {
 	}
 }
 
+type segmentizer struct {
+	segments    []textSegment
+	buffer      strings.Builder
+	currentKind segmentKind
+	fenceMarker string
+	limit       int
+	inFence     bool
+}
+
 func segmentizeTextBounded(text string, limit int) ([]textSegment, bool) {
-	segments := make([]textSegment, 0, 8)
-
-	var buffer strings.Builder
-
-	currentKind := segmentPlain
-	inFence := false
-	fenceMarker := ""
-
-	flush := func(kind segmentKind) bool {
-		if buffer.Len() == 0 {
-			return true
-		}
-
-		content := buffer.String()
-		buffer.Reset()
-
-		finalKind := segmentKindFromContent(kind, content)
-		var exceeded bool
-		segments, exceeded = appendSegmentContentBounded(segments, finalKind, content, limit)
-
-		return !exceeded
+	state := segmentizer{
+		segments:    make([]textSegment, 0, 8),
+		currentKind: segmentPlain,
+		limit:       limit,
 	}
 
 	for line := range strings.Lines(text) {
-		nextKind, marker, changedFence := nextSegmentState(strings.TrimSpace(line), inFence, fenceMarker)
-		if changedFence {
-			if inFence && marker == fenceMarker {
-				buffer.WriteString(line)
-				if !flush(segmentCode) {
-					return nil, true
-				}
-				inFence = false
-				fenceMarker = ""
-				currentKind = segmentPlain
-			} else {
-				if !flush(currentKind) {
-					return nil, true
-				}
-				inFence = true
-				fenceMarker = marker
-				currentKind = segmentCode
-				buffer.WriteString(line)
-			}
-			continue
-		}
+		nextKind, marker, changedFence := nextSegmentState(strings.TrimSpace(line), state.inFence, state.fenceMarker)
 
-		if inFence {
-			buffer.WriteString(line)
-
-			continue
-		}
-
-		if buffer.Len() == 0 {
-			currentKind = nextKind
-		} else if nextKind != currentKind {
-			if !flush(currentKind) {
+		switch {
+		case changedFence:
+			if !state.applyFenceChange(line, marker) {
 				return nil, true
 			}
-			currentKind = nextKind
+		case state.inFence:
+			state.buffer.WriteString(line)
+		default:
+			if !state.appendLine(line, nextKind) {
+				return nil, true
+			}
 		}
-		buffer.WriteString(line)
 	}
 
-	if !flush(currentKind) {
+	if !state.flush(state.currentKind) {
 		return nil, true
 	}
 
-	return segments, false
+	return state.segments, false
+}
+
+func (s *segmentizer) flush(kind segmentKind) bool {
+	if s.buffer.Len() == 0 {
+		return true
+	}
+
+	content := s.buffer.String()
+	s.buffer.Reset()
+
+	finalKind := segmentKindFromContent(kind, content)
+
+	var exceeded bool
+
+	s.segments, exceeded = appendSegmentContentBounded(s.segments, finalKind, content, s.limit)
+
+	return !exceeded
+}
+
+func (s *segmentizer) applyFenceChange(line, marker string) bool {
+	if s.inFence && marker == s.fenceMarker {
+		s.buffer.WriteString(line)
+
+		if !s.flush(segmentCode) {
+			return false
+		}
+
+		s.inFence = false
+		s.fenceMarker = ""
+		s.currentKind = segmentPlain
+
+		return true
+	}
+
+	if !s.flush(s.currentKind) {
+		return false
+	}
+
+	s.inFence = true
+	s.fenceMarker = marker
+	s.currentKind = segmentCode
+
+	s.buffer.WriteString(line)
+
+	return true
+}
+
+func (s *segmentizer) appendLine(line string, nextKind segmentKind) bool {
+	if s.buffer.Len() == 0 {
+		s.currentKind = nextKind
+	} else if nextKind != s.currentKind {
+		if !s.flush(s.currentKind) {
+			return false
+		}
+
+		s.currentKind = nextKind
+	}
+
+	s.buffer.WriteString(line)
+
+	return true
 }
 
 func appendSegmentContentBounded(segments []textSegment, kind segmentKind, content string, limit int) ([]textSegment, bool) {
@@ -207,19 +248,24 @@ func appendSegmentContentBounded(segments []textSegment, kind segmentKind, conte
 
 	initialLength := len(segments)
 	partIndex := 0
+
 	for part := range strings.SplitSeq(content, "`") {
 		if part != "" {
 			if len(segments) >= limit {
 				return nil, true
 			}
+
 			segments = append(segments, newInlineSegment(part, partIndex))
 		}
+
 		partIndex++
 	}
+
 	if len(segments) == initialLength {
 		if len(segments) >= limit {
 			return nil, true
 		}
+
 		segments = append(segments, textSegment{Kind: kind, Views: normalizeViews(content)})
 	}
 
@@ -272,7 +318,9 @@ func looksLikeConfig(text string) bool {
 
 	total := 0
 	keyValue := 0
+
 	var distinctKeys [3]string
+
 	distinctKeyCount := 0
 	hasRulepackKeys := false
 
@@ -286,19 +334,8 @@ func looksLikeConfig(text string) bool {
 
 		if key, ok := configLineKey(line); ok {
 			keyValue++
-			if distinctKeyCount < len(distinctKeys) {
-				seen := false
-				for _, existing := range distinctKeys[:distinctKeyCount] {
-					if strings.EqualFold(existing, key) {
-						seen = true
-						break
-					}
-				}
-				if !seen {
-					distinctKeys[distinctKeyCount] = key
-					distinctKeyCount++
-				}
-			}
+
+			distinctKeyCount = appendDistinctKey(distinctKeys[:], distinctKeyCount, key)
 		}
 
 		if strings.Contains(trimmed, "rules:") || strings.Contains(trimmed, "pattern:") || strings.Contains(trimmed, "weight:") {
@@ -313,6 +350,7 @@ func looksLikeConfig(text string) bool {
 	if hasRulepackKeys {
 		return true
 	}
+
 	if distinctKeyCount < len(distinctKeys) {
 		return false
 	}
@@ -320,11 +358,29 @@ func looksLikeConfig(text string) bool {
 	return keyValue >= 3 || float64(keyValue)/float64(total) >= 0.35
 }
 
+func appendDistinctKey(keys []string, count int, key string) int {
+	if count >= len(keys) {
+		return count
+	}
+
+	for _, existing := range keys[:count] {
+		if strings.EqualFold(existing, key) {
+			return count
+		}
+	}
+
+	keys[count] = key
+
+	return count + 1
+}
+
 func configLineKey(line string) (string, bool) {
 	value := strings.TrimLeft(line, " \t\r\f\v")
 	if strings.HasPrefix(value, "-") {
 		rest := value[1:]
+
 		value = strings.TrimLeft(rest, " \t\r\f\v")
+
 		if len(value) == len(rest) {
 			return "", false
 		}
@@ -334,9 +390,11 @@ func configLineKey(line string) (string, bool) {
 	for end < len(value) && isConfigKeyByte(value[end]) {
 		end++
 	}
+
 	if end == 0 {
 		return "", false
 	}
+
 	rest := strings.TrimLeft(value[end:], " \t\r\f\v")
 	if !strings.HasPrefix(rest, ":") {
 		return "", false

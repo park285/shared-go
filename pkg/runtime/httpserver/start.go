@@ -25,9 +25,11 @@ func handleListenError(err error, logger *slog.Logger, errCh chan<- error) {
 	if err == nil || errors.Is(err, http.ErrServerClosed) {
 		return
 	}
+
 	if logger != nil {
 		logger.Error("http server listen error", "err", err)
 	}
+
 	if errCh != nil {
 		errCh <- fmt.Errorf("http server listen: %w", err)
 	}

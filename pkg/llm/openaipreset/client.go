@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"reflect"
 	"slices"
 	"strings"
 	"time"
@@ -61,6 +60,7 @@ func New(baseURL, apiKey, model string, opts ...Option) (*Client, error) {
 	}
 
 	cfg := &config{schemaName: defaultSchemaName}
+
 	for _, opt := range opts {
 		opt(cfg)
 	}
@@ -77,6 +77,7 @@ func New(baseURL, apiKey, model string, opts ...Option) (*Client, error) {
 	if normalizedBaseURL := strings.TrimRight(strings.TrimSpace(baseURL), "/"); normalizedBaseURL != "" {
 		requestOpts = append(requestOpts, option.WithBaseURL(normalizedBaseURL))
 	}
+
 	requestOpts = append(requestOpts, option.WithHTTPClient(httpClient))
 
 	generator, err := sharedllm.NewOpenAICompatibleJSONGenerator(sharedllm.OpenAICompatibleConfig{
@@ -87,7 +88,7 @@ func New(baseURL, apiKey, model string, opts ...Option) (*Client, error) {
 		MaxRetries:                   cfg.maxRetries,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("open AI compatible JSON generator: %w", err)
 	}
 
 	reporter := cfg.usageReporter
@@ -115,6 +116,7 @@ func (c *Client) promptCacheKeyFor(task string) string {
 	if c.promptCacheKeyPrefix == "" {
 		return ""
 	}
+
 	return c.promptCacheKeyPrefix + strings.TrimSpace(task)
 }
 
@@ -136,6 +138,7 @@ func (c *Client) Model() string {
 	if c == nil {
 		return ""
 	}
+
 	return c.model
 }
 
@@ -143,31 +146,33 @@ func (c *Client) GenerateJSON(ctx context.Context, systemPrompt, userPrompt stri
 	if c == nil {
 		return "", errClientNil
 	}
+
 	resp, err := c.generate(ctx, c.schemaName, systemPrompt, "", "", userPrompt, schema)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("generate: %w", err)
 	}
+
 	return resp.Text, nil
 }
 
-func (c *Client) GenerateJSONInto(
+func (c *Client) GenerateJSONAs[T any](
 	ctx context.Context,
 	task string,
 	prompts PromptLayers,
 	schema map[string]any,
-	out any,
-) error {
+) (T, error) {
+	var zero T
+
 	if c == nil {
-		return errClientNil
+		return zero, errClientNil
 	}
-	if isNilOutputTarget(out) {
-		return errors.New("openaipreset: output target is nil")
-	}
+
 	resp, err := c.generate(ctx, task, "", prompts.Invariant, prompts.Developer, prompts.User, schema)
 	if err != nil {
-		return err
+		return zero, fmt.Errorf("generate: %w", err)
 	}
-	return decodeJSONInto(task, resp.Text, out)
+
+	return decodeJSONAs[T](task, resp.Text)
 }
 
 // GenerateLayeredResponsesJSON returns every Responses output_text fragment
@@ -177,28 +182,35 @@ func (c *Client) GenerateLayeredResponsesJSON(ctx context.Context, task string, 
 	if c == nil {
 		return "", errClientNil
 	}
+
 	if c.chatCompletions || c.allowChatCompletionsFallback {
 		return "", ErrResponsesJSONRequired
 	}
+
 	profile := sharedllm.InstructionProfileOpenAI
+
 	params, model, err := c.completionParams(CompletionRequest{
 		Messages: []Message{{Role: "system", Content: prompts.Invariant}, {Role: "developer", Content: prompts.Developer}, {Role: "user", Content: prompts.User}},
 		Model:    c.model, ResponseFormat: &ResponseFormat{Name: sharedllm.ResponsesSchemaName(task), Schema: schema, Strict: true}, InstructionProfile: &profile,
 		CacheKey: c.promptCacheKeyFor(task),
 	})
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("completion params: %w", err)
 	}
+
 	attrs := promptSummaryAttrs(model, joinedPromptLen(prompts.Invariant, prompts.Developer, prompts.User))
-	return runRequest(ctx, c.logger, attrs, func() (string, error) {
-		resp, err := c.openai.Responses.New(ctx, params)
-		if err != nil {
-			return "", fmt.Errorf("openai responses API: %w", openaidiag.SafeError(err))
+
+	out, err := runRequest(ctx, c.logger, attrs, func() (string, error) {
+		resp, respErr := c.openai.Responses.New(ctx, params)
+		if respErr != nil {
+			return "", fmt.Errorf("openai responses API: %w", openaidiag.SafeError(respErr))
 		}
+
 		responseModel := strings.TrimSpace(resp.Model)
 		if responseModel == "" {
 			responseModel = model
 		}
+
 		c.usageReporter.RecordUsage(ctx, providerLabel, responseModel, sharedllm.Usage{
 			InputTokens:           int(resp.Usage.InputTokens),
 			OutputTokens:          int(resp.Usage.OutputTokens),
@@ -206,24 +218,34 @@ func (c *Client) GenerateLayeredResponsesJSON(ctx context.Context, task string, 
 			CachedInputTokens:     int(resp.Usage.InputTokensDetails.CachedTokens),
 			ReasoningOutputTokens: int(resp.Usage.OutputTokensDetails.ReasoningTokens),
 		})
+
 		text := completeResponsesOutputText(resp)
 		if strings.TrimSpace(text) == "" {
 			return "", sharedllm.ErrOpenAIEmptyOutput
 		}
+
 		return text, nil
 	})
+	if err != nil {
+		return out, fmt.Errorf("run request: %w", err)
+	}
+
+	return out, nil
 }
 
 func completeResponsesOutputText(resp *responses.Response) string {
 	if resp == nil {
 		return ""
 	}
+
 	var out strings.Builder
+
 	for itemIndex := range resp.Output {
 		item := &resp.Output[itemIndex]
 		if item.Type != "message" {
 			continue
 		}
+
 		for contentIndex := range item.Content {
 			content := &item.Content[contentIndex]
 			if content.Type == "output_text" {
@@ -231,20 +253,8 @@ func completeResponsesOutputText(resp *responses.Response) string {
 			}
 		}
 	}
-	return out.String()
-}
 
-func isNilOutputTarget(out any) bool {
-	if out == nil {
-		return true
-	}
-	value := reflect.ValueOf(out)
-	switch value.Kind() {
-	case reflect.Pointer, reflect.Map, reflect.Interface:
-		return value.IsNil()
-	default:
-		return false
-	}
+	return out.String()
 }
 
 func (c *Client) generate(
@@ -253,7 +263,8 @@ func (c *Client) generate(
 	schema map[string]any,
 ) (sharedllm.JSONResponse, error) {
 	attrs := promptSummaryAttrs(c.model, layeredPromptLen(systemPrompt, invariantPrompt, developerPrompt, userPrompt))
-	return runRequest(ctx, c.logger, attrs, func() (sharedllm.JSONResponse, error) {
+
+	out, err := runRequest(ctx, c.logger, attrs, func() (sharedllm.JSONResponse, error) {
 		return sharedllm.RunJSON(ctx, c.generator, sharedllm.JSONRequest{
 			TaskName:        taskName,
 			SystemPrompt:    systemPrompt,
@@ -270,17 +281,25 @@ func (c *Client) generate(
 			CacheKey:        c.promptCacheKeyFor(taskName),
 		}, providerLabel, c.usageReporter)
 	})
+	if err != nil {
+		return out, fmt.Errorf("run request: %w", err)
+	}
+
+	return out, nil
 }
 
-func decodeJSONInto(task, text string, out any) error {
-	if err := jsonv2.Unmarshal([]byte(text), out); err != nil {
-		return fmt.Errorf("decode %s json failed: %w", strings.TrimSpace(task), &redactedCauseError{cause: err})
+func decodeJSONAs[T any](task, text string) (T, error) {
+	var out T
+
+	if err := jsonv2.Unmarshal([]byte(text), &out); err != nil {
+		return out, fmt.Errorf("decode %s json failed: %w", strings.TrimSpace(task), &redactedCauseError{cause: err})
 	}
-	return nil
+
+	return out, nil
 }
 
 // JSON decode error 메시지는 실패 지점 주변 원문을 담을 수 있으므로 렌더링하면 provider
-// 출력이 샌다(TestGenerateJSONIntoDecodeErrorOmitsProviderOutput). 원문은 Unwrap으로만
+// 출력이 샌다(TestGenerateJSONAsDecodeErrorOmitsProviderOutput). 원문은 Unwrap으로만
 // 전달해 errors.Is/As 대상 클래스를 보존하고, 메시지에는 타입만 남긴다.
 type redactedCauseError struct{ cause error }
 
@@ -292,15 +311,21 @@ func (e *redactedCauseError) Unwrap() error { return e.cause }
 
 func runRequest[T any](ctx context.Context, logger *slog.Logger, attrs []slog.Attr, run func() (T, error)) (T, error) {
 	logging.Info(ctx, logger, "llm.request.started", "llm request started", attrs...)
+
 	started := time.Now()
 	resp, err := run()
 	elapsed := logging.SinceMS(started)
+
 	if err != nil {
 		logging.Error(ctx, logger, "llm.request.failed", "llm request failed", append(attrs, elapsed)...)
+
 		var zero T
-		return zero, err
+
+		return zero, fmt.Errorf("run: %w", err)
 	}
+
 	logging.Info(ctx, logger, "llm.request.succeeded", "llm request succeeded", append(attrs, elapsed)...)
+
 	return resp, nil
 }
 
@@ -315,6 +340,7 @@ func promptSummaryAttrs(model string, promptLen int) []slog.Attr {
 func layeredPromptLen(systemPrompt, invariantPrompt, developerPrompt, userPrompt string) int {
 	hasInvariantPrompt := strings.TrimSpace(invariantPrompt) != ""
 	hasDeveloperPrompt := strings.TrimSpace(developerPrompt) != ""
+
 	switch {
 	case hasInvariantPrompt && hasDeveloperPrompt:
 		return joinedPromptLen(invariantPrompt, developerPrompt, userPrompt)
@@ -331,35 +357,46 @@ func layeredPromptLen(systemPrompt, invariantPrompt, developerPrompt, userPrompt
 // 계층 경계를 rune이 가로지르지 않으므로 계층별 trim 결과를 그대로 합산할 수 있다.
 func joinedPromptLen(parts ...string) int {
 	total := 0
+
 	for i, part := range parts {
 		if i > 0 {
 			total++
 		}
+
 		total += len(part)
 	}
 
 	lead := 0
+
 	for i, part := range parts {
 		if i > 0 {
 			lead++
 		}
+
 		trimmed := strings.TrimLeftFunc(part, unicode.IsSpace)
+
 		lead += len(part) - len(trimmed)
+
 		if trimmed != "" {
 			break
 		}
 	}
+
 	if lead >= total {
 		return 0
 	}
 
 	trail := 0
+
 	for i, part := range slices.Backward(parts) {
 		if i < len(parts)-1 {
 			trail++
 		}
+
 		trimmed := strings.TrimRightFunc(part, unicode.IsSpace)
+
 		trail += len(part) - len(trimmed)
+
 		if trimmed != "" {
 			break
 		}

@@ -38,6 +38,7 @@ func TestRespond(t *testing.T) {
 
 	// 유효한 JSON인지 확인
 	var out map[string]string
+
 	if err := jsonv2.Unmarshal([]byte(strings.TrimSpace(body)), &out); err != nil {
 		t.Errorf("응답 바디가 유효한 JSON이 아님: %v (body=%s)", err, body)
 	}
@@ -65,7 +66,9 @@ func TestJSON_Render(t *testing.T) {
 	}
 
 	body := strings.TrimSpace(w.Body.String())
+
 	var out map[string]int
+
 	if err := jsonv2.Unmarshal([]byte(body), &out); err != nil {
 		t.Errorf("응답 바디가 유효한 JSON이 아님: %v (body=%s)", err, body)
 	}
@@ -117,6 +120,7 @@ func TestJSONRenderRejectsInvalidUTF8(t *testing.T) {
 	if err := (ginjson.JSON{Data: map[string]string{"k": "ok\xff\xfebad"}}).Render(w); err == nil {
 		t.Fatal("Render 오류 = nil, want invalid UTF-8 failure")
 	}
+
 	if w.Body.Len() != 0 {
 		t.Fatalf("Render가 실패 후 body를 기록함: %q", w.Body.String())
 	}
@@ -149,6 +153,7 @@ func TestJSON_WriteContentType(t *testing.T) {
 			t.Parallel()
 
 			w := httptest.NewRecorder()
+
 			if tc.preset != "" {
 				w.Header().Set("Content-Type", tc.preset)
 			}

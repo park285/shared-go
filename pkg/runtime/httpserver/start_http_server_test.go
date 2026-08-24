@@ -3,6 +3,7 @@ package httpserver
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -18,17 +19,25 @@ type syncBuffer struct {
 func (b *syncBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.buf.Write(p)
+
+	out, err := b.buf.Write(p)
+	if err != nil {
+		return out, fmt.Errorf("write: %w", err)
+	}
+
+	return out, nil
 }
 
 func (b *syncBuffer) String() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
 	return b.buf.String()
 }
 
 func TestStartServerWithPrefix_CustomErrorText(t *testing.T) {
 	t.Parallel()
+
 	wantText := "custom prefix"
 	wantErr := errors.New("listen failed")
 	server := newFakeServer(wantErr, nil)
@@ -41,6 +50,7 @@ func TestStartServerWithPrefix_CustomErrorText(t *testing.T) {
 		if !strings.Contains(err.Error(), wantText) {
 			t.Fatalf("error = %q, want prefix %q", err, wantText)
 		}
+
 		if !errors.Is(err, wantErr) {
 			t.Fatalf("error = %v, want wrapped %v", err, wantErr)
 		}
@@ -51,11 +61,14 @@ func TestStartServerWithPrefix_CustomErrorText(t *testing.T) {
 
 func TestStartServerWithPrefix_LogsListenErrorWithErrChNonNil(t *testing.T) {
 	t.Parallel()
+
 	wantText := "bind failed"
 	wantErr := errors.New("listen failed")
 	server := newFakeServer(wantErr, nil)
 	errCh := make(chan error, 1)
+
 	var logBuf syncBuffer
+
 	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
 
 	StartServerWithPrefix(server, wantText, logger, errCh)
@@ -65,6 +78,7 @@ func TestStartServerWithPrefix_LogsListenErrorWithErrChNonNil(t *testing.T) {
 		if !errors.Is(err, wantErr) {
 			t.Fatalf("errCh error = %v, want wrapped %v", err, wantErr)
 		}
+
 		if !strings.Contains(err.Error(), wantText) {
 			t.Fatalf("errCh error = %q, want prefix %q", err, wantText)
 		}
@@ -73,10 +87,12 @@ func TestStartServerWithPrefix_LogsListenErrorWithErrChNonNil(t *testing.T) {
 	}
 
 	deadline := time.After(2 * time.Second)
+
 	for {
 		if logged := logBuf.String(); strings.Contains(logged, wantText) {
 			break
 		}
+
 		select {
 		case <-deadline:
 			t.Fatalf("listen error not logged with errCh non-nil; log = %q", logBuf.String())

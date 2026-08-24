@@ -1,6 +1,7 @@
 package outputguard
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -10,7 +11,11 @@ import (
 var baselineOutputGuard = NewGuard()
 
 func validateOutputForTest(text string) error {
-	return baselineOutputGuard.Validate(CheckRequest{Text: text})
+	if err := baselineOutputGuard.Validate(CheckRequest{Text: text}); err != nil {
+		return fmt.Errorf("validate: %w", err)
+	}
+
+	return nil
 }
 
 func TestGuardValidateBlocksSystemPromptHeader(t *testing.T) {

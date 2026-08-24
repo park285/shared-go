@@ -31,6 +31,7 @@ func TestMetricVectorsEnforceSeriesLimit(t *testing.T) {
 			t.Fatalf("%s SeriesCount() = %d, want 2", name, got)
 		}
 	}
+
 	if counter.DroppedSeries() != 1 || gauge.DroppedSeries() != 1 || histogram.DroppedSeries() != 1 {
 		t.Fatalf("DroppedSeries() = (%d, %d, %d), want (1, 1, 1)", counter.DroppedSeries(), gauge.DroppedSeries(), histogram.DroppedSeries())
 	}
@@ -52,6 +53,7 @@ func TestMetricVectorRejectsOversizedLabelsBeforeRetention(t *testing.T) {
 	if got := vec.SeriesCount(); got != 0 {
 		t.Fatalf("SeriesCount() = %d, want 0", got)
 	}
+
 	if got := vec.DroppedSeries(); got != 3 {
 		t.Fatalf("DroppedSeries() = %d, want 3", got)
 	}
@@ -61,20 +63,23 @@ func TestMetricVectorConcurrentAdmissionNeverExceedsLimit(t *testing.T) {
 	t.Parallel()
 
 	const limit = 8
+
 	vec := NewCounterVecWithOptions("requests_total", "Requests", VecOptions{MaxSeries: limit})
+
 	var wg sync.WaitGroup
+
 	for i := range 128 {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
+		wg.Go(func() {
 			vec.Inc(Labels{"id": fmt.Sprintf("%d", i)})
-		}(i)
+		})
 	}
+
 	wg.Wait()
 
 	if got := vec.SeriesCount(); got != limit {
 		t.Fatalf("SeriesCount() = %d, want %d", got, limit)
 	}
+
 	if got := vec.DroppedSeries(); got != 128-limit {
 		t.Fatalf("DroppedSeries() = %d, want %d", got, 128-limit)
 	}
@@ -84,12 +89,15 @@ func TestMetricVectorCompatibilityConstructorUsesSafeDefault(t *testing.T) {
 	t.Parallel()
 
 	vec := NewCounterVec("requests_total", "Requests")
+
 	for i := 0; i <= DefaultMaxMetricSeries; i++ {
 		vec.Inc(Labels{"id": fmt.Sprintf("%d", i)})
 	}
+
 	if got := vec.SeriesCount(); got != DefaultMaxMetricSeries {
 		t.Fatalf("SeriesCount() = %d, want %d", got, DefaultMaxMetricSeries)
 	}
+
 	if got := vec.DroppedSeries(); got != 1 {
 		t.Fatalf("DroppedSeries() = %d, want 1", got)
 	}

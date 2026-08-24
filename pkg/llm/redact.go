@@ -23,8 +23,10 @@ func RedactDiagnostic(text string, limit int) string {
 	}
 
 	redacted := envSecretRegex.ReplaceAllString(text, "${1}=***REDACTED***")
+
 	redacted = jsonSecretRegex.ReplaceAllString(redacted, "${1}***REDACTED***")
 	redacted = bearerRegex.ReplaceAllString(redacted, "${1}***REDACTED***")
+
 	return truncateDiagnostic(redacted, limit)
 }
 
@@ -37,5 +39,6 @@ func truncateDiagnostic(text string, limit int) string {
 	for cut > 0 && !utf8.RuneStart(text[cut]) {
 		cut--
 	}
+
 	return strings.TrimRight(text[:cut], "\x00") + truncatedMarker
 }

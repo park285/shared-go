@@ -13,6 +13,7 @@ func renderEmphasis(input string) string {
 	text := replaceDelimited(input, "***", func(content string) string {
 		return styleSpan(content, "❮", "❯", styleBoldItalic, true)
 	})
+
 	text = replaceDelimited(text, "___", func(content string) string {
 		return styleSpan(content, "❮", "❯", styleBoldItalic, true)
 	})
@@ -77,6 +78,7 @@ func styleBoldItalic(text string) string {
 
 func mapASCII(text string, upper, lower, digit rune) string {
 	var b strings.Builder
+
 	b.Grow(len(text) * 4)
 
 	for _, r := range text {
@@ -101,23 +103,27 @@ func replaceDelimited(input, delim string, transform func(string) string) string
 	}
 
 	var b strings.Builder
+
 	index := 0
 
 	for index < len(input) {
 		start := findDelim(input, delim, index, true)
 		if start < 0 {
 			b.WriteString(input[index:])
+
 			break
 		}
 
 		end := findDelim(input, delim, start+len(delim), false)
 		if end < 0 {
 			b.WriteString(input[index:])
+
 			break
 		}
 
 		b.WriteString(input[index:start])
 		b.WriteString(transform(input[start+len(delim) : end]))
+
 		index = end + len(delim)
 	}
 
@@ -150,6 +156,7 @@ func findDelim(input, delim string, start int, opener bool) int {
 func isOpener(input string, pos, width int) bool {
 	prev := prevRune(input, pos)
 	next := nextRune(input, pos+width)
+
 	if next == 0 || unicode.IsSpace(next) {
 		return false
 	}
@@ -160,6 +167,7 @@ func isOpener(input string, pos, width int) bool {
 func isCloser(input string, pos, width int) bool {
 	prev := prevRune(input, pos)
 	next := nextRune(input, pos+width)
+
 	if prev == 0 || unicode.IsSpace(prev) {
 		return false
 	}
@@ -171,6 +179,7 @@ func prevRune(text string, byteIndex int) rune {
 	if byteIndex > len(text) {
 		byteIndex = len(text)
 	}
+
 	if byteIndex <= 0 {
 		return 0
 	}
@@ -187,6 +196,7 @@ func nextRune(text string, byteIndex int) rune {
 	if byteIndex >= len(text) {
 		return 0
 	}
+
 	for _, r := range text[byteIndex:] {
 		return r
 	}
@@ -199,7 +209,9 @@ func renderStrike(input string) string {
 		parts := reStrike.FindStringSubmatch(match)
 
 		var b strings.Builder
+
 		b.Grow(len(parts[1]) * 3)
+
 		for _, r := range parts[1] {
 			b.WriteRune(r)
 			b.WriteRune('\u0336')

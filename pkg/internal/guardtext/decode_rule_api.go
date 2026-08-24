@@ -24,8 +24,10 @@ func DecodeCandidatesWithContextForRules(input string, mayContribute func(string
 	if mayContribute == nil {
 		return DecodeCandidatesWithContext(input)
 	}
+
 	result := decodeCandidatesForRules(input, mayContribute)
 	joined, changed := normalizeSingleSpaceBase64(input)
+
 	if !changed {
 		return result
 	}
@@ -57,10 +59,13 @@ func decodeCandidatesForRules(input string, mayContribute func(string) bool) Dec
 	if semantic.status != 0 {
 		return DecodeResult{Status: semantic.status}
 	}
+
 	input = semantic.projected
+
 	originalPotential, needsNormalization := ruleDecodePreflight(input)
 	normalized := normalizedRuleDecodeInput(input, needsNormalization)
 	decoded := decodeCandidatesWithContextForRules(input, normalized, mayContribute, nil, nil, originalPotential)
+
 	if len(semantic.candidates) == 0 {
 		return decoded
 	}
@@ -83,6 +88,7 @@ func DecodeCandidatesWithContextForRuleOwner[T any](
 
 	result := decodeForRuleOwner(input, owner, mayContribute, contextMayContribute, oversizedWouldBlock)
 	joined, changed := normalizeSingleSpaceBase64(input)
+
 	if !changed {
 		return result
 	}
@@ -102,27 +108,37 @@ func decodeForRuleOwner[T any](
 ) DecodeResult {
 	matcher := func(candidate string) bool { return mayContribute(owner, candidate) }
 	semantic := decodeSemanticRuleInput(input, matcher)
+
 	if semantic.status != 0 {
 		return DecodeResult{Status: semantic.status}
 	}
+
 	input = semantic.projected
+
 	originalPotential, needsNormalization := ruleDecodePreflight(input)
+
 	if !originalPotential && !needsNormalization {
 		return DecodeResult{Candidates: semantic.candidates}
 	}
+
 	normalized := normalizedRuleDecodeInput(input, needsNormalization)
+
 	var contextMatcher EmbeddedContextMatcher
+
 	if contextMayContribute != nil {
 		contextMatcher = func(input string, start, end int, decoded string) bool {
 			return contextMayContribute(owner, input, start, end, decoded)
 		}
 	}
+
 	var oversizedCallback func(string, string, []string) bool
+
 	if (len(input) > maxDecodedCandidateLen || len(normalized) > maxDecodedCandidateLen) && oversizedWouldBlock != nil {
 		oversizedCallback = func(original, decoded string, bounded []string) bool {
 			return oversizedWouldBlock(owner, original, decoded, bounded)
 		}
 	}
+
 	decoded := decodeCandidatesWithContextForRules(
 		input,
 		normalized,
@@ -131,6 +147,7 @@ func decodeForRuleOwner[T any](
 		oversizedCallback,
 		originalPotential,
 	)
+
 	if len(semantic.candidates) == 0 {
 		return decoded
 	}
@@ -139,7 +156,7 @@ func decodeForRuleOwner[T any](
 }
 
 // DecodeCandidatesWithContextForRuleOwnerAndBlockWitness는 일반 후보 admission과 별개로
-// 실제 owner 정책에서 Block인 bounded decode 후보 하나를 보존한다. decode 한도 자체를
+// 실제 owner 정책에서 Block인 bounded decode 후보 하나를 보존한다. Decode 한도 자체를
 // 공격 근거로 쓰지 않으면서 depth·candidate 예산 뒤의 확정 공격만 차단할 때 사용한다.
 func DecodeCandidatesWithContextForRuleOwnerAndBlockWitness[T any](
 	input string,
@@ -170,6 +187,7 @@ func DecodeCandidatesWithContextForRuleOwnerAndBlockWitness[T any](
 	}
 
 	var wrappedContextMayContribute func(T, string, int, int, string) bool
+
 	if contextMayContribute != nil {
 		wrappedContextMayContribute = func(owner T, input string, start, end int, decoded string) bool {
 			contributes := contextMayContribute(owner, input, start, end, decoded)
@@ -201,10 +219,12 @@ func normalizedRuleDecodeInput(input string, needed bool) string {
 	if !needed {
 		return ""
 	}
+
 	normalized := NormalizeEncodingSyntax(input)
 	if normalized == input {
 		return ""
 	}
+
 	return normalized
 }
 

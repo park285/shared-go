@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -59,9 +60,10 @@ func NewProvider(ctx context.Context, config Config) (*Provider, error) {
 	if !config.Enabled {
 		return &Provider{}, nil
 	}
+
 	validatedConfig, err := validateConfig(config)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("validate config: %w", err)
 	}
 
 	exporter, err := otlptracegrpc.New(ctx, buildOTLPExporterOptions(validatedConfig)...)
@@ -82,21 +84,26 @@ func NewProvider(ctx context.Context, config Config) (*Provider, error) {
 func validateConfig(config Config) (Config, error) {
 	config.ServiceName = strings.TrimSpace(config.ServiceName)
 	config.OTLPEndpoint = strings.TrimSpace(config.OTLPEndpoint)
+
 	if config.ServiceName == "" {
-		return Config{}, fmt.Errorf("invalid telemetry config: ServiceName is required")
+		return Config{}, errors.New("invalid telemetry config: ServiceName is required")
 	}
+
 	if config.OTLPEndpoint == "" {
-		return Config{}, fmt.Errorf("invalid telemetry config: OTLPEndpoint is required")
+		return Config{}, errors.New("invalid telemetry config: OTLPEndpoint is required")
 	}
+
 	if isEndpointURL(config.OTLPEndpoint) {
 		parsed, err := url.Parse(config.OTLPEndpoint)
 		if err != nil || parsed.Host == "" {
 			return Config{}, fmt.Errorf("invalid telemetry config: OTLPEndpoint URL must include a host: %q", config.OTLPEndpoint)
 		}
 	}
+
 	if math.IsNaN(config.SampleRate) || math.IsInf(config.SampleRate, 0) || config.SampleRate < 0 || config.SampleRate > 1 {
-		return Config{}, fmt.Errorf("invalid telemetry config: SampleRate must be between 0 and 1")
+		return Config{}, errors.New("invalid telemetry config: SampleRate must be between 0 and 1")
 	}
+
 	return config, nil
 }
 
@@ -114,6 +121,7 @@ func buildOTLPExporterOptions(config Config) []otlptracegrpc.Option {
 	if config.OTLPInsecure {
 		return append(opts, otlptracegrpc.WithInsecure())
 	}
+
 	// otlptracegrpc는 OTEL_EXPORTER_OTLP_INSECURE 같은 env를 user option보다 먼저 적용한다.
 	// TLS를 명시하지 않으면 env가 심은 Insecure=true가 그대로 남아 평문으로 강등되므로,
 	// Insecure보다 우선 적용되는 GRPCCredentials로 TLS를 못박는다.
@@ -128,11 +136,13 @@ func endpointOption(endpoint string) otlptracegrpc.Option {
 	if isEndpointURL(endpoint) {
 		return otlptracegrpc.WithEndpointURL(endpoint)
 	}
+
 	return otlptracegrpc.WithEndpoint(endpoint)
 }
 
 func buildSampler(config Config) sdktrace.Sampler {
 	var rootSampler sdktrace.Sampler
+
 	if config.SampleRate >= 1.0 {
 		rootSampler = sdktrace.AlwaysSample()
 	} else if config.SampleRate <= 0 {
@@ -140,6 +150,7 @@ func buildSampler(config Config) sdktrace.Sampler {
 	} else {
 		rootSampler = sdktrace.TraceIDRatioBased(config.SampleRate)
 	}
+
 	return sdktrace.ParentBased(rootSampler)
 }
 
@@ -158,6 +169,7 @@ func (slogErrorHandler) Handle(err error) {
 	if err == nil {
 		return
 	}
+
 	slog.Warn("otel export error", "error", logging.RedactDiagnostic(err.Error()))
 }
 
@@ -174,13 +186,16 @@ func (p *Provider) Shutdown(ctx context.Context) error {
 	if p == nil || p.tracerProvider == nil {
 		return nil
 	}
+
 	p.shutdownOnce.Do(func() {
 		flushCtx, cancel := flushContext(ctx)
 		defer cancel()
+
 		if err := p.tracerProvider.Shutdown(flushCtx); err != nil {
 			p.shutdownErr = fmt.Errorf("shutdown otel tracer provider: %w", err)
 		}
 	})
+
 	return p.shutdownErr
 }
 

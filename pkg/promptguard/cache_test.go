@@ -56,6 +56,7 @@ func TestTTLCacheUpdateAtCapacityPreservesOtherEntry(t *testing.T) {
 		if got, ok := cache.Get("a"); !ok || got != 3 {
 			t.Fatalf("Get(a) = (%d, %v), want (3, true)", got, ok)
 		}
+
 		if got, ok := cache.Get("b"); !ok || got != 2 {
 			t.Fatalf("Get(b) = (%d, %v), want (2, true)", got, ok)
 		}
@@ -68,16 +69,20 @@ func TestTTLCacheExpiredResolutionPreservesNewerEntry(t *testing.T) {
 	now := time.Date(2026, time.July, 12, 0, 0, 0, 0, time.UTC)
 	cache := newTTLCache[string, int](2, time.Minute, func() time.Time { return now })
 	cache.Set("a", 1)
+
 	now = now.Add(2 * time.Minute)
 
 	cache.mu.RLock()
+
 	stale := cache.entries["a"]
 	cache.mu.RUnlock()
+
 	if !stale.expired(now) {
 		t.Fatal("test setup: cached entry must be expired")
 	}
 
 	cache.mu.Lock()
+
 	cache.entries["a"] = ttlEntry[int]{value: 2, expiresAt: now.Add(time.Minute)}
 	cache.mu.Unlock()
 

@@ -12,13 +12,16 @@ func FuzzRuleDecodePreflightMatchesReference(f *testing.F) {
 	} {
 		f.Add(seed)
 	}
+
 	f.Fuzz(func(t *testing.T, input string) {
 		if len(input) > maxDecodedCandidateLen {
 			t.Skip()
 		}
+
 		wantPotential := hasPotentialDecodeSurface(input) || hasPlausibleShortRuleDecodeSurface(input)
 		wantNormalization := EncodingSyntaxNeedsNormalization(input)
 		gotPotential, gotNormalization := ruleDecodePreflight(input)
+
 		if gotPotential != wantPotential || gotNormalization != wantNormalization {
 			t.Fatalf("ruleDecodePreflight(%q) = (%t, %t), want (%t, %t)", input, gotPotential, gotNormalization, wantPotential, wantNormalization)
 		}

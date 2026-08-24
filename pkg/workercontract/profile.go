@@ -104,6 +104,7 @@ func KnownIdentity(service, role string) (Identity, error) {
 	if !ok {
 		return Identity{}, fmt.Errorf("worker profile identity: unsupported service/role %q/%q", service, role)
 	}
+
 	return Identity{Service: service, Role: role, WorkerIDs: slices.Clone(workerIDs)}, nil
 }
 
@@ -122,139 +123,182 @@ func DecodeSettings(raw jsontext.Value, destination any) error {
 	if destination == nil {
 		return errors.New("worker settings: nil destination")
 	}
+
 	if err := validateJSONDocument(raw); err != nil {
 		return fmt.Errorf("worker settings: %w", err)
 	}
+
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 || trimmed[0] != '{' {
 		return errors.New("worker settings: object required")
 	}
+
 	if err := jsonv2.Unmarshal(raw, destination, jsonv2.RejectUnknownMembers(true)); err != nil {
 		return fmt.Errorf("worker settings: %w", err)
 	}
+
 	return nil
 }
 
 func decodeProfile(raw []byte, identity Identity) (Profile, error) {
 	if err := validateJSONDocument(raw); err != nil {
-		return Profile{}, err
+		return Profile{}, fmt.Errorf("validate JSON document: %w", err)
 	}
+
 	top, err := decodeExactObject(raw, "profile", "contract_version", "service", "role", "profile_id", "workers")
 	if err != nil {
-		return Profile{}, err
+		return Profile{}, fmt.Errorf("decode exact object: %w", err)
 	}
+
 	var profile Profile
+
 	if err := decodeField(top, "contract_version", &profile.ContractVersion); err != nil {
-		return Profile{}, err
+		return Profile{}, fmt.Errorf("decode field: %w", err)
 	}
+
 	if err := decodeField(top, "service", &profile.Service); err != nil {
-		return Profile{}, err
+		return Profile{}, fmt.Errorf("decode field: %w", err)
 	}
+
 	if err := decodeField(top, "role", &profile.Role); err != nil {
-		return Profile{}, err
+		return Profile{}, fmt.Errorf("decode field: %w", err)
 	}
+
 	if err := decodeField(top, "profile_id", &profile.ProfileID); err != nil {
-		return Profile{}, err
+		return Profile{}, fmt.Errorf("decode field: %w", err)
 	}
+
 	workerRaw := map[string]jsontext.Value{}
 	if err := decodeField(top, "workers", &workerRaw); err != nil {
-		return Profile{}, err
+		return Profile{}, fmt.Errorf("decode field: %w", err)
 	}
+
 	profile.Workers = make(map[string]WorkerProfile, len(workerRaw))
 	for workerID, encoded := range workerRaw {
 		worker, decodeErr := decodeWorker(encoded, workerID)
 		if decodeErr != nil {
-			return Profile{}, decodeErr
+			return Profile{}, fmt.Errorf("decode worker: %w", decodeErr)
 		}
+
 		profile.Workers[workerID] = worker
 	}
+
 	if err := validateProfile(profile, identity); err != nil {
-		return Profile{}, err
+		return Profile{}, fmt.Errorf("validate profile: %w", err)
 	}
+
 	return profile, nil
 }
 
 func decodeWorker(raw jsontext.Value, workerID string) (WorkerProfile, error) {
 	fields, fieldsErr := decodeExactObject(raw, "workers."+workerID, "executor", "queue", "settings")
 	if fieldsErr != nil {
-		return WorkerProfile{}, fieldsErr
+		return WorkerProfile{}, fmt.Errorf("decode exact object: %w", fieldsErr)
 	}
+
 	executorFields, executorErr := decodeExactObject(fields["executor"], "workers."+workerID+".executor", "enabled", "configured_workers", "attempt_timeout")
 	if executorErr != nil {
-		return WorkerProfile{}, executorErr
+		return WorkerProfile{}, fmt.Errorf("decode exact object: %w", executorErr)
 	}
+
 	queueFields, queueErr := decodeExactObject(fields["queue"], "workers."+workerID+".queue", "capacity", "max_age")
 	if queueErr != nil {
-		return WorkerProfile{}, queueErr
+		return WorkerProfile{}, fmt.Errorf("decode exact object: %w", queueErr)
 	}
+
 	var worker WorkerProfile
+
 	if bytes.Equal(bytes.TrimSpace(executorFields["enabled"]), []byte("null")) {
 		return WorkerProfile{}, fmt.Errorf("workers.%s.executor.enabled: boolean required", workerID)
 	}
+
 	if err := decodeField(executorFields, "enabled", &worker.Executor.Enabled); err != nil {
-		return WorkerProfile{}, err
+		return WorkerProfile{}, fmt.Errorf("decode field: %w", err)
 	}
+
 	if err := decodeField(executorFields, "configured_workers", &worker.Executor.ConfiguredWorkers); err != nil {
-		return WorkerProfile{}, err
+		return WorkerProfile{}, fmt.Errorf("decode field: %w", err)
 	}
+
 	attemptTimeout, err := decodeDuration(executorFields["attempt_timeout"], "workers."+workerID+".executor.attempt_timeout")
 	if err != nil {
-		return WorkerProfile{}, err
+		return WorkerProfile{}, fmt.Errorf("decode duration: %w", err)
 	}
+
 	worker.Executor.AttemptTimeout = attemptTimeout
+
 	capacity, err := decodeCapacity(queueFields["capacity"], "workers."+workerID+".queue.capacity")
 	if err != nil {
-		return WorkerProfile{}, err
+		return WorkerProfile{}, fmt.Errorf("decode capacity: %w", err)
 	}
+
 	worker.Queue.Capacity = capacity
+
 	maxAge, err := decodeDuration(queueFields["max_age"], "workers."+workerID+".queue.max_age")
 	if err != nil {
-		return WorkerProfile{}, err
+		return WorkerProfile{}, fmt.Errorf("decode duration: %w", err)
 	}
+
 	worker.Queue.MaxAge = maxAge
+
 	settings := bytes.TrimSpace(fields["settings"])
+
 	if len(settings) == 0 || settings[0] != '{' {
 		return WorkerProfile{}, fmt.Errorf("workers.%s.settings: object required", workerID)
 	}
+
 	worker.Settings = slices.Clone(fields["settings"])
+
 	return worker, nil
 }
 
 func decodeDuration(raw jsontext.Value, field string) (DurationPolicy, error) {
 	fields, err := decodeExactObject(raw, field, "mode", "milliseconds")
 	if err != nil {
-		return DurationPolicy{}, err
+		return DurationPolicy{}, fmt.Errorf("decode exact object: %w", err)
 	}
+
 	var policy DurationPolicy
+
 	if err := decodeField(fields, "mode", &policy.Mode); err != nil {
-		return DurationPolicy{}, err
+		return DurationPolicy{}, fmt.Errorf("decode field: %w", err)
 	}
+
 	if !bytes.Equal(bytes.TrimSpace(fields["milliseconds"]), []byte("null")) {
 		var milliseconds int64
+
 		if err := decodeField(fields, "milliseconds", &milliseconds); err != nil {
-			return DurationPolicy{}, err
+			return DurationPolicy{}, fmt.Errorf("decode field: %w", err)
 		}
+
 		policy.Milliseconds = &milliseconds
 	}
+
 	return policy, nil
 }
 
 func decodeCapacity(raw jsontext.Value, field string) (CapacityPolicy, error) {
 	fields, err := decodeExactObject(raw, field, "mode", "items")
 	if err != nil {
-		return CapacityPolicy{}, err
+		return CapacityPolicy{}, fmt.Errorf("decode exact object: %w", err)
 	}
+
 	var policy CapacityPolicy
+
 	if err := decodeField(fields, "mode", &policy.Mode); err != nil {
-		return CapacityPolicy{}, err
+		return CapacityPolicy{}, fmt.Errorf("decode field: %w", err)
 	}
+
 	if !bytes.Equal(bytes.TrimSpace(fields["items"]), []byte("null")) {
 		var items int64
+
 		if err := decodeField(fields, "items", &items); err != nil {
-			return CapacityPolicy{}, err
+			return CapacityPolicy{}, fmt.Errorf("decode field: %w", err)
 		}
+
 		policy.Items = &items
 	}
+
 	return policy, nil
 }
 
@@ -263,6 +307,7 @@ func decodeExactObject(raw jsontext.Value, field string, names ...string) (map[s
 	if err := jsonv2.Unmarshal(raw, &value); err != nil || value == nil {
 		return nil, fmt.Errorf("%s: object required", field)
 	}
+
 	allowed := make(map[string]struct{}, len(names))
 	for _, name := range names {
 		allowed[name] = struct{}{}
@@ -270,11 +315,13 @@ func decodeExactObject(raw jsontext.Value, field string, names ...string) (map[s
 			return nil, fmt.Errorf("%s.%s: required", field, name)
 		}
 	}
+
 	for name := range value {
 		if _, ok := allowed[name]; !ok {
 			return nil, fmt.Errorf("%s.%s: unknown field", field, name)
 		}
 	}
+
 	return value, nil
 }
 
@@ -282,6 +329,7 @@ func decodeField(fields map[string]jsontext.Value, name string, destination any)
 	if err := jsonv2.Unmarshal(fields[name], destination); err != nil {
 		return fmt.Errorf("%s: %w", name, err)
 	}
+
 	return nil
 }
 
@@ -289,39 +337,50 @@ func validateProfile(profile Profile, identity Identity) error {
 	if profile.ContractVersion != ContractVersion {
 		return fmt.Errorf("contract_version: got %d, want %d", profile.ContractVersion, ContractVersion)
 	}
+
 	if profile.Service != identity.Service || profile.Role != identity.Role {
 		return fmt.Errorf("profile identity: got %s/%s, want %s/%s", profile.Service, profile.Role, identity.Service, identity.Role)
 	}
+
 	if !profileIDPattern.MatchString(profile.ProfileID) {
 		return errors.New("profile_id: non-canonical value")
 	}
+
 	actual := make([]string, 0, len(profile.Workers))
 	for workerID, worker := range profile.Workers {
 		if !workerIDPattern.MatchString(workerID) {
 			return fmt.Errorf("worker id %q: non-canonical value", workerID)
 		}
+
 		actual = append(actual, workerID)
 		if err := validateWorker(workerID, worker); err != nil {
-			return err
+			return fmt.Errorf("validate worker: %w", err)
 		}
 	}
+
 	slices.Sort(actual)
+
 	expected := slices.Clone(identity.WorkerIDs)
 	slices.Sort(expected)
+
 	if !slices.Equal(actual, expected) {
 		return fmt.Errorf("workers: got %v, want %v", actual, expected)
 	}
+
 	return nil
 }
 
 func validateWorker(workerID string, worker WorkerProfile) error {
 	prefix := "workers." + workerID
+
 	if worker.Executor.ConfiguredWorkers < 1 || worker.Executor.ConfiguredWorkers > MaxConfiguredWorkers {
 		return fmt.Errorf("%s.executor.configured_workers: out of range", prefix)
 	}
+
 	if err := validateDuration(worker.Executor.AttemptTimeout, false, prefix+".executor.attempt_timeout"); err != nil {
-		return err
+		return fmt.Errorf("validate duration: %w", err)
 	}
+
 	switch worker.Queue.Capacity.Mode {
 	case CapacityModeBounded:
 		if worker.Queue.Capacity.Items == nil || *worker.Queue.Capacity.Items < 1 || *worker.Queue.Capacity.Items > MaxQueueCapacityItems {
@@ -334,7 +393,12 @@ func validateWorker(workerID string, worker WorkerProfile) error {
 	default:
 		return fmt.Errorf("%s.queue.capacity.mode: invalid", prefix)
 	}
-	return validateDuration(worker.Queue.MaxAge, true, prefix+".queue.max_age")
+
+	if err := validateDuration(worker.Queue.MaxAge, true, prefix+".queue.max_age"); err != nil {
+		return fmt.Errorf("validate duration: %w", err)
+	}
+
+	return nil
 }
 
 func validateDuration(policy DurationPolicy, allowNone bool, field string) error {
@@ -351,24 +415,28 @@ func validateDuration(policy DurationPolicy, allowNone bool, field string) error
 		if !allowNone {
 			return fmt.Errorf("%s.mode: none is not allowed", field)
 		}
+
 		if policy.Milliseconds != nil {
 			return fmt.Errorf("%s.milliseconds: must be null", field)
 		}
 	default:
 		return fmt.Errorf("%s.mode: invalid", field)
 	}
+
 	return nil
 }
 
 func validateJSONDocument(raw []byte) error {
 	decoder := jsontext.NewDecoder(bytes.NewReader(raw))
 	if _, err := decoder.ReadValue(); err != nil {
-		return err
+		return fmt.Errorf("read value: %w", err)
 	}
+
 	if _, err := decoder.ReadValue(); errors.Is(err, io.EOF) {
 		return nil
 	} else if err != nil {
-		return err
+		return fmt.Errorf("read value: %w", err)
 	}
+
 	return errors.New("trailing JSON value")
 }

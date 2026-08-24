@@ -2,19 +2,20 @@ package jsonutil
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 )
 
-func TestExtract(t *testing.T) {
-	t.Parallel()
+type extractCase struct {
+	name      string
+	input     string
+	wantJSON  string
+	wantError error
+}
 
-	tests := []struct {
-		name      string
-		input     string
-		wantJSON  string
-		wantError error
-	}{
+func extractFenceCases() []extractCase {
+	return []extractCase{
 		{
 			name:     "코드펜스 내 JSON",
 			input:    "```json\n{\"name\": \"test\"}\n```",
@@ -40,6 +41,11 @@ func TestExtract(t *testing.T) {
 			input:    "Here is the result:\n```json\n{\"status\": \"ok\"}\n```\nDone!",
 			wantJSON: `{"status": "ok"}`,
 		},
+	}
+}
+
+func extractBracketFallbackCases() []extractCase {
+	return []extractCase{
 		{
 			name:     "브라켓 매칭 폴백 - Object",
 			input:    "The answer is {\"foo\": \"bar\"} and more text",
@@ -85,6 +91,11 @@ func TestExtract(t *testing.T) {
 			input:    `prefix {"a":{"b":[{"c":{"d":{"e":[1]}}}]}} suffix`,
 			wantJSON: `{"a":{"b":[{"c":{"d":{"e":[1]}}}]}}`,
 		},
+	}
+}
+
+func extractNoJSONCases() []extractCase {
+	return []extractCase{
 		{
 			name:      "비매칭 bracket",
 			input:     `{"a":[1,2,3}`,
@@ -111,16 +122,28 @@ func TestExtract(t *testing.T) {
 			wantError: ErrNoJSONFound,
 		},
 	}
+}
 
-	for _, tt := range tests {
+func TestExtract(t *testing.T) {
+	t.Parallel()
+
+	cases := slices.Concat(
+		extractFenceCases(),
+		extractBracketFallbackCases(),
+		extractNoJSONCases(),
+	)
+
+	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			result, err := Extract(tt.input)
 
 			if tt.wantError != nil {
 				if !errors.Is(err, tt.wantError) {
 					t.Errorf("Extract() error = %v, wantError %v", err, tt.wantError)
 				}
+
 				return
 			}
 
@@ -174,18 +197,21 @@ func TestExtract_WholeDocumentFastPath(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			got, err := Extract(tt.input)
 
 			if tt.wantError != nil {
 				if !errors.Is(err, tt.wantError) {
 					t.Fatalf("Extract() error = %v, wantError %v", err, tt.wantError)
 				}
+
 				return
 			}
 
 			if err != nil {
 				t.Fatalf("Extract() unexpected error: %v", err)
 			}
+
 			if string(got) != tt.wantJSON {
 				t.Fatalf("Extract() = %q, want %q", string(got), tt.wantJSON)
 			}
@@ -203,9 +229,11 @@ func TestExtract_ResultDoesNotPinInputBuffer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Extract() unexpected error: %v", err)
 	}
+
 	if string(got) != payload {
 		t.Fatalf("Extract() = %q, want %q", string(got), payload)
 	}
+
 	if cap(got) > 1024 {
 		t.Fatalf("Extract() result cap = %d, want <= 1024 (입력 전체 버퍼를 alias하면 안 됨, 입력 %d바이트)", cap(got), len(input))
 	}
@@ -255,6 +283,7 @@ func TestFindMatchingEnd(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			result := findMatchingEnd([]byte(tt.input), tt.start)
 			if result != tt.want {
 				t.Errorf("findMatchingEnd() = %d, want %d", result, tt.want)

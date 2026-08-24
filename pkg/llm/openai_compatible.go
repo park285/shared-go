@@ -41,9 +41,11 @@ func ResolveOpenAIMaxRetries(configured *int) int {
 	if configured == nil {
 		return DefaultOpenAIMaxRetries
 	}
+
 	if *configured < 0 {
 		return 0
 	}
+
 	return *configured
 }
 
@@ -65,6 +67,7 @@ func NewOpenAICompatibleJSONGenerator(cfg OpenAICompatibleConfig) (*OpenAICompat
 	if baseURL := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/"); baseURL != "" {
 		opts = append(opts, option.WithBaseURL(baseURL))
 	}
+
 	if cfg.HTTPClient != nil {
 		opts = append(opts, option.WithHTTPClient(cfg.HTTPClient))
 	}
@@ -79,19 +82,26 @@ func (g *OpenAICompatibleJSONGenerator) GenerateJSON(ctx context.Context, req JS
 	if g == nil {
 		return JSONResponse{}, ErrNilJSONGenerator
 	}
+
 	if ctx == nil {
 		return JSONResponse{}, ErrNilContext
 	}
+
 	if err := ValidateJSONRequest(req); err != nil {
-		return JSONResponse{}, err
+		return JSONResponse{}, fmt.Errorf("validate JSON request: %w", err)
 	}
+
 	if err := ctx.Err(); err != nil {
 		return JSONResponse{}, err
 	}
 
 	if req.ChatCompletions {
 		resp, err := g.generateChatCompletionsJSON(ctx, req)
-		return resp, safeOpenAICompatibleError(err)
+		if safeErr := safeOpenAICompatibleError(err); safeErr != nil {
+			return resp, fmt.Errorf("safe open AI compatible error: %w", safeErr)
+		}
+
+		return resp, nil
 	}
 
 	resp, err := g.generateResponsesJSON(ctx, req)
@@ -100,8 +110,13 @@ func (g *OpenAICompatibleJSONGenerator) GenerateJSON(ctx context.Context, req JS
 	}
 
 	if !g.allowChatCompletionsFallback || !shouldFallbackToChatCompletions(err) {
-		return JSONResponse{}, safeOpenAICompatibleError(err)
+		if safeErr := safeOpenAICompatibleError(err); safeErr != nil {
+			return JSONResponse{}, fmt.Errorf("safe open AI compatible error: %w", safeErr)
+		}
+
+		return JSONResponse{}, nil
 	}
+
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return JSONResponse{}, ctxErr
 	}
@@ -110,7 +125,9 @@ func (g *OpenAICompatibleJSONGenerator) GenerateJSON(ctx context.Context, req JS
 	if fallbackErr != nil {
 		return JSONResponse{}, fmt.Errorf("openai responses failed (%w) and chat completions fallback failed: %w", safeOpenAICompatibleError(err), safeOpenAICompatibleError(fallbackErr))
 	}
+
 	fallbackResp.FallbackUsed = true
+
 	return fallbackResp, nil
 }
 
@@ -119,16 +136,18 @@ const defaultResponsesSchemaName = "schema"
 var responsesSchemaNameInvalidChars = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
 
 // OpenAI Responses API의 text.format.name은 [a-zA-Z0-9_-](최대 64자)만 허용한다.
-// taskName을 그대로 schema name으로 넘기면 점 등 비허용 문자가 섞여 400(invalid_value)이 난다.
+// TaskName을 그대로 schema name으로 넘기면 점 등 비허용 문자가 섞여 400(invalid_value)이 난다.
 // ResponsesSchemaName은 Responses API의 schema name 제약에 맞게 task name을 정규화한다.
 func ResponsesSchemaName(name string) string {
 	cleaned := responsesSchemaNameInvalidChars.ReplaceAllString(strings.TrimSpace(name), "_")
 	if cleaned == "" {
 		return defaultResponsesSchemaName
 	}
+
 	if len(cleaned) > 64 {
 		cleaned = cleaned[:64]
 	}
+
 	return cleaned
 }
 
@@ -148,24 +167,29 @@ func (g *OpenAICompatibleJSONGenerator) generateResponsesJSON(ctx context.Contex
 	if isLayeredJSONRequest(req) {
 		messages, err := AdaptInstructionMessages(layeredJSONMessages(req), InstructionProfileForModel(req.Model))
 		if err != nil {
-			return JSONResponse{}, err
+			return JSONResponse{}, fmt.Errorf("adapt instruction messages: %w", err)
 		}
+
 		params.Input.OfInputItemList = responsesInput(messages)
 	} else {
 		params.Instructions = openai.String(req.SystemPrompt)
 		params.Input.OfString = openai.String(req.UserPrompt)
 	}
+
 	if req.WebSearch {
 		params.Tools = []responses.ToolUnionParam{
 			responses.ToolParamOfWebSearch(responses.WebSearchToolTypeWebSearch),
 		}
 	}
+
 	if req.Temperature != nil {
 		params.Temperature = openai.Float(*req.Temperature)
 	}
+
 	if effort := strings.TrimSpace(req.ReasoningEffort); effort != "" {
 		params.Reasoning = shared.ReasoningParam{Effort: shared.ReasoningEffort(effort)}
 	}
+
 	if cacheKey := strings.TrimSpace(req.CacheKey); cacheKey != "" {
 		params.PromptCacheKey = openai.String(cacheKey)
 	}
@@ -177,8 +201,9 @@ func (g *OpenAICompatibleJSONGenerator) generateResponsesJSON(ctx context.Contex
 
 	text, err := extractResponsesOutputText(resp)
 	if err != nil {
-		return JSONResponse{}, err
+		return JSONResponse{}, fmt.Errorf("extract responses output text: %w", err)
 	}
+
 	return JSONResponse{
 		Text:  text,
 		Model: responseModel(resp, req.Model),
@@ -191,13 +216,15 @@ func (g *OpenAICompatibleJSONGenerator) generateChatCompletionsJSON(ctx context.
 	if isLayeredJSONRequest(req) {
 		messages, err := AdaptInstructionMessages(layeredJSONMessages(req), InstructionProfileSingleSystem)
 		if err != nil {
-			return JSONResponse{}, err
+			return JSONResponse{}, fmt.Errorf("adapt instruction messages: %w", err)
 		}
+
 		instructions = messages[0].Content
 	}
+
 	systemPrompt, err := chatCompletionsSystemPrompt(instructions, req.Schema)
 	if err != nil {
-		return JSONResponse{}, err
+		return JSONResponse{}, fmt.Errorf("chat completions system prompt: %w", err)
 	}
 
 	params := openai.ChatCompletionNewParams{
@@ -210,9 +237,11 @@ func (g *OpenAICompatibleJSONGenerator) generateChatCompletionsJSON(ctx context.
 	if req.Temperature != nil {
 		params.Temperature = openai.Float(*req.Temperature)
 	}
+
 	if effort := strings.TrimSpace(req.ReasoningEffort); effort != "" {
 		params.ReasoningEffort = shared.ReasoningEffort(effort)
 	}
+
 	if cacheKey := strings.TrimSpace(req.CacheKey); cacheKey != "" {
 		params.PromptCacheKey = openai.String(cacheKey)
 	}
@@ -221,6 +250,7 @@ func (g *OpenAICompatibleJSONGenerator) generateChatCompletionsJSON(ctx context.
 	if err != nil {
 		return JSONResponse{}, fmt.Errorf("openai chat completions API: %w", err)
 	}
+
 	if len(completion.Choices) == 0 {
 		return JSONResponse{}, fmt.Errorf("%w: choices=0", ErrOpenAIEmptyOutput)
 	}
@@ -243,12 +273,15 @@ func isLayeredJSONRequest(req JSONRequest) bool {
 
 func layeredJSONMessages(req JSONRequest) []Message {
 	messages := make([]Message, 0, 3)
+
 	if hasPromptLayer(req.InvariantPrompt) {
 		messages = append(messages, Message{Role: roleSystem, Content: req.InvariantPrompt})
 	}
+
 	if hasPromptLayer(req.DeveloperPrompt) {
 		messages = append(messages, Message{Role: roleDeveloper, Content: req.DeveloperPrompt})
 	}
+
 	return append(messages, Message{Role: roleUser, Content: req.UserPrompt})
 }
 
@@ -257,6 +290,7 @@ func responsesInput(messages []Message) responses.ResponseInputParam {
 	for _, message := range messages {
 		input = append(input, responses.ResponseInputItemParamOfMessage(message.Content, responsesRole(message.Role)))
 	}
+
 	return input
 }
 
@@ -278,6 +312,7 @@ func chatCompletionsSystemPrompt(systemPrompt string, schema map[string]any) (st
 	if err != nil {
 		return "", fmt.Errorf("marshal json schema: %w", err)
 	}
+
 	return fmt.Sprintf(`%s
 
 IMPORTANT: You MUST respond with ONLY a valid JSON object that follows this schema (no markdown, no explanation, just the JSON):
@@ -290,9 +325,11 @@ func responseModel(resp *responses.Response, requestedModel string) string {
 	if resp == nil {
 		return strings.TrimSpace(requestedModel)
 	}
+
 	if model := strings.TrimSpace(resp.Model); model != "" {
 		return model
 	}
+
 	return strings.TrimSpace(requestedModel)
 }
 
@@ -300,6 +337,7 @@ func usageFromResponse(resp *responses.Response) Usage {
 	if resp == nil {
 		return Usage{}
 	}
+
 	return Usage{
 		InputTokens:           int(resp.Usage.InputTokens),
 		OutputTokens:          int(resp.Usage.OutputTokens),
@@ -314,6 +352,7 @@ func usageFromChatCompletion(completion *openai.ChatCompletion) Usage {
 	if completion == nil {
 		return Usage{}
 	}
+
 	return Usage{
 		InputTokens:           int(completion.Usage.PromptTokens),
 		OutputTokens:          int(completion.Usage.CompletionTokens),

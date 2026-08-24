@@ -2,6 +2,7 @@ package workerpool_test
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -12,10 +13,7 @@ import (
 )
 
 func TestManagedPoolStuckFinalizerPermanentlyBlocksAdmission(t *testing.T) {
-	release := make(chan struct{})
-	var releaseOnce sync.Once
-	unblock := func() { releaseOnce.Do(func() { close(release) }) }
-	t.Cleanup(unblock)
+	release, unblock := newReleaseGate(t)
 
 	pool := newManagedPoolForTest(t, workerpool.ManagedConfig{
 		Workers:             1,
@@ -24,6 +22,51 @@ func TestManagedPoolStuckFinalizerPermanentlyBlocksAdmission(t *testing.T) {
 		FinalizeQueueSize:   1,
 		FinalizeTimeout:     20 * time.Millisecond,
 	})
+
+	submitStuckFinalizerJob(t, pool, release)
+
+	for attempt := range 3 {
+		expectFinalizerCapacityRejection(t, pool, fmt.Sprintf("attempt %d", attempt), workerpool.JobSpec{
+			Run:      func(context.Context) {},
+			Finalize: func(context.Context, workerpool.JobOutcome) {},
+		})
+
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	blocked := pool.Snapshot()
+	if blocked.Finalizer.OverdueInFlight != 1 || blocked.Finalizer.Reservations != 1 {
+		t.Fatalf("finalizer snapshot = %+v, want the overdue slot still holding its reservation", blocked.Finalizer)
+	}
+
+	runCompleted := make(chan struct{})
+
+	if !trySubmit(pool, workerpool.JobSpec{Run: func(context.Context) { close(runCompleted) }}) {
+		t.Fatal("TrySubmit(no finalizer) = false, want admission unaffected without a finalizer")
+	}
+
+	awaitClosed(t, runCompleted, "run-only job")
+
+	unblock()
+
+	awaitManagedSnapshot(t, pool, "finalizer capacity returned", func(snapshot workerpool.ManagedSnapshot) bool {
+		return snapshot.Finalizer.OverdueInFlight == 0 &&
+			snapshot.Finalizer.InFlight == 0 &&
+			snapshot.Finalizer.Reservations == 0
+	})
+
+	if result := pool.TrySubmitResult(workerpool.JobSpec{
+		Run:      func(context.Context) {},
+		Finalize: func(context.Context, workerpool.JobOutcome) {},
+	}); !result.Accepted || !result.FinalizerClaimed {
+		t.Fatalf("TrySubmitResult(after release) = %+v, want accepted finalizer claim", result)
+	}
+
+	closeManagedPool(t, pool)
+}
+
+func submitStuckFinalizerJob(t *testing.T, pool *workerpool.ManagedPool, release <-chan struct{}) {
+	t.Helper()
 
 	if !trySubmit(pool, workerpool.JobSpec{
 		Run:      func(context.Context) {},
@@ -38,55 +81,14 @@ func TestManagedPoolStuckFinalizerPermanentlyBlocksAdmission(t *testing.T) {
 			snapshot.Finalizer.InFlight == 1 &&
 			snapshot.Finalizer.Reservations == 1
 	})
-
-	for attempt := range 3 {
-		result := pool.TrySubmitResult(workerpool.JobSpec{
-			Run:      func(context.Context) {},
-			Finalize: func(context.Context, workerpool.JobOutcome) {},
-		})
-		if result.Accepted || result.FinalizerClaimed ||
-			result.Reason != workerpool.ManagedSubmitRejectedFinalizerCapacity {
-			t.Fatalf("TrySubmitResult(attempt %d) = %+v, want unclaimed capacity rejection", attempt, result)
-		}
-		time.Sleep(25 * time.Millisecond)
-	}
-
-	blocked := pool.Snapshot()
-	if blocked.Finalizer.OverdueInFlight != 1 || blocked.Finalizer.Reservations != 1 {
-		t.Fatalf("finalizer snapshot = %+v, want the overdue slot still holding its reservation", blocked.Finalizer)
-	}
-	runCompleted := make(chan struct{})
-	if !trySubmit(pool, workerpool.JobSpec{Run: func(context.Context) { close(runCompleted) }}) {
-		t.Fatal("TrySubmit(no finalizer) = false, want admission unaffected without a finalizer")
-	}
-	awaitClosed(t, runCompleted, "run-only job")
-
-	unblock()
-
-	awaitManagedSnapshot(t, pool, "finalizer capacity returned", func(snapshot workerpool.ManagedSnapshot) bool {
-		return snapshot.Finalizer.OverdueInFlight == 0 &&
-			snapshot.Finalizer.InFlight == 0 &&
-			snapshot.Finalizer.Reservations == 0
-	})
-	if result := pool.TrySubmitResult(workerpool.JobSpec{
-		Run:      func(context.Context) {},
-		Finalize: func(context.Context, workerpool.JobOutcome) {},
-	}); !result.Accepted || !result.FinalizerClaimed {
-		t.Fatalf("TrySubmitResult(after release) = %+v, want accepted finalizer claim", result)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	if err := pool.CloseContext(ctx); err != nil {
-		t.Fatalf("CloseContext() error = %v", err)
-	}
 }
 
 func TestManagedPoolReportsClosedFinalizerRejectionSeparately(t *testing.T) {
 	pool := newManagedPoolForTest(t, workerpool.ManagedConfig{Workers: 1, QueueSize: 1})
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
+
 	if err := pool.CloseContext(ctx); err != nil {
 		t.Fatalf("CloseContext() error = %v", err)
 	}
@@ -98,10 +100,12 @@ func TestManagedPoolReportsClosedFinalizerRejectionSeparately(t *testing.T) {
 			finalized <- struct{}{}
 		},
 	})
+
 	if result.Accepted || result.FinalizerClaimed ||
 		result.Reason != workerpool.ManagedSubmitRejectedFinalizerClosed {
 		t.Fatalf("TrySubmitResult(after close) = %+v, want unclaimed closed rejection", result)
 	}
+
 	select {
 	case <-finalized:
 		t.Fatal("Finalize ran for a rejection the pool did not claim")
@@ -115,10 +119,7 @@ func TestManagedPoolReportsClosedFinalizerRejectionSeparately(t *testing.T) {
 }
 
 func TestManagedPoolRejectsShutdownWindowSubmissionsAsClosed(t *testing.T) {
-	release := make(chan struct{})
-	var releaseOnce sync.Once
-	unblock := func() { releaseOnce.Do(func() { close(release) }) }
-	t.Cleanup(unblock)
+	release, unblock := newReleaseGate(t)
 
 	pool := newManagedPoolForTest(t, workerpool.ManagedConfig{
 		Workers:             1,
@@ -129,6 +130,7 @@ func TestManagedPoolRejectsShutdownWindowSubmissionsAsClosed(t *testing.T) {
 	})
 
 	running := make(chan struct{})
+
 	if !trySubmit(pool, workerpool.JobSpec{
 		Run: func(context.Context) {
 			close(running)
@@ -137,9 +139,11 @@ func TestManagedPoolRejectsShutdownWindowSubmissionsAsClosed(t *testing.T) {
 	}) {
 		t.Fatal("TrySubmit(worker blocker) = false")
 	}
+
 	awaitClosed(t, running, "worker blocker start")
 
 	finalizing := make(chan struct{})
+
 	if !trySubmit(pool, workerpool.JobSpec{
 		Run: func(context.Context) {},
 		Finalize: func(context.Context, workerpool.JobOutcome) {
@@ -151,14 +155,47 @@ func TestManagedPoolRejectsShutdownWindowSubmissionsAsClosed(t *testing.T) {
 	}
 
 	closeErr := make(chan error, 1)
+
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
+
 		closeErr <- pool.CloseContext(ctx)
 	}()
+
 	awaitClosed(t, finalizing, "shutdown finalize of queued job")
 
+	finalized := expectShutdownWindowRejections(t, pool)
+
+	during := pool.Snapshot()
+	if during.Finalizer.Claimed != 1 || during.Finalizer.Reservations != 1 ||
+		during.Finalizer.Overloaded != 0 || during.Finalizer.ReservationRejected != 0 {
+		t.Fatalf("finalizer snapshot = %+v, want shutdown-window submissions to reserve nothing", during.Finalizer)
+	}
+
+	unblock()
+
+	if err := awaitValue(t, closeErr, "CloseContext"); err != nil {
+		t.Fatalf("CloseContext() error = %v", err)
+	}
+
+	select {
+	case <-finalized:
+		t.Fatal("Finalize ran for a rejection the pool did not claim")
+	default:
+	}
+
+	after := pool.Snapshot()
+	if !after.Finalizer.Quiesced || after.Finalizer.Reservations != 0 {
+		t.Fatalf("finalizer snapshot after close = %+v, want quiesced with no reservation held", after.Finalizer)
+	}
+}
+
+func expectShutdownWindowRejections(t *testing.T, pool *workerpool.ManagedPool) chan struct{} {
+	t.Helper()
+
 	finalized := make(chan struct{}, 16)
+
 	for attempt := range 5 {
 		result := pool.TrySubmitResult(workerpool.JobSpec{
 			Run: func(context.Context) {},
@@ -177,26 +214,7 @@ func TestManagedPoolRejectsShutdownWindowSubmissionsAsClosed(t *testing.T) {
 		t.Fatalf("TrySubmitResult(no finalizer, shutdown window) = %+v, want plain rejection", plain)
 	}
 
-	during := pool.Snapshot()
-	if during.Finalizer.Claimed != 1 || during.Finalizer.Reservations != 1 ||
-		during.Finalizer.Overloaded != 0 || during.Finalizer.ReservationRejected != 0 {
-		t.Fatalf("finalizer snapshot = %+v, want shutdown-window submissions to reserve nothing", during.Finalizer)
-	}
-
-	unblock()
-	if err := awaitValue(t, closeErr, "CloseContext"); err != nil {
-		t.Fatalf("CloseContext() error = %v", err)
-	}
-	select {
-	case <-finalized:
-		t.Fatal("Finalize ran for a rejection the pool did not claim")
-	default:
-	}
-
-	after := pool.Snapshot()
-	if !after.Finalizer.Quiesced || after.Finalizer.Reservations != 0 {
-		t.Fatalf("finalizer snapshot after close = %+v, want quiesced with no reservation held", after.Finalizer)
-	}
+	return finalized
 }
 
 func TestManagedPoolConcurrentShutdownKeepsFinalizerOwnershipBalanced(t *testing.T) {
@@ -210,8 +228,11 @@ func TestManagedPoolConcurrentShutdownKeepsFinalizerOwnershipBalanced(t *testing
 	})
 
 	var claimed, finalized atomic.Int64
+
 	stop := make(chan struct{})
+
 	var submitters sync.WaitGroup
+
 	for range 8 {
 		submitters.Go(func() {
 			for {
@@ -220,6 +241,7 @@ func TestManagedPoolConcurrentShutdownKeepsFinalizerOwnershipBalanced(t *testing
 					return
 				default:
 				}
+
 				result := pool.TrySubmitResult(workerpool.JobSpec{
 					Run: func(context.Context) {},
 					Finalize: func(context.Context, workerpool.JobOutcome) {
@@ -234,17 +256,22 @@ func TestManagedPoolConcurrentShutdownKeepsFinalizerOwnershipBalanced(t *testing
 	}
 
 	time.Sleep(10 * time.Millisecond)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+
 	defer cancel()
+
 	if err := pool.CloseContext(ctx); err != nil {
 		t.Fatalf("CloseContext() error = %v", err)
 	}
+
 	close(stop)
 	submitters.Wait()
 
 	awaitManagedSnapshot(t, pool, "finalizer ownership balanced", func(snapshot workerpool.ManagedSnapshot) bool {
 		return snapshot.Finalizer.Reservations == 0 && claimed.Load() == finalized.Load()
 	})
+
 	if result := pool.TrySubmitResult(workerpool.JobSpec{
 		Run:      func(context.Context) {},
 		Finalize: func(context.Context, workerpool.JobOutcome) {},

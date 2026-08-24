@@ -21,7 +21,8 @@ func TestMoveAndPrune_MovesAndPrunesBackups(t *testing.T) {
 
 	logDir := t.TempDir()
 	logPath := filepath.Join(logDir, "service.log")
-	if err := os.WriteFile(logPath, []byte("active\n"), 0o644); err != nil {
+
+	if err := os.WriteFile(logPath, []byte("active\n"), 0o644); err != nil { //nolint:gosec // 허용적인 권한을 감지하는 동작을 검증하려고 일부러 그 권한으로 쓴다.
 		t.Fatalf("write active log failed: %v", err)
 	}
 
@@ -31,8 +32,9 @@ func TestMoveAndPrune_MovesAndPrunesBackups(t *testing.T) {
 		"service-" + now.Add(-24*time.Hour).Format(BackupTimeFmt) + ".log.gz",
 		"service-" + now.Add(-(31*24)*time.Hour).Format(BackupTimeFmt) + ".log.gz",
 	}
+
 	for _, name := range names {
-		if err := os.WriteFile(filepath.Join(logDir, name), []byte(name), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(logDir, name), []byte(name), 0o644); err != nil { //nolint:gosec // 허용적인 권한을 감지하는 동작을 검증하려고 일부러 그 권한으로 쓴다.
 			t.Fatalf("write compressed backup failed: %v", err)
 		}
 	}
@@ -42,10 +44,12 @@ func TestMoveAndPrune_MovesAndPrunesBackups(t *testing.T) {
 	}
 
 	archiveDir := filepath.Join(logDir, DirName)
+
 	entries, err := os.ReadDir(archiveDir)
 	if err != nil {
 		t.Fatalf("read archive dir failed: %v", err)
 	}
+
 	if len(entries) != 2 {
 		t.Fatalf("archive entry count = %d, want 2", len(entries))
 	}
@@ -56,8 +60,8 @@ func TestPruneArchivedCompressedBackups_RemovesBackupsOlderThanMaxAge(t *testing
 
 	archiveDir := t.TempDir()
 	now := time.Now().UTC()
-	oldBackup := writeArchivedBackup(t, archiveDir, "service.log", now.Add(-72*time.Hour))
-	recentBackup := writeArchivedBackup(t, archiveDir, "service.log", now.Add(-12*time.Hour))
+	oldBackup := writeArchivedBackup(t, archiveDir, now.Add(-72*time.Hour))
+	recentBackup := writeArchivedBackup(t, archiveDir, now.Add(-12*time.Hour))
 
 	if err := pruneArchivedCompressedBackups(archiveDir, "service.log", 0, 1); err != nil {
 		t.Fatalf("pruneArchivedCompressedBackups() error = %v", err)
@@ -72,9 +76,9 @@ func TestPruneArchivedCompressedBackups_RemovesBackupsBeyondMaxBackupsNewestFirs
 
 	archiveDir := t.TempDir()
 	now := time.Now().UTC()
-	oldestBackup := writeArchivedBackup(t, archiveDir, "service.log", now.Add(-3*time.Hour))
-	newerBackup := writeArchivedBackup(t, archiveDir, "service.log", now.Add(-2*time.Hour))
-	newestBackup := writeArchivedBackup(t, archiveDir, "service.log", now.Add(-1*time.Hour))
+	oldestBackup := writeArchivedBackup(t, archiveDir, now.Add(-3*time.Hour))
+	newerBackup := writeArchivedBackup(t, archiveDir, now.Add(-2*time.Hour))
+	newestBackup := writeArchivedBackup(t, archiveDir, now.Add(-1*time.Hour))
 
 	if err := pruneArchivedCompressedBackups(archiveDir, "service.log", 2, 0); err != nil {
 		t.Fatalf("pruneArchivedCompressedBackups() error = %v", err)
@@ -91,9 +95,9 @@ func TestPruneArchivedCompressedBackups_IgnoresDisabledCriteria(t *testing.T) {
 	archiveDir := t.TempDir()
 	now := time.Now().UTC()
 	backups := []string{
-		writeArchivedBackup(t, archiveDir, "service.log", now.Add(-72*time.Hour)),
-		writeArchivedBackup(t, archiveDir, "service.log", now.Add(-48*time.Hour)),
-		writeArchivedBackup(t, archiveDir, "service.log", now.Add(-24*time.Hour)),
+		writeArchivedBackup(t, archiveDir, now.Add(-72*time.Hour)),
+		writeArchivedBackup(t, archiveDir, now.Add(-48*time.Hour)),
+		writeArchivedBackup(t, archiveDir, now.Add(-24*time.Hour)),
 	}
 
 	if err := pruneArchivedCompressedBackups(archiveDir, "service.log", 0, 0); err != nil {
@@ -136,22 +140,29 @@ func TestEnsureLogFilePerm_CreatesMissingFile(t *testing.T) {
 func TestEnsureLogFilePerm_CorrectsRestrictedUmask(t *testing.T) {
 	if os.Getenv("ARCHIVE_RESTRICTED_UMASK_HELPER") == "1" {
 		syscall.Umask(0o077)
+
 		logPath := "service.log"
 		if err := EnsureLogFilePerm(logPath); err != nil {
 			t.Fatalf("EnsureLogFilePerm() error = %v", err)
 		}
+
 		assertPathPerm(t, logPath, LogFilePerm)
+
 		return
 	}
 
 	workDir := t.TempDir()
 	logPath := filepath.Join(workDir, "service.log")
-	cmd := exec.Command(os.Args[0], "-test.run=^TestEnsureLogFilePerm_CorrectsRestrictedUmask$")
+	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestEnsureLogFilePerm_CorrectsRestrictedUmask$") //nolint:gosec // 테스트가 만든 컨테이너 ID와 고정 명령만 전달한다.
+
 	cmd.Dir = workDir
+
 	cmd.Env = append(os.Environ(), "ARCHIVE_RESTRICTED_UMASK_HELPER=1")
+
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("restricted-umask helper failed: %v\n%s", err, output)
 	}
+
 	assertPathPerm(t, logPath, LogFilePerm)
 }
 
@@ -162,14 +173,17 @@ func TestEnsureLogDirPerm_CreatesAndCorrectsDirectoryMode(t *testing.T) {
 	if err := EnsureLogDirPerm(logDir); err != nil {
 		t.Fatalf("EnsureLogDirPerm() create error = %v", err)
 	}
+
 	assertPathPerm(t, logDir, LogDirPerm)
 
-	if err := os.Chmod(logDir, 0o700); err != nil {
+	if err := os.Chmod(logDir, 0o700); err != nil { //nolint:gosec // 허용적인 권한을 감지하는 동작을 검증하려고 일부러 그 권한을 만든다.
 		t.Fatalf("chmod log dir failed: %v", err)
 	}
+
 	if err := EnsureLogDirPerm(logDir); err != nil {
 		t.Fatalf("EnsureLogDirPerm() chmod error = %v", err)
 	}
+
 	assertPathPerm(t, logDir, LogDirPerm)
 }
 
@@ -177,11 +191,12 @@ func TestAwareWriterWrite_TriggersArchiverOnSuccessAndFailure(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name  string
-		inner io.Writer
+		name         string
+		inner        io.Writer
+		wantWriteErr bool
 	}{
 		{name: "success", inner: &bytes.Buffer{}},
-		{name: "failure", inner: failingWriter{}},
+		{name: "failure", inner: failingWriter{}, wantWriteErr: true},
 	}
 
 	for _, tt := range tests {
@@ -190,17 +205,22 @@ func TestAwareWriterWrite_TriggersArchiverOnSuccessAndFailure(t *testing.T) {
 
 			logDir := t.TempDir()
 			logPath := filepath.Join(logDir, "service.log")
+
 			if err := os.WriteFile(logPath, []byte("active\n"), LogFilePerm); err != nil {
 				t.Fatalf("write log file failed: %v", err)
 			}
-			backupPath := writeCompressedBackup(t, logDir, "service.log", time.Now().UTC())
+
+			backupPath := writeCompressedBackup(t, logDir, time.Now().UTC())
 
 			writer := &AwareWriter{
 				Inner:    tt.inner,
 				Archiver: NewCompressedLogArchiver(logPath, 5, 7, true),
 			}
 
-			_, _ = writer.Write([]byte("entry\n"))
+			if _, err := writer.Write([]byte("entry\n")); (err != nil) != tt.wantWriteErr {
+				t.Fatalf("Write() error = %v, wantErr = %v", err, tt.wantWriteErr)
+			}
+
 			writer.Archiver.wait()
 
 			assertPathMissing(t, backupPath)
@@ -214,21 +234,24 @@ func TestCompressedLogArchiverTrigger_RunsOnlyOnceWithinScanInterval(t *testing.
 
 	logDir := t.TempDir()
 	logPath := filepath.Join(logDir, "service.log")
+
 	if err := os.WriteFile(logPath, []byte("active\n"), LogFilePerm); err != nil {
 		t.Fatalf("write log file failed: %v", err)
 	}
 
-	firstBackup := writeCompressedBackup(t, logDir, "service.log", time.Now().UTC().Add(-1*time.Minute))
+	firstBackup := writeCompressedBackup(t, logDir, time.Now().UTC().Add(-1*time.Minute))
 	archiver := NewCompressedLogArchiver(logPath, 5, 7, true)
 	archiver.Trigger()
 	archiver.wait()
 	assertPathMissing(t, firstBackup)
 
-	secondBackup := writeCompressedBackup(t, logDir, "service.log", time.Now().UTC())
+	secondBackup := writeCompressedBackup(t, logDir, time.Now().UTC())
+
 	archiver.Trigger()
 	archiver.wait()
 
 	assertPathExists(t, secondBackup)
+
 	archiveEntries := archiveEntryNames(t, filepath.Join(logDir, DirName))
 	if len(archiveEntries) != 1 {
 		t.Fatalf("archive entry count = %d, want 1; entries=%v", len(archiveEntries), archiveEntries)
@@ -238,19 +261,25 @@ func TestCompressedLogArchiverTrigger_RunsOnlyOnceWithinScanInterval(t *testing.
 func TestCompressedLogArchiverTrigger_ReturnsBeforeScanCompletes(t *testing.T) {
 	logDir := t.TempDir()
 	logPath := filepath.Join(logDir, "service.log")
+
 	if err := os.WriteFile(logPath, []byte("active\n"), LogFilePerm); err != nil {
 		t.Fatalf("write log file failed: %v", err)
 	}
-	writeCompressedBackup(t, logDir, "service.log", time.Now().UTC())
+
+	writeCompressedBackup(t, logDir, time.Now().UTC())
 
 	release := make(chan struct{})
 	entered := make(chan struct{})
+
 	var enteredOnce sync.Once
+
 	restore := setReadDirFn(func(name string) ([]os.DirEntry, error) {
 		enteredOnce.Do(func() { close(entered) })
 		<-release
+
 		return os.ReadDir(name)
 	})
+
 	defer restore()
 
 	archiver := NewCompressedLogArchiver(logPath, 5, 7, true)
@@ -270,38 +299,51 @@ func TestCompressedLogArchiverTrigger_ReturnsBeforeScanCompletes(t *testing.T) {
 func TestCompressedLogArchiverTrigger_ConcurrentRunsAtMostOnce(t *testing.T) {
 	logDir := t.TempDir()
 	logPath := filepath.Join(logDir, "service.log")
+
 	if err := os.WriteFile(logPath, []byte("active\n"), LogFilePerm); err != nil {
 		t.Fatalf("write log file failed: %v", err)
 	}
-	writeCompressedBackup(t, logDir, "service.log", time.Now().UTC())
+
+	writeCompressedBackup(t, logDir, time.Now().UTC())
 
 	release := make(chan struct{})
+
 	var concurrent, peak atomic.Int32
+
 	restore := setReadDirFn(func(name string) ([]os.DirEntry, error) {
 		now := concurrent.Add(1)
+
 		for {
 			old := peak.Load()
 			if now <= old || peak.CompareAndSwap(old, now) {
 				break
 			}
 		}
+
 		<-release
 		concurrent.Add(-1)
+
 		return os.ReadDir(name)
 	})
+
 	defer restore()
 
 	archiver := NewCompressedLogArchiver(logPath, 5, 7, true)
 
 	const triggers = 16
+
 	var wg sync.WaitGroup
+
 	wg.Add(triggers)
+
 	for range triggers {
 		go func() {
 			defer wg.Done()
+
 			archiver.Trigger()
 		}()
 	}
+
 	wg.Wait()
 	close(release)
 	archiver.wait()
@@ -316,10 +358,12 @@ func TestCompressedLogArchiverClose_BlocksLaterTriggerFromTouchingDir(t *testing
 
 	logDir := t.TempDir()
 	logPath := filepath.Join(logDir, "service.log")
+
 	if err := os.WriteFile(logPath, []byte("active\n"), LogFilePerm); err != nil {
 		t.Fatalf("write log file failed: %v", err)
 	}
-	writeCompressedBackup(t, logDir, "service.log", time.Now().UTC())
+
+	writeCompressedBackup(t, logDir, time.Now().UTC())
 
 	archiver := NewCompressedLogArchiver(logPath, 5, 7, true)
 	if err := archiver.Close(); err != nil {
@@ -337,12 +381,14 @@ func TestMoveAndPrune_SetsArchivedBackupPerm(t *testing.T) {
 
 	logDir := t.TempDir()
 	logPath := filepath.Join(logDir, "service.log")
+
 	if err := os.WriteFile(logPath, []byte("active\n"), LogFilePerm); err != nil {
 		t.Fatalf("write log file failed: %v", err)
 	}
 
 	name := fmt.Sprintf("service-%s.log.gz", time.Now().UTC().Format(BackupTimeFmt))
 	backupPath := filepath.Join(logDir, name)
+
 	if err := os.WriteFile(backupPath, []byte(name), 0o600); err != nil {
 		t.Fatalf("write compressed backup failed: %v", err)
 	}
@@ -359,6 +405,7 @@ func TestMoveAndPrune_RemovesSymlinkBackupWithoutChmodTarget(t *testing.T) {
 
 	logDir := t.TempDir()
 	logPath := filepath.Join(logDir, "service.log")
+
 	if err := os.WriteFile(logPath, []byte("active\n"), LogFilePerm); err != nil {
 		t.Fatalf("write log file failed: %v", err)
 	}
@@ -370,6 +417,7 @@ func TestMoveAndPrune_RemovesSymlinkBackupWithoutChmodTarget(t *testing.T) {
 
 	name := fmt.Sprintf("service-%s.log.gz", time.Now().UTC().Format(BackupTimeFmt))
 	linkPath := filepath.Join(logDir, name)
+
 	if err := os.Symlink(victimPath, linkPath); err != nil {
 		t.Fatalf("create symlink backup failed: %v", err)
 	}
@@ -389,21 +437,25 @@ func (failingWriter) Write([]byte) (int, error) {
 	return 0, errors.New("write failed")
 }
 
-func writeArchivedBackup(t *testing.T, archiveDir, baseName string, timestamp time.Time) string {
+func writeArchivedBackup(t *testing.T, archiveDir string, timestamp time.Time) string {
 	t.Helper()
 
-	return writeCompressedBackup(t, archiveDir, baseName, timestamp)
+	return writeCompressedBackup(t, archiveDir, timestamp)
 }
 
-func writeCompressedBackup(t *testing.T, dir, baseName string, timestamp time.Time) string {
+func writeCompressedBackup(t *testing.T, dir string, timestamp time.Time) string {
 	t.Helper()
+
+	const baseName = "service.log"
 
 	prefix, ext := backupPrefixAndExt(baseName)
 	name := fmt.Sprintf("%s%s%s%s", prefix, timestamp.Format(BackupTimeFmt), ext, CompressSuffix)
 	path := filepath.Join(dir, name)
-	if err := os.WriteFile(path, []byte(name), 0o644); err != nil {
+
+	if err := os.WriteFile(path, []byte(name), 0o644); err != nil { //nolint:gosec // 허용적인 권한을 감지하는 동작을 검증하려고 일부러 그 권한으로 쓴다.
 		t.Fatalf("write compressed backup failed: %v", err)
 	}
+
 	return path
 }
 
@@ -419,7 +471,9 @@ func archiveEntryNames(t *testing.T, archiveDir string) []string {
 	for _, entry := range entries {
 		names = append(names, entry.Name())
 	}
+
 	slices.Sort(names)
+
 	return names
 }
 
@@ -446,6 +500,7 @@ func assertPathPerm(t *testing.T, path string, want os.FileMode) {
 	if err != nil {
 		t.Fatalf("stat %s failed: %v", path, err)
 	}
+
 	if got := info.Mode().Perm(); got != want {
 		t.Fatalf("%s mode = %v, want %v", path, got, want)
 	}

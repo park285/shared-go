@@ -30,38 +30,55 @@ func TestSanitizeHandler_SensitiveKeys(t *testing.T) {
 		{"apikey", "apikey", "ak_12345", true},
 		{"ApiKey mixed", "ApiKey", "ak_12345", true},
 		{"non-sensitive", "username", "john_doe", false},
-		{"non-sensitive number", "count", "42", false},
+		{"non-sensitive number", testCount, "42", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
+
 			baseHandler := slog.NewTextHandler(&buf, nil)
 			sanitized := newSanitizeHandler(baseHandler)
 			logger := slog.New(sanitized)
 
 			logger.Info("test", slog.String(tt.key, tt.value))
+
 			output := buf.String()
 
 			if tt.expectRedacted {
-				if !strings.Contains(output, "***REDACTED***") {
-					t.Errorf("Expected ***REDACTED*** in output, got: %s", output)
-				}
-				if strings.Contains(output, tt.value) {
-					t.Errorf("Expected value %q to be masked, but found in output: %s", tt.value, output)
-				}
-				if !strings.Contains(output, tt.key+"=") {
-					t.Errorf("Expected key %q to be preserved in output, got: %s", tt.key, output)
-				}
+				assertKeyRedacted(t, output, tt.key, tt.value)
 			} else {
-				if strings.Contains(output, "***REDACTED***") {
-					t.Errorf("Did not expect redaction for key %q, got: %s", tt.key, output)
-				}
-				if !strings.Contains(output, tt.value) {
-					t.Errorf("Expected value %q in output, got: %s", tt.value, output)
-				}
+				assertKeyNotRedacted(t, output, tt.key, tt.value)
 			}
 		})
+	}
+}
+
+func assertKeyRedacted(t *testing.T, output, key, value string) {
+	t.Helper()
+
+	if !strings.Contains(output, "***REDACTED***") {
+		t.Errorf("Expected ***REDACTED*** in output, got: %s", output)
+	}
+
+	if strings.Contains(output, value) {
+		t.Errorf("Expected value %q to be masked, but found in output: %s", value, output)
+	}
+
+	if !strings.Contains(output, key+"=") {
+		t.Errorf("Expected key %q to be preserved in output, got: %s", key, output)
+	}
+}
+
+func assertKeyNotRedacted(t *testing.T, output, key, value string) {
+	t.Helper()
+
+	if strings.Contains(output, "***REDACTED***") {
+		t.Errorf("Did not expect redaction for key %q, got: %s", key, output)
+	}
+
+	if !strings.Contains(output, value) {
+		t.Errorf("Expected value %q in output, got: %s", value, output)
 	}
 }
 
@@ -106,11 +123,13 @@ func TestSanitizeHandler_BearerToken(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
+
 			baseHandler := slog.NewTextHandler(&buf, nil)
 			sanitized := newSanitizeHandler(baseHandler)
 			logger := slog.New(sanitized)
 
 			logger.Info("auth", slog.String("header", tt.value))
+
 			output := buf.String()
 
 			if !strings.Contains(output, tt.expected) {
@@ -122,6 +141,7 @@ func TestSanitizeHandler_BearerToken(t *testing.T) {
 
 func TestSanitizeHandler_GroupHandling(t *testing.T) {
 	var buf bytes.Buffer
+
 	baseHandler := slog.NewTextHandler(&buf, nil)
 	sanitized := newSanitizeHandler(baseHandler)
 	logger := slog.New(sanitized)
@@ -132,14 +152,17 @@ func TestSanitizeHandler_GroupHandling(t *testing.T) {
 			slog.String("username", "john"),
 		),
 	)
+
 	output := buf.String()
 
 	if !strings.Contains(output, "***REDACTED***") {
 		t.Errorf("Expected group password to be redacted, got: %s", output)
 	}
+
 	if strings.Contains(output, "secret123") {
 		t.Errorf("Expected password value to be masked, got: %s", output)
 	}
+
 	if !strings.Contains(output, "username=john") {
 		t.Errorf("Expected username to be preserved, got: %s", output)
 	}
@@ -147,6 +170,7 @@ func TestSanitizeHandler_GroupHandling(t *testing.T) {
 
 func TestSanitizeHandler_NestedGroups(t *testing.T) {
 	var buf bytes.Buffer
+
 	baseHandler := slog.NewTextHandler(&buf, nil)
 	sanitized := newSanitizeHandler(baseHandler)
 	logger := slog.New(sanitized)
@@ -159,14 +183,17 @@ func TestSanitizeHandler_NestedGroups(t *testing.T) {
 			),
 		),
 	)
+
 	output := buf.String()
 
 	if !strings.Contains(output, "***REDACTED***") {
 		t.Errorf("Expected nested secret to be redacted, got: %s", output)
 	}
+
 	if strings.Contains(output, "nested_secret") {
 		t.Errorf("Expected nested secret value to be masked, got: %s", output)
 	}
+
 	if !strings.Contains(output, "public=visible") {
 		t.Errorf("Expected public field to be preserved, got: %s", output)
 	}
@@ -174,6 +201,7 @@ func TestSanitizeHandler_NestedGroups(t *testing.T) {
 
 func TestSanitizeHandler_NonStringValuesMaskedByKey(t *testing.T) {
 	var buf bytes.Buffer
+
 	baseHandler := slog.NewTextHandler(&buf, nil)
 	sanitized := newSanitizeHandler(baseHandler)
 	logger := slog.New(sanitized)
@@ -184,6 +212,7 @@ func TestSanitizeHandler_NonStringValuesMaskedByKey(t *testing.T) {
 		slog.Float64("secret", 3.14),
 		slog.Int("attempt", 42),
 	)
+
 	output := buf.String()
 
 	for _, leaked := range []string{"12345", "3.14"} {
@@ -191,11 +220,13 @@ func TestSanitizeHandler_NonStringValuesMaskedByKey(t *testing.T) {
 			t.Errorf("non-string value under a credential key leaked %q, got: %s", leaked, output)
 		}
 	}
+
 	for _, key := range []string{"token", "password", "secret"} {
 		if !strings.Contains(output, key+"=***REDACTED***") {
 			t.Errorf("expected %s to be redacted, got: %s", key, output)
 		}
 	}
+
 	if !strings.Contains(output, "attempt=42") {
 		t.Errorf("non-sensitive non-string value must be preserved, got: %s", output)
 	}
@@ -205,11 +236,15 @@ func credentialBranchOutput(t *testing.T, build func(*slog.Logger) *slog.Logger,
 	t.Helper()
 
 	var buf bytes.Buffer
+
 	logger := slog.New(newSanitizeHandler(slog.NewTextHandler(&buf, nil)))
+
 	if build != nil {
 		logger = build(logger)
 	}
+
 	logger.LogAttrs(t.Context(), slog.LevelInfo, "credential", attrs...)
+
 	return buf.String()
 }
 
@@ -227,7 +262,7 @@ func TestSanitizeHandler_CredentialKeysMaskedAcrossValueBranches(t *testing.T) {
 		},
 		{
 			name:  "kind_any_map_with_privacy_key",
-			attrs: []slog.Attr{slog.Any("token", map[string]any{"raw": secret, "user_name": "u-1"})},
+			attrs: []slog.Attr{slog.Any("token", map[string]any{"raw": secret, tokenUserName: "u-1"})},
 		},
 		{
 			name:  "kind_any_map_without_privacy_key",
@@ -258,6 +293,7 @@ func TestSanitizeHandler_CredentialKeysMaskedAcrossValueBranches(t *testing.T) {
 			if strings.Contains(output, secret) {
 				t.Fatalf("credential value survived masking: %s", output)
 			}
+
 			if !strings.Contains(output, redactedValue) {
 				t.Fatalf("no redaction marker in output: %s", output)
 			}
@@ -267,6 +303,7 @@ func TestSanitizeHandler_CredentialKeysMaskedAcrossValueBranches(t *testing.T) {
 
 func TestSanitizeHandler_WithAttrs(t *testing.T) {
 	var buf bytes.Buffer
+
 	baseHandler := slog.NewTextHandler(&buf, nil)
 	sanitized := newSanitizeHandler(baseHandler)
 	loggerWithAttrs := slog.New(sanitized).With(
@@ -275,14 +312,17 @@ func TestSanitizeHandler_WithAttrs(t *testing.T) {
 	)
 
 	loggerWithAttrs.Info("test message")
+
 	output := buf.String()
 
 	if !strings.Contains(output, "***REDACTED***") {
 		t.Errorf("Expected token in WithAttrs to be redacted, got: %s", output)
 	}
+
 	if strings.Contains(output, "should_be_masked") {
 		t.Errorf("Expected token value to be masked, got: %s", output)
 	}
+
 	if !strings.Contains(output, "service=test_service") {
 		t.Errorf("Expected service field to be preserved, got: %s", output)
 	}
@@ -290,6 +330,7 @@ func TestSanitizeHandler_WithAttrs(t *testing.T) {
 
 func TestSanitizeHandler_WithGroup(t *testing.T) {
 	var buf bytes.Buffer
+
 	baseHandler := slog.NewTextHandler(&buf, nil)
 	sanitized := newSanitizeHandler(baseHandler)
 	loggerWithGroup := slog.New(sanitized).WithGroup("request")
@@ -298,14 +339,17 @@ func TestSanitizeHandler_WithGroup(t *testing.T) {
 		slog.String("api_key", "secret_key"),
 		slog.String("path", "/api/users"),
 	)
+
 	output := buf.String()
 
 	if !strings.Contains(output, "***REDACTED***") {
 		t.Errorf("Expected api_key in WithGroup to be redacted, got: %s", output)
 	}
+
 	if strings.Contains(output, "secret_key") {
 		t.Errorf("Expected api_key value to be masked, got: %s", output)
 	}
+
 	if !strings.Contains(output, "path=/api/users") {
 		t.Errorf("Expected path field to be preserved, got: %s", output)
 	}
@@ -313,6 +357,7 @@ func TestSanitizeHandler_WithGroup(t *testing.T) {
 
 func TestSanitizeHandler_MixedScenario(t *testing.T) {
 	var buf bytes.Buffer
+
 	baseHandler := slog.NewTextHandler(&buf, nil)
 	sanitized := newSanitizeHandler(baseHandler)
 	logger := slog.New(sanitized)
@@ -321,33 +366,40 @@ func TestSanitizeHandler_MixedScenario(t *testing.T) {
 		slog.String("username", "alice"),
 		slog.String("password", "super_secret_pass"),
 		slog.String("header", "Bearer abc123.def456.ghi789"),
-		slog.Int("user_id", 42),
-		slog.String("video_id", "dQw4w9WgXcQ"),
+		slog.Int(testUserID, 42),
+		slog.String(testVideoID, "dQw4w9WgXcQ"),
 		slog.Group("metadata",
 			slog.String("api_key", "ak_xyz"),
 			slog.String("ip", "192.168.1.1"),
 		),
 	)
+
 	output := buf.String()
 
 	if !strings.Contains(output, "username=alice") {
 		t.Errorf("Expected username to be preserved, got: %s", output)
 	}
+
 	if strings.Contains(output, "super_secret_pass") {
 		t.Errorf("Expected password to be masked, got: %s", output)
 	}
+
 	if !strings.Contains(output, "Bearer ***REDACTED***") {
 		t.Errorf("Expected Bearer token to be masked, got: %s", output)
 	}
+
 	if !strings.Contains(output, "user_id=42") {
 		t.Errorf("Expected operational user_id to be preserved, got: %s", output)
 	}
+
 	if !strings.Contains(output, "video_id=dQw4w9WgXcQ") {
 		t.Errorf("Expected public content id to be preserved, got: %s", output)
 	}
+
 	if strings.Contains(output, "ak_xyz") {
 		t.Errorf("Expected api_key in group to be masked, got: %s", output)
 	}
+
 	if !strings.Contains(output, "ip=192.168.1.1") {
 		t.Errorf("Expected ip to be preserved, got: %s", output)
 	}
@@ -360,16 +412,19 @@ func TestSanitizeHandler_MixedScenario(t *testing.T) {
 
 func TestSanitizeHandler_QuerySecrets(t *testing.T) {
 	var buf bytes.Buffer
+
 	baseHandler := slog.NewTextHandler(&buf, nil)
 	sanitized := newSanitizeHandler(baseHandler)
 	logger := slog.New(sanitized)
 
 	logger.Info("test", slog.String("url", "https://example.test?a=1&api_key=secret-value&token=token-value&b=2"))
+
 	output := buf.String()
 
 	if strings.Contains(output, "secret-value") || strings.Contains(output, "token-value") {
 		t.Errorf("Expected query secrets to be masked, got: %s", output)
 	}
+
 	if !strings.Contains(output, "api_key=***REDACTED***") || !strings.Contains(output, "token=***REDACTED***") {
 		t.Errorf("Expected query secret placeholders, got: %s", output)
 	}
@@ -377,16 +432,19 @@ func TestSanitizeHandler_QuerySecrets(t *testing.T) {
 
 func TestSanitizeHandler_KeyCasePreserved(t *testing.T) {
 	var buf bytes.Buffer
+
 	baseHandler := slog.NewTextHandler(&buf, nil)
 	sanitized := newSanitizeHandler(baseHandler)
 	logger := slog.New(sanitized)
 
 	logger.Info("test", slog.String("Token", "secret123"))
+
 	output := buf.String()
 
 	if !strings.Contains(output, "Token=") {
 		t.Errorf("Expected key 'Token' (capital T) to be preserved, got: %s", output)
 	}
+
 	if !strings.Contains(output, "***REDACTED***") {
 		t.Errorf("Expected value to be redacted, got: %s", output)
 	}

@@ -1,7 +1,6 @@
 package httputil
 
 import (
-	"context"
 	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
@@ -11,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/park285/shared-go/v2/pkg/internal/testsupport"
 )
 
 func TestJSONClient_NewJSONRequestSetsHeadersAndBody(t *testing.T) {
@@ -18,7 +19,7 @@ func TestJSONClient_NewJSONRequestSetsHeadersAndBody(t *testing.T) {
 
 	client := NewJSONClient("https://example.com/", " secret-key ", 5*time.Second)
 
-	req, err := client.NewJSONRequest(context.Background(), http.MethodPost, "/internal/test", map[string]any{
+	req, err := client.NewJSONRequest(t.Context(), http.MethodPost, "/internal/test", map[string]any{
 		"name": "kapu",
 		"id":   7,
 	})
@@ -29,12 +30,15 @@ func TestJSONClient_NewJSONRequestSetsHeadersAndBody(t *testing.T) {
 	if got, want := req.Method, http.MethodPost; got != want {
 		t.Fatalf("req.Method = %s, want %s", got, want)
 	}
+
 	if got, want := req.URL.String(), "https://example.com/internal/test"; got != want {
 		t.Fatalf("req.URL = %s, want %s", got, want)
 	}
+
 	if got, want := req.Header.Get("Content-Type"), "application/json"; got != want {
 		t.Fatalf("Content-Type = %q, want %q", got, want)
 	}
+
 	if got, want := req.Header.Get(HeaderAPIKey), "secret-key"; got != want {
 		t.Fatalf("API key header = %q, want %q", got, want)
 	}
@@ -43,10 +47,13 @@ func TestJSONClient_NewJSONRequestSetsHeadersAndBody(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadAll(req.Body) error = %v", err)
 	}
+
 	var got map[string]any
+
 	if err := jsonv2.Unmarshal(body, &got); err != nil {
 		t.Fatalf("jsonv2.Unmarshal(body) error = %v", err)
 	}
+
 	if got["name"] != "kapu" || got["id"] != float64(7) {
 		t.Fatalf("body payload = %#v, want name=kapu id=7", got)
 	}
@@ -65,6 +72,7 @@ func TestJSONClientNewJSONRequestUsesV2WireSemantics(t *testing.T) {
 	}
 
 	client := NewJSONClient("https://example.com", "", time.Second)
+
 	req, err := client.NewJSONRequest(t.Context(), http.MethodPost, "/v2", requestPayload{
 		Digest:    [2]byte{1, 2},
 		CreatedAt: time.Date(2026, time.August, 23, 1, 2, 3, 4, time.UTC),
@@ -72,11 +80,14 @@ func TestJSONClientNewJSONRequestUsesV2WireSemantics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewJSONRequest() error = %v", err)
 	}
+
 	body, err := io.ReadAll(req.Body)
 	if err != nil {
 		t.Fatalf("ReadAll(req.Body) error = %v", err)
 	}
+
 	const want = `{"map":{},"slice":[],"count":0,"digest":"AQI=","createdAt":"2026-08-23T01:02:03.000000004Z"}`
+
 	if string(body) != want {
 		t.Fatalf("body = %s, want %s", body, want)
 	}
@@ -99,11 +110,12 @@ func TestJSONClientNewJSONRequestRejectsUnsupportedV2Shapes(t *testing.T) {
 		{
 			name: "malformed struct tag",
 			payload: struct {
-				//lint:ignore SA5008 v2가 잘못된 struct tag를 SemanticError로 거절하는지 검증하려고 일부러 둔 fixture다.
+				//nolint:staticcheck // v2가 잘못된 struct tag를 SemanticError로 거절하는지 검증하려고 일부러 둔 fixture다.
 				Value string `json:"value,"`
 			}{Value: "x"},
 		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
@@ -112,6 +124,7 @@ func TestJSONClientNewJSONRequestRejectsUnsupportedV2Shapes(t *testing.T) {
 			if err == nil {
 				t.Fatal("NewJSONRequest() error = nil, want v2 semantic failure")
 			}
+
 			if _, ok := errors.AsType[*jsonv2.SemanticError](err); !ok {
 				t.Fatalf("error type = %T, want *jsonv2.SemanticError in chain", err)
 			}
@@ -124,7 +137,7 @@ func TestJSONClient_NewRequestAppliesAPIKeyWithoutBody(t *testing.T) {
 
 	client := NewJSONClient("https://example.com", "token", 3*time.Second)
 
-	req, err := client.NewRequest(context.Background(), http.MethodGet, "/health")
+	req, err := client.NewRequest(t.Context(), http.MethodGet, "/health")
 	if err != nil {
 		t.Fatalf("NewRequest() error = %v", err)
 	}
@@ -132,6 +145,7 @@ func TestJSONClient_NewRequestAppliesAPIKeyWithoutBody(t *testing.T) {
 	if got, want := req.URL.String(), "https://example.com/health"; got != want {
 		t.Fatalf("req.URL = %s, want %s", got, want)
 	}
+
 	if got, want := req.Header.Get(HeaderAPIKey), "token"; got != want {
 		t.Fatalf("API key header = %q, want %q", got, want)
 	}
@@ -144,6 +158,7 @@ func TestNewJSONClientWithHTTPClientUsesProvidedClient(t *testing.T) {
 		if got, want := req.URL.String(), "https://example.com/ping"; got != want {
 			t.Fatalf("request URL = %s, want %s", got, want)
 		}
+
 		return &http.Response{
 			StatusCode: http.StatusNoContent,
 			Body:       io.NopCloser(strings.NewReader("")),
@@ -153,15 +168,18 @@ func TestNewJSONClientWithHTTPClientUsesProvidedClient(t *testing.T) {
 	})
 	client := NewJSONClientWithHTTPClient("https://example.com", "token", &http.Client{Transport: rt})
 
-	req, err := client.NewRequest(context.Background(), http.MethodGet, "/ping")
+	req, err := client.NewRequest(t.Context(), http.MethodGet, "/ping")
 	if err != nil {
 		t.Fatalf("NewRequest() error = %v", err)
 	}
+
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("Do() error = %v", err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
+
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("StatusCode = %d, want %d", resp.StatusCode, http.StatusNoContent)
 	}
@@ -176,6 +194,7 @@ func TestJSONClient_DiscardBodyClosesResponse(t *testing.T) {
 	if err := client.DiscardBody(&http.Response{Body: body}); err != nil {
 		t.Fatalf("DiscardBody() error = %v", err)
 	}
+
 	if !body.closed {
 		t.Fatal("DiscardBody() expected body close")
 	}
@@ -191,7 +210,7 @@ func TestJSONClient_DoForwardsRequestAndReturnsResponse(t *testing.T) {
 		httpClient: ts.Client(),
 	}
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, ts.URL+"/ping", http.NoBody)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+"/ping", http.NoBody)
 	if err != nil {
 		t.Fatalf("NewRequestWithContext() error = %v", err)
 	}
@@ -200,6 +219,7 @@ func TestJSONClient_DoForwardsRequestAndReturnsResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Do() error = %v", err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
@@ -210,6 +230,7 @@ func TestJSONClient_DoForwardsRequestAndReturnsResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadAll() error = %v", err)
 	}
+
 	if got := string(body); got != "pong" {
 		t.Fatalf("Do() body = %q, want %q", got, "pong")
 	}
@@ -223,15 +244,20 @@ func TestJSONClient_DoWrapsError(t *testing.T) {
 		httpClient: &http.Client{Timeout: time.Millisecond},
 	}
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://127.0.0.1:0/unreachable", http.NoBody)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://127.0.0.1:0/unreachable", http.NoBody)
 	if err != nil {
 		t.Fatalf("NewRequestWithContext() error = %v", err)
 	}
 
-	_, err = client.Do(req)
+	resp, err := client.Do(req)
 	if err == nil {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			t.Errorf("Body.Close() error = %v", closeErr)
+		}
+
 		t.Fatal("Do() expected error for unreachable host")
 	}
+
 	if !strings.HasPrefix(err.Error(), "request: ") {
 		t.Fatalf("Do() error = %q, want prefix %q", err.Error(), "request: ")
 	}
@@ -261,10 +287,12 @@ func TestJSONClient_CheckStatusDelegatesToStandalone(t *testing.T) {
 			StatusCode: http.StatusInternalServerError,
 			Body:       io.NopCloser(strings.NewReader("fail")),
 		}
+
 		err := client.CheckStatus(resp)
 		if err == nil {
 			t.Fatal("CheckStatus() expected error")
 		}
+
 		if !strings.Contains(err.Error(), "status 500") {
 			t.Fatalf("CheckStatus() error = %q, want status 500", err.Error())
 		}
@@ -278,15 +306,19 @@ func TestJSONClient_DecodeJSONDelegatesToStandalone(t *testing.T) {
 	rc := &trackCloseReadCloser{Reader: strings.NewReader(`{"value":42}`)}
 	resp := &http.Response{Body: rc}
 
-	var out struct {
+	type payload struct {
 		Value int `json:"value"`
 	}
-	if err := client.DecodeJSON(resp, &out); err != nil {
+
+	out, err := client.DecodeJSON[payload](resp)
+	if err != nil {
 		t.Fatalf("DecodeJSON() error = %v", err)
 	}
+
 	if out.Value != 42 {
 		t.Fatalf("DecodeJSON() value = %d, want 42", out.Value)
 	}
+
 	if !rc.closed {
 		t.Fatal("DecodeJSON() expected body close")
 	}
@@ -332,13 +364,14 @@ func TestJSONClient_DiscardBodyReadError(t *testing.T) {
 
 	client := &JSONClient{}
 	resp := &http.Response{
-		Body: &errorReadCloser{err: fmt.Errorf("disk full")},
+		Body: &errorReadCloser{err: errors.New("disk full")},
 	}
 
 	err := client.DiscardBody(resp)
 	if err == nil {
 		t.Fatal("DiscardBody() expected error for failing reader")
 	}
+
 	if !strings.Contains(err.Error(), "discard body") {
 		t.Fatalf("DiscardBody() error = %q, want 'discard body' prefix", err.Error())
 	}
@@ -346,15 +379,22 @@ func TestJSONClient_DiscardBodyReadError(t *testing.T) {
 
 func newEchoServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte("pong"))
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		testsupport.WriteResponse(t, w, "pong")
 	}))
 	t.Cleanup(ts.Close)
+
 	return ts
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
-	return f(req)
+	out, err := f(req)
+	if err != nil {
+		return nil, fmt.Errorf("round trip: %w", err)
+	}
+
+	return out, nil
 }

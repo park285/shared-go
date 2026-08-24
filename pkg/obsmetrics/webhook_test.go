@@ -11,6 +11,7 @@ func renderWebhook(t *testing.T, m *WebhookMetrics) string {
 	t.Helper()
 
 	var buf bytes.Buffer
+
 	if !m.Expose(&buf) {
 		t.Fatal("Expose returned false")
 	}
@@ -48,6 +49,7 @@ func TestWebhookMetricsHistogramAndRetiredQueueGauge(t *testing.T) {
 	m.ObserveQueueDepth(3)
 
 	body := renderWebhook(t, m)
+
 	for _, want := range []string{
 		"twentyq_webhook_handler_duration_seconds_count 2",
 		"twentyq_webhook_handler_duration_seconds_bucket",
@@ -56,6 +58,7 @@ func TestWebhookMetricsHistogramAndRetiredQueueGauge(t *testing.T) {
 			t.Fatalf("body missing %q:\n%s", want, body)
 		}
 	}
+
 	if strings.Contains(body, "twentyq_webhook_queue_depth") {
 		t.Fatalf("retired scheduler metric was exported:\n%s", body)
 	}
@@ -69,6 +72,7 @@ func TestWebhookMetricsDecodeLatencyHistogram(t *testing.T) {
 	m.ObserveDecodeLatency(250 * time.Millisecond)
 
 	body := renderWebhook(t, m)
+
 	for _, want := range []string{
 		"chat_bot_webhook_decode_latency_seconds_count 2",
 		"chat_bot_webhook_decode_latency_seconds_sum",
@@ -87,6 +91,7 @@ func TestWebhookMetricsOmitRetiredSchedulerFamilies(t *testing.T) {
 	metrics.ObserveQueueDepth(7)
 
 	body := renderWebhook(t, metrics)
+
 	for _, forbidden := range []string{
 		"twentyq_webhook_queue_depth",
 		"twentyq_webhook_workers_configured",

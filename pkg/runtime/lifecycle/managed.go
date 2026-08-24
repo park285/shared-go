@@ -14,5 +14,6 @@ func (m *Managed) Close() {
 	if m == nil {
 		return
 	}
+
 	m.CleanupCloser.Close()
 }

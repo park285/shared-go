@@ -42,6 +42,7 @@ func FuzzIsReadableStringMatchesIsReadableText(f *testing.F) {
 	for _, candidate := range readableStringCases() {
 		f.Add(candidate)
 	}
+
 	f.Fuzz(func(t *testing.T, candidate string) {
 		if IsReadableString(candidate) != IsReadableText([]byte(candidate)) {
 			t.Fatalf("divergence for %q", candidate)
@@ -51,6 +52,7 @@ func FuzzIsReadableStringMatchesIsReadableText(f *testing.F) {
 
 func TestIsReadableStringAllocatesNothing(t *testing.T) {
 	candidate := strings.Repeat("readable payload ", 64)
+
 	if allocs := testing.AllocsPerRun(50, func() { _ = IsReadableString(candidate) }); allocs != 0 {
 		t.Fatalf("IsReadableString allocations = %.0f, want 0", allocs)
 	}

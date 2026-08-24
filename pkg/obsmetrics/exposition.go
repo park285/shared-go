@@ -34,20 +34,22 @@ func WriteCounterSeries(w io.Writer, name, help string, series []CounterSeries) 
 	if !writeMetricHeader(w, name, help, "counter") {
 		return false
 	}
+
 	for _, entry := range series {
 		if !writeMetricSample(w, name, labelsFromMap(entry.Labels), strconv.FormatUint(entry.Value, 10)) {
 			return false
 		}
 	}
+
 	return true
 }
 
-// WriteGauge는 단일 gauge 메트릭을 씁니다. value는 호출측이 직렬화한 문자열입니다(정수/실수 모두 수용).
+// WriteGauge는 단일 gauge 메트릭을 씁니다. Value는 호출측이 직렬화한 문자열입니다(정수/실수 모두 수용).
 func WriteGauge(w io.Writer, name, help, value string) bool {
 	return WriteGaugeWithLabels(w, name, help, nil, value)
 }
 
-// WriteGaugeWithLabels는 라벨이 있는 gauge 메트릭을 씁니다. value는 호출측이 직렬화한 문자열입니다.
+// WriteGaugeWithLabels는 라벨이 있는 gauge 메트릭을 씁니다. Value는 호출측이 직렬화한 문자열입니다.
 func WriteGaugeWithLabels(w io.Writer, name, help string, labels Labels, value string) bool {
 	return writeScalar(w, name, help, "gauge", labels, value)
 }
@@ -57,11 +59,13 @@ func WriteGaugeSeries(w io.Writer, name, help string, series []GaugeSeries) bool
 	if !writeMetricHeader(w, name, help, "gauge") {
 		return false
 	}
+
 	for _, entry := range series {
 		if !writeMetricSample(w, name, labelsFromMap(entry.Labels), entry.Value) {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -133,6 +137,7 @@ func writeHistogram(w io.Writer, name, help string, labels []labelPair, snap His
 
 func appendLabel(labels []labelPair, label labelPair) []labelPair {
 	out := make([]labelPair, 0, len(labels)+1)
+
 	out = append(out, labels...)
 	out = append(out, label)
 
@@ -145,16 +150,20 @@ func formatLabels(labels []labelPair) string {
 	}
 
 	var builder strings.Builder
+
 	builder.WriteByte('{')
+
 	for i, label := range labels {
 		if i > 0 {
 			builder.WriteByte(',')
 		}
+
 		builder.WriteString(label.name)
 		builder.WriteString("=\"")
 		builder.WriteString(escapeLabelValue(label.value))
 		builder.WriteByte('"')
 	}
+
 	builder.WriteByte('}')
 
 	return builder.String()

@@ -2,7 +2,6 @@ package promptguard
 
 import (
 	"encoding/base64"
-	"io"
 	"log/slog"
 	"net/url"
 	"strings"
@@ -15,6 +14,7 @@ func BenchmarkPromptGuardBenignFastPath(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
+
 	for range b.N {
 		_ = guard.evaluateRaw(input)
 	}
@@ -26,6 +26,7 @@ func BenchmarkPromptGuardAggregateBoundary(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
+
 	for range b.N {
 		_ = guard.evaluateRaw(input)
 	}
@@ -38,6 +39,7 @@ func BenchmarkPromptGuardDecoderHeavy(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
+
 	for range b.N {
 		_ = guard.evaluateRaw(input)
 	}
@@ -46,7 +48,8 @@ func BenchmarkPromptGuardDecoderHeavy(b *testing.B) {
 func newBenchmarkGuard(b *testing.B) *Guard {
 	b.Helper()
 
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
+
 	guard, err := NewGuard(Config{Enabled: true, UseEmbeddedDefaults: true}, logger)
 	if err != nil {
 		b.Fatalf("NewGuard() error = %v", err)

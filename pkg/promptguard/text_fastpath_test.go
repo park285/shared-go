@@ -38,6 +38,7 @@ func TestNormalizePostProcessMatchesLegacyPipeline(t *testing.T) {
 
 	input := "\u200b  MIXED\tCase\n\u00a0Text  "
 	baseline := strings.TrimSpace(collapseWhitespace(strings.ToLower(stripControlChars(input))))
+
 	if got := normalizePostProcess(input); got != baseline {
 		t.Fatalf("normalizePostProcess(%q) = %q, want baseline %q", input, got, baseline)
 	}
@@ -46,6 +47,8 @@ func TestNormalizePostProcessMatchesLegacyPipeline(t *testing.T) {
 var benchmarkNormalizeViewsSink Views
 
 func benchmarkNormalizeViews(b *testing.B, input string) {
+	b.Helper()
+
 	b.ReportAllocs()
 
 	for range b.N {

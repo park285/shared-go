@@ -93,7 +93,8 @@ rules:
       - dan
     weight: 0.5
 `
-	for name, content := range map[string]string{"policy.yml": policy, "rules.yml": rules} {
+
+	for name, content := range map[string]string{testPolicyYml: policy, testRulesYml: rules} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
 			t.Fatalf("WriteFile() error = %v", err)
 		}
@@ -215,6 +216,7 @@ func TestRulepackSourceBoundaries(t *testing.T) {
 
 	dir := t.TempDir()
 	writeV3Overlay(t, dir)
+
 	guard, err := NewGuard(Config{
 		Enabled:             true,
 		RulepacksDir:        dir,
@@ -254,9 +256,11 @@ func TestLoadRulepacksRejectsSymlink(t *testing.T) {
 
 	dir := t.TempDir()
 	target := filepath.Join(t.TempDir(), "outside.yml")
+
 	if err := os.WriteFile(target, []byte("version: 2\nrules: []\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
+
 	if err := os.Symlink(target, filepath.Join(dir, "linked.yml")); err != nil {
 		t.Skipf("symlink unsupported: %v", err)
 	}
@@ -277,7 +281,7 @@ func TestGuardCachesEvaluations(t *testing.T) {
 			MinBlockFamilies: 2,
 		},
 		Rules: []rawRule{
-			{ID: "policy", Family: "policy_bypass", Type: "regex", Action: "score", View: "joined", Segments: []string{"plain"}, Pattern: "정책[\\s\\S]{0,12}무시", Weight: 0.7},
+			{ID: "policy", Family: "policy_bypass", Type: ruleTypeRegex, Action: hitActionScore, View: "joined", Segments: []string{testSegmentPlain}, Pattern: "정책[\\s\\S]{0,12}무시", Weight: 0.7},
 		},
 	})
 	if err != nil {

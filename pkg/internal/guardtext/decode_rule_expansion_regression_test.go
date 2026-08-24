@@ -28,6 +28,7 @@ func TestDecodeCandidatesWithContextForRulesKeepsBenignNestedShortComplete(t *te
 		"system "+outer+":",
 		func(candidate string) bool { return strings.Contains(candidate, "system prompt:") },
 	)
+
 	if !result.Complete() || len(result.Candidates) != 0 {
 		t.Fatalf("result = %#v, want complete benign result", result)
 	}

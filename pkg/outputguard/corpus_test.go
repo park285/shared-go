@@ -2,11 +2,11 @@ package outputguard
 
 import (
 	"bufio"
+	jsonv2 "encoding/json/v2"
 	"os"
 	"strings"
 	"testing"
 
-	jsonv2 "encoding/json/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -26,32 +26,45 @@ func TestOutputGuardCorpus(t *testing.T) {
 
 	file, err := os.Open("testdata/corpus-v2.jsonl")
 	require.NoError(t, err)
-	defer file.Close()
+
+	t.Cleanup(func() {
+		_ = file.Close()
+	})
 
 	guard := NewGuard()
 	scanner := bufio.NewScanner(file)
+
 	for scanner.Scan() {
 		var test outputCorpusCase
+
 		require.NoError(t, jsonv2.Unmarshal(scanner.Bytes(), &test))
 		t.Run(test.ID, func(t *testing.T) {
+			t.Parallel()
+
 			text := test.Text
 			if test.TextRepeatCount > 0 {
 				text = strings.Repeat(test.TextRepeat, test.TextRepeatCount)
 			}
+
 			var evaluation Evaluation
+
 			if len(test.ProtectedTexts) > 0 {
 				bound, bindErr := guard.Bind(test.ProtectedTexts)
 				require.NoError(t, bindErr)
+
 				evaluation = bound.Check(text)
 			} else {
 				evaluation = guard.Check(CheckRequest{Text: text})
 			}
+
 			assert.Equal(t, test.ExpectedDecision, evaluation.Decision)
-			assert.Equal(t, len(test.ExpectedReasons), len(evaluation.ReasonCodes))
+			assert.Len(t, evaluation.ReasonCodes, len(test.ExpectedReasons))
+
 			if len(test.ExpectedReasons) > 0 {
 				assert.Equal(t, test.ExpectedReasons, evaluation.ReasonCodes)
 			}
 		})
 	}
+
 	require.NoError(t, scanner.Err())
 }

@@ -43,7 +43,7 @@ func SQLQueryRow(db SQLQueryRowContext) RowQuerier {
 
 // WithLedger는 적용 완료 ledger를 사용해 migration을 idempotent하게 만든다.
 // Apply와 Record는 별도 Execer 호출이라 원자적이지 않고, ledger는 at-least-once이므로 migration SQL은 idempotent해야 한다.
-// ledger 단독은 동시 실행을 막지 못한다: 여러 마이그레이터가 같은 migration을 동시에 Applied()==false로 보고 함께 실행할 수 있다.
+// Ledger 단독은 동시 실행을 막지 못한다: 여러 마이그레이터가 같은 migration을 동시에 Applied()==false로 보고 함께 실행할 수 있다.
 // 다중 레플리카에서 single-flight가 필요하면 Apply를 WithAdvisoryLock으로 감싸라.
 func WithLedger(l Ledger, q RowQuerier) Option {
 	return func(o *options) {
@@ -57,14 +57,17 @@ func (l Ledger) Ensure(ctx context.Context, exec Execer) error {
 	if exec == nil {
 		return errors.New("dbmigrate: exec is required")
 	}
+
 	table, err := l.tableName()
 	if err != nil {
-		return err
+		return fmt.Errorf("table name: %w", err)
 	}
+
 	query := queryEnsureLedger(table)
 	if err := exec(ctx, query); err != nil {
 		return fmt.Errorf("dbmigrate: ensure ledger: %w", err)
 	}
+
 	return nil
 }
 
@@ -80,24 +83,28 @@ func Baseline(ctx context.Context, fsys fs.FS, exec Execer, through string, l Le
 	}
 
 	throughIndex := -1
+
 	for i, name := range entries {
 		if name == through {
 			throughIndex = i
 			break
 		}
 	}
+
 	if throughIndex < 0 {
 		return fmt.Errorf("dbmigrate: baseline through migration %q not found in manifest", through)
 	}
 
 	if err := l.Ensure(ctx, exec); err != nil {
-		return err
+		return fmt.Errorf("ensure: %w", err)
 	}
+
 	for _, name := range entries[:throughIndex+1] {
 		if err := l.Record(ctx, exec, name); err != nil {
-			return err
+			return fmt.Errorf("record: %w", err)
 		}
 	}
+
 	return nil
 }
 
@@ -106,16 +113,20 @@ func (l Ledger) Applied(ctx context.Context, q RowQuerier, name string) (bool, e
 	if q == nil {
 		return false, errors.New("dbmigrate: ledger querier is required")
 	}
+
 	table, err := l.tableName()
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("table name: %w", err)
 	}
 
 	var applied bool
+
 	query := queryLedgerApplied(table)
+
 	if err := q.QueryRow(ctx, query, name).Scan(&applied); err != nil {
 		return false, fmt.Errorf("dbmigrate: query ledger %s: %w", name, err)
 	}
+
 	return applied, nil
 }
 
@@ -124,14 +135,17 @@ func (l Ledger) Record(ctx context.Context, exec Execer, name string) error {
 	if exec == nil {
 		return errors.New("dbmigrate: exec is required")
 	}
+
 	table, err := l.tableName()
 	if err != nil {
-		return err
+		return fmt.Errorf("table name: %w", err)
 	}
+
 	query := queryRecordLedger(table)
 	if err := exec(ctx, query, name); err != nil {
 		return fmt.Errorf("dbmigrate: record ledger %s: %w", name, err)
 	}
+
 	return nil
 }
 
@@ -143,16 +157,20 @@ func (l Ledger) tableName() (string, error) {
 
 	parts := strings.Split(table, ".")
 	quoted := make([]string, 0, len(parts))
+
 	for _, part := range parts {
 		trimmed := strings.TrimSpace(part)
 		if trimmed == "" {
 			return "", fmt.Errorf("dbmigrate: invalid ledger table %q", table)
 		}
+
 		if err := validateIdentifier(trimmed); err != nil {
 			return "", fmt.Errorf("dbmigrate: invalid ledger table %q: %w", table, err)
 		}
+
 		quoted = append(quoted, `"`+strings.ReplaceAll(trimmed, `"`, `""`)+`"`)
 	}
+
 	return strings.Join(quoted, "."), nil
 }
 
@@ -166,6 +184,7 @@ func validateIdentifier(s string) error {
 			return fmt.Errorf("invalid identifier character %q", r)
 		}
 	}
+
 	return nil
 }
 

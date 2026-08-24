@@ -116,6 +116,7 @@ func (w *asyncDropWriter) boundedCopy(p []byte) queuedLine {
 	body := trimPartialRune(p[:w.maxLineBytes-1])
 	data := make([]byte, len(body)+1)
 	copy(data, body)
+
 	data[len(body)] = '\n'
 
 	return queuedLine{data: data, truncated: true}
@@ -129,6 +130,7 @@ func trimPartialRune(line []byte) []byte {
 		if !utf8.RuneStart(line[i]) {
 			continue
 		}
+
 		if r, size := utf8.DecodeRune(line[i:]); r == utf8.RuneError && size == 1 {
 			return line[:i]
 		}
@@ -155,7 +157,7 @@ func (w *asyncDropWriter) Close() error {
 	return nil
 }
 
-// 요약도 JSON handler를 거쳐야 stdout 스트림의 파싱 계약을 보존한다. run goroutine이 이미
+// 요약도 JSON handler를 거쳐야 stdout 스트림의 파싱 계약을 보존한다. Run goroutine이 이미
 // 종료했으므로 queue를 거치지 않고 target에 직접 쓰는 일회용 handler를 만든다.
 func (w *asyncDropWriter) writeLossSummary() {
 	dropped, truncated := w.dropped.Load(), w.truncated.Load()

@@ -22,6 +22,7 @@ func TestIsOpenChat(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			if got := IsOpenChat(tt.roomType, tt.linkID); got != tt.want {
 				t.Fatalf("IsOpenChat(%q, %q) = %v, want %v", tt.roomType, tt.linkID, got, tt.want)
 			}

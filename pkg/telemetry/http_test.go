@@ -18,6 +18,27 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+const (
+	publicHTTPRequestTarget = "/api/private/private-user-123?token=private-token-456"
+	publicHTTPRemoteAddr    = "198.51.100.42:43123"
+	publicHTTPForwardedFor  = "203.0.113.77, 198.51.100.42"
+	publicHTTPUserAgent     = "private-client/7.0"
+	publicHTTPForwarded     = "for=203.0.113.77"
+	publicHTTPRealIP        = "203.0.113.77"
+	publicHTTPHost          = "private-tenant-123.example.com"
+	publicHTTPPrivateHeader = "private-header-value"
+	publicHTTPRoutePattern  = "GET /api/private/{userID}"
+)
+
+type publicHTTPCapturedRequest struct {
+	url        *url.URL
+	requestURI string
+	remoteAddr string
+	host       string
+	header     http.Header
+	pattern    string
+}
+
 func TestNewPublicHTTPHandlerRestoresRequestAndSanitizesSpan(t *testing.T) {
 	recorder := tracetest.NewSpanRecorder()
 	provider := sdktrace.NewTracerProvider(
@@ -29,93 +50,120 @@ func TestNewPublicHTTPHandlerRestoresRequestAndSanitizesSpan(t *testing.T) {
 		propagation.Baggage{},
 	))
 
-	const (
-		operation     = "public.http"
-		requestTarget = "/api/private/private-user-123?token=private-token-456"
-		remoteAddr    = "198.51.100.42:43123"
-		forwardedFor  = "203.0.113.77, 198.51.100.42"
-		userAgent     = "private-client/7.0"
-		forwarded     = "for=203.0.113.77"
-		realIP        = "203.0.113.77"
-		host          = "private-tenant-123.example.com"
-	)
+	const operation = "public.http"
 
-	var (
-		gotURL        *url.URL
-		gotRequestURI string
-		gotRemoteAddr string
-		gotHost       string
-		gotHeader     http.Header
-		gotPattern    string
-	)
+	var captured publicHTTPCapturedRequest
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/private/{userID}", func(w http.ResponseWriter, r *http.Request) {
-		copiedURL := *r.URL
-		gotURL = &copiedURL
-		gotRequestURI = r.RequestURI
-		gotRemoteAddr = r.RemoteAddr
-		gotHost = r.Host
-		gotHeader = r.Header.Clone()
-		gotPattern = r.Pattern
+		captured = capturePublicHTTPRequest(r)
+
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, requestTarget, http.NoBody)
-	req.RemoteAddr = remoteAddr
-	req.Host = host
-	req.Header.Set("X-Forwarded-For", forwardedFor)
-	req.Header.Set("User-Agent", userAgent)
-	req.Header.Set("Forwarded", forwarded)
-	req.Header.Set("X-Real-IP", realIP)
-	req.Header.Set("X-Private-Header", "private-header-value")
-	req.URL.RawPath = "/api/private/private-user-%31%32%33"
-	req.URL.ForceQuery = true
-	req.URL.Fragment = "private-fragment-789"
-	req.URL.RawFragment = "private-fragment-%37%38%39"
-	req.URL.Opaque = "private-opaque-abc"
+	req := newPublicHTTPPrivateRequest(t)
 	wantURL := *req.URL
 	wantRequestURI := req.RequestURI
 
 	handler := NewPublicHTTPHandler(mux, operation, HTTPHandlerOptions{})
 	handler.ServeHTTP(httptest.NewRecorder(), req)
 
-	if gotURL == nil {
-		t.Fatal("handler was not called")
-	}
-	if *gotURL != wantURL {
-		t.Fatalf("handler URL = %#v, want %#v", *gotURL, wantURL)
-	}
-	if gotRequestURI != wantRequestURI {
-		t.Fatalf("handler RequestURI = %q, want %q", gotRequestURI, wantRequestURI)
-	}
-	if gotRemoteAddr != remoteAddr {
-		t.Fatalf("handler RemoteAddr = %q, want %q", gotRemoteAddr, remoteAddr)
-	}
-	if gotHost != host {
-		t.Fatalf("handler Host = %q, want %q", gotHost, host)
-	}
-	for key, want := range map[string]string{
-		"X-Forwarded-For":  forwardedFor,
-		"User-Agent":       userAgent,
-		"Forwarded":        forwarded,
-		"X-Real-IP":        realIP,
-		"X-Private-Header": "private-header-value",
-	} {
-		if got := gotHeader.Get(key); got != want {
-			t.Fatalf("handler header %s = %q, want %q", key, got, want)
-		}
-	}
-	if gotPattern != "GET /api/private/{userID}" {
-		t.Fatalf("handler Pattern = %q, want %q", gotPattern, "GET /api/private/{userID}")
-	}
+	assertPublicHTTPRequestRestored(t, captured, wantURL, wantRequestURI)
 
 	spans := recorder.Ended()
 	if len(spans) != 1 {
 		t.Fatalf("ended spans = %d, want 1", len(spans))
 	}
+
 	if got := spans[0].Name(); got != operation {
 		t.Fatalf("span name = %q, want %q", got, operation)
 	}
+
+	assertPublicHTTPSpanHidesPrivateData(t, spans[0])
+}
+
+func newPublicHTTPPrivateRequest(t *testing.T) *http.Request {
+	t.Helper()
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, publicHTTPRequestTarget, http.NoBody)
+
+	req.RemoteAddr = publicHTTPRemoteAddr
+	req.Host = publicHTTPHost
+	req.Header.Set("X-Forwarded-For", publicHTTPForwardedFor)
+	req.Header.Set("User-Agent", publicHTTPUserAgent)
+	req.Header.Set("Forwarded", publicHTTPForwarded)
+	req.Header.Set("X-Real-IP", publicHTTPRealIP)
+	req.Header.Set("X-Private-Header", publicHTTPPrivateHeader)
+
+	req.URL.RawPath = "/api/private/private-user-%31%32%33"
+	req.URL.ForceQuery = true
+	req.URL.Fragment = "private-fragment-789"
+	req.URL.RawFragment = "private-fragment-%37%38%39"
+	req.URL.Opaque = "private-opaque-abc"
+
+	return req
+}
+
+func capturePublicHTTPRequest(r *http.Request) publicHTTPCapturedRequest {
+	copiedURL := *r.URL
+
+	return publicHTTPCapturedRequest{
+		url:        &copiedURL,
+		requestURI: r.RequestURI,
+		remoteAddr: r.RemoteAddr,
+		host:       r.Host,
+		header:     r.Header.Clone(),
+		pattern:    r.Pattern,
+	}
+}
+
+func assertPublicHTTPRequestRestored(
+	t *testing.T,
+	captured publicHTTPCapturedRequest,
+	wantURL url.URL,
+	wantRequestURI string,
+) {
+	t.Helper()
+
+	if captured.url == nil {
+		t.Fatal("handler was not called")
+	}
+
+	if *captured.url != wantURL {
+		t.Fatalf("handler URL = %#v, want %#v", *captured.url, wantURL)
+	}
+
+	if captured.requestURI != wantRequestURI {
+		t.Fatalf("handler RequestURI = %q, want %q", captured.requestURI, wantRequestURI)
+	}
+
+	if captured.remoteAddr != publicHTTPRemoteAddr {
+		t.Fatalf("handler RemoteAddr = %q, want %q", captured.remoteAddr, publicHTTPRemoteAddr)
+	}
+
+	if captured.host != publicHTTPHost {
+		t.Fatalf("handler Host = %q, want %q", captured.host, publicHTTPHost)
+	}
+
+	for key, want := range map[string]string{
+		"X-Forwarded-For":  publicHTTPForwardedFor,
+		"User-Agent":       publicHTTPUserAgent,
+		"Forwarded":        publicHTTPForwarded,
+		"X-Real-IP":        publicHTTPRealIP,
+		"X-Private-Header": publicHTTPPrivateHeader,
+	} {
+		if got := captured.header.Get(key); got != want {
+			t.Fatalf("handler header %s = %q, want %q", key, got, want)
+		}
+	}
+
+	if captured.pattern != publicHTTPRoutePattern {
+		t.Fatalf("handler Pattern = %q, want %q", captured.pattern, publicHTTPRoutePattern)
+	}
+}
+
+func assertPublicHTTPSpanHidesPrivateData(t *testing.T, span sdktrace.ReadOnlySpan) {
+	t.Helper()
 
 	forbiddenKeys := map[attribute.Key]struct{}{
 		attribute.Key("client.address"):       {},
@@ -130,22 +178,25 @@ func TestNewPublicHTTPHandlerRestoresRequestAndSanitizesSpan(t *testing.T) {
 		"private-fragment-789",
 		"private-fragment-%37%38%39",
 		"private-opaque-abc",
-		remoteAddr,
+		publicHTTPRemoteAddr,
 		"198.51.100.42",
-		forwardedFor,
+		publicHTTPForwardedFor,
 		"203.0.113.77",
-		userAgent,
-		forwarded,
-		realIP,
-		host,
+		publicHTTPUserAgent,
+		publicHTTPForwarded,
+		publicHTTPRealIP,
+		publicHTTPHost,
 	}
-	for _, attr := range spans[0].Attributes() {
+
+	for _, attr := range span.Attributes() {
 		if _, forbidden := forbiddenKeys[attr.Key]; forbidden {
 			t.Fatalf("forbidden client PII attribute %q recorded with value %q", attr.Key, attr.Value.String())
 		}
+
 		if attr.Key == attribute.Key("server.address") && attr.Value.String() != "" {
 			t.Fatalf("untrusted host recorded in server.address with value %q", attr.Value.String())
 		}
+
 		for _, sentinel := range sentinels {
 			if strings.Contains(attr.Value.String(), sentinel) {
 				t.Fatalf("request identifier %q recorded in span attribute %q", sentinel, attr.Key)
@@ -167,12 +218,15 @@ func TestNewPublicHTTPHandlerPreservesDynamicRequestTrailer(t *testing.T) {
 		trailerValue = "sha256=private-digest-123"
 		requestBody  = "body"
 	)
+
 	gotTrailer := make(chan string, 1)
 	server := httptest.NewServer(NewPublicHTTPHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, err := io.ReadAll(r.Body); err != nil {
 			t.Errorf("read request body: %v", err)
 		}
+
 		gotTrailer <- r.Trailer.Get(trailerName)
+
 		w.WriteHeader(http.StatusNoContent)
 	}), "public.trailer", HTTPHandlerOptions{}))
 	t.Cleanup(server.Close)
@@ -181,6 +235,7 @@ func TestNewPublicHTTPHandlerPreservesDynamicRequestTrailer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create request: %v", err)
 	}
+
 	req.Trailer = http.Header{trailerName: []string{trailerValue}}
 	req.ContentLength = -1
 
@@ -188,22 +243,32 @@ func TestNewPublicHTTPHandlerPreservesDynamicRequestTrailer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("send request: %v", err)
 	}
-	resp.Body.Close()
+
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			t.Errorf("Body.Close() error = %v", closeErr)
+		}
+	}()
+
 	if got := <-gotTrailer; got != trailerValue {
 		t.Fatalf("handler trailer = %q, want %q", got, trailerValue)
 	}
+
 	spans := recorder.Ended()
 	if len(spans) != 1 {
 		t.Fatalf("ended spans = %d, want 1", len(spans))
 	}
+
 	for _, attr := range spans[0].Attributes() {
 		if attr.Key == attribute.Key("http.request.body.size") {
 			if got := attr.Value.AsInt64(); got != int64(len(requestBody)) {
 				t.Fatalf("http.request.body.size = %d, want %d", got, len(requestBody))
 			}
+
 			return
 		}
 	}
+
 	t.Fatal("http.request.body.size attribute is missing")
 }
 
@@ -216,17 +281,22 @@ func TestNewPublicHTTPHandlerFilterObservesOriginalRequest(t *testing.T) {
 	installPublicHTTPGlobals(t, provider, propagation.TraceContext{})
 
 	const requestTarget = "/health?probe=private-probe"
+
 	var filtered *http.Request
+
 	called := false
 	handler := NewPublicHTTPHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
+
 		if got := r.URL.RequestURI(); got != requestTarget {
 			t.Errorf("handler URL = %q, want %q", got, requestTarget)
 		}
+
 		w.WriteHeader(http.StatusNoContent)
 	}), "public.filter", HTTPHandlerOptions{
 		Filter: func(r *http.Request) bool {
 			filtered = r.Clone(r.Context())
+
 			return r.URL.Path == "/health" && r.URL.RawQuery == "probe=private-probe" &&
 				r.RequestURI == requestTarget && r.RemoteAddr == "198.51.100.42:43123" &&
 				r.Header.Get("User-Agent") == "private-client/7.0"
@@ -234,6 +304,7 @@ func TestNewPublicHTTPHandlerFilterObservesOriginalRequest(t *testing.T) {
 	})
 
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, requestTarget, http.NoBody)
+
 	req.RemoteAddr = "198.51.100.42:43123"
 	req.Header.Set("User-Agent", "private-client/7.0")
 	handler.ServeHTTP(httptest.NewRecorder(), req)
@@ -241,9 +312,11 @@ func TestNewPublicHTTPHandlerFilterObservesOriginalRequest(t *testing.T) {
 	if !called {
 		t.Fatal("handler was not called")
 	}
+
 	if filtered == nil {
 		t.Fatal("filter was not called")
 	}
+
 	if got := len(recorder.Ended()); got != 1 {
 		t.Fatalf("ended spans = %d, want 1", got)
 	}
@@ -260,9 +333,11 @@ func TestNewPublicHTTPHandlerFilterCanRejectOriginalRequest(t *testing.T) {
 	called := false
 	handler := NewPublicHTTPHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
+
 		if got := r.URL.RequestURI(); got != "/metrics?probe=private" {
 			t.Errorf("handler URL = %q, want %q", got, "/metrics?probe=private")
 		}
+
 		w.WriteHeader(http.StatusNoContent)
 	}), "public.filter", HTTPHandlerOptions{
 		Filter: func(r *http.Request) bool {
@@ -278,6 +353,7 @@ func TestNewPublicHTTPHandlerFilterCanRejectOriginalRequest(t *testing.T) {
 	if !called {
 		t.Fatal("handler was not called")
 	}
+
 	if got := len(recorder.Ended()); got != 0 {
 		t.Fatalf("ended spans = %d, want 0", got)
 	}
@@ -296,9 +372,11 @@ func TestNewPublicHTTPHandlerRemoteSampledParentCannotOverrideLocalSampler(t *te
 		called  bool
 		sampled bool
 	)
+
 	handler := NewPublicHTTPHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
 		sampled = trace.SpanFromContext(r.Context()).SpanContext().IsSampled()
+
 		w.WriteHeader(http.StatusNoContent)
 	}), "public.sampling", HTTPHandlerOptions{})
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/private", http.NoBody)
@@ -309,9 +387,11 @@ func TestNewPublicHTTPHandlerRemoteSampledParentCannotOverrideLocalSampler(t *te
 	if !called {
 		t.Fatal("handler was not called")
 	}
+
 	if sampled {
 		t.Fatal("remote sampled traceparent overrode the local sampler")
 	}
+
 	if got := len(recorder.Ended()); got != 0 {
 		t.Fatalf("ended spans = %d, want 0", got)
 	}
@@ -329,11 +409,13 @@ func TestNewPublicHTTPHandlerDoesNotExtractRemoteBaggage(t *testing.T) {
 	))
 
 	var gotMember baggage.Member
+
 	handler := NewPublicHTTPHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotMember = baggage.FromContext(r.Context()).Member("private-user")
 		if got := r.Header.Get("baggage"); got != "private-user=private-user-123" {
 			t.Errorf("handler baggage header = %q, want original header", got)
 		}
+
 		w.WriteHeader(http.StatusNoContent)
 	}), "public.baggage", HTTPHandlerOptions{})
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/private", http.NoBody)
@@ -344,6 +426,7 @@ func TestNewPublicHTTPHandlerDoesNotExtractRemoteBaggage(t *testing.T) {
 	if gotMember.Key() != "" {
 		t.Fatalf("remote baggage reached handler context: %q", gotMember.Key())
 	}
+
 	if got := len(recorder.Ended()); got != 1 {
 		t.Fatalf("ended spans = %d, want 1", got)
 	}
@@ -365,6 +448,7 @@ func TestNewPublicHTTPHandlerBlankOperationReturnsOriginalHandler(t *testing.T) 
 			return true
 		},
 	})
+
 	if wrapped != original {
 		t.Fatal("blank operation did not return the original handler")
 	}
@@ -373,9 +457,11 @@ func TestNewPublicHTTPHandlerBlankOperationReturnsOriginalHandler(t *testing.T) 
 		httptest.NewRecorder(),
 		httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/private", http.NoBody),
 	)
+
 	if filterCalled {
 		t.Fatal("blank operation called the filter")
 	}
+
 	if got := len(recorder.Ended()); got != 0 {
 		t.Fatalf("ended spans = %d, want 0", got)
 	}
@@ -403,13 +489,15 @@ func installPublicHTTPGlobals(t *testing.T, provider *sdktrace.TracerProvider, p
 
 	previousProvider := otel.GetTracerProvider()
 	previousPropagator := otel.GetTextMapPropagator()
+
 	otel.SetTracerProvider(provider)
 	otel.SetTextMapPropagator(propagator)
 
 	t.Cleanup(func() {
 		otel.SetTracerProvider(previousProvider)
 		otel.SetTextMapPropagator(previousPropagator)
-		if err := provider.Shutdown(context.Background()); err != nil {
+
+		if err := provider.Shutdown(context.WithoutCancel(t.Context())); err != nil {
 			t.Errorf("shutdown tracer provider: %v", err)
 		}
 	})
@@ -440,19 +528,23 @@ func TestNewPublicHTTPHandlerRoutePatternNaming(t *testing.T) {
 	}
 
 	const wantPattern = "GET /rooms/{id}"
+
 	if got := spans[0].Name(); got != operation+" "+wantPattern {
 		t.Fatalf("span name = %q, want %q", got, operation+" "+wantPattern)
 	}
 
 	var gotRoute string
+
 	for _, attr := range spans[0].Attributes() {
 		if attr.Key == attribute.Key("http.route") {
 			gotRoute = attr.Value.AsString()
 		}
+
 		if attr.Key == attribute.Key("url.path") {
 			t.Fatalf("url.path attribute must stay absent, got %q", attr.Value.AsString())
 		}
 	}
+
 	if gotRoute != wantPattern {
 		t.Fatalf("http.route = %q, want %q", gotRoute, wantPattern)
 	}
@@ -482,9 +574,11 @@ func TestNewPublicHTTPHandlerRoutePatternUnmatchedKeepsOperation(t *testing.T) {
 	if len(spans) != 1 {
 		t.Fatalf("ended spans = %d, want 1", len(spans))
 	}
+
 	if got := spans[0].Name(); got != operation {
 		t.Fatalf("span name = %q, want %q", got, operation)
 	}
+
 	for _, attr := range spans[0].Attributes() {
 		if attr.Key == attribute.Key("http.route") {
 			t.Fatalf("http.route must stay absent on an unmatched route, got %q", attr.Value.AsString())
@@ -515,6 +609,7 @@ func TestNewPublicHTTPHandlerRoutePatternDisabledByDefault(t *testing.T) {
 	if len(spans) != 1 {
 		t.Fatalf("ended spans = %d, want 1", len(spans))
 	}
+
 	if got := spans[0].Name(); got != operation {
 		t.Fatalf("span name = %q, want %q", got, operation)
 	}

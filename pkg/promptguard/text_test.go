@@ -50,6 +50,7 @@ func TestSplitTextSegments(t *testing.T) {
 			foundCode = true
 		case segmentQuote:
 			foundQuote = true
+		case segmentPlain:
 		}
 	}
 
@@ -61,14 +62,16 @@ func TestSplitTextSegments(t *testing.T) {
 func TestSplitTextSegmentsDistinguishesDialogueFromFlatConfig(t *testing.T) {
 	t.Parallel()
 
-	dialogue := "User: first question\nAssistant: first answer\nUser: second question\nAssistant: second answer"
-	dialogueSegments := splitTextSegments(dialogue)
+	dialog := "User: first question\nAssistant: first answer\nUser: second question\nAssistant: second answer"
+	dialogueSegments := splitTextSegments(dialog)
+
 	if len(dialogueSegments) != 1 || dialogueSegments[0].Kind != segmentPlain {
-		t.Fatalf("dialogue segments = %#v, want one plain segment", dialogueSegments)
+		t.Fatalf("dialog segments = %#v, want one plain segment", dialogueSegments)
 	}
 
 	config := "host: localhost\nport: 8080\ndebug: true"
 	configSegments := splitTextSegments(config)
+
 	if len(configSegments) != 1 || configSegments[0].Kind != segmentConfig {
 		t.Fatalf("config segments = %#v, want one config segment", configSegments)
 	}

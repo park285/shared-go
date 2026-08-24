@@ -3,6 +3,7 @@ package netguard
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -14,6 +15,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/park285/shared-go/v2/pkg/internal/testsupport"
 )
 
 func TestIsBlockedIP(t *testing.T) {
@@ -68,9 +71,9 @@ func TestPolicyValidateTarget(t *testing.T) {
 	t.Parallel()
 
 	policy := Policy{
-		Resolver:     staticResolver{"example.com": {net.ParseIP("93.184.216.34")}},
+		Resolver:     staticResolver{testExampleCom: {net.ParseIP("93.184.216.34")}},
 		Timeout:      time.Second,
-		AllowedHosts: []string{"example.com"},
+		AllowedHosts: []string{testExampleCom},
 		AllowedPorts: []string{"443"},
 	}
 	if _, err := policy.ValidateURL(t.Context(), "https://example.com/path"); err != nil {
@@ -94,6 +97,7 @@ func TestPolicyValidateTarget(t *testing.T) {
 			if err == nil {
 				t.Fatal("ValidateURL() error = nil, want error")
 			}
+
 			if tt.wantErr != nil && !errors.Is(err, tt.wantErr) {
 				t.Fatalf("ValidateURL() error = %v, want %v", err, tt.wantErr)
 			}
@@ -108,6 +112,7 @@ func TestPolicyValidateTargetRejectsResolvedPrivateIP(t *testing.T) {
 		Resolver: staticResolver{"internal.test": {net.ParseIP("127.0.0.1")}},
 	}
 	_, err := policy.ValidateURL(t.Context(), "https://internal.test/secret")
+
 	if !errors.Is(err, ErrBlockedIP) {
 		t.Fatalf("ValidateURL() error = %v, want ErrBlockedIP", err)
 	}
@@ -123,6 +128,7 @@ func TestPolicyValidateTargetRejectsAnyBlockedDNSAnswer(t *testing.T) {
 		}},
 	}
 	_, err := policy.ValidateURL(t.Context(), "https://mixed.test/resource")
+
 	if !errors.Is(err, ErrBlockedIP) {
 		t.Fatalf("ValidateURL() error = %v, want ErrBlockedIP", err)
 	}
@@ -144,13 +150,14 @@ func TestGuardedDialContextResolvesAndBlocksPrivateTargets(t *testing.T) {
 	t.Parallel()
 
 	var dialed []string
-	base := func(_ context.Context, _ string, address string) (net.Conn, error) {
+
+	base := func(_ context.Context, _, address string) (net.Conn, error) {
 		dialed = append(dialed, address)
 		return nil, errors.New("stop after address capture")
 	}
 	policy := Policy{
 		Resolver: staticResolver{
-			"example.com":  {net.ParseIP("93.184.216.34")},
+			testExampleCom: {net.ParseIP("93.184.216.34")},
 			"internal.net": {net.ParseIP("127.0.0.1")},
 		},
 	}
@@ -159,7 +166,8 @@ func TestGuardedDialContextResolvesAndBlocksPrivateTargets(t *testing.T) {
 	if err == nil {
 		t.Fatal("guarded dial error = nil, want base error")
 	}
-	if !slices.Equal(dialed, []string{"93.184.216.34:443"}) {
+
+	if !slices.Equal(dialed, []string{testValue931842}) {
 		t.Fatalf("dialed = %v, want resolved public address", dialed)
 	}
 
@@ -167,7 +175,8 @@ func TestGuardedDialContextResolvesAndBlocksPrivateTargets(t *testing.T) {
 	if !errors.Is(err, ErrBlockedIP) {
 		t.Fatalf("guarded dial error = %v, want ErrBlockedIP", err)
 	}
-	if !slices.Equal(dialed, []string{"93.184.216.34:443"}) {
+
+	if !slices.Equal(dialed, []string{testValue931842}) {
 		t.Fatalf("blocked target dialed addresses = %v, want unchanged", dialed)
 	}
 }
@@ -175,31 +184,39 @@ func TestGuardedDialContextResolvesAndBlocksPrivateTargets(t *testing.T) {
 func TestGuardedDialContextFailsOverResolvedAddresses(t *testing.T) {
 	t.Parallel()
 
-	var dialed []string
-	var peer net.Conn
-	base := func(_ context.Context, _ string, address string) (net.Conn, error) {
+	var (
+		dialed []string
+		peer   net.Conn
+	)
+
+	base := func(_ context.Context, _, address string) (net.Conn, error) {
 		dialed = append(dialed, address)
-		if address == "93.184.216.34:443" {
+		if address == testValue931842 {
 			return nil, errors.New("first address failed")
 		}
+
 		conn, server := net.Pipe()
+
 		peer = server
+
 		return conn, nil
 	}
 	policy := Policy{
-		Resolver: staticResolver{"example.com": {
+		Resolver: staticResolver{testExampleCom: {
 			net.ParseIP("93.184.216.34"),
 			net.ParseIP("93.184.216.35"),
 		}},
 	}
 
-	conn, err := GuardedDialContext(base, policy)(context.Background(), "tcp", "example.com:443")
+	conn, err := GuardedDialContext(base, policy)(t.Context(), "tcp", "example.com:443")
 	if err != nil {
 		t.Fatalf("guarded dial error = %v", err)
 	}
-	defer func() { _ = conn.Close() }()
-	defer func() { _ = peer.Close() }()
-	if !slices.Equal(dialed, []string{"93.184.216.34:443", "93.184.216.35:443"}) {
+
+	defer testsupport.CloseNow(t, "conn.Close", conn.Close)
+	defer testsupport.CloseNow(t, "peer.Close", peer.Close)
+
+	if !slices.Equal(dialed, []string{testValue931842, "93.184.216.35:443"}) {
 		t.Fatalf("dialed = %v, want failover across resolved addresses", dialed)
 	}
 }
@@ -213,7 +230,7 @@ func TestGuardedDialContextRejectsDisallowedPort(t *testing.T) {
 		return nil, errors.New("must not dial")
 	}
 	policy := Policy{
-		Resolver:     staticResolver{"example.com": {net.ParseIP("93.184.216.34")}},
+		Resolver:     staticResolver{testExampleCom: {net.ParseIP("93.184.216.34")}},
 		AllowedPorts: []string{"443"},
 	}
 
@@ -221,9 +238,11 @@ func TestGuardedDialContextRejectsDisallowedPort(t *testing.T) {
 	if err == nil {
 		t.Fatal("guarded dial error = nil, want disallowed port")
 	}
+
 	if !strings.Contains(err.Error(), `port "80" is not allowed`) {
 		t.Fatalf("guarded dial error = %v, want disallowed port", err)
 	}
+
 	if called {
 		t.Fatal("base dial was called for disallowed port")
 	}
@@ -242,6 +261,7 @@ func TestGuardedTransportDisablesProxy(t *testing.T) {
 	if guarded.Proxy != nil {
 		t.Fatal("GuardedTransport().Proxy is non-nil, want nil")
 	}
+
 	if base.Proxy == nil {
 		t.Fatal("GuardedTransport mutated base Proxy")
 	}
@@ -261,10 +281,24 @@ func TestGuardedClientWrapsNonTransportRoundTripper(t *testing.T) {
 		Resolver: staticResolver{"internal.test": {net.ParseIP("127.0.0.1")}},
 	}
 
-	_, err := GuardedClient(client, policy).Get("https://internal.test/secret")
+	req, reqErr := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://internal.test/secret", http.NoBody)
+	if reqErr != nil {
+		t.Fatalf("NewRequestWithContext() error = %v", reqErr)
+	}
+
+	resp, err := GuardedClient(client, policy).Do(req)
+	if err == nil {
+		defer func() {
+			if closeErr := resp.Body.Close(); closeErr != nil {
+				t.Errorf("Body.Close() error = %v", closeErr)
+			}
+		}()
+	}
+
 	if !errors.Is(err, ErrBlockedIP) {
 		t.Fatalf("GuardedClient().Get() error = %v, want ErrBlockedIP", err)
 	}
+
 	if called {
 		t.Fatal("inner RoundTripper was called for blocked target")
 	}
@@ -282,16 +316,23 @@ func TestGuardedClientRejectsDisallowedHostBeforeDial(t *testing.T) {
 	}
 	policy := Policy{
 		Resolver:     staticResolver{"blocked.test": {net.ParseIP("93.184.216.34")}},
-		AllowedHosts: []string{"allowed.test"},
+		AllowedHosts: []string{testAllowedTest},
 	}
 
-	resp, err := GuardedClient(&http.Client{Transport: transport}, policy).Get("https://blocked.test/resource")
+	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://blocked.test/resource", http.NoBody)
+	if err != nil {
+		t.Fatalf("NewRequestWithContext() error = %v", err)
+	}
+
+	resp, err := GuardedClient(&http.Client{Transport: transport}, policy).Do(respReq)
 	if resp != nil {
 		_ = resp.Body.Close()
 	}
+
 	if !errors.Is(err, ErrHostNotAllowed) {
 		t.Fatalf("GuardedClient().Get() error = %v, want ErrHostNotAllowed", err)
 	}
+
 	if dialed != 0 {
 		t.Fatalf("dial attempts = %d, want 0 (host must be rejected before dial)", dialed)
 	}
@@ -308,28 +349,41 @@ func TestGuardedClientRejectsDisallowedSchemeAndPortBeforeDial(t *testing.T) {
 		},
 	}
 	policy := Policy{
-		Resolver:     staticResolver{"allowed.test": {net.ParseIP("93.184.216.34")}},
-		AllowedHosts: []string{"allowed.test"},
+		Resolver:     staticResolver{testAllowedTest: {net.ParseIP("93.184.216.34")}},
+		AllowedHosts: []string{testAllowedTest},
 		AllowedPorts: []string{"443"},
 		Schemes:      []string{"https"},
 	}
 	client := GuardedClient(&http.Client{Transport: transport}, policy)
 
-	resp, err := client.Get("https://allowed.test:8443/resource")
+	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://allowed.test:8443/resource", http.NoBody)
+	if err != nil {
+		t.Fatalf("NewRequestWithContext() error = %v", err)
+	}
+
+	resp, err := client.Do(respReq)
 	if resp != nil {
 		_ = resp.Body.Close()
 	}
+
 	if err == nil || !strings.Contains(err.Error(), `port "8443" is not allowed`) {
 		t.Fatalf("GuardedClient().Get() port error = %v, want disallowed port", err)
 	}
 
-	resp, err = client.Get("http://allowed.test/resource")
+	respReq, err = http.NewRequestWithContext(t.Context(), http.MethodGet, "http://allowed.test/resource", http.NoBody)
+	if err != nil {
+		t.Fatalf("NewRequestWithContext() error = %v", err)
+	}
+
+	resp, err = client.Do(respReq)
 	if resp != nil {
 		_ = resp.Body.Close()
 	}
+
 	if !errors.Is(err, ErrUnsupportedScheme) {
 		t.Fatalf("GuardedClient().Get() scheme error = %v, want ErrUnsupportedScheme", err)
 	}
+
 	if dialed != 0 {
 		t.Fatalf("dial attempts = %d, want 0", dialed)
 	}
@@ -347,14 +401,16 @@ func TestGuardedTransportRejectsDisallowedHostAtDial(t *testing.T) {
 	}
 	policy := Policy{
 		Resolver:     staticResolver{"blocked.test": {net.ParseIP("93.184.216.34")}},
-		AllowedHosts: []string{"allowed.test"},
+		AllowedHosts: []string{testAllowedTest},
 	}
 
 	guarded := GuardedTransport(base, policy)
-	_, err := guarded.DialContext(context.Background(), "tcp", "blocked.test:443")
+	_, err := guarded.DialContext(t.Context(), "tcp", "blocked.test:443")
+
 	if !errors.Is(err, ErrHostNotAllowed) {
 		t.Fatalf("GuardedTransport().DialContext() error = %v, want ErrHostNotAllowed", err)
 	}
+
 	if dialed != 0 {
 		t.Fatalf("dial attempts = %d, want 0", dialed)
 	}
@@ -367,25 +423,35 @@ func TestGuardedClientDialsPinnedAddressUnderDNSRebinding(t *testing.T) {
 		{net.ParseIP("93.184.216.34")},
 		{net.ParseIP("127.0.0.1")},
 	}}
+
 	var dialed []string
+
 	transport := &http.Transport{
-		DialContext: func(_ context.Context, _ string, address string) (net.Conn, error) {
+		DialContext: func(_ context.Context, _, address string) (net.Conn, error) {
 			dialed = append(dialed, address)
 			return nil, errors.New("stop after address capture")
 		},
 	}
 	policy := Policy{Resolver: resolver, AllowedHosts: []string{"rebind.test"}}
 
-	resp, err := GuardedClient(&http.Client{Transport: transport}, policy).Get("https://rebind.test/resource")
+	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://rebind.test/resource", http.NoBody)
+	if err != nil {
+		t.Fatalf("NewRequestWithContext() error = %v", err)
+	}
+
+	resp, err := GuardedClient(&http.Client{Transport: transport}, policy).Do(respReq)
 	if resp != nil {
 		_ = resp.Body.Close()
 	}
+
 	if err == nil {
 		t.Fatal("GuardedClient().Get() error = nil, want captured dial error")
 	}
-	if !slices.Equal(dialed, []string{"93.184.216.34:443"}) {
+
+	if !slices.Equal(dialed, []string{testValue931842}) {
 		t.Fatalf("dialed = %v, want only the validated literal address", dialed)
 	}
+
 	if got := resolver.Calls(); got != 1 {
 		t.Fatalf("resolver calls = %d, want 1 (dial-time answer must be the one dialed)", got)
 	}
@@ -404,13 +470,20 @@ func TestGuardedClientRejectsRebindingToBlockedAnswer(t *testing.T) {
 	}
 	policy := Policy{Resolver: resolver, AllowedHosts: []string{"rebind.test"}}
 
-	resp, err := GuardedClient(&http.Client{Transport: transport}, policy).Get("https://rebind.test/resource")
+	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://rebind.test/resource", http.NoBody)
+	if err != nil {
+		t.Fatalf("NewRequestWithContext() error = %v", err)
+	}
+
+	resp, err := GuardedClient(&http.Client{Transport: transport}, policy).Do(respReq)
 	if resp != nil {
 		_ = resp.Body.Close()
 	}
+
 	if !errors.Is(err, ErrBlockedIP) {
 		t.Fatalf("GuardedClient().Get() error = %v, want ErrBlockedIP", err)
 	}
+
 	if dialed != 0 {
 		t.Fatalf("dial attempts = %d, want 0", dialed)
 	}
@@ -427,17 +500,24 @@ func TestGuardedClientRequireGuardedDialRejectsOpaqueTransport(t *testing.T) {
 		}),
 	}
 	policy := Policy{
-		Resolver:           staticResolver{"example.com": {net.ParseIP("93.184.216.34")}},
+		Resolver:           staticResolver{testExampleCom: {net.ParseIP("93.184.216.34")}},
 		RequireGuardedDial: true,
 	}
 
-	resp, err := GuardedClient(client, policy).Get("https://example.com/resource")
+	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://example.com/resource", http.NoBody)
+	if err != nil {
+		t.Fatalf("NewRequestWithContext() error = %v", err)
+	}
+
+	resp, err := GuardedClient(client, policy).Do(respReq)
 	if resp != nil {
 		_ = resp.Body.Close()
 	}
+
 	if !errors.Is(err, ErrUnguardedTransport) {
 		t.Fatalf("GuardedClient().Get() error = %v, want ErrUnguardedTransport", err)
 	}
+
 	if called {
 		t.Fatal("opaque RoundTripper was called under RequireGuardedDial")
 	}
@@ -448,28 +528,42 @@ func TestGuardedClientAcceptsDeclaredDialGuardedTransport(t *testing.T) {
 
 	stub := &dialGuardedRoundTripper{}
 	policy := Policy{
-		Resolver:           staticResolver{"example.com": {net.ParseIP("93.184.216.34")}},
-		AllowedHosts:       []string{"example.com"},
+		Resolver:           staticResolver{testExampleCom: {net.ParseIP("93.184.216.34")}},
+		AllowedHosts:       []string{testExampleCom},
 		RequireGuardedDial: true,
 	}
 	client := GuardedClient(&http.Client{Transport: stub}, policy)
 
-	resp, err := client.Get("https://example.com/resource")
+	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://example.com/resource", http.NoBody)
+	if err != nil {
+		t.Fatalf("NewRequestWithContext() error = %v", err)
+	}
+
+	resp, err := client.Do(respReq)
 	if err != nil {
 		t.Fatalf("GuardedClient().Get() error = %v", err)
 	}
+
 	_ = resp.Body.Close()
+
 	if stub.calls != 1 {
 		t.Fatalf("declared dial-guarded RoundTripper calls = %d, want 1", stub.calls)
 	}
 
-	resp, err = client.Get("https://other.example/resource")
+	respReq, err = http.NewRequestWithContext(t.Context(), http.MethodGet, "https://other.example/resource", http.NoBody)
+	if err != nil {
+		t.Fatalf("NewRequestWithContext() error = %v", err)
+	}
+
+	resp, err = client.Do(respReq)
 	if resp != nil {
 		_ = resp.Body.Close()
 	}
+
 	if !errors.Is(err, ErrHostNotAllowed) {
 		t.Fatalf("GuardedClient().Get() error = %v, want ErrHostNotAllowed", err)
 	}
+
 	if stub.calls != 1 {
 		t.Fatalf("declared dial-guarded RoundTripper calls = %d, want 1 (host must be rejected first)", stub.calls)
 	}
@@ -488,13 +582,20 @@ func TestGuardedClientRequireGuardedDialNeverWeakensValidation(t *testing.T) {
 				RequireGuardedDial: requireGuardedDial,
 			}
 
-			resp, err := GuardedClient(&http.Client{Transport: stub}, policy).Get("https://internal.test/secret")
+			respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://internal.test/secret", http.NoBody)
+			if err != nil {
+				t.Fatalf("NewRequestWithContext() error = %v", err)
+			}
+
+			resp, err := GuardedClient(&http.Client{Transport: stub}, policy).Do(respReq)
 			if resp != nil {
 				_ = resp.Body.Close()
 			}
+
 			if !errors.Is(err, ErrBlockedIP) {
 				t.Fatalf("RequireGuardedDial=%v error = %v, want ErrBlockedIP", requireGuardedDial, err)
 			}
+
 			if stub.calls != 0 {
 				t.Fatalf("RequireGuardedDial=%v declared RoundTripper calls = %d, want 0", requireGuardedDial, stub.calls)
 			}
@@ -507,7 +608,7 @@ func TestGuardedRoundTripperClosesRequestBodyOnReject(t *testing.T) {
 
 	blockedPolicy := Policy{
 		Resolver:     staticResolver{"blocked.test": {net.ParseIP("93.184.216.34")}},
-		AllowedHosts: []string{"allowed.test"},
+		AllowedHosts: []string{testAllowedTest},
 	}
 	tests := []struct {
 		name      string
@@ -544,19 +645,23 @@ func TestGuardedRoundTripperClosesRequestBodyOnReject(t *testing.T) {
 			t.Parallel()
 
 			body := &trackedBody{}
+
 			req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "https://blocked.test/resource", body)
 			if err != nil {
 				t.Fatalf("NewRequestWithContext() error = %v", err)
 			}
+
 			guarded := GuardedClient(&http.Client{Transport: tt.transport}, tt.policy)
 
 			resp, err := guarded.Transport.RoundTrip(req)
 			if resp != nil {
 				_ = resp.Body.Close()
 			}
+
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("RoundTrip() error = %v, want %v", err, tt.wantErr)
 			}
+
 			if body.Closed() != 1 {
 				t.Fatalf("request body closes = %d, want 1 (RoundTripper must close body on reject)", body.Closed())
 			}
@@ -571,6 +676,7 @@ func TestPolicyMatchesIDNHostInEitherAllowlistForm(t *testing.T) {
 		unicodeHost  = "bücher.example"
 		punycodeHost = "xn--bcher-kva.example"
 	)
+
 	resolver := staticResolver{punycodeHost: {net.ParseIP("93.184.216.34")}}
 
 	tests := []struct {
@@ -590,21 +696,26 @@ func TestPolicyMatchesIDNHostInEitherAllowlistForm(t *testing.T) {
 			if _, err := policy.ValidateURL(t.Context(), "https://"+unicodeHost+"/path"); err != nil {
 				t.Fatalf("ValidateURL(unicode request) error = %v, want allowed", err)
 			}
+
 			if _, err := policy.ValidateURL(t.Context(), "https://"+punycodeHost+"/path"); err != nil {
 				t.Fatalf("ValidateURL(punycode request) error = %v, want allowed", err)
 			}
 
 			dialed := 0
-			base := func(_ context.Context, _ string, address string) (net.Conn, error) {
+			base := func(_ context.Context, _, address string) (net.Conn, error) {
 				dialed++
-				if address != "93.184.216.34:443" {
+
+				if address != testValue931842 {
 					t.Errorf("dialed address = %q, want resolved literal", address)
 				}
+
 				return nil, errors.New("stop after address capture")
 			}
+
 			if err := callGuardedDial(GuardedDialContext(base, policy), punycodeHost+":443"); err == nil {
 				t.Fatal("guarded dial error = nil, want captured dial error")
 			}
+
 			if dialed != 1 {
 				t.Fatalf("punycode dial attempts = %d, want 1 (dial layer must match allowlist)", dialed)
 			}
@@ -623,6 +734,7 @@ func TestPolicyRejectsDisallowedIDNHost(t *testing.T) {
 	if _, err := policy.ValidateURL(t.Context(), "https://bücher.example/path"); !errors.Is(err, ErrHostNotAllowed) {
 		t.Fatalf("ValidateURL(unicode) error = %v, want ErrHostNotAllowed", err)
 	}
+
 	if err := callGuardedDial(GuardedDialContext(nil, policy), "xn--bcher-kva.example:443"); !errors.Is(err, ErrHostNotAllowed) {
 		t.Fatalf("guarded dial error = %v, want ErrHostNotAllowed", err)
 	}
@@ -656,8 +768,8 @@ func TestRedirectPolicyKeepsHeadersAcrossEquivalentIDNForms(t *testing.T) {
 			req := &http.Request{
 				URL: mustURL(t, testCase.to),
 				Header: http.Header{
-					"Authorization": []string{"Bearer token"},
-					"Cookie":        []string{"session=abc"},
+					testAuthorization: []string{testBearerToken},
+					"Cookie":          []string{"session=abc"},
 				},
 			}
 			via := []*http.Request{{URL: mustURL(t, testCase.from)}}
@@ -665,9 +777,11 @@ func TestRedirectPolicyKeepsHeadersAcrossEquivalentIDNForms(t *testing.T) {
 			if err := RedirectPolicy(RedirectConfig{Policy: policy, MaxRedirects: 3})(req, via); err != nil {
 				t.Fatalf("RedirectPolicy() error = %v", err)
 			}
-			if got := req.Header.Get("Authorization"); got != "Bearer token" {
+
+			if got := req.Header.Get(testAuthorization); got != testBearerToken {
 				t.Fatalf("Authorization = %q, want preserved", got)
 			}
+
 			if got := req.Header.Get("Cookie"); got != "session=abc" {
 				t.Fatalf("Cookie = %q, want preserved", got)
 			}
@@ -687,7 +801,7 @@ func TestRedirectPolicyStripsHeadersRestoredOnLaterHop(t *testing.T) {
 	// net/http가 hop마다 최초 header를 복원하므로 hop2 요청도 credential을 들고 들어온다.
 	req := &http.Request{
 		URL:    mustURL(t, "https://relay.test/3"),
-		Header: http.Header{"Authorization": []string{"Bearer token"}},
+		Header: http.Header{testAuthorization: []string{testBearerToken}},
 	}
 	via := []*http.Request{
 		{URL: mustURL(t, "https://start.test/1")},
@@ -697,7 +811,8 @@ func TestRedirectPolicyStripsHeadersRestoredOnLaterHop(t *testing.T) {
 	if err := RedirectPolicy(RedirectConfig{Policy: policy, MaxRedirects: 5})(req, via); err != nil {
 		t.Fatalf("RedirectPolicy() error = %v", err)
 	}
-	if got := req.Header.Get("Authorization"); got != "" {
+
+	if got := req.Header.Get(testAuthorization); got != "" {
 		t.Fatalf("multi-hop redirect Authorization = %q, want empty (origin is start.test)", got)
 	}
 }
@@ -713,7 +828,7 @@ func TestRedirectPolicyKeepsHeadersReturningToOriginalOrigin(t *testing.T) {
 	}
 	req := &http.Request{
 		URL:    mustURL(t, "https://start.test/3"),
-		Header: http.Header{"Authorization": []string{"Bearer token"}},
+		Header: http.Header{testAuthorization: []string{testBearerToken}},
 	}
 	via := []*http.Request{
 		{URL: mustURL(t, "https://start.test/1")},
@@ -723,7 +838,8 @@ func TestRedirectPolicyKeepsHeadersReturningToOriginalOrigin(t *testing.T) {
 	if err := RedirectPolicy(RedirectConfig{Policy: policy, MaxRedirects: 5})(req, via); err != nil {
 		t.Fatalf("RedirectPolicy() error = %v", err)
 	}
-	if got := req.Header.Get("Authorization"); got != "Bearer token" {
+
+	if got := req.Header.Get(testAuthorization); got != testBearerToken {
 		t.Fatalf("return-to-origin Authorization = %q, want preserved", got)
 	}
 }
@@ -733,8 +849,8 @@ func TestRedirectPolicyStripsCredentialsOutsideSameOrigin(t *testing.T) {
 
 	policy := Policy{
 		Resolver: staticResolver{
-			"example.com": {net.ParseIP("93.184.216.34")},
-			"other.com":   {net.ParseIP("93.184.216.35")},
+			testExampleCom: {net.ParseIP("93.184.216.34")},
+			"other.com":    {net.ParseIP("93.184.216.35")},
 		},
 	}
 	tests := []struct {
@@ -743,11 +859,11 @@ func TestRedirectPolicyStripsCredentialsOutsideSameOrigin(t *testing.T) {
 		to         string
 		wantHeader bool
 	}{
-		{name: "same origin", from: "https://example.com/start", to: "https://example.com/next", wantHeader: true},
-		{name: "same origin default port", from: "https://example.com/start", to: "https://example.com:443/next", wantHeader: true},
-		{name: "different port", from: "https://example.com/start", to: "https://example.com:8443/next"},
-		{name: "scheme downgrade", from: "https://example.com/start", to: "http://example.com/next"},
-		{name: "cross host", from: "https://example.com/start", to: "https://other.com/next"},
+		{name: "same origin", from: testHTTPSExampleComStart, to: "https://example.com/next", wantHeader: true},
+		{name: "same origin default port", from: testHTTPSExampleComStart, to: "https://example.com:443/next", wantHeader: true},
+		{name: "different port", from: testHTTPSExampleComStart, to: "https://example.com:8443/next"},
+		{name: "scheme downgrade", from: testHTTPSExampleComStart, to: "http://example.com/next"},
+		{name: "cross host", from: testHTTPSExampleComStart, to: "https://other.com/next"},
 	}
 
 	for _, tt := range tests {
@@ -757,8 +873,8 @@ func TestRedirectPolicyStripsCredentialsOutsideSameOrigin(t *testing.T) {
 			req := &http.Request{
 				URL: mustURL(t, tt.to),
 				Header: http.Header{
-					"Authorization": []string{"Bearer token"},
-					"Cookie":        []string{"session=abc"},
+					testAuthorization: []string{testBearerToken},
+					"Cookie":          []string{"session=abc"},
 				},
 			}
 			via := []*http.Request{{URL: mustURL(t, tt.from)}}
@@ -766,14 +882,18 @@ func TestRedirectPolicyStripsCredentialsOutsideSameOrigin(t *testing.T) {
 			if err := RedirectPolicy(RedirectConfig{Policy: policy, MaxRedirects: 3})(req, via); err != nil {
 				t.Fatalf("RedirectPolicy() error = %v", err)
 			}
-			gotAuth := req.Header.Get("Authorization")
+
+			gotAuth := req.Header.Get(testAuthorization)
 			gotCookie := req.Header.Get("Cookie")
+
 			if tt.wantHeader {
-				if gotAuth != "Bearer token" || gotCookie != "session=abc" {
+				if gotAuth != testBearerToken || gotCookie != "session=abc" {
 					t.Fatalf("same-origin redirect headers = (%q, %q), want preserved", gotAuth, gotCookie)
 				}
+
 				return
 			}
+
 			if gotAuth != "" || gotCookie != "" {
 				t.Fatalf("cross-origin redirect headers = (%q, %q), want empty", gotAuth, gotCookie)
 			}
@@ -787,15 +907,16 @@ func TestRedirectPolicyForwardHeadersKeepsCrossOriginHeaders(t *testing.T) {
 	policy := Policy{Resolver: staticResolver{"other.com": {net.ParseIP("93.184.216.35")}}}
 	req := &http.Request{
 		URL:    mustURL(t, "https://other.com:8443/next"),
-		Header: http.Header{"Authorization": []string{"Bearer token"}},
+		Header: http.Header{testAuthorization: []string{testBearerToken}},
 	}
-	via := []*http.Request{{URL: mustURL(t, "https://example.com/start")}}
+	via := []*http.Request{{URL: mustURL(t, testHTTPSExampleComStart)}}
 
 	cfg := RedirectConfig{Policy: policy, MaxRedirects: 3, ForwardHeaders: true}
 	if err := RedirectPolicy(cfg)(req, via); err != nil {
 		t.Fatalf("RedirectPolicy() error = %v", err)
 	}
-	if got := req.Header.Get("Authorization"); got != "Bearer token" {
+
+	if got := req.Header.Get(testAuthorization); got != testBearerToken {
 		t.Fatalf("ForwardHeaders redirect Authorization = %q, want preserved", got)
 	}
 }
@@ -805,20 +926,21 @@ func TestRedirectPolicyValidatesTargetAndStripsCrossHostHeaders(t *testing.T) {
 
 	policy := Policy{
 		Resolver: staticResolver{
-			"example.com": {net.ParseIP("93.184.216.34")},
-			"other.com":   {net.ParseIP("93.184.216.35")},
+			testExampleCom: {net.ParseIP("93.184.216.34")},
+			"other.com":    {net.ParseIP("93.184.216.35")},
 		},
 	}
 	req := &http.Request{
 		URL:    mustURL(t, "https://other.com/final"),
-		Header: http.Header{"Authorization": []string{"Bearer token"}},
+		Header: http.Header{testAuthorization: []string{testBearerToken}},
 	}
-	via := []*http.Request{{URL: mustURL(t, "https://example.com/start")}}
+	via := []*http.Request{{URL: mustURL(t, testHTTPSExampleComStart)}}
 
 	if err := RedirectPolicy(RedirectConfig{Policy: policy, MaxRedirects: 2})(req, via); err != nil {
 		t.Fatalf("RedirectPolicy() error = %v", err)
 	}
-	if got := req.Header.Get("Authorization"); got != "" {
+
+	if got := req.Header.Get(testAuthorization); got != "" {
 		t.Fatalf("Authorization after cross-host redirect = %q, want empty", got)
 	}
 
@@ -841,18 +963,21 @@ func TestRedirectPolicyLimitAndDisableFollow(t *testing.T) {
 		{URL: mustURL(t, "https://example.com/one")},
 		{URL: mustURL(t, "https://example.com/two")},
 	}
-	policy := Policy{Resolver: staticResolver{"example.com": {net.ParseIP("93.184.216.34")}}}
+	policy := Policy{Resolver: staticResolver{testExampleCom: {net.ParseIP("93.184.216.34")}}}
 
 	if err := RedirectPolicy(RedirectConfig{Policy: policy, MaxRedirects: 1})(req, via); !errors.Is(err, ErrTooManyRedirects) {
 		t.Fatalf("RedirectPolicy() error = %v, want ErrTooManyRedirects", err)
 	}
+
 	defaultVia := make([]*http.Request, 11)
 	for i := range defaultVia {
 		defaultVia[i] = &http.Request{URL: mustURL(t, "https://example.com/hop")}
 	}
+
 	if err := RedirectPolicy(RedirectConfig{Policy: policy})(req, defaultVia); !errors.Is(err, ErrTooManyRedirects) {
 		t.Fatalf("RedirectPolicy(default) error = %v, want ErrTooManyRedirects", err)
 	}
+
 	if err := RedirectPolicy(RedirectConfig{DisableFollow: true})(req, via); !errors.Is(err, http.ErrUseLastResponse) {
 		t.Fatalf("RedirectPolicy(disable) error = %v, want http.ErrUseLastResponse", err)
 	}
@@ -865,6 +990,7 @@ func (r staticResolver) LookupIP(_ context.Context, _, host string) ([]net.IP, e
 	if !ok {
 		return nil, &net.DNSError{Name: host, Err: "not found"}
 	}
+
 	return ips, nil
 }
 
@@ -880,6 +1006,7 @@ func (r *sequenceResolver) LookupIP(_ context.Context, _, _ string) ([]net.IP, e
 
 	index := min(r.calls, len(r.answers)-1)
 	r.calls++
+
 	return r.answers[index], nil
 }
 
@@ -902,6 +1029,7 @@ func (b *trackedBody) Close() error {
 	defer b.mu.Unlock()
 
 	b.closed++
+
 	return nil
 }
 
@@ -920,6 +1048,7 @@ func (*dialGuardedRoundTripper) NetguardDialGuarded() bool { return true }
 
 func (d *dialGuardedRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	d.calls++
+
 	return &http.Response{
 		StatusCode: http.StatusNoContent,
 		Header:     make(http.Header),
@@ -931,12 +1060,20 @@ func (d *dialGuardedRoundTripper) RoundTrip(req *http.Request) (*http.Response, 
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
-	return f(req)
+	out, err := f(req)
+	if err != nil {
+		return nil, fmt.Errorf("round trip: %w", err)
+	}
+
+	return out, nil
 }
 
 func callGuardedDial(dial func(context.Context, string, string) (net.Conn, error), address string) error {
-	_, err := dial(context.Background(), "tcp", address)
-	return err
+	if _, err := dial(context.Background(), "tcp", address); err != nil {
+		return fmt.Errorf("dial: %w", err)
+	}
+
+	return nil
 }
 
 func mustURL(t *testing.T, raw string) *url.URL {
@@ -946,6 +1083,7 @@ func mustURL(t *testing.T, raw string) *url.URL {
 	if err != nil {
 		t.Fatalf("url.Parse(%q) error = %v", raw, err)
 	}
+
 	return parsed
 }
 
@@ -954,23 +1092,24 @@ func TestRedirectPolicyStripsNonCanonicalHeaderKeys(t *testing.T) {
 
 	policy := Policy{
 		Resolver: staticResolver{
-			"example.com": {net.ParseIP("93.184.216.34")},
-			"other.com":   {net.ParseIP("93.184.216.35")},
+			testExampleCom: {net.ParseIP("93.184.216.34")},
+			"other.com":    {net.ParseIP("93.184.216.35")},
 		},
 	}
 	req := &http.Request{
 		URL: mustURL(t, "https://other.com/next"),
 		Header: http.Header{
 			"x-internal-token": []string{"secret"},
-			"authorization":    []string{"Bearer token"},
-			"Authorization":    []string{"Bearer canonical"},
+			"authorization":    []string{testBearerToken},
+			testAuthorization:  []string{"Bearer canonical"},
 		},
 	}
-	via := []*http.Request{{URL: mustURL(t, "https://example.com/start")}}
+	via := []*http.Request{{URL: mustURL(t, testHTTPSExampleComStart)}}
 
 	if err := RedirectPolicy(RedirectConfig{Policy: policy, MaxRedirects: 3})(req, via); err != nil {
 		t.Fatalf("RedirectPolicy() error = %v", err)
 	}
+
 	if len(req.Header) != 0 {
 		t.Fatalf("cross-origin redirect header = %v, want empty", req.Header)
 	}
@@ -988,11 +1127,14 @@ func TestRedirectPolicyStripsNonCanonicalHeaderKeysOnWire(t *testing.T) {
 		mu       sync.Mutex
 		gotToken string
 	)
+
 	final := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		mu.Lock()
+
 		gotToken = r.Header.Get("X-Internal-Token")
 		mu.Unlock()
 	}))
+
 	defer final.Close()
 
 	start := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1006,25 +1148,39 @@ func TestRedirectPolicyStripsNonCanonicalHeaderKeysOnWire(t *testing.T) {
 		Timeout:           5 * time.Second,
 	}
 	client := GuardedClient(nil, policy)
+
 	client.CheckRedirect = RedirectPolicy(RedirectConfig{Policy: policy, MaxRedirects: 3})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, start.URL+"/start", nil)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, start.URL+"/start", http.NoBody)
 	if err != nil {
 		t.Fatalf("http.NewRequestWithContext() error = %v", err)
 	}
+
 	req.Header["x-internal-token"] = []string{"secret"}
 
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("client.Do() error = %v", err)
 	}
-	_, _ = io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
+
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			t.Errorf("Body.Close() error = %v", closeErr)
+		}
+	}()
+
+	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+		t.Errorf("Copy() error = %v", err)
+	}
+
+	testsupport.CloseNow(t, "resp.Body.Close", resp.Body.Close)
 
 	mu.Lock()
 	defer mu.Unlock()
+
 	if gotToken != "" {
 		t.Fatalf("cross-origin hop received X-Internal-Token = %q, want empty", gotToken)
 	}
@@ -1051,6 +1207,7 @@ func TestIsBlockedAddrZonedAddressFailsClosed(t *testing.T) {
 			if err != nil {
 				t.Fatalf("netip.ParseAddr(%q) error = %v", raw, err)
 			}
+
 			if !IsBlockedAddr(addr) {
 				t.Fatalf("IsBlockedAddr(%q) = false, want true", raw)
 			}

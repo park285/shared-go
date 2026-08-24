@@ -101,7 +101,7 @@ func TestEnableFileLoggingWithOptionsKeepsFileLoggingWhenStdoutStalls(t *testing
 	releaseStdout := sync.OnceFunc(func() { close(stdout.release) })
 	t.Cleanup(releaseStdout)
 
-	config := Config{Level: "info", Dir: dir, MaxSizeMB: 5, MaxBackups: 5, MaxAgeDays: 30, Compress: true}
+	config := Config{Level: testInfo, Dir: dir, MaxSizeMB: 5, MaxBackups: 5, MaxAgeDays: 30, Compress: true}
 
 	logger, closer, err := enableFileLoggingWithStdout(stdout, config, "stall.log", Options{AsyncStdout: true})
 	if err != nil {
@@ -135,11 +135,12 @@ func TestEnableFileLoggingWithOptionsKeepsFileLoggingWhenStdoutStalls(t *testing
 
 	// stall 해제 후 동기 Close: async로 두면 closer의 마지막 파일 flush가 t.TempDir 정리와 레이스한다.
 	releaseStdout()
+
 	_ = closer.Close()
 }
 
 func TestEnableFileLoggingWithOptionsReturnsNilCloserForConsoleOnly(t *testing.T) {
-	logger, closer, err := EnableFileLoggingWithOptions(Config{Level: "info"}, "unused.log", Options{AsyncStdout: true})
+	logger, closer, err := EnableFileLoggingWithOptions(Config{Level: testInfo}, "unused.log", Options{AsyncStdout: true})
 	if err != nil {
 		t.Fatalf("EnableFileLoggingWithOptions() error = %v", err)
 	}

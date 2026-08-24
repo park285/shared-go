@@ -48,21 +48,27 @@ func NewLoginFailureRateLimiter(opts LoginFailureRateLimiterOptions) *LoginFailu
 	if opts.MaxAttempts <= 0 {
 		opts.MaxAttempts = 5
 	}
+
 	if opts.Window <= 0 {
 		opts.Window = 5 * time.Minute
 	}
+
 	if opts.Lockout <= 0 {
 		opts.Lockout = 15 * time.Minute
 	}
+
 	if opts.CleanupInterval <= 0 {
 		opts.CleanupInterval = time.Minute
 	}
+
 	if opts.MaxIdentities <= 0 {
 		opts.MaxIdentities = defaultLoginFailureMaxIdentities
 	}
+
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
+
 	return &LoginFailureRateLimiter{
 		attempts:      make(map[string]loginAttemptInfo),
 		maxAttempts:   opts.MaxAttempts,
@@ -86,8 +92,10 @@ func (l *LoginFailureRateLimiter) Start() {
 	if l == nil {
 		return
 	}
+
 	l.startOnce.Do(func() {
 		l.started.Store(true)
+
 		go l.cleanupLoop()
 	})
 }
@@ -97,12 +105,15 @@ func (l *LoginFailureRateLimiter) Stop() {
 	if l == nil {
 		return
 	}
+
 	l.stopOnce.Do(func() {
 		close(l.stop)
 	})
+
 	if !l.started.Load() {
 		return
 	}
+
 	<-l.done
 }
 
@@ -111,6 +122,7 @@ func (l *LoginFailureRateLimiter) IsAllowed(identity string) (bool, time.Duratio
 	if l == nil {
 		return true, 0
 	}
+
 	identity = strings.TrimSpace(identity)
 	if identity == "" {
 		return false, 0
@@ -121,33 +133,39 @@ func (l *LoginFailureRateLimiter) IsAllowed(identity string) (bool, time.Duratio
 
 	now := l.now()
 	info, ok := l.attempts[identity]
+
 	if !ok {
-		if len(l.attempts) >= l.maxIdentities {
-			l.cleanupStaleIfDueLocked(now)
-			if len(l.attempts) >= l.maxIdentities {
-				return false, l.cleanup
-			}
+		if !l.hasCapacityLocked(now) {
+			return false, l.cleanup
 		}
+
 		info = loginAttemptInfo{firstAttempt: now}
 		l.attempts[identity] = info
 		l.scheduleExpiryLocked(info)
+
 		return true, 0
 	}
+
 	if !info.lockedUntil.IsZero() {
 		if now.Before(info.lockedUntil) {
 			return false, info.lockedUntil.Sub(now)
 		}
+
 		info = loginAttemptInfo{firstAttempt: now}
 		l.attempts[identity] = info
 		l.scheduleExpiryLocked(info)
+
 		return true, 0
 	}
+
 	if now.Sub(info.firstAttempt) >= l.window {
 		info = loginAttemptInfo{firstAttempt: now}
 		l.attempts[identity] = info
 		l.scheduleExpiryLocked(info)
+
 		return true, 0
 	}
+
 	return info.count < l.maxAttempts, 0
 }
 
@@ -156,6 +174,7 @@ func (l *LoginFailureRateLimiter) RecordFailure(identity string) int {
 	if l == nil {
 		return 0
 	}
+
 	identity = strings.TrimSpace(identity)
 	if identity == "" {
 		return 0
@@ -166,25 +185,27 @@ func (l *LoginFailureRateLimiter) RecordFailure(identity string) int {
 
 	now := l.now()
 	info, ok := l.attempts[identity]
+
 	if !ok {
-		if len(l.attempts) >= l.maxIdentities {
-			l.cleanupStaleIfDueLocked(now)
-			if len(l.attempts) >= l.maxIdentities {
-				return 0
-			}
+		if !l.hasCapacityLocked(now) {
+			return 0
 		}
+
 		info = loginAttemptInfo{firstAttempt: now}
 	} else if info.firstAttempt.IsZero() ||
 		(!info.lockedUntil.IsZero() && !now.Before(info.lockedUntil)) ||
 		now.Sub(info.firstAttempt) >= l.window {
 		info = loginAttemptInfo{firstAttempt: now}
 	}
+
 	info.count++
 	if info.count >= l.maxAttempts {
 		info.lockedUntil = now.Add(l.lockout)
 	}
+
 	l.attempts[identity] = info
 	l.scheduleExpiryLocked(info)
+
 	return info.count
 }
 
@@ -193,6 +214,7 @@ func (l *LoginFailureRateLimiter) RecordSuccess(identity string) {
 	if l == nil {
 		return
 	}
+
 	identity = strings.TrimSpace(identity)
 	if identity == "" {
 		return
@@ -200,13 +222,17 @@ func (l *LoginFailureRateLimiter) RecordSuccess(identity string) {
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
+
 	delete(l.attempts, identity)
 }
 
 func (l *LoginFailureRateLimiter) cleanupLoop() {
 	defer close(l.done)
+
 	ticker := time.NewTicker(l.cleanup)
+
 	defer ticker.Stop()
+
 	for {
 		select {
 		case <-l.stop:
@@ -220,6 +246,7 @@ func (l *LoginFailureRateLimiter) cleanupLoop() {
 func (l *LoginFailureRateLimiter) cleanupStale(now time.Time) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+
 	l.cleanupStaleLocked(now)
 }
 
@@ -229,14 +256,27 @@ func (l *LoginFailureRateLimiter) cleanupStaleLocked(now time.Time) {
 		if !info.lockedUntil.IsZero() {
 			if !now.Before(info.lockedUntil) {
 				delete(l.attempts, identity)
+
 				continue
 			}
 		} else if now.Sub(info.firstAttempt) >= l.window {
 			delete(l.attempts, identity)
+
 			continue
 		}
+
 		l.scheduleExpiryLocked(info)
 	}
+}
+
+func (l *LoginFailureRateLimiter) hasCapacityLocked(now time.Time) bool {
+	if len(l.attempts) < l.maxIdentities {
+		return true
+	}
+
+	l.cleanupStaleIfDueLocked(now)
+
+	return len(l.attempts) < l.maxIdentities
 }
 
 func (l *LoginFailureRateLimiter) cleanupStaleIfDueLocked(now time.Time) {
@@ -250,6 +290,7 @@ func (l *LoginFailureRateLimiter) scheduleExpiryLocked(info loginAttemptInfo) {
 	if expiresAt.IsZero() {
 		expiresAt = info.firstAttempt.Add(l.window)
 	}
+
 	if l.nextExpiry.IsZero() || expiresAt.Before(l.nextExpiry) {
 		l.nextExpiry = expiresAt
 	}

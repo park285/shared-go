@@ -22,6 +22,7 @@ package logging
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"maps"
 	"regexp"
@@ -98,11 +99,13 @@ func mightContainQuerySecret(s string) bool {
 	if !strings.ContainsAny(s, "?&;") || !strings.Contains(s, "=") {
 		return false
 	}
+
 	for _, tok := range querySecretTokens {
 		if containsFold(s, tok) {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -116,14 +119,17 @@ func containsFold(s, substr string) bool {
 		// 짧은 입력이라도 non-ASCII가 있으면 게이트를 통과시켜 정규식에 위임한다.
 		return hasNonASCII(s)
 	}
+
 	for i := range len(s) {
 		if s[i] >= 0x80 {
 			return true
 		}
+
 		if i+len(substr) <= len(s) && strings.EqualFold(s[i:i+len(substr)], substr) {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -133,6 +139,7 @@ func hasNonASCII(s string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -149,42 +156,55 @@ func RedactDiagnostic(s string) string {
 	if mightContainBearer(s) {
 		s = bearerTokenRegex.ReplaceAllString(s, "${1}***REDACTED***")
 	}
+
 	if mightContainQuerySecret(s) {
 		s = querySecretRegex.ReplaceAllString(s, "${1}***REDACTED***")
 	}
+
 	if mightContainCredentialURL(s) {
 		s = credentialURLRegex.ReplaceAllString(s, "${1}***REDACTED***@")
 	}
+
 	return redactSecretAssignments(s)
 }
 
 func redactSecretAssignments(s string) string {
 	var redacted strings.Builder
+
 	lastWritten := 0
+
 	for separator := 0; separator < len(s); separator++ {
 		if s[separator] != ':' && s[separator] != '=' {
 			continue
 		}
+
 		key := assignmentKeyBefore(s, separator)
 		if !isSensitiveKey(key) {
 			continue
 		}
+
 		valueStart, valueEnd := assignmentValueAfter(s, separator+1)
 		if valueStart == valueEnd {
 			continue
 		}
+
 		if redacted.Cap() == 0 {
 			redacted.Grow(len(s))
 		}
+
 		redacted.WriteString(s[lastWritten:valueStart])
 		redacted.WriteString(redactedValue)
+
 		lastWritten = valueEnd
 		separator = valueEnd - 1
 	}
+
 	if redacted.Cap() == 0 {
 		return s
 	}
+
 	redacted.WriteString(s[lastWritten:])
+
 	return redacted.String()
 }
 
@@ -193,13 +213,16 @@ func assignmentKeyBefore(s string, separator int) string {
 	for end > 0 && (s[end-1] == ' ' || s[end-1] == '\t') {
 		end--
 	}
+
 	if end > 0 && s[end-1] == '"' {
 		end--
 	}
+
 	start := end
 	for start > 0 && isAssignmentKeyByte(s[start-1]) {
 		start--
 	}
+
 	return s[start:end]
 }
 
@@ -207,9 +230,11 @@ func assignmentValueAfter(s string, start int) (int, int) {
 	for start < len(s) && (s[start] == ' ' || s[start] == '\t') {
 		start++
 	}
+
 	if start == len(s) {
 		return start, start
 	}
+
 	if s[start] == '"' || s[start] == '\'' {
 		quote := s[start]
 		for end := start + 1; end < len(s); end++ {
@@ -217,16 +242,20 @@ func assignmentValueAfter(s string, start int) (int, int) {
 				end++
 				continue
 			}
+
 			if s[end] == quote {
 				return start, end + 1
 			}
 		}
+
 		return start, len(s)
 	}
+
 	end := start
 	for end < len(s) && !strings.ContainsRune(" \t\r\n,;&", rune(s[end])) {
 		end++
 	}
+
 	return start, end
 }
 
@@ -248,28 +277,39 @@ func (h *sanitizeHandler) Handle(ctx context.Context, record slog.Record) error 
 	// 변경 감지 패스가 처음 바뀐 attr의 위치와 정제 결과를 남긴다. 그 앞의 attr들은
 	// changed=false로 판정됐으므로 정제해도 원본과 같은 값이라 재구축 때 원본을 그대로 쓴다.
 	firstChangedIndex := -1
+
 	var firstChangedAttr slog.Attr
+
 	if !changed && !h.inMaskedGroup {
 		index := 0
+
 		record.Attrs(func(attr slog.Attr) bool {
 			out, attrChanged := sanitizeAttrChanged(attr)
 			if attrChanged {
 				changed = true
 				firstChangedIndex = index
 				firstChangedAttr = out
+
 				return false
 			}
+
 			index++
+
 			return true
 		})
 	}
 
 	if !changed && !h.inMaskedGroup {
-		return h.inner.Handle(ctx, record)
+		if err := h.inner.Handle(ctx, record); err != nil {
+			return fmt.Errorf("handle: %w", err)
+		}
+
+		return nil
 	}
 
 	newRecord := slog.NewRecord(record.Time, record.Level, msg, record.PC)
 	index := 0
+
 	record.Attrs(func(attr slog.Attr) bool {
 		switch {
 		case index < firstChangedIndex:
@@ -279,10 +319,17 @@ func (h *sanitizeHandler) Handle(ctx context.Context, record slog.Record) error 
 		default:
 			newRecord.AddAttrs(h.sanitizeOwnedAttr(attr))
 		}
+
 		index++
+
 		return true
 	})
-	return h.inner.Handle(ctx, newRecord)
+
+	if err := h.inner.Handle(ctx, newRecord); err != nil {
+		return fmt.Errorf("handle: %w", err)
+	}
+
+	return nil
 }
 
 func (h *sanitizeHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
@@ -290,6 +337,7 @@ func (h *sanitizeHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	for _, attr := range attrs {
 		sanitized = append(sanitized, h.sanitizeOwnedAttr(attr))
 	}
+
 	return &sanitizeHandler{inner: h.inner.WithAttrs(sanitized), inMaskedGroup: h.inMaskedGroup}
 }
 
@@ -297,6 +345,7 @@ func (h *sanitizeHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 // credential의 구성 요소다.
 func (h *sanitizeHandler) WithGroup(name string) slog.Handler {
 	normalizedName := normalizeSensitiveKey(name)
+
 	return &sanitizeHandler{
 		inner:         h.inner.WithGroup(name),
 		inMaskedGroup: h.inMaskedGroup || isMaskedNormalizedKey(normalizedName),
@@ -307,6 +356,7 @@ func (h *sanitizeHandler) sanitizeOwnedAttr(attr slog.Attr) slog.Attr {
 	if h.inMaskedGroup {
 		return slog.String(attr.Key, redactedValue)
 	}
+
 	return sanitizeAttr(attr)
 }
 
@@ -323,6 +373,7 @@ func sanitizeAttr(attr slog.Attr) slog.Attr {
 // LogValuer뿐이므로 Kind 검사로 보수적으로(LogValuer면 항상 changed) 판정한다.
 func sanitizeAttrChanged(attr slog.Attr) (slog.Attr, bool) {
 	changed := attr.Value.Kind() == slog.KindLogValuer
+
 	attr.Value = attr.Value.Resolve()
 	// key 기반 판정은 값을 읽지 않으므로 모든 값 분기(KindAny·KindGroup·KindString)보다 앞이어야
 	// 한다. 뒤에 두면 마스킹 여부가 값 타입이나 무관한 map 내용에 종속된다.
@@ -330,15 +381,10 @@ func sanitizeAttrChanged(attr slog.Attr) (slog.Attr, bool) {
 	if isMaskedNormalizedKey(normalizedKey) {
 		return slog.String(attr.Key, redactedValue), true
 	}
+
 	if attr.Value.Kind() == slog.KindAny {
-		value := attr.Value.Any()
-		if raw, ok := value.(map[string]any); ok {
-			if masked, mapChanged := maskPrivacyMap(raw); mapChanged {
-				return slog.Any(attr.Key, masked), true
-			}
-		}
-		if err, ok := value.(error); ok {
-			return slog.String(attr.Key, RedactDiagnostic(err.Error())), true
+		if out, masked := sanitizeAnyAttr(attr); masked {
+			return out, true
 		}
 	}
 
@@ -352,13 +398,17 @@ func sanitizeAttrChanged(attr slog.Attr) (slog.Attr, bool) {
 
 			sanitized := make([]slog.Attr, len(groupAttrs))
 			copy(sanitized, groupAttrs[:index])
+
 			sanitized[index] = out
 			for next := index + 1; next < len(groupAttrs); next++ {
 				sanitized[next] = sanitizeAttr(groupAttrs[next])
 			}
+
 			attr.Value = slog.GroupValue(sanitized...)
+
 			return attr, true
 		}
+
 		return attr, changed
 	}
 
@@ -374,7 +424,24 @@ func sanitizeAttrChanged(attr slog.Attr) (slog.Attr, bool) {
 	if redacted != attr.Value.String() {
 		changed = true
 	}
+
 	return slog.String(attr.Key, redacted), changed
+}
+
+// 두 번째 반환값은 sanitizeAttrChanged의 changed와 달리 "이 분기가 결과를 확정했다"는 신호다.
+func sanitizeAnyAttr(attr slog.Attr) (slog.Attr, bool) {
+	value := attr.Value.Any()
+	if raw, ok := value.(map[string]any); ok {
+		if masked, mapChanged := maskPrivacyMap(raw); mapChanged {
+			return slog.Any(attr.Key, masked), true
+		}
+	}
+
+	if err, ok := value.(error); ok {
+		return slog.String(attr.Key, RedactDiagnostic(err.Error())), true
+	}
+
+	return attr, false
 }
 
 func isSensitiveKey(key string) bool {
@@ -385,9 +452,11 @@ func isSensitiveNormalizedKey(normalized string) bool {
 	if normalized == "" {
 		return false
 	}
+
 	if _, ok := sensitiveExactKeys[normalized]; ok {
 		return true
 	}
+
 	return strings.HasSuffix(normalized, "_token") ||
 		strings.HasSuffix(normalized, "_secret") ||
 		strings.HasSuffix(normalized, "_password") ||
@@ -407,6 +476,7 @@ func normalizeSensitiveKey(key string) string {
 	key = strings.ReplaceAll(key, "-", "_")
 	key = strings.ReplaceAll(key, ".", "_")
 	key = strings.ReplaceAll(key, " ", "_")
+
 	return key
 }
 
@@ -441,13 +511,16 @@ func maskPrivacyMap(raw map[string]any) (map[string]any, bool) {
 
 func maskPrivacyMapDepth(raw map[string]any, depth int) (map[string]any, bool) {
 	var masked map[string]any
+
 	for key, value := range raw {
 		if shouldMaskStructuredMapValue(key, value) {
 			if masked == nil {
 				masked = make(map[string]any, len(raw))
 				maps.Copy(masked, raw)
 			}
+
 			masked[key] = redactedValue
+
 			continue
 		}
 
@@ -456,16 +529,20 @@ func maskPrivacyMapDepth(raw map[string]any, depth int) (map[string]any, bool) {
 		if !ok || depth >= maxPrivacyMapDepth {
 			continue
 		}
+
 		nestedMasked, changed := maskPrivacyMapDepth(nested, depth+1)
 		if !changed {
 			continue
 		}
+
 		if masked == nil {
 			masked = make(map[string]any, len(raw))
 			maps.Copy(masked, raw)
 		}
+
 		masked[key] = nestedMasked
 	}
+
 	return masked, masked != nil
 }
 
@@ -474,7 +551,9 @@ func shouldMaskStructuredMapValue(key string, value any) bool {
 	if isMaskedNormalizedKey(normalizedKey) {
 		return true
 	}
+
 	text, ok := value.(string)
+
 	return ok && isBroadValueNormalizedKey(normalizedKey) && isSecretLikeValue(text)
 }
 
@@ -506,19 +585,23 @@ func isSecretLikeValue(v string) bool {
 	if _, ok := secretLikeExactValues[strings.ToLower(strings.TrimSpace(v))]; ok {
 		return true
 	}
+
 	if hasSecretLikePrefix(v) {
 		return true
 	}
+
 	return isHighEntropyToken(v)
 }
 
 func hasSecretLikePrefix(v string) bool {
 	lower := strings.ToLower(v)
+
 	for _, p := range secretLikePrefixes {
 		if strings.HasPrefix(lower, p) {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -526,7 +609,9 @@ func isHighEntropyToken(v string) bool {
 	if len(v) < secretLikeMinLen {
 		return false
 	}
+
 	var hasLower, hasUpper, hasDigit bool
+
 	for i := range len(v) {
 		c := v[i]
 		switch {
@@ -541,5 +626,6 @@ func isHighEntropyToken(v string) bool {
 			return false
 		}
 	}
+
 	return hasLower && hasUpper && hasDigit
 }

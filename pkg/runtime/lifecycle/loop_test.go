@@ -10,11 +10,12 @@ import (
 )
 
 func TestRunTickerLoop_ContextCancelReturnsCtxErr(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
 	err := RunTickerLoop(ctx, time.Millisecond, func(context.Context) error {
 		t.Fatal("onTick should not run after context cancellation")
+
 		return nil
 	})
 
@@ -25,51 +26,56 @@ func TestRunTickerLoop_ContextCancelReturnsCtxErr(t *testing.T) {
 
 func TestRunTickerLoop_OnTickErrorTerminatesLoop(t *testing.T) {
 	wantErr := errors.New("tick failed")
+
 	var calls atomic.Int32
 
-	err := RunTickerLoop(context.Background(), time.Millisecond, func(context.Context) error {
+	err := RunTickerLoop(t.Context(), time.Millisecond, func(context.Context) error {
 		calls.Add(1)
+
 		return wantErr
 	})
 
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("RunTickerLoop() error = %v, want %v", err, wantErr)
 	}
+
 	if got := calls.Load(); got != 1 {
 		t.Fatalf("onTick calls = %d, want 1", got)
 	}
 }
 
 func TestRunTickerLoop_InvalidIntervalReturnsError(t *testing.T) {
-	err := RunTickerLoop(context.Background(), 0, func(context.Context) error {
+	err := RunTickerLoop(t.Context(), 0, func(context.Context) error {
 		t.Fatal("onTick should not run with invalid interval")
+
 		return nil
 	})
-
 	if err == nil {
 		t.Fatal("RunTickerLoop() error = nil, want error")
 	}
+
 	if !strings.Contains(err.Error(), "interval") {
 		t.Fatalf("RunTickerLoop() error = %q, want interval context", err)
 	}
 }
 
 func TestRunTickerLoop_NilOnTickReturnsError(t *testing.T) {
-	err := RunTickerLoop(context.Background(), time.Millisecond, nil)
-
+	err := RunTickerLoop(t.Context(), time.Millisecond, nil)
 	if err == nil {
 		t.Fatal("RunTickerLoop() error = nil, want error")
 	}
+
 	if !strings.Contains(err.Error(), "onTick") {
 		t.Fatalf("RunTickerLoop() error = %q, want onTick context", err)
 	}
 }
 
 func TestRunTickerLoop_TicksAtInterval(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	done := make(chan error, 1)
+
 	var calls atomic.Int32
 
 	go func() {
@@ -77,6 +83,7 @@ func TestRunTickerLoop_TicksAtInterval(t *testing.T) {
 			if calls.Add(1) == 3 {
 				cancel()
 			}
+
 			return nil
 		})
 	}()

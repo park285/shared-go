@@ -80,6 +80,7 @@ func TestRenderLeavesBlankInput(t *testing.T) {
 	if got := Render(""); got != "" {
 		t.Fatalf("Render(empty) = %q", got)
 	}
+
 	if got := Render("   \n"); got != "   \n" {
 		t.Fatalf("Render(whitespace) = %q", got)
 	}
@@ -89,6 +90,7 @@ func TestRenderKeepsCodeLiteral(t *testing.T) {
 	t.Parallel()
 
 	got := Render("```tex\n\\frac{x}{y}\n```\n`\\pi`")
+
 	for _, want := range []string{`\frac{x}{y}`, `⦗ \pi ⦘`} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("Render(code) = %q, want %q", got, want)
@@ -100,6 +102,7 @@ func TestRenderTableKeepsPipeInsideInlineCode(t *testing.T) {
 	t.Parallel()
 
 	got := Render("| Expr | Value |\n| --- | --- |\n| `x|y` | ok |")
+
 	for _, want := range []string{"【Expr】", "《1》 ⦗ x|y ⦘", "【Value】", "《1》 ok"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("Render(table) = %q, want %q", got, want)
@@ -112,6 +115,7 @@ func TestRenderWrappedCodeBlock(t *testing.T) {
 
 	got := Render("````\n```js\nconst x=1\n```\n````")
 	want := "┏━━━━━ js ━━━━━┓\n```\nconst x=1\n```\n┗━━━━━━━━━━━┛"
+
 	if got != want {
 		t.Fatalf("Render(wrapped) = %q, want %q", got, want)
 	}
@@ -124,6 +128,7 @@ func TestRenderKeepsMalformedThenConvertsValidBold(t *testing.T) {
 	if !strings.Contains(got, "**bold__") {
 		t.Fatalf("Render() = %q, want raw malformed delimiter", got)
 	}
+
 	if !strings.Contains(got, "𝗼𝗸") && !strings.Contains(got, "❪𝗼𝗸❫") {
 		t.Fatalf("Render() = %q, want converted valid bold", got)
 	}
@@ -133,11 +138,13 @@ func TestRenderDoesNotKeepMarkdownTokens(t *testing.T) {
 	t.Parallel()
 
 	got := Render("# 제목\n- **강조**\n> 인용")
+
 	for _, want := range []string{"【제목】", "❪강조❫", "  ‖ 인용"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("Render() = %q, want %q", got, want)
 		}
 	}
+
 	if strings.Contains(got, "**【제목】**") {
 		t.Fatalf("Render() kept kakao markdown heading: %q", got)
 	}
@@ -149,6 +156,7 @@ func TestPrevRuneIsConstantTime(t *testing.T) {
 	text := strings.Repeat("가나다라마", 100000) + "*"
 	byteIndex := len(text) - len("*")
 	last, _ := utf8.DecodeLastRuneInString(text[:byteIndex])
+
 	if got := prevRune(text, byteIndex); got != last {
 		t.Fatalf("prevRune = %q, want %q", got, last)
 	}
@@ -159,8 +167,10 @@ func TestEmphasisRenderingBoundedTime(t *testing.T) {
 
 	input := strings.Repeat("*굵게* 그리고 _기울임_ 텍스트 ", 20000)
 	done := make(chan struct{})
+
 	go func() {
 		_ = renderEmphasis(input)
+
 		close(done)
 	}()
 
@@ -175,15 +185,18 @@ func TestTableOutputAmplificationCapped(t *testing.T) {
 	t.Parallel()
 
 	var sb strings.Builder
+
 	header := "|" + strings.Repeat(" col |", 100)
 	sep := "|" + strings.Repeat(" --- |", 100)
 	sb.WriteString(header + "\n" + sep + "\n")
+
 	for range 1000 {
 		sb.WriteString("|" + strings.Repeat(" v |", 100) + "\n")
 	}
 
 	output := renderTables(sb.String())
 	lineCount := strings.Count(output, "\n") + 1
+
 	if lineCount > maxTableOutputLines+10 {
 		t.Fatalf("table rendering produced %d lines, want <= %d", lineCount, maxTableOutputLines+10)
 	}

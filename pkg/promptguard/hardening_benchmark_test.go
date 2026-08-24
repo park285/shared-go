@@ -11,6 +11,7 @@ func BenchmarkPromptGuardShortRuleContext(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
+
 	for range b.N {
 		_ = guard.evaluateRaw(input)
 	}
@@ -22,6 +23,7 @@ func BenchmarkPromptGuardRollingAggregate(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
+
 	for range b.N {
 		_ = guard.evaluateRaw(input)
 	}
@@ -32,6 +34,8 @@ func rollingAggregateBenchmarkInput() string {
 	for i := range parts {
 		parts[i] = strings.Repeat("ordinary context ", 2)
 	}
+
 	parts[len(parts)-1] = "ordinary instructions reference"
+
 	return JoinParts(parts...)
 }

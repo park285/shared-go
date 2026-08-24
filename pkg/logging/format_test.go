@@ -2,7 +2,6 @@ package logging
 
 import (
 	"bytes"
-	"context"
 	jsonv2 "encoding/json/v2"
 	"io"
 	"log/slog"
@@ -12,32 +11,37 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/park285/shared-go/v2/pkg/internal/testsupport"
 )
 
 const (
 	probeUserID   = "kakao-user-4821"
-	probeToken    = "ghp_FAKEnotarealgithubtoken000"
+	probeToken    = "ghp_FAKEnotarealgithubtoken000" //nolint:gosec // 테스트 자리표시자 문자열이며 실제 자격 증명이 아니다.
 	probeQuerySec = "leakedqueryvalue"
 	probeMessage  = "format_probe connecting https://x.test?api_key=" + probeQuerySec
 )
 
 func logFormatProbe(logger *slog.Logger) {
 	logger.Info(probeMessage,
-		slog.String("user_id", probeUserID),
+		slog.String(testUserID, probeUserID),
 		slog.String("authorization", "Bearer "+probeToken),
 	)
 }
 
 func assertProbeSanitized(t *testing.T, label, out string) {
 	t.Helper()
+
 	for _, leaked := range []string{probeToken, probeQuerySec} {
 		if strings.Contains(out, leaked) {
 			t.Fatalf("%s: unsanitized value %q reached the writer: %s", label, leaked, out)
 		}
 	}
+
 	if !strings.Contains(out, probeUserID) {
 		t.Fatalf("%s: operational user_id was not preserved: %s", label, out)
 	}
+
 	if !strings.Contains(out, redactedValue) {
 		t.Fatalf("%s: no redaction marker in output: %s", label, out)
 	}
@@ -45,40 +49,52 @@ func assertProbeSanitized(t *testing.T, label, out string) {
 
 func probeJSONRecord(t *testing.T, label, out string) map[string]any {
 	t.Helper()
+
 	var probe map[string]any
+
 	for line := range strings.SplitSeq(strings.TrimSpace(out), "\n") {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
+
 		var record map[string]any
+
 		if err := jsonv2.Unmarshal([]byte(line), &record); err != nil {
 			t.Fatalf("%s: line is not valid JSON: %q (%v)", label, line, err)
 		}
+
 		if msg, ok := record[slog.MessageKey].(string); ok && strings.HasPrefix(msg, "format_probe") {
 			probe = record
 		}
 	}
+
 	if probe == nil {
 		t.Fatalf("%s: probe record missing from output: %s", label, out)
 	}
+
 	return probe
 }
 
 func assertJSONProbe(t *testing.T, label, out string) {
 	t.Helper()
+
 	record := probeJSONRecord(t, label, out)
+
 	for _, key := range []string{slog.TimeKey, slog.LevelKey, slog.MessageKey, slog.SourceKey} {
 		if _, ok := record[key]; !ok {
 			t.Fatalf("%s: JSON record missing slog key %q: %v", label, key, record)
 		}
 	}
-	if got := record["user_id"]; got != probeUserID {
+
+	if got := record[testUserID]; got != probeUserID {
 		t.Fatalf("%s: JSON user_id = %v, want %q", label, got, probeUserID)
 	}
+
 	if got := record["authorization"]; got != redactedValue {
 		t.Fatalf("%s: JSON authorization = %v, want %q", label, got, redactedValue)
 	}
-	if msg, _ := record[slog.MessageKey].(string); strings.Contains(msg, probeQuerySec) {
+
+	if msg := testsupport.AssertType[string](t, "record[MessageKey]", record[slog.MessageKey]); strings.Contains(msg, probeQuerySec) {
 		t.Fatalf("%s: JSON msg kept query secret: %q", label, msg)
 	}
 }
@@ -88,11 +104,14 @@ func assertJSONProbe(t *testing.T, label, out string) {
 // 비워야 한다 — 출력이 파이프 버퍼(리눅스 64 KiB)를 넘으면 fn이 쓰기에서 교착한다.
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
+
 	orig := os.Stdout
+
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("os.Pipe: %v", err)
 	}
+
 	os.Stdout = w
 
 	// fn 안의 t.Fatalf는 runtime.Goexit이므로 복구·close는 defer로만 보장된다.
@@ -103,8 +122,13 @@ func captureStdout(t *testing.T, fn func()) string {
 	}()
 
 	drained := make(chan []byte, 1)
+
 	go func() {
-		out, _ := io.ReadAll(r)
+		out, readErr := io.ReadAll(r)
+		if readErr != nil {
+			t.Errorf("ReadAll() error = %v", readErr)
+		}
+
 		drained <- out
 	}()
 
@@ -113,6 +137,7 @@ func captureStdout(t *testing.T, fn func()) string {
 			os.Stdout = orig
 			_ = w.Close()
 		}()
+
 		fn()
 	}()
 
@@ -144,17 +169,19 @@ func TestNewLogger_SanitizesAndKeepsJSONFormat(t *testing.T) {
 
 func TestConsoleHandler_SanitizesJSON(t *testing.T) {
 	var stdout bytes.Buffer
+
 	logger, closer, err := enableFileLoggingWithStdout(
 		&stdout,
-		Config{Level: "info", Format: FormatJSON},
+		Config{Level: testInfo, Format: FormatJSON},
 		"console.log",
 		Options{},
 	)
 	if err != nil {
 		t.Fatalf("enableFileLoggingWithStdout() error = %v", err)
 	}
+
 	if closer != nil {
-		t.Fatalf("console-only config returned a closer, want nil")
+		t.Fatal("console-only config returned a closer, want nil")
 	}
 
 	logFormatProbe(logger)
@@ -165,11 +192,13 @@ func TestConsoleHandler_SanitizesJSON(t *testing.T) {
 
 func TestFileHandler_SanitizesJSONOnBothLanes(t *testing.T) {
 	logDir := t.TempDir()
+
 	var stdout bytes.Buffer
+
 	logger, closer, err := enableFileLoggingWithStdout(
 		&stdout,
 		Config{
-			Level:      "info",
+			Level:      testInfo,
 			Format:     FormatJSON,
 			Dir:        logDir,
 			MaxSizeMB:  10,
@@ -182,6 +211,7 @@ func TestFileHandler_SanitizesJSONOnBothLanes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("enableFileLoggingWithStdout() error = %v", err)
 	}
+
 	t.Cleanup(func() {
 		if closer != nil {
 			_ = closer.Close()
@@ -190,7 +220,7 @@ func TestFileHandler_SanitizesJSONOnBothLanes(t *testing.T) {
 
 	logFormatProbe(logger)
 
-	fileBytes, err := os.ReadFile(filepath.Join(logDir, "service.log"))
+	fileBytes, err := os.ReadFile(filepath.Join(logDir, "service.log")) //nolint:gosec // 테스트가 만든 임시 디렉터리 경로만 읽는다.
 	if err != nil {
 		t.Fatalf("read log file: %v", err)
 	}
@@ -205,40 +235,50 @@ func TestFileHandler_SanitizesJSONOnBothLanes(t *testing.T) {
 
 func formatProbeOutput(t *testing.T, config Config) string {
 	t.Helper()
+
 	var stdout bytes.Buffer
+
 	logger, closer, err := enableFileLoggingWithStdout(&stdout, config, "probe.log", Options{})
 	if err != nil {
 		t.Fatalf("enableFileLoggingWithStdout() error = %v", err)
 	}
+
 	if closer != nil {
 		t.Cleanup(func() { _ = closer.Close() })
 	}
+
 	logFormatProbe(logger)
+
 	return stdout.String()
 }
 
 func TestFormatZeroValue_MatchesExplicitJSON(t *testing.T) {
-	zero := formatProbeOutput(t, Config{Level: "info"})
-	explicit := formatProbeOutput(t, Config{Level: "info", Format: FormatJSON})
+	zero := formatProbeOutput(t, Config{Level: testInfo})
+	explicit := formatProbeOutput(t, Config{Level: testInfo, Format: FormatJSON})
 
 	zeroRecord := probeJSONRecord(t, "zero-value Format", zero)
 	explicitRecord := probeJSONRecord(t, "explicit json Format", explicit)
+
 	delete(zeroRecord, slog.TimeKey)
 	delete(explicitRecord, slog.TimeKey)
+
 	if !reflect.DeepEqual(zeroRecord, explicitRecord) {
 		t.Fatalf("zero-value Format diverged from %q\nzero: %s\njson: %s", FormatJSON, zero, explicit)
 	}
 }
 
 func TestEnableFileLogging_RejectsTextFormat(t *testing.T) {
-	config := Config{Level: "info", Format: "text"}
+	config := Config{Level: testInfo, Format: "text"}
+
 	logger, closer, err := EnableFileLoggingWithOptions(config, "service.log", Options{})
 	if err == nil {
 		t.Fatal("EnableFileLoggingWithOptions() error = nil, want text rejection")
 	}
+
 	if logger != nil || closer != nil {
 		t.Fatalf("EnableFileLoggingWithOptions() = (%v, %v), want (nil, nil) on text rejection", logger, closer)
 	}
+
 	if !strings.Contains(err.Error(), `only "json" is supported`) {
 		t.Fatalf("error = %q, want json-only contract", err)
 	}
@@ -262,12 +302,14 @@ func TestFormatHandlers_MaskSensitiveKeysRegardlessOfValueKind(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			var buf bytes.Buffer
+
 			slog.New(newFormatHandler(slog.LevelInfo, &buf)).Info("probe", tc.attr)
 
 			out := buf.String()
 			if strings.Contains(out, tc.leak) {
 				t.Fatalf("%s value survived masking: %s", tc.name, strings.TrimSpace(out))
 			}
+
 			if !strings.Contains(out, redactedValue) {
 				t.Fatalf("%s produced no redaction marker: %s", tc.name, strings.TrimSpace(out))
 			}
@@ -276,16 +318,16 @@ func TestFormatHandlers_MaskSensitiveKeysRegardlessOfValueKind(t *testing.T) {
 }
 
 // json은 프로덕션 출하 lane이다. Level 배선이 풀리면 수집기에 DEBUG가 그대로 쏟아진다.
-// console 분기와 file 분기는 서로 다른 handler 생성 지점이라, Dir이 빈 구성만 밟으면
+// Console 분기와 file 분기는 서로 다른 handler 생성 지점이라, Dir이 빈 구성만 밟으면
 // 프로덕션이 실제로 쓰는 file 분기의 배선은 어떤 단언도 지나지 않는다.
 func TestJSONFormat_LevelPinned(t *testing.T) {
 	const debugProbe = "json_debug_probe_must_be_filtered"
 
 	fileLaneDir := t.TempDir()
 	lanes := map[string]Config{
-		"console": {Level: "info", Format: FormatJSON},
+		"console": {Level: testInfo, Format: FormatJSON},
 		"file": {
-			Level:      "info",
+			Level:      testInfo,
 			Format:     FormatJSON,
 			Dir:        fileLaneDir,
 			MaxSizeMB:  10,
@@ -297,10 +339,12 @@ func TestJSONFormat_LevelPinned(t *testing.T) {
 	for lane, config := range lanes {
 		t.Run(lane, func(t *testing.T) {
 			var stdout bytes.Buffer
+
 			logger, closer, err := enableFileLoggingWithStdout(&stdout, config, "probe.log", Options{})
 			if err != nil {
 				t.Fatalf("enableFileLoggingWithStdout() error = %v", err)
 			}
+
 			if closer != nil {
 				t.Cleanup(func() { _ = closer.Close() })
 			}
@@ -314,10 +358,11 @@ func TestJSONFormat_LevelPinned(t *testing.T) {
 
 	// 이 읽기는 루프 밖에 있어야 한다. 안으로 옮기면 lanes에서 file lane이 사라진 순간
 	// 조용히 건너뛰어져, 프로덕션 file 분기의 level 배선이 다시 무단언 상태가 된다.
-	fileBytes, err := os.ReadFile(filepath.Join(fileLaneDir, "probe.log"))
+	fileBytes, err := os.ReadFile(filepath.Join(fileLaneDir, "probe.log")) //nolint:gosec // 테스트가 만든 임시 디렉터리 경로만 읽는다.
 	if err != nil {
 		t.Fatalf("file lane wrote no log file under %s: %v", fileLaneDir, err)
 	}
+
 	assertJSONLevelPinned(t, "json/file/file", string(fileBytes), debugProbe)
 }
 
@@ -327,6 +372,7 @@ func assertJSONLevelPinned(t *testing.T, label, out, debugProbe string) {
 	if strings.Contains(out, debugProbe) {
 		t.Errorf("%s: handler ignored Config.Level, debug record emitted at info level: %s", label, out)
 	}
+
 	if record := probeJSONRecord(t, label, out); record[slog.LevelKey] != "INFO" {
 		t.Errorf("%s: level = %v, want %q", label, record[slog.LevelKey], "INFO")
 	}
@@ -347,6 +393,7 @@ func TestNewLogger_LevelPinned(t *testing.T) {
 	if strings.Contains(out, debugProbe) {
 		t.Errorf("NewLogger emitted a debug record at its pinned info level: %s", out)
 	}
+
 	if !strings.Contains(out, infoProbe) {
 		t.Fatalf("NewLogger dropped the info record: %s", out)
 	}
@@ -355,23 +402,29 @@ func TestNewLogger_LevelPinned(t *testing.T) {
 // JSON source.file이 빌드 머신 절대 경로면 디렉터리 구조가 모든 record에 실린다.
 func TestJSONFormat_ShortensSourcePath(t *testing.T) {
 	var buf bytes.Buffer
+
 	slog.New(newFormatHandler(slog.LevelInfo, &buf)).Info("format_probe_source")
 
 	record := probeJSONRecord(t, "json/source", buf.String())
 	source, ok := record[slog.SourceKey].(string)
+
 	if !ok {
 		t.Fatalf("source is not a string: %v", record[slog.SourceKey])
 	}
+
 	file, line, found := strings.Cut(source, ":")
 	if !found {
 		t.Fatalf("source = %q, want \"file:line\"", source)
 	}
+
 	if filepath.IsAbs(file) {
 		t.Fatalf("source file is an absolute build path: %q", file)
 	}
+
 	if want := "logging/format_test.go"; file != want {
 		t.Fatalf("source file = %q, want %q", file, want)
 	}
+
 	if line == "" || line == "0" {
 		t.Fatalf("source line dropped: %q", source)
 	}
@@ -379,8 +432,10 @@ func TestJSONFormat_ShortensSourcePath(t *testing.T) {
 
 func TestJSONFormat_OmitsSourceForZeroPC(t *testing.T) {
 	var buf bytes.Buffer
+
 	handler := newFormatHandler(slog.LevelInfo, &buf)
-	if err := handler.Handle(context.Background(), slog.NewRecord(time.Now(), slog.LevelInfo, "format_probe_zero_pc", 0)); err != nil {
+
+	if err := handler.Handle(t.Context(), slog.NewRecord(time.Now(), slog.LevelInfo, "format_probe_zero_pc", 0)); err != nil {
 		t.Fatalf("handle zero-PC record: %v", err)
 	}
 
@@ -392,9 +447,9 @@ func TestJSONFormat_OmitsSourceForZeroPC(t *testing.T) {
 
 func TestEnableFileLogging_RejectsUnknownFormat(t *testing.T) {
 	configs := map[string]Config{
-		"console": {Level: "info", Format: "yaml"},
+		"console": {Level: testInfo, Format: "yaml"},
 		"file": {
-			Level:      "info",
+			Level:      testInfo,
 			Format:     "yaml",
 			Dir:        t.TempDir(),
 			MaxSizeMB:  10,
@@ -407,17 +462,19 @@ func TestEnableFileLogging_RejectsUnknownFormat(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			logger, closer, err := EnableFileLoggingWithOptions(config, "service.log", Options{})
 			if err == nil {
-				t.Fatalf("EnableFileLoggingWithOptions() error = nil, want rejection")
+				t.Fatal("EnableFileLoggingWithOptions() error = nil, want rejection")
 			}
+
 			if logger != nil || closer != nil {
 				t.Fatalf("EnableFileLoggingWithOptions() = (%v, %v), want (nil, nil) on rejection", logger, closer)
 			}
+
 			if !strings.Contains(err.Error(), `"yaml"`) {
 				t.Fatalf("error %q does not name the offending format", err)
 			}
 
 			if _, err := EnableFileLogging(config, "service.log"); err == nil {
-				t.Fatalf("EnableFileLogging() error = nil, want rejection")
+				t.Fatal("EnableFileLogging() error = nil, want rejection")
 			}
 		})
 	}

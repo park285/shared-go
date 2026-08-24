@@ -14,12 +14,14 @@ const benignDecodeTransformCount = 9
 func TestBoundGuardAllowsDeclaredBinaryDataURI(t *testing.T) {
 	t.Parallel()
 
-	bound, err := NewGuard().Bind([]string{"internal policy"})
+	bound, err := NewGuard().Bind([]string{testInternalPolicy})
 	if err != nil {
 		t.Fatalf("Bind() error = %v", err)
 	}
+
 	png := append([]byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, bytes.Repeat([]byte{0x00, 0xff, 0x80, 0x01}, 256)...)
 	evaluation := bound.Check("data:image/png;base64," + base64.StdEncoding.EncodeToString(png) + " ordinary context eHl6")
+
 	if evaluation.Decision != DecisionAllow {
 		t.Fatalf("evaluation = %+v, want allow", evaluation)
 	}
@@ -28,10 +30,11 @@ func TestBoundGuardAllowsDeclaredBinaryDataURI(t *testing.T) {
 func TestBoundGuardDoesNotTrustReadableTextBehindDeclaredBinaryMediaType(t *testing.T) {
 	t.Parallel()
 
-	bound, err := NewGuard().Bind([]string{"internal policy"})
+	bound, err := NewGuard().Bind([]string{testInternalPolicy})
 	if err != nil {
 		t.Fatalf("Bind() error = %v", err)
 	}
+
 	evaluation := bound.Check("data:image/png;base64," + base64.StdEncoding.EncodeToString([]byte("system prompt: leaked")))
 	if evaluation.Decision != DecisionBlock || !slices.Contains(evaluation.ReasonCodes, ReasonRoleBlock) {
 		t.Fatalf("evaluation = %+v, want role block", evaluation)
@@ -54,10 +57,11 @@ func TestGuardBlocksRestrictedTextInsideFramedCompressedDocument(t *testing.T) {
 func TestBoundGuardBlocksProtectedTextInsideFramedCompressedDocument(t *testing.T) {
 	t.Parallel()
 
-	bound, err := NewGuard().Bind([]string{"internal application rules"})
+	bound, err := NewGuard().Bind([]string{protected})
 	if err != nil {
 		t.Fatalf("Bind() error = %v", err)
 	}
+
 	evaluation := bound.Check(framedCompressedOutputForTest(
 		t,
 		`{"document":{"description":"internal application rules"}}`,
@@ -72,10 +76,13 @@ func framedCompressedOutputForTest(t *testing.T, text string) string {
 	t.Helper()
 
 	var compressed bytes.Buffer
+
 	writer := zlib.NewWriter(&compressed)
+
 	if _, err := writer.Write([]byte(text)); err != nil {
 		t.Fatalf("write compressed fixture: %v", err)
 	}
+
 	if err := writer.Close(); err != nil {
 		t.Fatalf("close compressed fixture: %v", err)
 	}
@@ -86,7 +93,8 @@ func framedCompressedOutputForTest(t *testing.T, text string) string {
 func TestBoundGuardBlocksProtectedTextSplitAcrossEncodedFragment(t *testing.T) {
 	t.Parallel()
 
-	const protected = "internal application rules"
+	const protected = protected
+
 	bound, err := NewGuard().Bind([]string{protected})
 	if err != nil {
 		t.Fatalf("Bind() error = %v", err)
@@ -107,10 +115,13 @@ func TestBoundGuardBlocksProtectedTextSplitAcrossEncodedFragment(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			evaluation := bound.Check(test.text)
 			if evaluation.Decision != DecisionBlock {
 				t.Fatalf("decision = %v, want block: %+v", evaluation.Decision, evaluation)
 			}
+
 			if !slices.Contains(evaluation.ReasonCodes, ReasonProtectedTextOverlap) {
 				t.Fatalf("reasons = %v, want protected overlap", evaluation.ReasonCodes)
 			}
@@ -121,7 +132,7 @@ func TestBoundGuardBlocksProtectedTextSplitAcrossEncodedFragment(t *testing.T) {
 func TestBoundGuardBlocksProtectedTextSplitAcrossShortPaddedBase64Fragment(t *testing.T) {
 	t.Parallel()
 
-	bound, err := NewGuard().Bind([]string{"internal application rules"})
+	bound, err := NewGuard().Bind([]string{protected})
 	if err != nil {
 		t.Fatalf("Bind() error = %v", err)
 	}
@@ -130,6 +141,7 @@ func TestBoundGuardBlocksProtectedTextSplitAcrossShortPaddedBase64Fragment(t *te
 	if evaluation.Decision != DecisionBlock {
 		t.Fatalf("decision = %v, want block: %+v", evaluation.Decision, evaluation)
 	}
+
 	if !slices.Contains(evaluation.ReasonCodes, ReasonProtectedTextOverlap) {
 		t.Fatalf("reasons = %v, want protected overlap", evaluation.ReasonCodes)
 	}
@@ -138,7 +150,7 @@ func TestBoundGuardBlocksProtectedTextSplitAcrossShortPaddedBase64Fragment(t *te
 func TestBoundGuardBlocksProtectedTextSplitAcrossShortHexFragment(t *testing.T) {
 	t.Parallel()
 
-	bound, err := NewGuard().Bind([]string{"internal policy"})
+	bound, err := NewGuard().Bind([]string{testInternalPolicy})
 	if err != nil {
 		t.Fatalf("Bind() error = %v", err)
 	}
@@ -147,6 +159,7 @@ func TestBoundGuardBlocksProtectedTextSplitAcrossShortHexFragment(t *testing.T) 
 	if evaluation.Decision != DecisionBlock {
 		t.Fatalf("decision = %v, want block: %+v", evaluation.Decision, evaluation)
 	}
+
 	if !slices.Contains(evaluation.ReasonCodes, ReasonProtectedTextOverlap) {
 		t.Fatalf("reasons = %v, want protected overlap", evaluation.ReasonCodes)
 	}
@@ -155,7 +168,7 @@ func TestBoundGuardBlocksProtectedTextSplitAcrossShortHexFragment(t *testing.T) 
 func TestBoundGuardBlocksProtectedTextSplitAcrossOneAndTwoByteHexFragments(t *testing.T) {
 	t.Parallel()
 
-	bound, err := NewGuard().Bind([]string{"internal policy"})
+	bound, err := NewGuard().Bind([]string{testInternalPolicy})
 	if err != nil {
 		t.Fatalf("Bind() error = %v", err)
 	}
@@ -168,6 +181,7 @@ func TestBoundGuardBlocksProtectedTextSplitAcrossOneAndTwoByteHexFragments(t *te
 		if evaluation.Decision != DecisionBlock {
 			t.Fatalf("text %q decision = %v, want block: %+v", text, evaluation.Decision, evaluation)
 		}
+
 		if !slices.Contains(evaluation.ReasonCodes, ReasonProtectedTextOverlap) {
 			t.Fatalf("text %q reasons = %v, want protected overlap", text, evaluation.ReasonCodes)
 		}
@@ -177,7 +191,7 @@ func TestBoundGuardBlocksProtectedTextSplitAcrossOneAndTwoByteHexFragments(t *te
 func TestBoundGuardAllowsMalformedOrEmptyShortHexFragments(t *testing.T) {
 	t.Parallel()
 
-	bound, err := NewGuard().Bind([]string{"internal policy"})
+	bound, err := NewGuard().Bind([]string{testInternalPolicy})
 	if err != nil {
 		t.Fatalf("Bind() error = %v", err)
 	}
@@ -198,7 +212,7 @@ func TestBoundGuardAllowsMalformedOrEmptyShortHexFragments(t *testing.T) {
 func TestBoundGuardBlocksProtectedTextSplitAcrossOneByteHexFragment(t *testing.T) {
 	t.Parallel()
 
-	bound, err := NewGuard().Bind([]string{"internal policy"})
+	bound, err := NewGuard().Bind([]string{testInternalPolicy})
 	if err != nil {
 		t.Fatalf("Bind() error = %v", err)
 	}
@@ -207,6 +221,7 @@ func TestBoundGuardBlocksProtectedTextSplitAcrossOneByteHexFragment(t *testing.T
 	if evaluation.Decision != DecisionBlock {
 		t.Fatalf("decision = %v, want block: %+v", evaluation.Decision, evaluation)
 	}
+
 	if !slices.Contains(evaluation.ReasonCodes, ReasonProtectedTextOverlap) {
 		t.Fatalf("reasons = %v, want protected overlap", evaluation.ReasonCodes)
 	}
@@ -215,7 +230,7 @@ func TestBoundGuardBlocksProtectedTextSplitAcrossOneByteHexFragment(t *testing.T
 func TestBoundGuardBlocksProtectedTextBehindNormalizedHexEnvelope(t *testing.T) {
 	t.Parallel()
 
-	bound, err := NewGuard().Bind([]string{"internal policy"})
+	bound, err := NewGuard().Bind([]string{testInternalPolicy})
 	if err != nil {
 		t.Fatalf("Bind() error = %v", err)
 	}
@@ -224,6 +239,7 @@ func TestBoundGuardBlocksProtectedTextBehindNormalizedHexEnvelope(t *testing.T) 
 	if evaluation.Decision != DecisionBlock {
 		t.Fatalf("decision = %v, want block: %+v", evaluation.Decision, evaluation)
 	}
+
 	if !slices.Contains(evaluation.ReasonCodes, ReasonProtectedTextOverlap) {
 		t.Fatalf("reasons = %v, want protected overlap", evaluation.ReasonCodes)
 	}
@@ -232,7 +248,7 @@ func TestBoundGuardBlocksProtectedTextBehindNormalizedHexEnvelope(t *testing.T) 
 func TestBoundGuardBlocksProtectedTextAdjacentToBase64Fragment(t *testing.T) {
 	t.Parallel()
 
-	bound, err := NewGuard().Bind([]string{"internal policy"})
+	bound, err := NewGuard().Bind([]string{testInternalPolicy})
 	if err != nil {
 		t.Fatalf("Bind() error = %v", err)
 	}
@@ -246,6 +262,7 @@ func TestBoundGuardBlocksProtectedTextAdjacentToBase64Fragment(t *testing.T) {
 		if evaluation.Decision != DecisionBlock {
 			t.Fatalf("text %q decision = %v, want block: %+v", text, evaluation.Decision, evaluation)
 		}
+
 		if !slices.Contains(evaluation.ReasonCodes, ReasonProtectedTextOverlap) {
 			t.Fatalf("text %q reasons = %v, want protected overlap", text, evaluation.ReasonCodes)
 		}
@@ -255,7 +272,7 @@ func TestBoundGuardBlocksProtectedTextAdjacentToBase64Fragment(t *testing.T) {
 func TestBoundGuardAllowsBenignWordsPastProtectedDecodeScanBudget(t *testing.T) {
 	t.Parallel()
 
-	bound, err := NewGuard().Bind([]string{"internal policy"})
+	bound, err := NewGuard().Bind([]string{testInternalPolicy})
 	if err != nil {
 		t.Fatalf("Bind() error = %v", err)
 	}
@@ -276,6 +293,7 @@ func TestBoundGuardAllowsStructuredOutputWithCamelCaseAndTimestamp(t *testing.T)
 
 	text := `{"version":1,"session":{"startedAt":"2026-05-24T10:00:00Z","updatedAt":"2026-05-24T10:01:00Z","saveHintAt":20},"world":{"locationName":"market","moonPhase":"new","eventName":"festival"},"flags":{"metGuide":"true"}}`
 	evaluation := bound.Check(text)
+
 	if evaluation.Decision != DecisionAllow {
 		t.Fatalf("decision = %v, want allow: %+v", evaluation.Decision, evaluation)
 	}
@@ -298,7 +316,7 @@ func TestBoundGuardBlocksShortBase64RestrictedRule(t *testing.T) {
 func TestBoundGuardBlocksProtectedTextSplitAcrossShortUnpaddedBase64Fragment(t *testing.T) {
 	t.Parallel()
 
-	bound, err := NewGuard().Bind([]string{"internal application rules"})
+	bound, err := NewGuard().Bind([]string{protected})
 	if err != nil {
 		t.Fatalf("Bind() error = %v", err)
 	}
@@ -307,6 +325,7 @@ func TestBoundGuardBlocksProtectedTextSplitAcrossShortUnpaddedBase64Fragment(t *
 	if evaluation.Decision != DecisionBlock {
 		t.Fatalf("decision = %v, want block: %+v", evaluation.Decision, evaluation)
 	}
+
 	if !slices.Contains(evaluation.ReasonCodes, ReasonProtectedTextOverlap) {
 		t.Fatalf("reasons = %v, want protected overlap", evaluation.ReasonCodes)
 	}
@@ -315,7 +334,7 @@ func TestBoundGuardBlocksProtectedTextSplitAcrossShortUnpaddedBase64Fragment(t *
 func TestBoundGuardBlocksProtectedTextSplitAcrossVeryShortBase64Fragments(t *testing.T) {
 	t.Parallel()
 
-	bound, err := NewGuard().Bind([]string{"internal policy"})
+	bound, err := NewGuard().Bind([]string{testInternalPolicy})
 	if err != nil {
 		t.Fatalf("Bind() error = %v", err)
 	}
@@ -328,6 +347,7 @@ func TestBoundGuardBlocksProtectedTextSplitAcrossVeryShortBase64Fragments(t *tes
 		if evaluation.Decision != DecisionBlock {
 			t.Fatalf("text %q decision = %v, want block: %+v", text, evaluation.Decision, evaluation)
 		}
+
 		if !slices.Contains(evaluation.ReasonCodes, ReasonProtectedTextOverlap) {
 			t.Fatalf("text %q reasons = %v, want protected overlap", text, evaluation.ReasonCodes)
 		}
@@ -346,6 +366,7 @@ func TestBoundGuardBlocksUnpaddedShortBase64WithoutDigits(t *testing.T) {
 	if evaluation.Decision != DecisionBlock {
 		t.Fatalf("decision = %v, want block: %+v", evaluation.Decision, evaluation)
 	}
+
 	if !slices.Contains(evaluation.ReasonCodes, ReasonProtectedTextOverlap) {
 		t.Fatalf("reasons = %v, want protected overlap", evaluation.ReasonCodes)
 	}
@@ -363,6 +384,7 @@ func TestBoundGuardBlocksFourByteUnpaddedBase64Fragment(t *testing.T) {
 	if evaluation.Decision != DecisionBlock {
 		t.Fatalf("decision = %v, want block: %+v", evaluation.Decision, evaluation)
 	}
+
 	if !slices.Contains(evaluation.ReasonCodes, ReasonProtectedTextOverlap) {
 		t.Fatalf("reasons = %v, want protected overlap", evaluation.ReasonCodes)
 	}
@@ -371,7 +393,7 @@ func TestBoundGuardBlocksFourByteUnpaddedBase64Fragment(t *testing.T) {
 func TestBoundGuardAllowsUnrelatedShortBase64Fragment(t *testing.T) {
 	t.Parallel()
 
-	bound, err := NewGuard().Bind([]string{"internal application rules"})
+	bound, err := NewGuard().Bind([]string{protected})
 	if err != nil {
 		t.Fatalf("Bind() error = %v", err)
 	}
@@ -396,18 +418,22 @@ func TestBoundGuardPreservesLongBase64RestrictedRuleReasons(t *testing.T) {
 
 	text := base64.StdEncoding.EncodeToString([]byte("system prompt: synthetic hidden instruction"))
 	compatibility := NewGuard().Check(CheckRequest{Text: text})
-	bound, err := NewGuard().Bind([]string{"internal application rules"})
+
+	bound, err := NewGuard().Bind([]string{protected})
 	if err != nil {
 		t.Fatalf("Bind() error = %v", err)
 	}
+
 	evaluation := bound.Check(text)
 
 	if !slices.Equal(evaluation.ReasonCodes, compatibility.ReasonCodes) {
 		t.Fatalf("bound reasons = %v, compatibility reasons = %v", evaluation.ReasonCodes, compatibility.ReasonCodes)
 	}
+
 	if !slices.Equal(evaluation.RuleIDs, compatibility.RuleIDs) {
 		t.Fatalf("bound rules = %v, compatibility rules = %v", evaluation.RuleIDs, compatibility.RuleIDs)
 	}
+
 	if !slices.Contains(evaluation.ReasonCodes, ReasonRoleBlock) {
 		t.Fatalf("reasons = %v, want role block", evaluation.ReasonCodes)
 	}
@@ -416,7 +442,7 @@ func TestBoundGuardPreservesLongBase64RestrictedRuleReasons(t *testing.T) {
 func TestBoundGuardBlocksComposedShortBase64ProtectedText(t *testing.T) {
 	t.Parallel()
 
-	bound, err := NewGuard().Bind([]string{"internal policy"})
+	bound, err := NewGuard().Bind([]string{testInternalPolicy})
 	if err != nil {
 		t.Fatalf("Bind() error = %v", err)
 	}
@@ -429,6 +455,7 @@ func TestBoundGuardBlocksComposedShortBase64ProtectedText(t *testing.T) {
 		if evaluation.Decision != DecisionBlock {
 			t.Fatalf("text %q decision = %v, want block: %+v", text, evaluation.Decision, evaluation)
 		}
+
 		if !slices.Contains(evaluation.ReasonCodes, ReasonProtectedTextOverlap) {
 			t.Fatalf("text %q reasons = %v, want protected overlap", text, evaluation.ReasonCodes)
 		}
@@ -444,6 +471,7 @@ func TestGuardBlocksRestrictedRoleSplitAcrossBase64Fragment(t *testing.T) {
 	if evaluation.Decision != DecisionBlock {
 		t.Fatalf("decision = %v, want block: %+v", evaluation.Decision, evaluation)
 	}
+
 	if !slices.Contains(evaluation.ReasonCodes, ReasonRoleBlock) {
 		t.Fatalf("reasons = %v, want role block", evaluation.ReasonCodes)
 	}
@@ -461,6 +489,7 @@ func TestBoundGuardRecoversUnpaddedBase64BeforePlaintextSuffix(t *testing.T) {
 	if evaluation.Decision != DecisionBlock {
 		t.Fatalf("decision = %v, want block: %+v", evaluation.Decision, evaluation)
 	}
+
 	if !slices.Contains(evaluation.ReasonCodes, ReasonProtectedTextOverlap) {
 		t.Fatalf("reasons = %v, want protected overlap", evaluation.ReasonCodes)
 	}
@@ -469,7 +498,7 @@ func TestBoundGuardRecoversUnpaddedBase64BeforePlaintextSuffix(t *testing.T) {
 func TestBoundGuardRecombinesEncodedSeparator(t *testing.T) {
 	t.Parallel()
 
-	bound, err := NewGuard().Bind([]string{"internal policy"})
+	bound, err := NewGuard().Bind([]string{testInternalPolicy})
 	if err != nil {
 		t.Fatalf("Bind() error = %v", err)
 	}
@@ -478,6 +507,7 @@ func TestBoundGuardRecombinesEncodedSeparator(t *testing.T) {
 	if evaluation.Decision != DecisionBlock {
 		t.Fatalf("decision = %v, want block: %+v", evaluation.Decision, evaluation)
 	}
+
 	if !slices.Contains(evaluation.ReasonCodes, ReasonProtectedTextOverlap) {
 		t.Fatalf("reasons = %v, want protected overlap", evaluation.ReasonCodes)
 	}
@@ -486,7 +516,7 @@ func TestBoundGuardRecombinesEncodedSeparator(t *testing.T) {
 func TestBoundGuardAllowsRepeatedBenignCamelCaseTokens(t *testing.T) {
 	t.Parallel()
 
-	bound, err := NewGuard().Bind([]string{"internal policy"})
+	bound, err := NewGuard().Bind([]string{testInternalPolicy})
 	if err != nil {
 		t.Fatalf("Bind() error = %v", err)
 	}
@@ -500,16 +530,18 @@ func TestBoundGuardAllowsRepeatedBenignCamelCaseTokens(t *testing.T) {
 func TestBoundGuardRecombinesEncodedSeparatorAcrossLongPlaintextRuns(t *testing.T) {
 	t.Parallel()
 
-	bound, err := NewGuard().Bind([]string{"internal policy"})
+	bound, err := NewGuard().Bind([]string{testInternalPolicy})
 	if err != nil {
 		t.Fatalf("Bind() error = %v", err)
 	}
 
 	separator := strings.Repeat(".", 4000)
 	evaluation := bound.Check("internal" + separator + "IA==" + separator + "policy")
+
 	if evaluation.Decision != DecisionBlock {
 		t.Fatalf("decision = %v, want block: %+v", evaluation.Decision, evaluation)
 	}
+
 	if !slices.Contains(evaluation.ReasonCodes, ReasonProtectedTextOverlap) {
 		t.Fatalf("reasons = %v, want protected overlap", evaluation.ReasonCodes)
 	}
@@ -524,6 +556,7 @@ func TestGuardRecoversRestrictedBase64BeforePlaintextSuffix(t *testing.T) {
 	if evaluation.Decision != DecisionBlock {
 		t.Fatalf("decision = %v, want block: %+v", evaluation.Decision, evaluation)
 	}
+
 	if !slices.Contains(evaluation.ReasonCodes, ReasonRoleBlock) {
 		t.Fatalf("reasons = %v, want role block", evaluation.ReasonCodes)
 	}
@@ -538,6 +571,7 @@ func TestGuardRecoversRestrictedBase64BetweenPlaintextInSingleToken(t *testing.T
 	if evaluation.Decision != DecisionBlock {
 		t.Fatalf("decision = %v, want block: %+v", evaluation.Decision, evaluation)
 	}
+
 	if !slices.Contains(evaluation.ReasonCodes, ReasonRoleBlock) {
 		t.Fatalf("reasons = %v, want role block", evaluation.ReasonCodes)
 	}
@@ -549,9 +583,11 @@ func TestGuardRecoversURLSafeBase64BeforePlaintextSuffix(t *testing.T) {
 	payload := "api_key: sk-synthetic12345 😀"
 	encoded := base64.RawURLEncoding.EncodeToString([]byte(payload))
 	evaluation := NewGuard().Check(CheckRequest{Text: encoded + "suffix"})
+
 	if evaluation.Decision != DecisionBlock {
 		t.Fatalf("decision = %v, want block: %+v", evaluation.Decision, evaluation)
 	}
+
 	if !slices.Contains(evaluation.ReasonCodes, ReasonSecretPattern) {
 		t.Fatalf("reasons = %v, want secret pattern", evaluation.ReasonCodes)
 	}
@@ -560,6 +596,7 @@ func TestGuardRecoversURLSafeBase64BeforePlaintextSuffix(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Bind() error = %v", err)
 	}
+
 	boundEvaluation := bound.Check(encoded + "suffix")
 	if !slices.Contains(boundEvaluation.ReasonCodes, ReasonProtectedTextOverlap) {
 		t.Fatalf("bound reasons = %v, want protected overlap", boundEvaluation.ReasonCodes)
@@ -578,6 +615,7 @@ func TestBoundGuardRecoversBase64BetweenPlaintextPrefixAndSuffix(t *testing.T) {
 	if evaluation.Decision != DecisionBlock {
 		t.Fatalf("decision = %v, want block: %+v", evaluation.Decision, evaluation)
 	}
+
 	if !slices.Contains(evaluation.ReasonCodes, ReasonProtectedTextOverlap) {
 		t.Fatalf("reasons = %v, want protected overlap", evaluation.ReasonCodes)
 	}
@@ -593,9 +631,11 @@ func TestBoundGuardExpandsNestedBase64WithPlaintextSuffix(t *testing.T) {
 
 	inner := "cG9saWN5internal"
 	evaluation := bound.Check(base64.StdEncoding.EncodeToString([]byte(inner)))
+
 	if evaluation.Decision != DecisionBlock {
 		t.Fatalf("decision = %v, want block: %+v", evaluation.Decision, evaluation)
 	}
+
 	if !slices.Contains(evaluation.ReasonCodes, ReasonProtectedTextOverlap) {
 		t.Fatalf("reasons = %v, want protected overlap", evaluation.ReasonCodes)
 	}
@@ -604,13 +644,14 @@ func TestBoundGuardExpandsNestedBase64WithPlaintextSuffix(t *testing.T) {
 func TestBoundGuardAllowsLargeStructuredOutputWithCamelCaseKeys(t *testing.T) {
 	t.Parallel()
 
-	bound, err := NewGuard().Bind([]string{"internal policy"})
+	bound, err := NewGuard().Bind([]string{testInternalPolicy})
 	if err != nil {
 		t.Fatalf("Bind() error = %v", err)
 	}
 
 	text := "[" + strings.Repeat(`{"saveHintAt":20},`, 500) + "{}]"
 	evaluation := bound.Check(text)
+
 	if evaluation.Decision != DecisionAllow {
 		t.Fatalf("decision = %v, want allow: %+v", evaluation.Decision, evaluation)
 	}
@@ -619,7 +660,7 @@ func TestBoundGuardAllowsLargeStructuredOutputWithCamelCaseKeys(t *testing.T) {
 func TestBoundGuardAllowsLongHomogeneousStructuredField(t *testing.T) {
 	t.Parallel()
 
-	bound, err := NewGuard().Bind([]string{"internal policy"})
+	bound, err := NewGuard().Bind([]string{testInternalPolicy})
 	if err != nil {
 		t.Fatalf("Bind() error = %v", err)
 	}
@@ -633,13 +674,14 @@ func TestBoundGuardAllowsLongHomogeneousStructuredField(t *testing.T) {
 func TestBoundGuardAllowsStructuredSHA512Digest(t *testing.T) {
 	t.Parallel()
 
-	bound, err := NewGuard().Bind([]string{"internal policy"})
+	bound, err := NewGuard().Bind([]string{testInternalPolicy})
 	if err != nil {
 		t.Fatalf("Bind() error = %v", err)
 	}
 
 	digest := strings.Repeat("0123456789abcdef", 8)
 	evaluation := bound.Check(`{"digest":"` + digest + `"}`)
+
 	if evaluation.Decision != DecisionAllow {
 		t.Fatalf("decision = %v, want allow: %+v", evaluation.Decision, evaluation)
 	}
@@ -648,7 +690,7 @@ func TestBoundGuardAllowsStructuredSHA512Digest(t *testing.T) {
 func TestBoundGuardAllowsBenignUnpaddedBase64WithPlaintextSuffix(t *testing.T) {
 	t.Parallel()
 
-	bound, err := NewGuard().Bind([]string{"internal policy"})
+	bound, err := NewGuard().Bind([]string{testInternalPolicy})
 	if err != nil {
 		t.Fatalf("Bind() error = %v", err)
 	}
@@ -677,7 +719,7 @@ func TestBoundGuardAllowsBenignUnpaddedBase64WithPlaintextSuffix(t *testing.T) {
 func TestBoundGuardAllowsDecoratedSHA512Digest(t *testing.T) {
 	t.Parallel()
 
-	bound, err := NewGuard().Bind([]string{"internal policy"})
+	bound, err := NewGuard().Bind([]string{testInternalPolicy})
 	if err != nil {
 		t.Fatalf("Bind() error = %v", err)
 	}
@@ -699,6 +741,7 @@ func TestGuardAllowsManyNonContributingBase64Transforms(t *testing.T) {
 
 	encoded := base64.StdEncoding.EncodeToString([]byte("readable contextual fragment"))
 	evaluation := NewGuard().Check(CheckRequest{Text: strings.Repeat(encoded+"!", benignDecodeTransformCount)})
+
 	if evaluation.Decision != DecisionAllow {
 		t.Fatalf("decision = %v, want allow: %+v", evaluation.Decision, evaluation)
 	}
@@ -707,13 +750,14 @@ func TestGuardAllowsManyNonContributingBase64Transforms(t *testing.T) {
 func TestBoundGuardAllowsManyNonContributingBase64Transforms(t *testing.T) {
 	t.Parallel()
 
-	bound, err := NewGuard().Bind([]string{"internal application rules"})
+	bound, err := NewGuard().Bind([]string{protected})
 	if err != nil {
 		t.Fatalf("Bind() error = %v", err)
 	}
 
 	encoded := base64.StdEncoding.EncodeToString([]byte("readable contextual fragment"))
 	evaluation := bound.Check(strings.Repeat(encoded+"!", benignDecodeTransformCount))
+
 	if evaluation.Decision != DecisionAllow {
 		t.Fatalf("decision = %v, want allow: %+v", evaluation.Decision, evaluation)
 	}
@@ -729,6 +773,7 @@ func TestBoundGuardAllowsStructuredCitationsWithEncodedMetadata(t *testing.T) {
 
 	encoded := base64.StdEncoding.EncodeToString([]byte("readable citation metadata"))
 	output := structuredCitationOutput(encoded, 4)
+
 	for _, text := range []string{output, strings.ReplaceAll(output, "https://", "HTTPS://")} {
 		evaluation := bound.Check(text)
 		if evaluation.Decision != DecisionAllow {
@@ -749,9 +794,11 @@ func TestBoundGuardFindsNestedProtectedTextAfterEncodedCitationMetadata(t *testi
 	inner := "cG9saWN5internal"
 	nested := base64.StdEncoding.EncodeToString([]byte(inner))
 	evaluation := bound.Check(structuredCitationOutput(benign, 3) + " https://example.test/" + nested)
+
 	if evaluation.Decision != DecisionBlock || !slices.Contains(evaluation.ReasonCodes, ReasonProtectedTextOverlap) {
 		t.Fatalf("evaluation = %+v, want protected-text overlap", evaluation)
 	}
+
 	if slices.Contains(evaluation.ReasonCodes, ReasonDecodeIncomplete) {
 		t.Fatalf("reasons = %v, benign metadata must not exhaust decode work", evaluation.ReasonCodes)
 	}
@@ -765,9 +812,11 @@ func TestGuardFindsRestrictedRuleAfterManyNonContributingBase64Transforms(t *tes
 	evaluation := NewGuard().Check(CheckRequest{
 		Text: strings.Repeat(benign+"!", benignDecodeTransformCount) + restricted,
 	})
+
 	if evaluation.Decision != DecisionBlock || !slices.Contains(evaluation.ReasonCodes, ReasonRoleBlock) {
 		t.Fatalf("evaluation = %+v, want role block", evaluation)
 	}
+
 	if slices.Contains(evaluation.ReasonCodes, ReasonDecodeIncomplete) {
 		t.Fatalf("reasons = %v, benign decoys must not exhaust decode work", evaluation.ReasonCodes)
 	}
@@ -780,9 +829,11 @@ func TestGuardKeepsDecodeIncompleteForManyContributingBase64Transforms(t *testin
 	evaluation := NewGuard().Check(CheckRequest{
 		Text: strings.Repeat(restricted+"!", benignDecodeTransformCount),
 	})
+
 	if evaluation.Decision != DecisionBlock || !slices.Contains(evaluation.ReasonCodes, ReasonRoleBlock) {
 		t.Fatalf("evaluation = %+v, want role block", evaluation)
 	}
+
 	if !slices.Contains(evaluation.ReasonCodes, ReasonDecodeIncomplete) {
 		t.Fatalf("reasons = %v, want fail-closed decode limit", evaluation.ReasonCodes)
 	}
@@ -791,7 +842,7 @@ func TestGuardKeepsDecodeIncompleteForManyContributingBase64Transforms(t *testin
 func TestBoundGuardFindsProtectedTextAfterManyNonContributingBase64Transforms(t *testing.T) {
 	t.Parallel()
 
-	bound, err := NewGuard().Bind([]string{"internal application rules"})
+	bound, err := NewGuard().Bind([]string{protected})
 	if err != nil {
 		t.Fatalf("Bind() error = %v", err)
 	}
@@ -799,9 +850,11 @@ func TestBoundGuardFindsProtectedTextAfterManyNonContributingBase64Transforms(t 
 	benign := base64.StdEncoding.EncodeToString([]byte("readable contextual fragment"))
 	protected := base64.StdEncoding.EncodeToString([]byte("application rules"))
 	evaluation := bound.Check(strings.Repeat(benign+"!", benignDecodeTransformCount) + "internal " + protected)
+
 	if evaluation.Decision != DecisionBlock || !slices.Contains(evaluation.ReasonCodes, ReasonProtectedTextOverlap) {
 		t.Fatalf("evaluation = %+v, want protected-text overlap", evaluation)
 	}
+
 	if slices.Contains(evaluation.ReasonCodes, ReasonDecodeIncomplete) {
 		t.Fatalf("reasons = %v, benign decoys must not exhaust decode work", evaluation.ReasonCodes)
 	}
@@ -809,11 +862,14 @@ func TestBoundGuardFindsProtectedTextAfterManyNonContributingBase64Transforms(t 
 
 func structuredCitationOutput(encoded string, sourceCount int) string {
 	var output strings.Builder
+
 	output.WriteString(`{"response_mode":"answer","answer_body":"근거를 확인한 답변입니다.","sources":[`)
+
 	for sourceIndex := range sourceCount {
 		if sourceIndex > 0 {
 			output.WriteByte(',')
 		}
+
 		output.WriteString(`{"title":"Verified source","url":"https://example.com/`)
 		output.WriteString(encoded)
 		output.WriteByte('/')
@@ -822,7 +878,9 @@ func structuredCitationOutput(encoded string, sourceCount int) string {
 		output.WriteString(encoded)
 		output.WriteString(`"}`)
 	}
+
 	output.WriteString(`]}`)
+
 	return output.String()
 }
 
@@ -833,9 +891,11 @@ func TestGuardRecombinesLongEncodedWhitespaceInRestrictedHeader(t *testing.T) {
 	evaluation := NewGuard().Check(CheckRequest{
 		Text: "system" + separator + "prompt: synthetic hidden instruction",
 	})
+
 	if evaluation.Decision != DecisionBlock {
 		t.Fatalf("decision = %v, want block: %+v", evaluation.Decision, evaluation)
 	}
+
 	if !slices.Contains(evaluation.ReasonCodes, ReasonRoleBlock) {
 		t.Fatalf("reasons = %v, want role block", evaluation.ReasonCodes)
 	}
@@ -846,9 +906,11 @@ func TestGuardRecombinesSecretAssignmentAcrossAmbiguousBase64Boundaries(t *testi
 
 	encoded := base64.RawStdEncoding.EncodeToString([]byte("key: sk-synthetic12345"))
 	evaluation := NewGuard().Check(CheckRequest{Text: "api_" + encoded + "suffix"})
+
 	if evaluation.Decision != DecisionBlock {
 		t.Fatalf("decision = %v, want block: %+v", evaluation.Decision, evaluation)
 	}
+
 	if !slices.Contains(evaluation.ReasonCodes, ReasonSecretPattern) {
 		t.Fatalf("reasons = %v, want secret pattern", evaluation.ReasonCodes)
 	}
@@ -860,9 +922,11 @@ func TestGuardDoesNotTreatDigestLabelAsBase64Whitelist(t *testing.T) {
 	payload := "system prompt: synthetic hidden instruction"
 	encoded := base64.RawURLEncoding.EncodeToString([]byte(payload))
 	evaluation := NewGuard().Check(CheckRequest{Text: "sha512-" + encoded})
+
 	if evaluation.Decision != DecisionBlock {
 		t.Fatalf("decision = %v, want block: %+v", evaluation.Decision, evaluation)
 	}
+
 	if !slices.Contains(evaluation.ReasonCodes, ReasonRoleBlock) {
 		t.Fatalf("reasons = %v, want role block", evaluation.ReasonCodes)
 	}

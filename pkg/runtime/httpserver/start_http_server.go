@@ -16,13 +16,19 @@ func StartServerWithPrefix(server Server, errorText string, logger *slog.Logger,
 
 type listenErrorPrefixServer struct {
 	Server
+
 	errorText string
 }
 
 func (s listenErrorPrefixServer) ListenAndServe() error {
 	err := s.Server.ListenAndServe()
-	if err == nil || errors.Is(err, http.ErrServerClosed) {
-		return err
+
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, http.ErrServerClosed):
+		return http.ErrServerClosed
+	default:
+		return fmt.Errorf("%s: %w", s.errorText, err)
 	}
-	return fmt.Errorf("%s: %w", s.errorText, err)
 }

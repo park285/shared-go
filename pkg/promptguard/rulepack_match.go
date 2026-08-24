@@ -24,6 +24,7 @@ func (r *compiledRule) appliesToTextSegment(segment textSegment) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -47,6 +48,7 @@ func (r *compiledRule) matchInput(segment textSegment, policy compiledPolicy) (s
 	if !r.appliesToTextSegment(segment) {
 		return "", 0, false
 	}
+
 	if segment.Aggregate && r.View != viewRaw && r.View != viewAggregateNorm && r.View != viewAggregateJoined {
 		return "", 0, false
 	}
@@ -55,28 +57,33 @@ func (r *compiledRule) matchInput(segment textSegment, policy compiledPolicy) (s
 	if strings.TrimSpace(text) == "" {
 		return "", 0, false
 	}
-	if r.View == viewRaw {
-		if !containsAllLiteralGroups(segment.rawNormalizedView(), r.RequiredLiteralGroups) {
-			if len(r.RawCasePrefilter) == 0 ||
-				!containsAllLiteralGroups(segment.rawNormalizedView(), r.RawCaseStablePrefilter) ||
-				!containsASCIIUpper(text) ||
-				!containsAllLiteralGroupsASCIIFold(text, r.RawCasePrefilter) {
-				return "", 0, false
-			}
-		}
-	} else {
-		if len(r.RequiredLiteralBranches) > 0 {
-			if !containsAnyLiteralBranch(text, r.RequiredLiteralBranches) {
-				return "", 0, false
-			}
-		} else if !containsAllLiteralGroups(text, r.RequiredLiteralGroups) {
-			return "", 0, false
-		}
+
+	if !r.literalPrefilterPasses(segment, text) {
+		return "", 0, false
 	}
 
 	weight := r.Weight * segmentWeightMultiplier(policy, segment) * policy.viewMultiplier(r.View)
 
 	return text, weight, weight > 0
+}
+
+func (r *compiledRule) literalPrefilterPasses(segment textSegment, text string) bool {
+	if r.View != viewRaw {
+		if len(r.RequiredLiteralBranches) > 0 {
+			return containsAnyLiteralBranch(text, r.RequiredLiteralBranches)
+		}
+
+		return containsAllLiteralGroups(text, r.RequiredLiteralGroups)
+	}
+
+	if containsAllLiteralGroups(segment.rawNormalizedView(), r.RequiredLiteralGroups) {
+		return true
+	}
+
+	return len(r.RawCasePrefilter) > 0 &&
+		containsAllLiteralGroups(segment.rawNormalizedView(), r.RawCaseStablePrefilter) &&
+		containsASCIIUpper(text) &&
+		containsAllLiteralGroupsASCIIFold(text, r.RawCasePrefilter)
 }
 
 func containsAnyLiteralBranch(text string, branches [][][]string) bool {
@@ -85,6 +92,7 @@ func containsAnyLiteralBranch(text string, branches [][][]string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -101,12 +109,14 @@ func containsASCIIUpper(text string) bool {
 func containsAllLiteralGroupsASCIIFold(text string, groups [][]string) bool {
 	for _, group := range groups {
 		matched := false
+
 		for _, literal := range group {
 			if containsASCIIFold(text, literal) {
 				matched = true
 				break
 			}
 		}
+
 		if !matched {
 			return false
 		}
@@ -119,22 +129,27 @@ func containsASCIIFold(text, literal string) bool {
 	if strings.Contains(text, literal) {
 		return true
 	}
+
 	if literal == "" || len(literal) > len(text) {
 		return literal == ""
 	}
+
 	for index := range len(literal) {
 		if literal[index] >= 0x80 {
 			return false
 		}
 	}
+
 	for start := 0; start <= len(text)-len(literal); start++ {
 		matched := true
+
 		for offset := range len(literal) {
 			if foldASCII(text[start+offset]) != foldASCII(literal[offset]) {
 				matched = false
 				break
 			}
 		}
+
 		if matched {
 			return true
 		}
@@ -158,12 +173,15 @@ func (r *compiledRule) matchRegexSegment(segment textSegment, text string, weigh
 	}
 
 	normalized := normalizeViews(text).Norm
+
 	if segment.Aggregate {
 		normalized = segment.rawNormalizedView()
 	}
+
 	if normalized == text {
 		return nil
 	}
+
 	return r.matchRegexText(segment, normalized, weight, limit)
 }
 
@@ -171,6 +189,7 @@ func (r *compiledRule) matchRegexText(segment textSegment, text string, weight f
 	if limit <= 0 {
 		limit = 1
 	}
+
 	if limit == 1 {
 		location := r.Pattern.FindStringIndex(text)
 		if location == nil {
@@ -179,8 +198,10 @@ func (r *compiledRule) matchRegexText(segment textSegment, text string, weight f
 
 		return []Match{newRuleMatch(r, segment, text[location[0]:location[1]], weight)}
 	}
+
 	spans := r.Pattern.FindAllString(text, limit)
 	matches := make([]Match, 0, len(spans))
+
 	for _, span := range spans {
 		matches = append(matches, newRuleMatch(r, segment, span, weight))
 	}
@@ -195,12 +216,15 @@ func (r *compiledRule) matchPhraseSegment(segment textSegment, text string, weig
 	}
 
 	normalized := normalizeViews(text).Norm
+
 	if segment.Aggregate {
 		normalized = segment.rawNormalizedView()
 	}
+
 	if normalized == text {
 		return nil
 	}
+
 	return r.matchPhraseText(segment, normalized, weight, limit)
 }
 
@@ -208,6 +232,7 @@ func (segment textSegment) rawNormalizedView() string {
 	if segment.Aggregate {
 		return segment.rawNorm
 	}
+
 	return segment.Views.Norm
 }
 
@@ -215,11 +240,13 @@ func (r *compiledRule) matchPhraseText(segment textSegment, text string, weight 
 	if limit <= 0 {
 		limit = 1
 	}
+
 	matches := make([]Match, 0, min(limit, len(r.Phrases)))
 	for _, phrase := range r.Phrases {
 		if !phraseMatches(text, phrase, r.MatchMode) {
 			continue
 		}
+
 		matches = append(matches, newRuleMatch(r, segment, phrase, weight))
 		if len(matches) >= limit {
 			break
@@ -245,6 +272,7 @@ func containsAllLiteralGroups(text string, groups [][]string) bool {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -275,7 +303,9 @@ func segmentWeightMultiplier(policy compiledPolicy, segment textSegment) float64
 	if !segment.Aggregate || segment.Kinds == 0 {
 		return policy.segmentMultiplier(segment.Kind)
 	}
+
 	multiplier := 0.0
+
 	for _, kind := range allSegmentKinds {
 		if segment.Kinds.contains(kind) {
 			multiplier = max(multiplier, policy.segmentMultiplier(kind))
@@ -289,18 +319,23 @@ func phraseMatches(text, phrase, mode string) bool {
 	if mode != phraseMatchToken {
 		return strings.Contains(text, phrase)
 	}
+
 	for start := 0; start <= len(text)-len(phrase); {
 		index := strings.Index(text[start:], phrase)
 		if index < 0 {
 			return false
 		}
+
 		index += start
+
 		beforeOK := index == 0 || !isTokenRuneBefore(text, index)
 		after := index + len(phrase)
 		afterOK := after == len(text) || !isTokenRuneAfter(text, after)
+
 		if beforeOK && afterOK {
 			return true
 		}
+
 		start = index + 1
 	}
 

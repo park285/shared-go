@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	// overlay(Tailscale) MTU에서 fragmentation 없이 통과하는 보수값.
+	// Overlay(Tailscale) MTU에서 fragmentation 없이 통과하는 보수값.
 	initialPacketSize = 1200
 
 	serverKeepAlivePeriod = 10 * time.Second
@@ -75,8 +75,9 @@ func NewClient(timeout time.Duration, opts ClientOptions) (*http.Client, func(),
 	if opts.CACertFile != "" {
 		roots, err := loadRootCAs(opts.CACertFile)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, fmt.Errorf("load root c as: %w", err)
 		}
+
 		tlsConfig.RootCAs = roots
 	}
 
@@ -84,38 +85,9 @@ func NewClient(timeout time.Duration, opts ClientOptions) (*http.Client, func(),
 		TLSClientConfig: tlsConfig,
 		QUICConfig:      newClientQUICConfig(),
 	}
+
 	if opts.DialGuard != nil {
-		guard := opts.DialGuard
-		transport.Dial = func(ctx context.Context, addr string, tlsCfg *tls.Config, cfg *quic.Config) (*quic.Conn, error) {
-			host, port, err := net.SplitHostPort(addr)
-			if err != nil {
-				return nil, fmt.Errorf("split h3 dial addr %s: %w", addr, err)
-			}
-
-			// net.ResolveUDPAddr는 ctx를 받지 않는다. transport.Close()는 mutex를 쥔 채
-			// dial 취소를 기다리므로, 이름 해석이 ctx를 무시하면 종료와 그 client의 다른
-			// 요청이 resolver 타임아웃 전부를 함께 기다린다.
-			addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
-			if err != nil {
-				return nil, fmt.Errorf("resolve h3 dial addr %s: %w", addr, err)
-			}
-			if len(addrs) == 0 {
-				return nil, fmt.Errorf("resolve h3 dial addr %s: no addresses", addr)
-			}
-
-			chosen := preferIPv4(addrs)
-
-			// net.IP의 판별 메서드는 nil/unspecified에서 전부 false라, 올바른 guard도
-			// 이 주소를 허용한다. guard에 넘기기 전에 거른다.
-			if len(chosen.IP) == 0 || chosen.IP.IsUnspecified() {
-				return nil, fmt.Errorf("reject h3 dial addr %s: unusable destination address", addr)
-			}
-
-			if guardErr := guard(chosen.IP); guardErr != nil {
-				return nil, guardErr
-			}
-			return quic.DialAddrEarly(ctx, net.JoinHostPort(dialHost(chosen), port), tlsCfg, cfg)
-		}
+		transport.Dial = newGuardedDialer(opts.DialGuard)
 	}
 
 	client := &http.Client{
@@ -126,6 +98,41 @@ func NewClient(timeout time.Duration, opts ClientOptions) (*http.Client, func(),
 	return client, func() {
 		_ = transport.Close() //nolint:errcheck // 종료 시 transport 정리 실패는 무시
 	}, nil
+}
+
+func newGuardedDialer(guard func(net.IP) error) func(ctx context.Context, addr string, tlsCfg *tls.Config, cfg *quic.Config) (*quic.Conn, error) {
+	return func(ctx context.Context, addr string, tlsCfg *tls.Config, cfg *quic.Config) (*quic.Conn, error) {
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, fmt.Errorf("split h3 dial addr %s: %w", addr, err)
+		}
+
+		// net.ResolveUDPAddr는 ctx를 받지 않는다. transport.Close()는 mutex를 쥔 채
+		// dial 취소를 기다리므로, 이름 해석이 ctx를 무시하면 종료와 그 client의 다른
+		// 요청이 resolver 타임아웃 전부를 함께 기다린다.
+		addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+		if err != nil {
+			return nil, fmt.Errorf("resolve h3 dial addr %s: %w", addr, err)
+		}
+
+		if len(addrs) == 0 {
+			return nil, fmt.Errorf("resolve h3 dial addr %s: no addresses", addr)
+		}
+
+		chosen := preferIPv4(addrs)
+
+		// net.IP의 판별 메서드는 nil/unspecified에서 전부 false라, 올바른 guard도
+		// 이 주소를 허용한다. guard에 넘기기 전에 거른다.
+		if len(chosen.IP) == 0 || chosen.IP.IsUnspecified() {
+			return nil, fmt.Errorf("reject h3 dial addr %s: unusable destination address", addr)
+		}
+
+		if guardErr := guard(chosen.IP); guardErr != nil {
+			return nil, fmt.Errorf("guard: %w", guardErr)
+		}
+
+		return quic.DialAddrEarly(ctx, net.JoinHostPort(dialHost(chosen), port), tlsCfg, cfg)
+	}
 }
 
 // net.ResolveUDPAddr는 호스트명에 대해 addrList.first(isIPv4)로 IPv4를 우선 선택했다.

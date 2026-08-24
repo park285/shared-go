@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/park285/shared-go/v2/pkg/internal/testsupport"
 )
 
 type syncBuffer struct {
@@ -23,14 +25,22 @@ func (b *syncBuffer) Write(p []byte) (int, error) {
 		b.once.Do(func() { close(b.started) })
 		<-b.release
 	}
+
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.buf.Write(p)
+
+	out, err := b.buf.Write(p)
+	if err != nil {
+		return out, fmt.Errorf("write: %w", err)
+	}
+
+	return out, nil
 }
 
 func (b *syncBuffer) String() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
 	return b.buf.String()
 }
 
@@ -41,15 +51,18 @@ func TestAsyncDropWriter_CloseWritesDropSummary(t *testing.T) {
 	target := &syncBuffer{started: make(chan struct{}), release: make(chan struct{})}
 	releaseTarget := sync.OnceFunc(func() { close(target.release) })
 	t.Cleanup(releaseTarget)
+
 	w := newAsyncDropWriter(target, 1)
 
-	w.Write([]byte("line-0\n"))
+	testsupport.WriteResponse(t, w, "line-0\n")
 	<-target.started
-	w.Write([]byte("line-1\n"))
-	w.Write([]byte("line-2\n"))
+	testsupport.WriteResponse(t, w, "line-1\n")
+	testsupport.WriteResponse(t, w, "line-2\n")
+
 	if w.droppedCount() == 0 {
 		t.Fatal("droppedCount() = 0, want > 0 when queue overflows")
 	}
+
 	releaseTarget()
 
 	if err := w.Close(); err != nil {
@@ -60,6 +73,7 @@ func TestAsyncDropWriter_CloseWritesDropSummary(t *testing.T) {
 	if !strings.Contains(out, "dropped") {
 		t.Fatalf("expected drop summary line in target output, got: %q", out)
 	}
+
 	if !strings.Contains(out, "async stdout writer") {
 		t.Fatalf("expected async writer label in summary, got: %q", out)
 	}
@@ -71,17 +85,21 @@ func TestAsyncDropWriter_CloseSummaryKeepsJSONFormat(t *testing.T) {
 	target := &syncBuffer{started: make(chan struct{}), release: make(chan struct{})}
 	releaseTarget := sync.OnceFunc(func() { close(target.release) })
 	t.Cleanup(releaseTarget)
+
 	w := newAsyncDropWriter(target, 1)
 
 	logger := slog.New(newFormatHandler(slog.LevelInfo, w))
 	logger.Info("first")
 	<-target.started
+
 	for range 8 {
 		logger.Info("overflow")
 	}
+
 	if w.droppedCount() == 0 {
 		t.Fatal("droppedCount() = 0, want > 0 when queue overflows")
 	}
+
 	releaseTarget()
 
 	if err := w.Close(); err != nil {
@@ -89,14 +107,18 @@ func TestAsyncDropWriter_CloseSummaryKeepsJSONFormat(t *testing.T) {
 	}
 
 	var summary map[string]any
+
 	for line := range strings.SplitSeq(strings.TrimSpace(target.String()), "\n") {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
+
 		var record map[string]any
+
 		if err := jsonv2.Unmarshal([]byte(line), &record); err != nil {
 			t.Fatalf("non-JSON line in json stdout stream: %q (%v)", line, err)
 		}
+
 		if msg, ok := record[slog.MessageKey].(string); ok && strings.Contains(msg, "lost lines") {
 			summary = record
 		}
@@ -105,9 +127,11 @@ func TestAsyncDropWriter_CloseSummaryKeepsJSONFormat(t *testing.T) {
 	if summary == nil {
 		t.Fatalf("drop summary record missing: %q", target.String())
 	}
+
 	if got := summary["dropped"]; got == nil || got == float64(0) {
 		t.Fatalf("summary dropped = %v, want > 0", got)
 	}
+
 	if got, ok := summary[slog.SourceKey]; ok {
 		t.Fatalf("summary carries a synthetic source attr: %v", got)
 	}
@@ -121,7 +145,7 @@ func TestEnableFileLogging_AsyncSummaryKeepsJSONFormat(t *testing.T) {
 	t.Cleanup(releaseStdout)
 
 	config := Config{
-		Level:      "info",
+		Level:      testInfo,
 		Format:     FormatJSON,
 		Dir:        t.TempDir(),
 		MaxSizeMB:  5,
@@ -135,24 +159,30 @@ func TestEnableFileLogging_AsyncSummaryKeepsJSONFormat(t *testing.T) {
 	}
 
 	<-stdout.started
+
 	for seq := range asyncStdoutQueueDepth * 2 {
 		logger.Info("async_format_probe", "seq", seq)
 	}
 
 	releaseStdout()
+
 	if err := closer.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)
 	}
 
 	var summary map[string]any
+
 	for line := range strings.SplitSeq(strings.TrimSpace(stdout.String()), "\n") {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
+
 		var record map[string]any
+
 		if err := jsonv2.Unmarshal([]byte(line), &record); err != nil {
 			t.Fatalf("non-JSON line in json stdout stream: %q (%v)", line, err)
 		}
+
 		if msg, ok := record[slog.MessageKey].(string); ok && strings.Contains(msg, "lost lines") {
 			summary = record
 		}
@@ -161,6 +191,7 @@ func TestEnableFileLogging_AsyncSummaryKeepsJSONFormat(t *testing.T) {
 	if summary == nil {
 		t.Fatalf("drop summary missing — the stalled queue never overflowed: %q", stdout.String())
 	}
+
 	if got := summary["dropped"]; got == nil || got == float64(0) {
 		t.Fatalf("summary dropped = %v, want > 0", got)
 	}
@@ -170,7 +201,9 @@ func TestAsyncDropWriter_CloseIsIdempotent(t *testing.T) {
 	t.Parallel()
 
 	var target syncBuffer
+
 	w := newAsyncDropWriter(&target, 8)
+
 	w.maxLineBytes = 16
 
 	if _, err := w.Write(bytes.Repeat([]byte("A"), 1024)); err != nil {
@@ -188,13 +221,15 @@ func TestAsyncDropWriter_CloseIsIdempotent(t *testing.T) {
 	}
 }
 
-// target은 이 파일의 syncBuffer가 아니라 동기화 없는 buffer여야 한다. syncBuffer로 바꾸면
+// target은 이 파일의 syncBuffer가 아니라 동기화 없는 buffer여야 한다. SyncBuffer로 바꾸면
 // 요약 경로의 동시 진입이 mutex에 가려 -race가 아무것도 잡지 못한다.
 func TestAsyncDropWriter_ConcurrentCloseDoesNotRaceOnTarget(t *testing.T) {
 	t.Parallel()
 
 	var target bytes.Buffer
+
 	w := newAsyncDropWriter(&target, 8)
+
 	w.maxLineBytes = 16
 
 	if _, err := w.Write(bytes.Repeat([]byte("A"), 1024)); err != nil {
@@ -202,19 +237,25 @@ func TestAsyncDropWriter_ConcurrentCloseDoesNotRaceOnTarget(t *testing.T) {
 	}
 
 	const closers = 4
+
 	start := make(chan struct{})
+
 	var wg sync.WaitGroup
 
 	wg.Add(closers)
+
 	for range closers {
 		go func() {
 			defer wg.Done()
+
 			<-start
+
 			if err := w.Close(); err != nil {
 				t.Errorf("Close() error = %v", err)
 			}
 		}()
 	}
+
 	close(start)
 	wg.Wait()
 
@@ -228,10 +269,11 @@ func TestAsyncDropWriter_CloseNoSummaryWhenNoDrops(t *testing.T) {
 	t.Parallel()
 
 	var target syncBuffer
+
 	w := newAsyncDropWriter(&target, 64)
 
 	for i := range 10 {
-		w.Write(fmt.Appendf(nil, "line-%d\n", i))
+		testsupport.WriteBytes(t, w, fmt.Appendf(nil, "line-%d\n", i))
 	}
 
 	if err := w.Close(); err != nil {

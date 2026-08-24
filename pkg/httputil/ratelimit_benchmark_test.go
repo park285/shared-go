@@ -15,12 +15,14 @@ func BenchmarkFixedWindowAllowHotIdentity(b *testing.B) {
 				EntryTTL:      time.Hour,
 				Now:           func() time.Time { return now },
 			})
+
 			for i := range cardinality {
 				limiter.Allow(fmt.Sprintf("identity-%05d", i))
 			}
 
 			b.ReportAllocs()
 			b.ResetTimer()
+
 			for range b.N {
 				limiter.Allow("identity-00000")
 			}
@@ -35,12 +37,14 @@ func BenchmarkFixedWindowAllowUniqueAtCapacity(b *testing.B) {
 		EntryTTL:      time.Hour,
 		Now:           func() time.Time { return now },
 	})
+
 	for i := range 10000 {
 		limiter.Allow(fmt.Sprintf("prefill-%05d", i))
 	}
 
 	b.ReportAllocs()
 	b.ResetTimer()
+
 	for i := range b.N {
 		limiter.Allow(fmt.Sprintf("churn-%08d", i))
 	}
@@ -55,12 +59,14 @@ func BenchmarkLoginFailureIsAllowedSaturatedMiss(b *testing.B) {
 				Window:        time.Hour,
 				Now:           func() time.Time { return now },
 			})
+
 			for i := range cardinality {
 				limiter.IsAllowed(fmt.Sprintf("prefill-%05d", i))
 			}
 
 			b.ReportAllocs()
 			b.ResetTimer()
+
 			for range b.N {
 				limiter.IsAllowed("unseen-at-capacity")
 			}

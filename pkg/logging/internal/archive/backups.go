@@ -26,6 +26,7 @@ func matchingCompressedBackupNames(dir, baseName string) ([]string, error) {
 	prefix, ext := backupPrefixAndExt(baseName)
 	suffix := ext + CompressSuffix
 	names := make([]string, 0, len(entries))
+
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -35,17 +36,19 @@ func matchingCompressedBackupNames(dir, baseName string) ([]string, error) {
 		if !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, suffix) {
 			continue
 		}
+
 		names = append(names, name)
 	}
 
 	slices.Sort(names)
+
 	return names, nil
 }
 
 func pruneArchivedCompressedBackups(archiveDir, baseName string, maxBackups, maxAgeDays int) error {
 	files, err := archivedCompressedBackups(archiveDir, baseName)
 	if err != nil {
-		return err
+		return fmt.Errorf("archived compressed backups: %w", err)
 	}
 
 	removeByPath := make(map[string]struct{})
@@ -54,7 +57,11 @@ func pruneArchivedCompressedBackups(archiveDir, baseName string, maxBackups, max
 	slices.SortFunc(files, compareArchivedLogFileNewestFirst)
 	collectArchivedBackupsBeyondLimit(files, maxBackups, removeByPath)
 
-	return removeArchivedCompressedBackupPaths(removeByPath)
+	if err := removeArchivedCompressedBackupPaths(removeByPath); err != nil {
+		return fmt.Errorf("remove archived compressed backup paths: %w", err)
+	}
+
+	return nil
 }
 
 func collectArchivedBackupsOlderThan(files []archivedLogFile, maxAgeDays int, removeByPath map[string]struct{}) {
@@ -63,6 +70,7 @@ func collectArchivedBackupsOlderThan(files []archivedLogFile, maxAgeDays int, re
 	}
 
 	cutoff := time.Now().Add(-time.Duration(maxAgeDays) * 24 * time.Hour)
+
 	for _, file := range files {
 		if file.timestamp.Before(cutoff) {
 			removeByPath[file.path] = struct{}{}
@@ -74,9 +82,11 @@ func compareArchivedLogFileNewestFirst(a, b archivedLogFile) int {
 	if a.timestamp.After(b.timestamp) {
 		return -1
 	}
+
 	if a.timestamp.Before(b.timestamp) {
 		return 1
 	}
+
 	return 0
 }
 
@@ -106,12 +116,14 @@ func archivedCompressedBackups(archiveDir, baseName string) ([]archivedLogFile, 
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
+
 		return nil, fmt.Errorf("archived compressed backups: read dir: %w", err)
 	}
 
 	prefix, ext := backupPrefixAndExt(baseName)
 	suffix := ext + CompressSuffix
 	files := make([]archivedLogFile, 0, len(entries))
+
 	for _, entry := range entries {
 		files = appendArchivedCompressedBackup(files, archiveDir, prefix, suffix, entry)
 	}
@@ -156,6 +168,7 @@ func backupTimestampFromName(name, prefix, suffix string) (time.Time, error) {
 	if !ok {
 		return time.Time{}, fmt.Errorf("unexpected backup name: %s", name)
 	}
+
 	timestamp, ok = strings.CutSuffix(timestamp, suffix)
 	if !ok {
 		return time.Time{}, fmt.Errorf("unexpected backup name: %s", name)
@@ -165,5 +178,6 @@ func backupTimestampFromName(name, prefix, suffix string) (time.Time, error) {
 	if err != nil {
 		return time.Time{}, fmt.Errorf("backup timestamp from name: parse %q: %w", timestamp, err)
 	}
+
 	return parsed, nil
 }

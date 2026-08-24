@@ -2,11 +2,10 @@ package promptguard
 
 import (
 	"bufio"
+	jsonv2 "encoding/json/v2"
 	"os"
 	"slices"
 	"testing"
-
-	jsonv2 "encoding/json/v2"
 )
 
 type corpusCase struct {
@@ -36,6 +35,7 @@ func TestEmbeddedRulepackCorpusV3(t *testing.T) {
 			}
 
 			actualRules := matchedRuleIDs(evaluation.Hits)
+
 			for _, expected := range tc.ExpectedRules {
 				if !slices.Contains(actualRules, expected) {
 					t.Errorf("detected rules = %v, want %q", actualRules, expected)
@@ -48,24 +48,30 @@ func TestEmbeddedRulepackCorpusV3(t *testing.T) {
 func readCorpusCases(t *testing.T, path string) []corpusCase {
 	t.Helper()
 
-	file, err := os.Open(path)
+	file, err := os.Open(path) //nolint:gosec // 테스트가 만든 임시 디렉터리 경로만 읽는다.
 	if err != nil {
 		t.Fatalf("open corpus: %v", err)
 	}
 	defer file.Close()
 
 	var cases []corpusCase
+
 	scanner := bufio.NewScanner(file)
+
 	for line := 1; scanner.Scan(); line++ {
 		var tc corpusCase
+
 		if err := jsonv2.Unmarshal(scanner.Bytes(), &tc); err != nil {
 			t.Fatalf("decode corpus line %d: %v", line, err)
 		}
+
 		if tc.ID == "" || tc.Input == "" || tc.ExpectedDecision == "" {
 			t.Fatalf("corpus line %d has an incomplete contract", line)
 		}
+
 		cases = append(cases, tc)
 	}
+
 	if err := scanner.Err(); err != nil {
 		t.Fatalf("scan corpus: %v", err)
 	}
@@ -78,6 +84,7 @@ func assertCorpusMinimums(t *testing.T, cases []corpusCase) {
 
 	counts := map[string]int{}
 	webMalicious := 0
+
 	for _, tc := range cases {
 		counts[tc.Class]++
 		if tc.Class == "malicious" && tc.Surface == "web_search_result" {
@@ -91,6 +98,7 @@ func assertCorpusMinimums(t *testing.T, cases []corpusCase) {
 			t.Errorf("%s corpus count = %d, want >= %d", class, counts[class], minimum)
 		}
 	}
+
 	if webMalicious < 8 {
 		t.Errorf("malicious web corpus count = %d, want >= 8", webMalicious)
 	}

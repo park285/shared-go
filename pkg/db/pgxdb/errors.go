@@ -15,6 +15,7 @@ func IsDuplicateKey(err error) bool {
 	if err == nil {
 		return false
 	}
+
 	pgErr, ok := errors.AsType[*pgconn.PgError](err)
 
 	return ok && pgErr.Code == sqlstateUniqueViolation

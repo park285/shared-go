@@ -56,6 +56,7 @@ type QueueSampler struct {
 // NewQueueSampler는 아직 관측되지 않은 sampler를 만든다.
 func NewQueueSampler(source QueueSnapshotSource) *QueueSampler {
 	code := QueueNotSampled
+
 	return &QueueSampler{
 		source: source,
 		latest: QueueSnapshot{Status: QueueSnapshotUnavailable, ErrorCode: &code},
@@ -68,29 +69,37 @@ func (s *QueueSampler) Sample(ctx context.Context, now time.Time) QueueSnapshot 
 		code := QueueSnapshotFailed
 		return QueueSnapshot{Status: QueueSnapshotUnavailable, ErrorCode: &code}
 	}
+
 	queryCtx, cancel := context.WithTimeout(ctx, QueueSampleTimeout)
 	values, err := s.source(queryCtx)
+
 	cancel()
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	if err != nil || values.Depth < 0 || values.OldestQueuedAge < 0 ||
 		(values.Depth == 0 && values.OldestQueuedAge != 0) {
 		code := QueueSnapshotFailed
+
 		s.latest.Status = QueueSnapshotUnavailable
 		s.latest.Depth = nil
 		s.latest.OldestQueuedAgeMS = nil
 		s.latest.ErrorCode = &code
+
 		return cloneQueueSnapshot(s.latest)
 	}
+
 	depth := values.Depth
 	ageMS := values.OldestQueuedAge.Milliseconds()
 	successAt := now.UnixMilli()
+
 	s.latest = QueueSnapshot{
 		Status:               QueueSnapshotCurrent,
 		Depth:                &depth,
 		OldestQueuedAgeMS:    &ageMS,
 		LastSuccessAtEpochMS: &successAt,
 	}
+
 	return cloneQueueSnapshot(s.latest)
 }
 
@@ -100,8 +109,11 @@ func (s *QueueSampler) Latest() QueueSnapshot {
 		code := QueueNotSampled
 		return QueueSnapshot{Status: QueueSnapshotUnavailable, ErrorCode: &code}
 	}
+
 	s.mu.RLock()
+
 	defer s.mu.RUnlock()
+
 	return cloneQueueSnapshot(s.latest)
 }
 
@@ -110,9 +122,13 @@ func (s *QueueSampler) Run(ctx context.Context) {
 	if s == nil {
 		return
 	}
+
 	s.Sample(ctx, time.Now())
+
 	ticker := time.NewTicker(QueueSampleInterval)
+
 	defer ticker.Stop()
+
 	for {
 		select {
 		case sampledAt := <-ticker.C:
@@ -129,8 +145,10 @@ func CurrentQueueSnapshot(depth int64, oldestQueuedAge time.Duration, observedAt
 		code := QueueSnapshotFailed
 		return QueueSnapshot{Status: QueueSnapshotUnavailable, ErrorCode: &code}
 	}
+
 	ageMS := oldestQueuedAge.Milliseconds()
 	successAt := observedAt.UnixMilli()
+
 	return QueueSnapshot{
 		Status:               QueueSnapshotCurrent,
 		Depth:                &depth,
@@ -143,19 +161,27 @@ func cloneQueueSnapshot(snapshot QueueSnapshot) QueueSnapshot {
 	clone := snapshot
 	if snapshot.Depth != nil {
 		value := *snapshot.Depth
+
 		clone.Depth = &value
 	}
+
 	if snapshot.OldestQueuedAgeMS != nil {
 		value := *snapshot.OldestQueuedAgeMS
+
 		clone.OldestQueuedAgeMS = &value
 	}
+
 	if snapshot.LastSuccessAtEpochMS != nil {
 		value := *snapshot.LastSuccessAtEpochMS
+
 		clone.LastSuccessAtEpochMS = &value
 	}
+
 	if snapshot.ErrorCode != nil {
 		value := *snapshot.ErrorCode
+
 		clone.ErrorCode = &value
 	}
+
 	return clone
 }

@@ -30,7 +30,7 @@ type filteredBase64Options struct {
 	emitNonContributingReadableWholes bool
 }
 
-// ruleBase64Spans는 rules 표준 경로용 수집기다. suspect 경계 열거는 소비 단계가
+// ruleBase64Spans는 rules 표준 경로용 수집기다. Suspect 경계 열거는 소비 단계가
 // 동일 분류를 재수행하므로 기여 스팬만 방출해도 탐지 결과가 같고, 걸러야 junk
 // suspect의 우연-가독 subspan 노이즈가 scan 예산을 소진하지 않는다. 반면 가독
 // whole은 비기여여도 방출해야 한다: observeRuleExpansion이 그 splice 이음새에서
@@ -72,20 +72,26 @@ func filteredBase64Spans(
 ) []encodedSpan {
 	spans := make([]encodedSpan, 0, min(maxDecodeScans+1, len(input)/4))
 	for i := 0; i < len(input) && len(spans) <= maxDecodeScans && decodeWorkComplete(status); {
-		start := i
+		start := i //nolint:copyloopvar // 루프 변수가 본문에서 전진하므로 시작 위치를 따로 보존한다.
 		match := nextBase64Candidate(input, i)
+
 		i = match.next
+
 		if len(match.value) < minimum {
 			continue
 		}
+
 		if declaredNonTextDataPayload(input, start) {
 			continue
 		}
+
 		whole := encodedSpan{start: start, end: match.next}
 		if seenWholes.duplicate(input, whole) {
 			continue
 		}
+
 		enumerateBoundaries := looksLikeEmbeddedBase64(match.value)
+
 		spans = appendProtectedBase64Boundaries(
 			spans,
 			input,
@@ -99,6 +105,7 @@ func filteredBase64Spans(
 			status,
 		)
 	}
+
 	return spans
 }
 
@@ -117,9 +124,11 @@ func appendProtectedBase64Boundaries(
 	spans, wholeReadable := appendProtectedBase64Span(spans, input, whole, chargeReadableOnly, options.strictContribution, options.matchContext, options.emitNonContributingReadableWholes, mayContribute, work, status)
 	wholeIsPadded := whole.end > whole.start && input[whole.end-1] == '='
 	skipReadableWhole := wholeReadable && (wholeIsPadded || !options.enumerateReadable)
+
 	if len(spans) > maxDecodeScans || !decodeWorkComplete(status) || !enumerateBoundaries || skipReadableWhole {
 		return spans
 	}
+
 	if pathSegments, ok := httpURLPathBase64Segments(input, whole, minimum); ok {
 		for _, segment := range pathSegments {
 			spans = appendProtectedBase64Boundaries(
@@ -141,10 +150,12 @@ func appendProtectedBase64Boundaries(
 
 		return spans
 	}
+
 	spans = appendProtectedBase64Prefixes(spans, input, whole, minimum, options.strictContribution, options.matchContext, mayContribute, embeddedContextMayContribute, work, status)
 	if protectedBase64EnumerationDone(spans, status) {
 		return spans
 	}
+
 	spans = appendProtectedBase64Suffixes(spans, input, whole, minimum, options.strictContribution, options.matchContext, mayContribute, embeddedContextMayContribute, work, status)
 	if protectedBase64EnumerationDone(spans, status) {
 		return spans
@@ -161,26 +172,34 @@ func httpURLPathBase64Segments(input string, whole encodedSpan, minimum int) ([]
 	lookbackStart := max(0, whole.start-maxDecodedCandidateLen)
 	prefix := input[lookbackStart:whole.start]
 	schemeStart := lastHTTPURLScheme(prefix)
+
 	if schemeStart < 0 {
 		return nil, false
 	}
+
 	schemeStart += lookbackStart
+
 	between := input[schemeStart:whole.start]
+
 	if strings.ContainsAny(between, "\t\n\r \"'<>[]{}") || strings.ContainsAny(between, "?#") {
 		return nil, false
 	}
 
 	segments := make([]encodedSpan, 0, 3)
 	segmentStart := whole.start
+
 	for position := whole.start; position < whole.end; position++ {
 		if input[position] != '/' {
 			continue
 		}
+
 		if position-segmentStart >= minimum {
 			segments = append(segments, encodedSpan{start: segmentStart, end: position})
 		}
+
 		segmentStart = position + 1
 	}
+
 	if whole.end-segmentStart >= minimum {
 		segments = append(segments, encodedSpan{start: segmentStart, end: whole.end})
 	}
@@ -194,6 +213,7 @@ func lastHTTPURLScheme(input string) int {
 		if len(remaining) >= len("https://") && strings.EqualFold(remaining[:len("https://")], "https://") {
 			return start
 		}
+
 		if strings.EqualFold(remaining[:len("http://")], "http://") {
 			return start
 		}
@@ -290,32 +310,40 @@ func appendProtectedBase64Span(
 	if !readable {
 		return spans, false
 	}
+
 	var (
 		contributes  bool
 		nested       DecodeResult
 		nestedStatus DecodeStatus
 	)
+
 	if strictContribution {
 		contributes, nested, nestedStatus = matchingDecodedContributionDetails(decoded, mayContribute)
 	} else {
 		contributes, nestedStatus = protectedDecodedContribution(decoded, mayContribute)
 	}
+
 	mergeDecodeStatus(status, nestedStatus)
+
 	if !contributes && matchContext {
 		contextBytes := len(input) - (span.end - span.start) + len(decoded)
 		if !consumeProtectedContextWork(work, status, contextBytes) {
 			return spans, true
 		}
+
 		if strictContribution {
 			contributes, nestedStatus = matchingContextualDecodedContribution(input, span, decoded, nested, mayContribute, work)
 		} else {
 			contributes, nestedStatus = contextualWindowContribution(contextualMatchSurface(input, span, decoded), mayContribute)
 		}
+
 		mergeDecodeStatus(status, nestedStatus)
 	}
+
 	if !contributes && !emitNonContributingReadable {
 		return spans, true
 	}
+
 	if len(spans) == 0 || spans[len(spans)-1] != span {
 		spans = append(spans, span)
 	}
@@ -344,18 +372,23 @@ func appendEmbeddedProtectedBase64Span(
 	if !readable {
 		return spans, false
 	}
+
 	direct, nested, nestedStatus := matchingDecodedContributionDetails(decoded, mayContribute)
 	mergeDecodeStatus(status, nestedStatus)
+
 	if !decodeWorkComplete(status) {
 		return spans, true
 	}
+
 	contributes := mode == embeddedDirectOrContext && direct
 	if !contributes {
 		contributes = embeddedContextContributes(input, span, decoded, nested, embeddedContextMayContribute)
 	}
+
 	if !contributes {
 		return spans, true
 	}
+
 	if len(spans) == 0 || spans[len(spans)-1] != span {
 		spans = append(spans, span)
 	}
@@ -400,13 +433,16 @@ func decodeProtectedBase64Span(
 	if (span.end-span.start)%4 == 1 {
 		return "", false
 	}
+
 	if charge == chargePerAttempt && !consumeProtectedDecodeWork(work, status, span.end-span.start) {
 		return "", false
 	}
+
 	decoded, err := DecodeBase64Candidate(input[span.start:span.end])
 	if err != nil || !IsReadableText(decoded) {
 		return "", false
 	}
+
 	if charge == chargeReadableOnly && !consumeProtectedDecodeWork(work, status, span.end-span.start) {
 		return "", false
 	}
@@ -417,28 +453,36 @@ func decodeProtectedBase64Span(
 func protectedHexSpans(input string, mayContribute func(string) bool, work *protectedDecodeWork, status *DecodeStatus) []encodedSpan {
 	matches := shortHexPayloadPattern.FindAllStringSubmatchIndex(input, maxProtectedDecodeTries+1)
 	spans := make([]encodedSpan, 0, min(len(matches), maxDecodeScans+1))
+
 	for _, match := range matches {
 		if len(match) != 4 {
 			continue
 		}
+
 		span := encodedSpan{start: match[2], end: match[3]}
 		decoded, err := decodeHexPayload(input[span.start:span.end])
+
 		if err != nil || !IsReadableText(decoded) {
 			continue
 		}
+
 		if !consumeProtectedDecodeWork(work, status, span.end-span.start) {
 			break
 		}
+
 		contributes, nestedStatus := protectedDecodedContribution(string(decoded), mayContribute)
 		mergeDecodeStatus(status, nestedStatus)
+
 		if !contributes {
 			continue
 		}
+
 		spans = append(spans, span)
 		if len(spans) > maxDecodeScans {
 			break
 		}
 	}
+
 	if len(matches) > maxProtectedDecodeTries {
 		markProtectedDecodeWorkIncomplete(status)
 	}
@@ -462,23 +506,29 @@ func matchingDecodedContributionDetails(decoded string, mayContribute func(strin
 	if mayContribute == nil || mayContribute(decoded) {
 		return true, DecodeResult{}, 0
 	}
+
 	nested := DecodeCandidates(decoded)
 	if !nested.Complete() {
 		return false, nested, nested.Status
 	}
+
 	if slices.ContainsFunc(nested.Candidates, mayContribute) {
 		return true, nested, 0
 	}
+
 	if nested.maxDepth >= maxDecodeDepth {
 		return false, nested, DecodeDepthLimit
 	}
+
 	if shortNestedDecodeMayContribute(decoded, mayContribute) {
 		return true, nested, 0
 	}
+
 	if shortResult, ok := decodeSingleShortRuleContext(decoded, mayContribute); ok {
 		if !shortResult.Complete() {
 			return false, nested, shortResult.Status
 		}
+
 		if len(shortResult.Candidates) > 0 {
 			return true, nested, 0
 		}
@@ -505,15 +555,19 @@ func matchingContextualDecodedContribution(
 	if mayContribute == nil {
 		return true, 0
 	}
+
 	if mayContribute(contextualMatchSurface(input, span, decoded)) {
 		return true, 0
 	}
+
 	var status DecodeStatus
+
 	for _, candidate := range nested.Candidates {
 		surface := contextualMatchSurface(input, span, candidate)
 		if !consumeProtectedContextWork(work, &status, len(surface)) {
 			return false, status
 		}
+
 		if mayContribute(surface) {
 			return true, status
 		}
@@ -538,16 +592,20 @@ func decodedContribution(decoded string, mayContribute func(string) bool, retain
 	if mayContribute == nil || mayContribute(decoded) {
 		return true, 0
 	}
+
 	nested := DecodeCandidates(decoded)
 	if !nested.Complete() {
 		return false, nested.Status
 	}
+
 	if slices.ContainsFunc(nested.Candidates, mayContribute) {
 		return true, 0
 	}
+
 	if shortNestedDecodeMayContribute(decoded, mayContribute) {
 		return true, 0
 	}
+
 	if retainPotentialNested && hasPlausibleShortDecodeSurface(decoded) {
 		return true, 0
 	}
@@ -558,15 +616,19 @@ func decodedContribution(decoded string, mayContribute func(string) bool, retain
 func shortNestedDecodeMayContribute(input string, mayContribute func(string) bool) bool {
 	for i := 0; i < len(input); {
 		match := nextBase64Candidate(input, i)
+
 		i = match.next
+
 		if len(match.value) < 4 || !looksLikeEmbeddedBase64(match.value) {
 			continue
 		}
+
 		decoded, err := DecodeBase64Candidate(match.value)
 		if err == nil && IsReadableText(decoded) && mayContribute(string(decoded)) {
 			return true
 		}
 	}
+
 	for _, span := range hexSpansForPattern(input, shortHexPayloadPattern) {
 		decoded, err := decodeHexPayload(input[span.start:span.end])
 		if err == nil && IsReadableText(decoded) && mayContribute(string(decoded)) {
@@ -581,15 +643,20 @@ func hasPlausibleShortDecodeSurface(input string) bool {
 	if shortHexPayloadPattern.MatchString(input) {
 		return true
 	}
+
 	for i := 0; i < len(input); {
 		match := nextBase64Candidate(input, i)
+
 		i = match.next
+
 		if len(match.value) < 4 {
 			continue
 		}
+
 		if looksLikeEmbeddedBase64(match.value) {
 			return true
 		}
+
 		decoded, err := DecodeBase64Candidate(match.value)
 		if err == nil && IsReadableText(decoded) {
 			return true
@@ -603,12 +670,15 @@ func consumeProtectedDecodeWork(work *protectedDecodeWork, status *DecodeStatus,
 	if work == nil {
 		return true
 	}
+
 	if work.tries >= maxProtectedDecodeTries || work.bytes+bytes > maxProtectedDecodeBytes {
 		markProtectedDecodeWorkIncomplete(status)
 
 		return false
 	}
+
 	work.tries++
+
 	work.bytes += bytes
 
 	return true
@@ -618,6 +688,7 @@ func consumeProtectedContextWork(work *protectedDecodeWork, status *DecodeStatus
 	if work == nil {
 		return true
 	}
+
 	if bytes < 0 || work.contextBytes+bytes > maxProtectedContextBytes {
 		if status != nil {
 			*status |= DecodeByteLimit
@@ -625,6 +696,7 @@ func consumeProtectedContextWork(work *protectedDecodeWork, status *DecodeStatus
 
 		return false
 	}
+
 	work.contextBytes += bytes
 
 	return true
@@ -650,12 +722,15 @@ func looksLikeEmbeddedBase64(value string) bool {
 	if strings.HasSuffix(value, "=") {
 		return true
 	}
+
 	if len(value) >= 32 && (allHex(value) || looksLikeDecoratedHexDigest(value)) {
 		return false
 	}
+
 	hasLower := false
 	hasDigit := false
 	uppercaseAfterFirst := 0
+
 	for i := range len(value) {
 		switch {
 		case value[i] >= 'a' && value[i] <= 'z':
@@ -668,6 +743,7 @@ func looksLikeEmbeddedBase64(value string) bool {
 			hasDigit = true
 		}
 	}
+
 	return hasLower && (hasDigit || uppercaseAfterFirst >= 3)
 }
 
@@ -676,11 +752,13 @@ func looksLikeDecoratedHexDigest(value string) bool {
 	if !ok || strings.ContainsRune(right, '-') {
 		return false
 	}
+
 	if isStandardHexDigest(left) && strings.EqualFold(right, "artifact") {
 		return true
 	}
 
 	var wantBytes int
+
 	switch strings.ToLower(left) {
 	case "md5":
 		wantBytes = 16

@@ -47,12 +47,14 @@ func renderLine(line string) string {
 	case '-', '*', '+', '_':
 		if parts := reChecklist.FindStringSubmatch(line); len(parts) == 5 {
 			mark := "✖"
+
 			if strings.EqualFold(strings.TrimSpace(parts[3]), "x") {
 				mark = "✔"
 			}
 
 			return listIndent(len(parts[1])/2) + mark + " " + parts[4]
 		}
+
 		if parts := reBullet.FindStringSubmatch(line); len(parts) == 4 {
 			level := len(parts[1]) / 2
 
@@ -98,11 +100,13 @@ func isHorizontalRule(line string) bool {
 	}
 
 	count := 0
+
 	for _, r := range trimmed {
 		if r == rune(marker) {
 			count++
 			continue
 		}
+
 		if !unicode.IsSpace(r) {
 			return false
 		}

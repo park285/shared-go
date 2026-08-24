@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"net"
 	"net/http"
 	"net/netip"
@@ -92,20 +93,25 @@ func ParseTrustedProxies(values []string) ([]netip.Prefix, error) {
 		if strings.Contains(value, "/") {
 			prefix, err := netip.ParsePrefix(value)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("parse prefix: %w", err)
 			}
+
 			result = append(result, prefix.Masked())
+
 			continue
 		}
 
 		addr, err := netip.ParseAddr(value)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("parse addr: %w", err)
 		}
+
 		bits := 32
+
 		if addr.Is6() {
 			bits = 128
 		}
+
 		result = append(result, netip.PrefixFrom(addr, bits).Masked())
 	}
 
@@ -117,7 +123,13 @@ func ParseTrustedProxyCSV(raw string) ([]netip.Prefix, error) {
 	if strings.TrimSpace(raw) == "" {
 		return nil, nil
 	}
-	return ParseTrustedProxies(strings.Split(raw, ","))
+
+	out, err := ParseTrustedProxies(strings.Split(raw, ","))
+	if err != nil {
+		return out, fmt.Errorf("parse trusted proxies: %w", err)
+	}
+
+	return out, nil
 }
 
 // ClientIP는 trusted proxy 경계 안에서만 forwarded header를 반영한 client IP를 반환한다.
@@ -145,6 +157,7 @@ func RateLimitIdentity(r *http.Request, apiKey string, opts ClientIPOptions) str
 	if key := strings.TrimSpace(apiKey); key != "" {
 		return "key:" + RateLimitKeyHash(key)
 	}
+
 	if r == nil {
 		return "ip:unknown"
 	}
@@ -153,6 +166,7 @@ func RateLimitIdentity(r *http.Request, apiKey string, opts ClientIPOptions) str
 	if clientIP == "" {
 		return "ip:unknown"
 	}
+
 	return "ip:" + clientIP
 }
 
@@ -160,9 +174,11 @@ func RateLimitIdentity(r *http.Request, apiKey string, opts ClientIPOptions) str
 func RateLimitKeyHash(value string) string {
 	sum := sha256.Sum256([]byte(value))
 	encoded := hex.EncodeToString(sum[:])
+
 	if len(encoded) <= 16 {
 		return encoded
 	}
+
 	return encoded[:16]
 }
 
@@ -171,21 +187,26 @@ func NewFixedWindowRateLimiter(limit int, window time.Duration, opts FixedWindow
 	if limit <= 0 || window <= 0 {
 		return nil
 	}
+
 	now := opts.Now
 	if now == nil {
 		now = func() time.Time { return time.Now().UTC() }
 	}
+
 	maxIdentities := opts.MaxIdentities
 	if maxIdentities <= 0 {
 		maxIdentities = defaultFixedWindowMaxIdentities
 	}
+
 	entryTTL := opts.EntryTTL
 	if entryTTL <= 0 {
 		entryTTL = defaultFixedWindowEntryTTL
 	}
+
 	if entryTTL < window {
 		entryTTL = window
 	}
+
 	return &FixedWindowRateLimiter{
 		limit:         limit,
 		window:        window,
@@ -201,6 +222,7 @@ func (l *FixedWindowRateLimiter) Allow(identity string) bool {
 	if l == nil {
 		return true
 	}
+
 	identity = strings.TrimSpace(identity)
 	if identity == "" {
 		return false
@@ -215,16 +237,19 @@ func (l *FixedWindowRateLimiter) Allow(identity string) bool {
 	entry, ok := l.entries[identity]
 	if !ok {
 		l.evictIfNeeded()
+
 		entry = &fixedWindowEntry{identity: identity}
 		entry.element = l.lru.PushBack(entry)
 		l.entries[identity] = entry
 	} else {
 		l.lru.MoveToBack(entry.element)
 	}
+
 	if entry.windowStart.IsZero() || now.Sub(entry.windowStart) >= l.window {
 		entry.windowStart = now
 		entry.count = 0
 	}
+
 	entry.lastSeen = now
 
 	if entry.count >= l.limit {
@@ -232,6 +257,7 @@ func (l *FixedWindowRateLimiter) Allow(identity string) bool {
 	}
 
 	entry.count++
+
 	return true
 }
 
@@ -241,15 +267,19 @@ func FixedWindowRateLimitMiddleware(cfg RateLimitMiddlewareConfig) func(http.Han
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if cfg.Skip != nil && cfg.Skip(r) {
 				next.ServeHTTP(w, r)
+
 				return
 			}
 
 			identity := ""
+
 			if cfg.Identity != nil {
 				identity = cfg.Identity(r)
 			}
+
 			if cfg.Limiter.Allow(identity) {
 				next.ServeHTTP(w, r)
+
 				return
 			}
 
@@ -257,6 +287,7 @@ func FixedWindowRateLimitMiddleware(cfg RateLimitMiddlewareConfig) func(http.Han
 			if reject == nil {
 				reject = defaultRateLimitReject
 			}
+
 			reject(w, r, identity)
 		})
 	}
@@ -273,11 +304,13 @@ func (l *FixedWindowRateLimiter) pruneExpired(now time.Time) {
 	if l.entryTTL <= 0 {
 		return
 	}
+
 	for element := l.lru.Front(); element != nil; element = l.lru.Front() {
 		entry := fixedWindowEntryForElement(element)
 		if now.Sub(entry.lastSeen) < l.entryTTL {
 			return
 		}
+
 		l.removeEntry(entry)
 	}
 }
@@ -286,6 +319,7 @@ func (l *FixedWindowRateLimiter) evictIfNeeded() {
 	if l.maxIdentities <= 0 || len(l.entries) < l.maxIdentities {
 		return
 	}
+
 	if element := l.lru.Front(); element != nil {
 		l.removeEntry(fixedWindowEntryForElement(element))
 	}
@@ -296,6 +330,7 @@ func fixedWindowEntryForElement(element *list.Element) *fixedWindowEntry {
 	if !ok {
 		panic("httputil: invalid fixed-window LRU entry")
 	}
+
 	return entry
 }
 
@@ -310,20 +345,25 @@ func forwardedClientIP(r *http.Request, opts ClientIPOptions) string {
 		if opts.ForwardedMode == ForwardedHeaderRightmostNonTrusted {
 			return rightmostNonTrustedForwardedFor(xff, opts.TrustedProxies)
 		}
+
 		return firstForwardedFor(xff)
 	}
 
 	parseRealIP := parseIPCandidate
+
 	if opts.ForwardedMode == ForwardedHeaderRightmostNonTrusted {
 		parseRealIP = parsePlainIPCandidate
 	}
+
 	realIP, ok := parseRealIP(r.Header.Get("X-Real-IP"))
 	if !ok {
 		return ""
 	}
+
 	if opts.ForwardedMode == ForwardedHeaderRightmostNonTrusted && isTrustedProxy(realIP, opts.TrustedProxies) {
 		return ""
 	}
+
 	return realIP
 }
 
@@ -342,6 +382,7 @@ func isTrustedProxy(ip string, trustedProxies []netip.Prefix) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -356,6 +397,7 @@ func firstForwardedFor(headerValue string) string {
 			return ip
 		}
 	}
+
 	return ""
 }
 
@@ -366,11 +408,14 @@ func rightmostNonTrustedForwardedFor(headerValue string, trustedProxies []netip.
 		if !ok {
 			continue
 		}
+
 		if isTrustedProxy(candidate, trustedProxies) {
 			continue
 		}
+
 		return candidate
 	}
+
 	return ""
 }
 
@@ -384,6 +429,7 @@ func parsePlainIPCandidate(value string) (string, bool) {
 	if ip == nil {
 		return "", false
 	}
+
 	return ip.String(), true
 }
 
@@ -404,6 +450,7 @@ func parseIPCandidate(value string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
+
 	return addr.String(), true
 }
 

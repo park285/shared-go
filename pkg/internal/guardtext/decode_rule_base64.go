@@ -8,13 +8,17 @@ func shortRuleBase64Spans(
 	work *protectedDecodeWork,
 	status *DecodeStatus,
 ) []encodedSpan {
-	var spans []encodedSpan
-	var seen map[encodedSpan]struct{}
+	var (
+		spans []encodedSpan
+		seen  map[encodedSpan]struct{}
+	)
 
 	for i := 0; i < len(input) && len(spans) <= maxDecodeScans && decodeWorkComplete(status); {
 		match := nextBase64Candidate(input, i)
-		start := i
+		start := i //nolint:copyloopvar // 루프 변수가 본문에서 전진하므로 시작 위치를 따로 보존한다.
+
 		i = match.next
+
 		if len(match.value) < 4 {
 			continue
 		}
@@ -23,6 +27,7 @@ func shortRuleBase64Spans(
 		if seenWholes.duplicate(input, whole) {
 			continue
 		}
+
 		if pathSegments, ok := httpURLPathBase64Segments(input, whole, 4); ok {
 			for _, segment := range pathSegments {
 				spans, seen = appendShortRuleBase64Whole(spans, seen, input, segment, mayContribute, embeddedContextMayContribute, work, status)
@@ -30,8 +35,10 @@ func shortRuleBase64Spans(
 					break
 				}
 			}
+
 			continue
 		}
+
 		spans, seen = appendShortRuleBase64Whole(spans, seen, input, whole, mayContribute, embeddedContextMayContribute, work, status)
 	}
 
@@ -51,8 +58,11 @@ func appendShortRuleBase64Whole(
 	if declaredNonTextDataPayload(input, whole.start) {
 		return spans, seen
 	}
+
 	value := input[whole.start:whole.end]
+
 	var wholeReadable bool
+
 	if len(value) <= maxShortBase64CandidateLen {
 		spans, wholeReadable = appendShortRuleReadableBase64Whole(
 			spans,
@@ -71,9 +81,11 @@ func appendShortRuleBase64Whole(
 	if wholeReadable || !looksLikeEmbeddedBase64(value) || !decodeWorkComplete(status) {
 		return spans, seen
 	}
+
 	if seen == nil {
 		seen = make(map[encodedSpan]struct{}, min(maxDecodeScans+1, 16))
 	}
+
 	seen[whole] = struct{}{}
 
 	for subStart := whole.start; subStart < whole.end && len(spans) <= maxDecodeScans && decodeWorkComplete(status); subStart++ {
@@ -83,6 +95,7 @@ func appendShortRuleBase64Whole(
 			if span == whole {
 				continue
 			}
+
 			spans = appendMatchingShortBase64Span(spans, seen, input, span, mayContribute, embeddedContextMayContribute, work, status)
 			if !decodeWorkComplete(status) {
 				break
@@ -116,6 +129,7 @@ func appendShortRuleReadableBase64Whole(
 		work,
 		status,
 	)
+
 	if !readable || len(spans) != previousCount || !decodeWorkComplete(status) {
 		return spans, readable
 	}
@@ -137,29 +151,37 @@ func nestedShortContextMayContribute(
 	status *DecodeStatus,
 ) bool {
 	unexploredNesting := false
+
 	for position := 0; position < len(decoded) && decodeWorkComplete(status); {
-		start := position
+		start := position //nolint:copyloopvar // 루프 변수가 본문에서 전진하므로 시작 위치를 따로 보존한다.
 		match := nextBase64Candidate(decoded, position)
+
 		position = match.next
+
 		if len(match.value) < 4 || len(match.value) > maxShortBase64CandidateLen {
 			continue
 		}
+
 		inner, err := DecodeBase64Candidate(match.value)
 		if err != nil || !IsReadableText(inner) {
 			continue
 		}
+
 		if !consumeProtectedDecodeWork(work, status, len(match.value)) {
 			return false
 		}
 
 		nested := replaceDecodedSpan(decoded, encodedSpan{start: start, end: match.next}, string(inner))
 		surface := contextualMatchSurface(input, outer, nested)
+
 		if !consumeProtectedContextWork(work, status, len(surface)) {
 			return false
 		}
+
 		if mayContribute == nil || mayContribute(surface) {
 			return true
 		}
+
 		if !unexploredNesting {
 			unexploredNesting = hasDecodableShortRuleDecodeSurface(nested)
 		}
@@ -184,6 +206,7 @@ func readableBase64Span(
 	if (span.end-span.start)%4 == 1 {
 		return false
 	}
+
 	decoded, err := DecodeBase64Candidate(input[span.start:span.end])
 	if err != nil || !IsReadableText(decoded) {
 		return false
@@ -205,6 +228,7 @@ func appendMatchingShortBase64Span(
 	if _, exists := seen[span]; exists {
 		return spans
 	}
+
 	seen[span] = struct{}{}
 
 	updated, _ := appendEmbeddedProtectedBase64Span(
@@ -223,6 +247,7 @@ func appendMatchingShortBase64Span(
 	if len(updated) != len(spans) || !decodeWorkComplete(status) {
 		return updated
 	}
+
 	// whole-run 앞뒤에 base64 문자 1개만 붙어도 전체 decode가 깨져 이 sub-span 열거가
 	// 유일한 탐지 경로가 된다. 여기서도 whole 경로와 동일하게 중첩 층을 검사해야
 	// 노이즈 문자로 fail-closed를 우회하지 못한다.
@@ -230,9 +255,11 @@ func appendMatchingShortBase64Span(
 	if err != nil || !IsReadableText(decoded) {
 		return updated
 	}
+
 	if nestedShortContextMayContribute(input, span, string(decoded), mayContribute, work, status) {
 		updated = append(updated, span)
 	}
+
 	return updated
 }
 
@@ -240,31 +267,40 @@ func appendMatchingShortBase64Span(
 // 복호 성공만 미탐색 층으로 인정한다. 넓은 술어를 쓰면 숫자가 섞인 무해한 2겹 중첩
 // (예: base64^2("hi Bob2"))까지 fail-closed로 차단된다.
 func hasDecodableShortRuleDecodeSurface(input string) bool {
-	if containsASCIIFold(input, "hex") {
+	if containsHexFold(input) {
 		for _, span := range shortRuleHexSpans(input) {
 			if span.end > span.start {
 				return true
 			}
 		}
 	}
+
 	for i := 0; i < len(input); {
 		match := nextBase64Candidate(input, i)
+
 		i = match.next
+
 		if len(match.value) < 4 {
 			continue
 		}
+
 		if len(match.value) > maxShortBase64CandidateLen {
 			if looksLikeEmbeddedBase64(match.value) {
 				return true
 			}
+
 			continue
 		}
+
 		var storage [maxShortBase64CandidateLen]byte
+
 		decoded, err := decodeBase64CandidateInto(storage[:], match.value)
+
 		if err == nil && IsReadableText(decoded) {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -272,7 +308,10 @@ func plausibleShortBase64Value(value string) bool {
 	if looksLikeEmbeddedBase64(value) {
 		return true
 	}
+
 	var storage [maxShortBase64CandidateLen]byte
+
 	decoded, err := decodeBase64CandidateInto(storage[:], value)
+
 	return err == nil && IsReadableText(decoded)
 }

@@ -13,26 +13,21 @@ import (
 	"time"
 )
 
-func TestManifest(t *testing.T) {
-	t.Parallel()
+type manifestCase struct {
+	name    string
+	fsys    fs.FS
+	want    []string
+	wantErr string
+}
 
-	tests := []struct {
-		name    string
-		fsys    fs.FS
-		want    []string
-		wantErr string
-	}{
+func manifestOrderCases() []manifestCase {
+	return []manifestCase{
 		{
 			name: "ordered entries",
 			fsys: fstest.MapFS{
 				ManifestName: {Data: []byte("\n# comment\n001 first.sql\n002 second.sql\n")},
 			},
-			want: []string{"first.sql", "second.sql"},
-		},
-		{
-			name:    "missing manifest",
-			fsys:    fstest.MapFS{},
-			wantErr: "open manifest",
+			want: []string{testFirstSQL, testSecondSQL},
 		},
 		{
 			name: "descending order token rejected",
@@ -56,6 +51,30 @@ func TestManifest(t *testing.T) {
 			want: []string{"ninth.sql", "tenth.sql"},
 		},
 		{
+			name: "duplicate order rejected",
+			fsys: fstest.MapFS{
+				ManifestName: {Data: []byte("001 a.sql\n001 b.sql\n")},
+			},
+			wantErr: `manifest line 2: duplicate order "001" (first seen at line 1)`,
+		},
+		{
+			name: "non decimal order rejected",
+			fsys: fstest.MapFS{
+				ManifestName: {Data: []byte("one first.sql\n")},
+			},
+			wantErr: `manifest line 1: order "one" must contain only decimal digits`,
+		},
+	}
+}
+
+func manifestEntryCases() []manifestCase {
+	return []manifestCase{
+		{
+			name:    "missing manifest",
+			fsys:    fstest.MapFS{},
+			wantErr: "open manifest",
+		},
+		{
 			name: "too few fields",
 			fsys: fstest.MapFS{
 				ManifestName: {Data: []byte("001\n")},
@@ -75,20 +94,6 @@ func TestManifest(t *testing.T) {
 				ManifestName: {Data: []byte("# h\n\n001 a.sql\n\n002 a.sql\n")},
 			},
 			wantErr: `manifest line 5: duplicate filename "a.sql" (first seen at line 3)`,
-		},
-		{
-			name: "duplicate order rejected",
-			fsys: fstest.MapFS{
-				ManifestName: {Data: []byte("001 a.sql\n001 b.sql\n")},
-			},
-			wantErr: `manifest line 2: duplicate order "001" (first seen at line 1)`,
-		},
-		{
-			name: "non decimal order rejected",
-			fsys: fstest.MapFS{
-				ManifestName: {Data: []byte("one first.sql\n")},
-			},
-			wantErr: `manifest line 1: order "one" must contain only decimal digits`,
 		},
 		{
 			name: "nested migration path rejected",
@@ -112,8 +117,12 @@ func TestManifest(t *testing.T) {
 			wantErr: "has no entries",
 		},
 	}
+}
 
-	for _, tt := range tests {
+func TestManifest(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range slices.Concat(manifestOrderCases(), manifestEntryCases()) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -122,11 +131,14 @@ func TestManifest(t *testing.T) {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("Manifest() error = %v, want substring %q", err, tt.wantErr)
 				}
+
 				return
 			}
+
 			if err != nil {
 				t.Fatalf("Manifest() error = %v", err)
 			}
+
 			if !slices.Equal(got, tt.want) {
 				t.Fatalf("Manifest() = %v, want %v", got, tt.want)
 			}
@@ -138,17 +150,18 @@ func TestApplyOrderingAndWithOnly(t *testing.T) {
 	t.Parallel()
 
 	fsys := fstest.MapFS{
-		ManifestName: {Data: []byte("001 first.sql\n002 second.sql\n003 third.sql\n")},
-		"first.sql":  {Data: []byte("select 1")},
-		"second.sql": {Data: []byte("select 2")},
-		"third.sql":  {Data: []byte("select 3")},
+		ManifestName:  {Data: []byte("001 first.sql\n002 second.sql\n003 third.sql\n")},
+		testFirstSQL:  {Data: []byte("select 1")},
+		testSecondSQL: {Data: []byte("select 2")},
+		"third.sql":   {Data: []byte("select 3")},
 	}
 
 	var got []string
-	err := Apply(context.Background(), fsys, func(_ context.Context, query string, _ ...any) error {
+
+	err := Apply(t.Context(), fsys, func(_ context.Context, query string, _ ...any) error {
 		got = append(got, query)
 		return nil
-	}, WithOnly("third.sql", "first.sql"))
+	}, WithOnly("third.sql", testFirstSQL))
 	if err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}
@@ -163,26 +176,30 @@ func TestApplyWithOnlyRejectsUnknownName(t *testing.T) {
 	t.Parallel()
 
 	fsys := fstest.MapFS{
-		ManifestName: {Data: []byte("001 first.sql\n002 second.sql\n")},
-		"first.sql":  {Data: []byte("select 1")},
-		"second.sql": {Data: []byte("select 2")},
+		ManifestName:  {Data: []byte("001 first.sql\n002 second.sql\n")},
+		testFirstSQL:  {Data: []byte("select 1")},
+		testSecondSQL: {Data: []byte("select 2")},
 	}
 
 	db := newFakeLedgerDB()
-	err := Apply(context.Background(), fsys, db.Exec,
-		WithOnly("first.sql", "nope.sql"),
+	err := Apply(t.Context(), fsys, db.Exec,
+		WithOnly(testFirstSQL, "nope.sql"),
 		WithSession(SessionConfig{LockTimeout: time.Second, StatementTimeout: time.Second}),
 		WithLedger(Ledger{}, db),
 	)
+
 	if err == nil || !strings.Contains(err.Error(), "nope.sql") {
 		t.Fatalf("Apply() error = %v, want unknown WithOnly name", err)
 	}
+
 	if !strings.Contains(err.Error(), "not in manifest") {
 		t.Fatalf("Apply() error = %v, want 'not in manifest'", err)
 	}
+
 	if len(db.execs) != 0 {
 		t.Fatalf("execs = %v, want none before WithOnly validation (session/ledger must not run)", db.execs)
 	}
+
 	if len(db.events) != 0 {
 		t.Fatalf("events = %v, want none before WithOnly validation", db.events)
 	}
@@ -193,13 +210,13 @@ func TestApplyWithOnlyUnknownNamesAreSortedDeterministically(t *testing.T) {
 
 	fsys := fstest.MapFS{
 		ManifestName: {Data: []byte("001 first.sql\n")},
-		"first.sql":  {Data: []byte("select 1")},
+		testFirstSQL: {Data: []byte("select 1")},
 	}
 
 	for range 10 {
-		err := Apply(context.Background(), fsys, func(context.Context, string, ...any) error {
+		err := Apply(t.Context(), fsys, func(context.Context, string, ...any) error {
 			return nil
-		}, WithOnly("zz.sql", "first.sql", "aa.sql", "mm.sql"))
+		}, WithOnly("zz.sql", testFirstSQL, "aa.sql", "mm.sql"))
 		if err == nil || !strings.Contains(err.Error(), "not in manifest: aa.sql, mm.sql, zz.sql") {
 			t.Fatalf("Apply() error = %v, want sorted missing names \"aa.sql, mm.sql, zz.sql\"", err)
 		}
@@ -211,22 +228,24 @@ func TestApplyIdempotentCoreHasNoHiddenState(t *testing.T) {
 
 	fsys := fstest.MapFS{
 		ManifestName: {Data: []byte("001 first.sql\n002 second.sql\n")},
-		"first.sql":  {Data: []byte("create table if not exists a(id int)")},
-		"second.sql": {
+		testFirstSQL: {Data: []byte("create table if not exists a(id int)")},
+		testSecondSQL: {
 			Data: []byte("create index if not exists a_id_idx on a(id)"),
 		},
 	}
 
 	var got []string
+
 	exec := func(_ context.Context, query string, _ ...any) error {
 		got = append(got, query)
 		return nil
 	}
 
-	if err := Apply(context.Background(), fsys, exec); err != nil {
+	if err := Apply(t.Context(), fsys, exec); err != nil {
 		t.Fatalf("first Apply() error = %v", err)
 	}
-	if err := Apply(context.Background(), fsys, exec); err != nil {
+
+	if err := Apply(t.Context(), fsys, exec); err != nil {
 		t.Fatalf("second Apply() error = %v", err)
 	}
 
@@ -254,7 +273,7 @@ func TestApplyErrors(t *testing.T) {
 			name: "nil exec",
 			fsys: fstest.MapFS{
 				ManifestName: {Data: []byte("001 first.sql\n")},
-				"first.sql":  {Data: []byte("select 1")},
+				testFirstSQL: {Data: []byte("select 1")},
 			},
 			wantErr: "exec is required",
 		},
@@ -270,7 +289,7 @@ func TestApplyErrors(t *testing.T) {
 			name: "exec error names file",
 			fsys: fstest.MapFS{
 				ManifestName: {Data: []byte("001 first.sql\n")},
-				"first.sql":  {Data: []byte("select 1")},
+				testFirstSQL: {Data: []byte("select 1")},
 			},
 			exec:    func(context.Context, string, ...any) error { return errors.New("boom") },
 			wantErr: "exec first.sql",
@@ -281,7 +300,7 @@ func TestApplyErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			err := Apply(context.Background(), tt.fsys, tt.exec)
+			err := Apply(t.Context(), tt.fsys, tt.exec)
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Fatalf("Apply() error = %v, want substring %q", err, tt.wantErr)
 			}
@@ -293,9 +312,10 @@ func TestSQLExec(t *testing.T) {
 	t.Parallel()
 
 	db := sql.OpenDB(&fakeSQLConnector{})
+
 	defer func() { _ = db.Close() }()
 
-	if err := SQLExec(db)(context.Background(), "select 1 where $1 = $1", 1); err != nil {
+	if err := SQLExec(db)(t.Context(), "select 1 where $1 = $1", 1); err != nil {
 		t.Fatalf("SQLExec() error = %v", err)
 	}
 }
@@ -340,11 +360,12 @@ func TestApplyRunsEachMigrationFileWithoutArguments(t *testing.T) {
 	body := "CREATE TABLE a(id int);\nCREATE TABLE b(id int);\n"
 	fsys := fstest.MapFS{
 		ManifestName: {Data: []byte("001 first.sql\n")},
-		"first.sql":  {Data: []byte(body)},
+		testFirstSQL: {Data: []byte(body)},
 	}
 
 	var calls []recordedExec
-	if err := Apply(context.Background(), fsys, recordingExec(&calls, "")); err != nil {
+
+	if err := Apply(t.Context(), fsys, recordingExec(&calls, "")); err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}
 
@@ -371,26 +392,30 @@ func TestApplyWithOnlyRejectsEmptySelection(t *testing.T) {
 	t.Parallel()
 
 	fsys := fstest.MapFS{
-		ManifestName: {Data: []byte("001 first.sql\n002 second.sql\n")},
-		"first.sql":  {Data: []byte("select 1")},
-		"second.sql": {Data: []byte("select 2")},
+		ManifestName:  {Data: []byte("001 first.sql\n002 second.sql\n")},
+		testFirstSQL:  {Data: []byte("select 1")},
+		testSecondSQL: {Data: []byte("select 2")},
 	}
 
 	db := newFakeLedgerDB()
-	err := Apply(context.Background(), fsys, db.Exec,
+
+	err := Apply(t.Context(), fsys, db.Exec,
 		WithOnly(),
 		WithSession(SessionConfig{LockTimeout: time.Second, StatementTimeout: time.Second}),
 		WithLedger(Ledger{}, db),
 	)
 	if err == nil {
-		t.Fatalf("Apply() error = nil, want error for empty WithOnly selection")
+		t.Fatal("Apply() error = nil, want error for empty WithOnly selection")
 	}
+
 	if !strings.Contains(err.Error(), "WithOnly") {
 		t.Fatalf("Apply() error = %v, want error naming WithOnly", err)
 	}
+
 	if len(db.execs) != 0 {
 		t.Fatalf("execs = %v, want none: empty WithOnly must fail before session/ledger side effects", db.execs)
 	}
+
 	if len(db.events) != 0 {
 		t.Fatalf("events = %v, want none before WithOnly validation", db.events)
 	}
@@ -401,18 +426,22 @@ func TestApplyWithOnlyEmptyVariadicSliceRejected(t *testing.T) {
 
 	fsys := fstest.MapFS{
 		ManifestName: {Data: []byte("001 first.sql\n")},
-		"first.sql":  {Data: []byte("select 1")},
+		testFirstSQL: {Data: []byte("select 1")},
 	}
 
-	var selected []string
-	var got []string
-	err := Apply(context.Background(), fsys, func(_ context.Context, query string, _ ...any) error {
+	var (
+		selected []string
+		got      []string
+	)
+
+	err := Apply(t.Context(), fsys, func(_ context.Context, query string, _ ...any) error {
 		got = append(got, query)
 		return nil
 	}, WithOnly(selected...))
 	if err == nil {
-		t.Fatalf("Apply() error = nil, want error for empty WithOnly selection")
+		t.Fatal("Apply() error = nil, want error for empty WithOnly selection")
 	}
+
 	if len(got) != 0 {
 		t.Fatalf("executed SQL = %v, want none", got)
 	}

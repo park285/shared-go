@@ -27,6 +27,7 @@ func (g *Guard) decodedTextSegmentsWithRaw(input string, rawSegments []textSegme
 	if g == nil {
 		return decodedTextSegments(input)
 	}
+
 	if !guardtext.HasPotentialRuleDecodeSurface(input) {
 		return nil, 0
 	}
@@ -40,7 +41,9 @@ func (g *Guard) decodedTextSegmentsWithRaw(input string, rawSegments []textSegme
 		decodedCandidateWouldBlockForGuard,
 	)
 	scored, overflow := partitionDecodedSegments(result)
+
 	overflow = appendUniqueDecodedSegment(scored, overflow, blockingCandidate)
+
 	witnesses := g.blockingOverflowSegments(rawSegments, scored, overflow)
 
 	return append(scored, witnesses...), result.Status
@@ -63,13 +66,17 @@ func oversizedDecodedWouldBlockForGuard(guard *Guard, original, decoded string, 
 	if exceeded {
 		return false
 	}
+
 	policy := guard.policy()
+
 	fullSegments := append(slices.Clone(rawSegments), decodedCandidateSegment(decoded))
+
 	if guard.evaluateSegments(policy, fullSegments).Decision != DecisionBlock {
 		return false
 	}
 
 	boundedSegments := slices.Clone(rawSegments)
+
 	for _, candidate := range bounded {
 		boundedSegments = append(boundedSegments, decodedCandidateSegment(candidate))
 	}
@@ -89,16 +96,21 @@ func textSegmentsFromDecodeResult(result guardtext.DecodeResult) ([]textSegment,
 
 func partitionDecodedSegments(result guardtext.DecodeResult) ([]textSegment, []textSegment) {
 	scored := make([]textSegment, 0, min(len(result.Candidates), maxBase64Candidates))
+
 	var overflow []textSegment
+
 	for _, candidate := range result.Candidates {
 		if !guardtext.DecodedCandidateFitsBudget(candidate) {
 			continue
 		}
+
 		segment := decodedCandidateSegment(candidate)
+
 		if len(scored) < maxBase64Candidates {
 			scored = append(scored, segment)
 			continue
 		}
+
 		overflow = append(overflow, segment)
 	}
 
@@ -109,11 +121,13 @@ func appendUniqueDecodedSegment(scored, overflow []textSegment, candidate string
 	if candidate == "" || !guardtext.DecodedCandidateFitsBudget(candidate) {
 		return overflow
 	}
+
 	for _, segment := range scored {
 		if segment.Views.Raw == candidate {
 			return overflow
 		}
 	}
+
 	for _, segment := range overflow {
 		if segment.Views.Raw == candidate {
 			return overflow
@@ -127,6 +141,7 @@ func (g *Guard) blockingOverflowSegments(raw, scored, overflow []textSegment) []
 	if len(overflow) == 0 || g.segmentsBlock(raw, scored, nil) {
 		return nil
 	}
+
 	if !g.segmentsBlock(raw, scored, overflow) {
 		return nil
 	}
@@ -145,12 +160,16 @@ func (g *Guard) blockingOverflowSegments(raw, scored, overflow []textSegment) []
 	// 판정을 바꾸지 않는다. 최소화 1회당 raw+scored 전체를 다시 평가하므로 큰 입력에서는
 	// 평가 비용이 witness 개수만큼 증폭된다. 그래서 큰 입력은 비최소 witness로 되돌린다.
 	witnesses := slices.Clone(overflow[:start])
+
 	if segmentsByteTotal(raw)+segmentsByteTotal(scored) > maxWitnessMinimizeBytes {
 		return witnesses
 	}
+
 	for index := range slices.Backward(witnesses) {
 		withoutCurrent := slices.Clone(witnesses[:index])
+
 		withoutCurrent = append(withoutCurrent, witnesses[index+1:]...)
+
 		if g.segmentsBlock(raw, scored, withoutCurrent) {
 			witnesses = withoutCurrent
 		}
@@ -161,6 +180,7 @@ func (g *Guard) blockingOverflowSegments(raw, scored, overflow []textSegment) []
 
 func segmentsByteTotal(segments []textSegment) int {
 	total := 0
+
 	for index := range segments {
 		total += len(segments[index].Views.Raw)
 	}
@@ -170,6 +190,7 @@ func segmentsByteTotal(segments []textSegment) int {
 
 func (g *Guard) segmentsBlock(raw, scored, overflow []textSegment) bool {
 	segments := make([]textSegment, 0, len(raw)+len(scored)+len(overflow))
+
 	segments = append(segments, raw...)
 	segments = append(segments, scored...)
 	segments = append(segments, overflow...)
@@ -182,14 +203,18 @@ func (g *Guard) decodedCandidateMayContribute(candidate string) bool {
 	if decodedCandidateHasBoundarySyntax(views.Raw) {
 		return true
 	}
+
 	shortFragment := len(candidate) <= maxDecodedRuleFragmentBytes
+
 	for i := range g.packs {
 		for j := range g.packs[i].Rules {
 			rule := &g.packs[i].Rules[j]
 			text := decodedContributionView(rule, views)
+
 			if shortFragment && decodedTextOverlapsRequiredLiterals(text, rule.RequiredLiteralGroups) {
 				return true
 			}
+
 			if !shortFragment && len(rule.RequiredLiteralGroups) > 0 &&
 				containsAllLiteralGroups(text, rule.RequiredLiteralGroups) {
 				return true
@@ -207,6 +232,7 @@ func (g *Guard) decodedContextMayContribute(input string, start, end int, decode
 
 	left := lastRunes(input[:start], g.decodedContextRunes)
 	right := firstRunes(input[end:], g.decodedContextRunes)
+
 	if !g.decodedBoundaryCompletesLiteral(left, decoded, right) {
 		return false
 	}
@@ -227,6 +253,7 @@ func (g *Guard) decodedBoundaryCompletesLiteral(left, decoded, right string) boo
 			combined := decodedContributionView(rule, combinedViews)
 			decodedStart := len(decodedContributionView(rule, leftViews))
 			decodedEnd := len(decodedContributionView(rule, leftDecodedViews))
+
 			for _, group := range rule.RequiredLiteralGroups {
 				for _, literal := range group {
 					if literalNearDecoded(combined, literal, decodedStart, decodedEnd) {
@@ -244,20 +271,25 @@ func literalNearDecoded(text, literal string, decodedStart, decodedEnd int) bool
 	if literal == "" || decodedStart < 0 || decodedStart > decodedEnd || decodedStart > len(text) {
 		return false
 	}
+
 	decodedEnd = min(len(text), decodedEnd)
 
 	windowStart := max(0, decodedStart-len(literal))
 	windowEnd := min(len(text), decodedEnd+len(literal))
+
 	for offset := windowStart; offset <= windowEnd; {
 		index := strings.Index(text[offset:windowEnd], literal)
 		if index < 0 {
 			return false
 		}
+
 		start := offset + index
 		end := start + len(literal)
+
 		if end >= decodedStart && start <= decodedEnd {
 			return true
 		}
+
 		offset = start + 1
 	}
 
@@ -266,6 +298,7 @@ func literalNearDecoded(text, literal string, decodedStart, decodedEnd int) bool
 
 func requiredLiteralContextRunes(packs []compiledPack) int {
 	maximum := 0
+
 	for packIndex := range packs {
 		for ruleIndex := range packs[packIndex].Rules {
 			for _, group := range packs[packIndex].Rules[ruleIndex].RequiredLiteralGroups {
@@ -292,6 +325,7 @@ func decodedTextOverlapsRequiredLiterals(text string, groups [][]string) bool {
 	if text == "" {
 		return false
 	}
+
 	for _, group := range groups {
 		for _, literal := range group {
 			if decodedTextOverlapsLiteral(text, literal) {
@@ -299,6 +333,7 @@ func decodedTextOverlapsRequiredLiterals(text string, groups [][]string) bool {
 			}
 		}
 	}
+
 	return false
 }
 
@@ -306,34 +341,43 @@ func decodedTextOverlapsLiteral(text, literal string) bool {
 	if literal == "" {
 		return false
 	}
+
 	if strings.Contains(text, literal) {
 		return true
 	}
 
 	start := -1
+
 	for index, value := range text {
 		if unicode.IsLetter(value) || unicode.IsNumber(value) {
 			if start < 0 {
 				start = index
 			}
+
 			continue
 		}
+
 		if start >= 0 && decodedRunOverlapsLiteral(text[start:index], literal) {
 			return true
 		}
+
 		start = -1
 	}
+
 	return start >= 0 && decodedRunOverlapsLiteral(text[start:], literal)
 }
 
 func decodedRunOverlapsLiteral(run, literal string) bool {
 	minimum := 3
+
 	if containsNonASCII(run) {
 		minimum = 2
 	}
+
 	if utf8.RuneCountInString(run) < minimum {
 		return false
 	}
+
 	return strings.HasPrefix(literal, run) || strings.HasSuffix(literal, run)
 }
 
@@ -343,6 +387,7 @@ func containsNonASCII(value string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 

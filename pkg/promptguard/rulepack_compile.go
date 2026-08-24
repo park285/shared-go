@@ -17,13 +17,14 @@ func compileRulepack(raw *rawRulepack) (compiledPack, error) {
 	if raw == nil {
 		return compiledPack{}, errors.New("rulepack is nil")
 	}
+
 	if raw.Version != 3 {
-		return compiledPack{}, fmt.Errorf("rulepack version must be 3")
+		return compiledPack{}, errors.New("rulepack version must be 3")
 	}
 
 	rules, err := compileRules(raw)
 	if err != nil {
-		return compiledPack{}, err
+		return compiledPack{}, fmt.Errorf("compile rules: %w", err)
 	}
 
 	return compiledPack{
@@ -76,6 +77,7 @@ func compileRule(rule *rawRule) (compiledRule, error) {
 	if compiled.Action == hitActionBlock && compiled.Weight == 0 {
 		compiled.Weight = 1.0
 	}
+
 	if compiled.MaxOccurrences == 0 {
 		compiled.MaxOccurrences = 1
 	}
@@ -83,9 +85,11 @@ func compileRule(rule *rawRule) (compiledRule, error) {
 	if err := compileRuleMatcher(&compiled, rule); err != nil {
 		return compiledRule{}, fmt.Errorf("compile matcher: %w", err)
 	}
+
 	if compiled.View == viewRaw && compiled.Type == ruleTypeRegex {
 		compiled.RawCasePrefilter, compiled.RawCaseStablePrefilter = rawCasePrefilters(compiled.RequiredLiteralGroups)
 	}
+
 	compiled.RequiredLiteralGroups = normalizePrefilterLiteralGroups(compiled.RequiredLiteralGroups)
 	compiled.AggregatePrefilter = bestRequiredLiteralGroup(compiled.RequiredLiteralGroups)
 
@@ -98,22 +102,29 @@ func compileRule(rule *rawRule) (compiledRule, error) {
 
 func rawCasePrefilters(groups [][]string) ([][]string, [][]string) {
 	var stable [][]string
+
 	varies := false
+
 	for _, group := range groups {
 		groupVaries := false
+
 		for _, literal := range group {
 			lower := normalizeViews(literal).Norm
 			upper := normalizeViews(strings.ToUpper(literal)).Norm
+
 			if lower != upper {
 				groupVaries = true
 				varies = true
+
 				break
 			}
 		}
+
 		if !groupVaries {
 			stable = append(stable, slices.Clone(group))
 		}
 	}
+
 	if !varies {
 		return nil, nil
 	}
@@ -140,10 +151,13 @@ func normalizePrefilterLiteralGroups(groups [][]string) [][]string {
 				values = append(values, value)
 			}
 		}
+
 		if len(values) == 0 {
 			continue
 		}
+
 		slices.Sort(values)
+
 		normalized = append(normalized, slices.Compact(values))
 	}
 
@@ -218,6 +232,7 @@ func requiredRegexLiteralBranches(pattern *regexp.Regexp) [][][]string {
 	if err != nil {
 		return nil
 	}
+
 	return requiredAlternativeBranches(parsed)
 }
 
@@ -225,16 +240,19 @@ func requiredAlternativeBranches(expression *syntax.Regexp) [][][]string {
 	if expression == nil {
 		return nil
 	}
+
 	if expression.Op == syntax.OpCapture {
 		if len(expression.Sub) == 1 {
 			return requiredAlternativeBranches(expression.Sub[0])
 		}
 	}
+
 	if expression.Op != syntax.OpAlternate {
 		groups := normalizePrefilterLiteralGroups(requiredLiteralGroups(expression))
 		if len(groups) == 0 {
 			return nil
 		}
+
 		return [][][]string{groups}
 	}
 
@@ -244,8 +262,10 @@ func requiredAlternativeBranches(expression *syntax.Regexp) [][][]string {
 		if len(groups) == 0 {
 			return nil
 		}
+
 		branches = append(branches, groups)
 	}
+
 	return branches
 }
 
@@ -258,6 +278,7 @@ func assignPhraseMatcher(compiled *compiledRule, rule *rawRule) error {
 		}
 
 		views := normalizeViews(value)
+
 		switch compiled.View {
 		case viewRaw:
 			phrases = append(phrases, strings.ToLower(views.Raw))
@@ -283,12 +304,15 @@ func requiredRegexLiteralGroups(pattern *regexp.Regexp) [][]string {
 	if err != nil {
 		return nil
 	}
+
 	groups := requiredLiteralGroups(parsed)
 	for i := range groups {
 		for j := range groups[i] {
 			groups[i][j] = strings.ToLower(groups[i][j])
 		}
+
 		slices.Sort(groups[i])
+
 		groups[i] = slices.Compact(groups[i])
 	}
 
@@ -299,6 +323,7 @@ func requiredLiteralGroups(expression *syntax.Regexp) [][]string {
 	if expression == nil {
 		return nil
 	}
+
 	switch expression.Op {
 	case syntax.OpLiteral:
 		if literals := literalExpression(expression); len(literals) > 0 {
@@ -316,6 +341,20 @@ func requiredLiteralGroups(expression *syntax.Regexp) [][]string {
 		if expression.Min > 0 && len(expression.Sub) == 1 {
 			return requiredLiteralGroups(expression.Sub[0])
 		}
+	case syntax.OpNoMatch,
+		syntax.OpEmptyMatch,
+		syntax.OpCharClass,
+		syntax.OpAnyCharNotNL,
+		syntax.OpAnyChar,
+		syntax.OpBeginLine,
+		syntax.OpEndLine,
+		syntax.OpBeginText,
+		syntax.OpEndText,
+		syntax.OpWordBoundary,
+		syntax.OpNoWordBoundary,
+		syntax.OpStar,
+		syntax.OpQuest:
+		return nil
 	}
 
 	return nil
@@ -348,11 +387,13 @@ func requiredConcatLiteralGroups(expressions []*syntax.Regexp) [][]string {
 
 func requiredAlternateLiteralGroups(expressions []*syntax.Regexp) [][]string {
 	var combined []string
+
 	for _, expression := range expressions {
 		candidate := bestRequiredLiteralGroup(requiredLiteralGroups(expression))
 		if len(candidate) == 0 {
 			return nil
 		}
+
 		combined = append(combined, candidate...)
 	}
 
@@ -361,7 +402,9 @@ func requiredAlternateLiteralGroups(expressions []*syntax.Regexp) [][]string {
 
 func bestRequiredLiteralGroup(groups [][]string) []string {
 	var best []string
+
 	bestLength := 0
+
 	for _, group := range groups {
 		minimum := minimumLiteralRunes(group)
 		if minimum > bestLength {
@@ -369,11 +412,13 @@ func bestRequiredLiteralGroup(groups [][]string) []string {
 			bestLength = minimum
 		}
 	}
+
 	return best
 }
 
 func minimumLiteralRunes(values []string) int {
 	minimum := 0
+
 	for i, value := range values {
 		length := len([]rune(value))
 		if i == 0 || length < minimum {
@@ -388,18 +433,23 @@ func validateCompiledRule(compiled *compiledRule) error {
 	if !finiteFloat(compiled.Weight) {
 		return fmt.Errorf("%s: weight must be finite", compiled.ID)
 	}
+
 	if compiled.Weight < 0 {
 		return fmt.Errorf("%s: negative weight is unsupported", compiled.ID)
 	}
+
 	if compiled.Action != hitActionBlock && compiled.Weight <= 0 {
 		return fmt.Errorf("%s: non-block rule requires positive weight", compiled.ID)
 	}
+
 	if compiled.MaxOccurrences <= 0 {
 		return fmt.Errorf("%s: max_occurrences must be positive", compiled.ID)
 	}
+
 	if compiled.MaxOccurrences > maxRuleOccurrences {
 		return fmt.Errorf("%s: max_occurrences exceeds %d", compiled.ID, maxRuleOccurrences)
 	}
+
 	if compiled.Type == ruleTypePhrase {
 		if compiled.MatchMode != phraseMatchToken && compiled.MatchMode != phraseMatchSubstring {
 			return fmt.Errorf("%s: phrases require match_mode token or substring", compiled.ID)

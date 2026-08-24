@@ -24,6 +24,7 @@ func TestMustQueryPanicsForMissingAsset(t *testing.T) {
 
 func TestMustQueryPanicsForEmptyAsset(t *testing.T) {
 	fsys := fstest.MapFS{"empty.sql": &fstest.MapFile{Data: []byte(" \n\t")}}
+
 	assertPanicContains(t, "empty SQL asset empty.sql", func() {
 		MustQuery(fsys, "empty.sql")
 	})
@@ -31,14 +32,17 @@ func TestMustQueryPanicsForEmptyAsset(t *testing.T) {
 
 func assertPanicContains(t *testing.T, want string, fn func()) {
 	t.Helper()
+
 	defer func() {
 		value := recover()
 		if value == nil {
 			t.Fatal("panic = nil")
 		}
+
 		if got := fmt.Sprint(value); !strings.HasPrefix(got, want) {
 			t.Fatalf("panic = %q, want prefix %q", got, want)
 		}
 	}()
+
 	fn()
 }

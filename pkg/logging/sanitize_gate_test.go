@@ -9,17 +9,23 @@ import (
 
 func sanitizeValue(t *testing.T, key, value string) string {
 	t.Helper()
+
 	var buf bytes.Buffer
+
 	h := newSanitizeHandler(slog.NewTextHandler(&buf, nil))
 	slog.New(h).Info("m", slog.String(key, value))
+
 	return buf.String()
 }
 
 func sanitizeMessage(t *testing.T, msg string) string {
 	t.Helper()
+
 	var buf bytes.Buffer
+
 	h := newSanitizeHandler(slog.NewTextHandler(&buf, nil))
 	slog.New(h).Info(msg)
+
 	return buf.String()
 }
 
@@ -36,6 +42,7 @@ func TestRedactSecrets_MixedCaseBearerNotBypassed(t *testing.T) {
 		if strings.Contains(out, "abc123.def") {
 			t.Errorf("bearer token not redacted for %q, got: %s", in, out)
 		}
+
 		if !strings.Contains(out, "***REDACTED***") {
 			t.Errorf("expected redaction for %q, got: %s", in, out)
 		}
@@ -80,6 +87,7 @@ func FuzzRedactSecrets_GateIsSuperset(f *testing.F) {
 	for _, s := range seeds {
 		f.Add(s)
 	}
+
 	f.Fuzz(func(t *testing.T, in string) {
 		want := redactDiagnosticWithoutGates(in)
 		if got := redactSecrets(in); got != want {
@@ -91,6 +99,7 @@ func FuzzRedactSecrets_GateIsSuperset(f *testing.F) {
 func TestRedactSecrets_MatchesDirectRegex(t *testing.T) {
 	in := "url=https://x.test?token=secret123&Bearer foo.bar"
 	want := redactDiagnosticWithoutGates(in)
+
 	if got := redactSecrets(in); got != want {
 		t.Fatalf("redactSecrets(%q) = %q, want %q", in, got, want)
 	}
@@ -98,8 +107,10 @@ func TestRedactSecrets_MatchesDirectRegex(t *testing.T) {
 
 func redactDiagnosticWithoutGates(in string) string {
 	out := bearerTokenRegex.ReplaceAllString(in, "${1}***REDACTED***")
+
 	out = querySecretRegex.ReplaceAllString(out, "${1}***REDACTED***")
 	out = credentialURLRegex.ReplaceAllString(out, "${1}***REDACTED***@")
+
 	return redactSecretAssignments(out)
 }
 
@@ -108,6 +119,7 @@ func TestQuerySecret_SemicolonSeparator(t *testing.T) {
 	if strings.Contains(out, "p4ssw0rd") {
 		t.Errorf("semicolon-separated password must be masked, got: %s", out)
 	}
+
 	if !strings.Contains(out, "***REDACTED***") {
 		t.Errorf("expected redaction, got: %s", out)
 	}
@@ -124,9 +136,11 @@ func TestQuerySecret_NewKeys(t *testing.T) {
 	for _, c := range cases {
 		in := "https://x.test?" + c.key + "=" + c.secret + "&keep=ok"
 		out := sanitizeValue(t, "url", in)
+
 		if strings.Contains(out, c.secret) {
 			t.Errorf("query key %q value not masked, got: %s", c.key, out)
 		}
+
 		if !strings.Contains(out, "keep=ok") {
 			t.Errorf("non-secret query param dropped for %q, got: %s", c.key, out)
 		}
@@ -138,9 +152,11 @@ func TestQuerySecret_BareKeyMasked(t *testing.T) {
 	if strings.Contains(out, "api_key=secret") {
 		t.Fatalf("api_key query value not masked, got: %s", out)
 	}
+
 	if strings.Contains(out, "key=visible") {
 		t.Fatalf("bare key query value not masked, got: %s", out)
 	}
+
 	if !strings.Contains(out, "key=***REDACTED***") {
 		t.Fatalf("expected bare key query value to be masked, got: %s", out)
 	}

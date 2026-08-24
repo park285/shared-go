@@ -25,6 +25,7 @@ func DecodeCandidatesWithContextForProtected(
 	if semantic.status != 0 {
 		return DecodeResult{Status: semantic.status}
 	}
+
 	decoded := decodeCandidatesWithContext(semantic.projected, true, mayContribute, embeddedContextMayContribute)
 
 	return mergeSemanticCandidates(semantic.candidates, decoded)
@@ -40,12 +41,14 @@ func decodeCandidatesWithContext(
 	embeddedContextMayContribute EmbeddedContextMatcher,
 ) DecodeResult {
 	roots := []string{input}
+
 	if includeShort {
 		normalized := NormalizeEncodingSyntax(input)
 		if normalized != input {
 			roots = append(roots, normalized)
 		}
 	}
+
 	if !slices.ContainsFunc(roots, func(root string) bool {
 		return hasPotentialContextDecodeSurface(root, includeShort)
 	}) {
@@ -66,12 +69,15 @@ func decodeCandidatesWithContext(
 		if _, exists := decoder.visited[root]; exists {
 			continue
 		}
+
 		decoder.visited[root] = struct{}{}
 		decoder.queue = append(decoder.queue, decodeQueueEntry{text: root})
 	}
+
 	for decoder.pending() {
 		decoder.expandNext()
 	}
+
 	return decoder.result
 }
 
@@ -79,9 +85,11 @@ func hasPotentialContextDecodeSurface(input string, includeShort bool) bool {
 	if hasPotentialDecodeSurface(input) {
 		return true
 	}
+
 	if !includeShort {
 		return false
 	}
+
 	return hasPlausibleShortDecodeSurface(input)
 }
 
@@ -114,6 +122,7 @@ func (d *contextDecoder) pending() bool {
 func (d *contextDecoder) expandNext() {
 	current := d.queue[d.cursor]
 	d.cursor++
+
 	options := decodeContextOptions{
 		includeShort:           d.includeShort,
 		boundOversizedStandard: d.includeShort,
@@ -129,27 +138,35 @@ func (d *contextDecoder) admit(current decodeQueueEntry, candidate string) {
 	if candidate == current.text {
 		return
 	}
+
 	if _, ok := d.visited[candidate]; ok {
 		return
 	}
+
 	d.visited[candidate] = struct{}{}
 	if !IsReadableString(candidate) {
 		return
 	}
+
 	if len(candidate) > maxDecodedCandidateLen || d.total+len(candidate) > maxDecodedTotalBytes {
 		d.result.Status |= DecodeByteLimit
 		return
 	}
+
 	if current.depth >= maxDecodeDepth {
 		d.result.Status |= DecodeDepthLimit
 		return
 	}
+
 	if len(d.result.Candidates) >= maxDecodeCandidates {
 		d.result.Status |= DecodeCandidateLimit
 		return
 	}
+
 	d.result.Candidates = append(d.result.Candidates, candidate)
+
 	d.total += len(candidate)
+
 	d.queue = append(d.queue, decodeQueueEntry{text: candidate, depth: current.depth + 1})
 }
 
@@ -163,19 +180,23 @@ func (d *contextDecoder) admitContextual(current decodeQueueEntry, span encodedS
 		d.result.Status |= DecodeByteLimit
 		return
 	}
+
 	candidateBytes := len(contextual)
 	if candidateBytes > maxDecodedCandidateLen || d.total+candidateBytes > maxDecodedTotalBytes {
 		d.result.Status |= DecodeByteLimit
 		return
 	}
+
 	if current.depth >= maxDecodeDepth {
 		d.result.Status |= DecodeDepthLimit
 		return
 	}
+
 	if len(d.result.Candidates) >= maxDecodeCandidates {
 		d.result.Status |= DecodeCandidateLimit
 		return
 	}
+
 	d.admit(current, contextual)
 }
 
@@ -197,15 +218,18 @@ func decodeContextSurfaces(
 	if !decodeWorkComplete(status) {
 		return
 	}
+
 	for familiesPending(families) {
 		for i := range families {
 			family := &families[i]
 			if family.next >= len(family.spans) {
 				continue
 			}
+
 			if !consumeContextDecodeScan(scans, status) {
 				return
 			}
+
 			candidate, ok := decodeContextCandidate(
 				input,
 				family,
@@ -219,9 +243,11 @@ func decodeContextSurfaces(
 			if !ok {
 				continue
 			}
+
 			if observe != nil {
 				observe(candidate)
 			}
+
 			admitDecodedContextCandidate(candidate, options, admit, admitContextual)
 		}
 	}
@@ -244,6 +270,7 @@ func consumeContextDecodeScan(scans *int, status *DecodeStatus) bool {
 
 		return false
 	}
+
 	*scans++
 
 	return true
@@ -261,15 +288,19 @@ func decodeContextCandidate(
 ) (decodedContextCandidate, bool) {
 	span := family.spans[family.next]
 	decoded, ok := family.attempt()
+
 	if !ok || !IsReadableString(decoded) {
 		return decodedContextCandidate{}, false
 	}
+
 	if family.kind == decodeHex {
 		span.start = contextualHexStart(input, span.start)
 	}
+
 	if options.boundOversizedStandard && len(decoded) > maxDecodedCandidateLen && isWholeContextTransform(family.kind) {
 		bounded, nestedStatus := boundedStandardTransformCandidates(input, family.kind, family.spans, mayContribute)
 		mergeDecodeStatus(status, nestedStatus)
+
 		if oversizedWouldBlock != nil && oversizedWouldBlock(input, decoded, bounded) {
 			*status |= DecodeByteLimit
 		}
@@ -297,51 +328,103 @@ func classifyCandidateContribution(
 	work *protectedDecodeWork,
 	status *DecodeStatus,
 ) {
-	var nested DecodeResult
-	var nestedStatus DecodeStatus
+	var (
+		nested       DecodeResult
+		nestedStatus DecodeStatus
+	)
+
 	if options.filterCandidates {
 		candidate.decodedMayContribute, nested, nestedStatus = matchingDecodedContributionDetails(candidate.decoded, mayContribute)
 	} else {
 		candidate.decodedMayContribute, nestedStatus = protectedDecodedContribution(candidate.decoded, mayContribute)
 	}
+
 	mergeDecodeStatus(status, nestedStatus)
-	hasSurroundingContext := candidate.hasSurroundingContext(len(input))
-	if hasSurroundingContext && !options.includeShort && !options.filterCandidates {
-		candidate.contextMayContribute = true
-	} else if hasSurroundingContext && options.filterCandidates && !candidate.decodedMayContribute {
-		if embeddedContextMayContribute != nil {
-			classifyEmbeddedContextCandidate(input, candidate, nested, embeddedContextMayContribute)
 
-			return
-		}
-		contextBytes := len(input) - (candidate.span.end - candidate.span.start) + len(candidate.decoded)
-		if !consumeProtectedContextWork(work, status, contextBytes) {
-			return
-		}
-		var bounded bool
-		candidate.contextual, bounded = contextualAdmissionCandidate(input, candidate.span, candidate.decoded)
-		if !bounded {
-			*status |= DecodeByteLimit
-
-			return
-		}
-		candidate.contextMayContribute, nestedStatus = matchingContextualDecodedContribution(input, candidate.span, candidate.decoded, nested, mayContribute, work)
-		mergeDecodeStatus(status, nestedStatus)
-	} else if hasSurroundingContext && candidate.decodedMayContribute {
-		contextBytes := len(input) - (candidate.span.end - candidate.span.start) + len(candidate.decoded)
-		if !consumeProtectedContextWork(work, status, contextBytes) {
-			return
-		}
-		var bounded bool
-		candidate.contextual, bounded = contextualAdmissionCandidate(input, candidate.span, candidate.decoded)
-		if !bounded {
-			*status |= DecodeByteLimit
-
-			return
-		}
-		candidate.contextMayContribute, nestedStatus = contextualWindowContribution(candidate.contextual, mayContribute)
-		mergeDecodeStatus(status, nestedStatus)
+	if !candidate.hasSurroundingContext(len(input)) {
+		return
 	}
+
+	if !options.includeShort && !options.filterCandidates {
+		candidate.contextMayContribute = true
+
+		return
+	}
+
+	if options.filterCandidates && !candidate.decodedMayContribute {
+		classifyFilteredContextCandidate(input, candidate, nested, mayContribute, embeddedContextMayContribute, work, status)
+
+		return
+	}
+
+	if candidate.decodedMayContribute {
+		classifyWindowContextCandidate(input, candidate, mayContribute, work, status)
+	}
+}
+
+func classifyFilteredContextCandidate(
+	input string,
+	candidate *decodedContextCandidate,
+	nested DecodeResult,
+	mayContribute func(string) bool,
+	embeddedContextMayContribute EmbeddedContextMatcher,
+	work *protectedDecodeWork,
+	status *DecodeStatus,
+) {
+	if embeddedContextMayContribute != nil {
+		classifyEmbeddedContextCandidate(input, candidate, nested, embeddedContextMayContribute)
+
+		return
+	}
+
+	if !chargeContextualAdmission(input, candidate, work, status) {
+		return
+	}
+
+	var nestedStatus DecodeStatus
+
+	candidate.contextMayContribute, nestedStatus = matchingContextualDecodedContribution(input, candidate.span, candidate.decoded, nested, mayContribute, work)
+	mergeDecodeStatus(status, nestedStatus)
+}
+
+func classifyWindowContextCandidate(
+	input string,
+	candidate *decodedContextCandidate,
+	mayContribute func(string) bool,
+	work *protectedDecodeWork,
+	status *DecodeStatus,
+) {
+	if !chargeContextualAdmission(input, candidate, work, status) {
+		return
+	}
+
+	var nestedStatus DecodeStatus
+
+	candidate.contextMayContribute, nestedStatus = contextualWindowContribution(candidate.contextual, mayContribute)
+	mergeDecodeStatus(status, nestedStatus)
+}
+
+func chargeContextualAdmission(
+	input string,
+	candidate *decodedContextCandidate,
+	work *protectedDecodeWork,
+	status *DecodeStatus,
+) bool {
+	contextBytes := len(input) - (candidate.span.end - candidate.span.start) + len(candidate.decoded)
+	if !consumeProtectedContextWork(work, status, contextBytes) {
+		return false
+	}
+
+	contextual, bounded := contextualAdmissionCandidate(input, candidate.span, candidate.decoded)
+	if !bounded {
+		*status |= DecodeByteLimit
+
+		return false
+	}
+
+	candidate.contextual = contextual
+
+	return true
 }
 
 func classifyEmbeddedContextCandidate(
@@ -354,12 +437,14 @@ func classifyEmbeddedContextCandidate(
 	if !candidate.contextMayContribute {
 		return
 	}
+
 	contextual, bounded := contextualAdmissionCandidate(input, candidate.span, candidate.decoded)
 	if !bounded {
 		candidate.contextMayContribute = false
 
 		return
 	}
+
 	candidate.contextual = contextual
 }
 
@@ -379,19 +464,23 @@ func admitDecodedContextCandidate(candidate decodedContextCandidate, options dec
 
 		return
 	}
+
 	if options.filterCandidates {
 		if candidate.decodedMayContribute {
 			admit(candidate.decoded)
 		}
+
 		if candidate.contextMayContribute {
 			admit(candidate.contextual)
 		}
 
 		return
 	}
+
 	if !options.includeShort || candidate.decodedMayContribute {
 		admit(candidate.decoded)
 	}
+
 	if options.includeShort && candidate.contextMayContribute {
 		admit(candidate.contextual)
 	} else if candidate.hasContext() && !options.includeShort {
@@ -403,11 +492,14 @@ func replaceDecodedSpan(input string, span encodedSpan, decoded string) string {
 	if span.start < 0 || span.start > span.end || span.end > len(input) {
 		return input
 	}
+
 	var output strings.Builder
+
 	output.Grow(len(input) - (span.end - span.start) + len(decoded))
 	output.WriteString(input[:span.start])
 	output.WriteString(decoded)
 	output.WriteString(input[span.end:])
+
 	return output.String()
 }
 
@@ -416,16 +508,20 @@ func contextualHexStart(input string, payloadStart int) int {
 	for position > 0 && isASCIIContextSpace(input[position-1]) {
 		position--
 	}
+
 	if position == 0 || input[position-1] != ':' {
 		return payloadStart
 	}
+
 	position--
 	for position > 0 && isASCIIContextSpace(input[position-1]) {
 		position--
 	}
+
 	if position < len("hex") || !strings.EqualFold(input[position-len("hex"):position], "hex") {
 		return payloadStart
 	}
+
 	return position - len("hex")
 }
 

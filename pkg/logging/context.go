@@ -57,6 +57,7 @@ func componentFromContext(ctx context.Context) string {
 func ContextAttrs(ctx context.Context) []slog.Attr {
 	values := contextValuesFrom(ctx)
 	count := values.count()
+
 	if count == 0 {
 		return nil
 	}
@@ -79,18 +80,23 @@ func contextValuesFrom(ctx context.Context) contextValues {
 
 func (v contextValues) count() int {
 	count := 0
+
 	if v.runtime != "" {
 		count++
 	}
+
 	if v.component != "" {
 		count++
 	}
+
 	if v.requestID != "" {
 		count++
 	}
+
 	if v.jobID != "" {
 		count++
 	}
+
 	return count
 }
 
@@ -98,15 +104,19 @@ func (v contextValues) appendTo(attrs []slog.Attr) []slog.Attr {
 	if v.runtime != "" {
 		attrs = append(attrs, Runtime(v.runtime))
 	}
+
 	if v.component != "" {
 		attrs = append(attrs, componentAttr(v.component))
 	}
+
 	if v.requestID != "" {
 		attrs = append(attrs, RequestID(v.requestID))
 	}
+
 	if v.jobID != "" {
 		attrs = append(attrs, jobIDAttr(v.jobID))
 	}
+
 	return attrs
 }
 
@@ -114,25 +124,36 @@ func (v contextValues) addToRecord(record *slog.Record) {
 	if v.runtime != "" {
 		record.AddAttrs(Runtime(v.runtime))
 	}
+
 	if v.component != "" {
 		record.AddAttrs(componentAttr(v.component))
 	}
+
 	if v.requestID != "" {
 		record.AddAttrs(RequestID(v.requestID))
 	}
+
 	if v.jobID != "" {
 		record.AddAttrs(jobIDAttr(v.jobID))
 	}
 }
 
-func withString(ctx context.Context, key contextKey, value string) context.Context {
+func contextOrBackground(ctx context.Context) context.Context {
 	if ctx == nil {
-		ctx = context.Background()
+		return context.Background()
 	}
+
+	return ctx
+}
+
+func withString(ctx context.Context, key contextKey, value string) context.Context {
+	ctx = contextOrBackground(ctx)
+
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return ctx
 	}
+
 	return context.WithValue(ctx, key, value)
 }
 
@@ -140,6 +161,11 @@ func stringFromContext(ctx context.Context, key contextKey) string {
 	if ctx == nil {
 		return ""
 	}
-	value, _ := ctx.Value(key).(string)
+
+	value, ok := ctx.Value(key).(string)
+	if !ok {
+		return ""
+	}
+
 	return strings.TrimSpace(value)
 }

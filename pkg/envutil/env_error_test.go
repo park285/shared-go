@@ -2,6 +2,7 @@ package envutil
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -11,24 +12,29 @@ import (
 
 func TestIntE(t *testing.T) {
 	t.Setenv("TEST_INT_E", " 42 ")
+
 	got, err := IntE("TEST_INT_E", 7)
 	if err != nil || got != 42 {
 		t.Fatalf("IntE() = (%d, %v), want (42, nil)", got, err)
 	}
 
 	t.Setenv("TEST_INT_E", "invalid")
+
 	got, err = IntE("TEST_INT_E", 7)
 	if err == nil || got != 0 {
 		t.Fatalf("IntE(invalid) = (%d, %v), want (0, error)", got, err)
 	}
+
 	if !strings.Contains(err.Error(), `invalid int env TEST_INT_E (invalid syntax)`) {
 		t.Fatalf("IntE(invalid) error = %q", err)
 	}
+
 	if !errors.Is(err, strconv.ErrSyntax) {
 		t.Fatalf("IntE(invalid) error = %v, want strconv.ErrSyntax", err)
 	}
 
 	t.Setenv("TEST_INT_E", " ")
+
 	got, err = IntE("TEST_INT_E", 7)
 	if err != nil || got != 7 {
 		t.Fatalf("IntE(blank) = (%d, %v), want (7, nil)", got, err)
@@ -37,30 +43,59 @@ func TestIntE(t *testing.T) {
 
 func TestStrictParseErrorsDoNotContainRawValues(t *testing.T) {
 	const canary = "raw-env-canary-do-not-echo-1234567890"
+
 	tests := []struct {
 		name string
 		key  string
 		call func(string) error
 	}{
-		{name: "int", key: "TEST_SECRET_INT", call: func(key string) error { _, err := IntE(key, 0); return err }},
-		{name: "int64", key: "TEST_SECRET_INT64", call: func(key string) error { _, err := Int64E(key, 0); return err }},
-		{name: "float", key: "TEST_SECRET_FLOAT", call: func(key string) error { _, err := FloatE(key, 0); return err }},
-		{name: "bool", key: "TEST_SECRET_BOOL", call: func(key string) error { _, err := BoolE(key, false); return err }},
+		{name: "int", key: "TEST_SECRET_INT", call: func(key string) error {
+			if _, err := IntE(key, 0); err != nil {
+				return fmt.Errorf("int: %w", err)
+			}
+
+			return nil
+		}},
+		{name: "int64", key: "TEST_SECRET_INT64", call: func(key string) error {
+			if _, err := Int64E(key, 0); err != nil {
+				return fmt.Errorf("int64: %w", err)
+			}
+
+			return nil
+		}},
+		{name: "float", key: "TEST_SECRET_FLOAT", call: func(key string) error {
+			if _, err := FloatE(key, 0); err != nil {
+				return fmt.Errorf("float: %w", err)
+			}
+
+			return nil
+		}},
+		{name: "bool", key: "TEST_SECRET_BOOL", call: func(key string) error {
+			if _, err := BoolE(key, false); err != nil {
+				return fmt.Errorf("bool: %w", err)
+			}
+
+			return nil
+		}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv(tt.key, canary)
+
 			err := tt.call(tt.key)
 			if err == nil {
 				t.Fatal("strict parser error = nil")
 			}
+
 			if strings.Contains(err.Error(), canary) {
 				t.Fatalf("strict parser leaked raw value: %q", err)
 			}
+
 			if !strings.Contains(err.Error(), tt.key) {
 				t.Fatalf("strict parser error = %q, want key", err)
 			}
+
 			if !errors.Is(err, strconv.ErrSyntax) {
 				t.Fatalf("strict parser error = %v, want syntax classification", err)
 			}
@@ -70,10 +105,12 @@ func TestStrictParseErrorsDoNotContainRawValues(t *testing.T) {
 
 func TestStrictParseErrorsPreserveRangeClassification(t *testing.T) {
 	t.Setenv("TEST_INT_RANGE", "999999999999999999999999999999")
+
 	_, err := IntE("TEST_INT_RANGE", 0)
 	if err == nil || !errors.Is(err, strconv.ErrRange) {
 		t.Fatalf("IntE(range) error = %v, want strconv.ErrRange", err)
 	}
+
 	if strings.Contains(err.Error(), "999999999999999999999999999999") {
 		t.Fatalf("IntE(range) leaked raw value: %q", err)
 	}
@@ -81,12 +118,14 @@ func TestStrictParseErrorsPreserveRangeClassification(t *testing.T) {
 
 func TestInt64E(t *testing.T) {
 	t.Setenv("TEST_INT64_E", "9223372036854775807")
+
 	got, err := Int64E("TEST_INT64_E", 7)
 	if err != nil || got != 9223372036854775807 {
 		t.Fatalf("Int64E() = (%d, %v)", got, err)
 	}
 
 	t.Setenv("TEST_INT64_E", "invalid")
+
 	got, err = Int64E("TEST_INT64_E", 7)
 	if err == nil || got != 0 {
 		t.Fatalf("Int64E(invalid) = (%d, %v), want (0, error)", got, err)
@@ -95,12 +134,14 @@ func TestInt64E(t *testing.T) {
 
 func TestFloatE(t *testing.T) {
 	t.Setenv("TEST_FLOAT_E", " 3.5 ")
+
 	got, err := FloatE("TEST_FLOAT_E", 1.5)
 	if err != nil || got != 3.5 {
 		t.Fatalf("FloatE() = (%v, %v), want (3.5, nil)", got, err)
 	}
 
 	t.Setenv("TEST_FLOAT_E", "invalid")
+
 	got, err = FloatE("TEST_FLOAT_E", 1.5)
 	if err == nil || got != 0 {
 		t.Fatalf("FloatE(invalid) = (%v, %v), want (0, error)", got, err)
@@ -127,6 +168,7 @@ func TestBoolE(t *testing.T) {
 	} {
 		t.Run(tt.value, func(t *testing.T) {
 			t.Setenv("TEST_BOOL_E", tt.value)
+
 			got, err := BoolE("TEST_BOOL_E", !tt.want)
 			if err != nil || got != tt.want {
 				t.Fatalf("BoolE(%q) = (%v, %v), want (%v, nil)", tt.value, got, err, tt.want)
@@ -135,6 +177,7 @@ func TestBoolE(t *testing.T) {
 	}
 
 	t.Setenv("TEST_BOOL_E", "maybe")
+
 	got, err := BoolE("TEST_BOOL_E", true)
 	if err == nil || got {
 		t.Fatalf("BoolE(maybe) = (%v, %v), want (false, error)", got, err)
@@ -154,14 +197,17 @@ func TestBoolAcceptanceSetIsShared(t *testing.T) {
 			if got := Bool("TEST_BOOL_TABLE", !want); got != want {
 				t.Errorf("Bool(%q) = %v, want %v", value, got, want)
 			}
+
 			got, err := BoolE("TEST_BOOL_TABLE", !want)
 			if err != nil || got != want {
 				t.Errorf("BoolE(%q) = (%v, %v), want (%v, nil)", value, got, err, want)
 			}
+
 			gotExplicit, explicit, err := BoolExplicit("TEST_BOOL_TABLE")
 			if err != nil || !explicit || gotExplicit != want {
 				t.Errorf("BoolExplicit(%q) = (%v, %v, %v), want (%v, true, nil)", value, gotExplicit, explicit, err, want)
 			}
+
 			if got := dotenvBool("TEST_BOOL_TABLE", !want); got != want {
 				t.Errorf("dotenvBool(%q) = %v, want %v", value, got, want)
 			}
@@ -175,12 +221,15 @@ func TestBoolAcceptanceSetIsShared(t *testing.T) {
 			if got := Bool("TEST_BOOL_TABLE", true); !got {
 				t.Errorf("Bool(%q) = %v, want default true", value, got)
 			}
+
 			if _, err := BoolE("TEST_BOOL_TABLE", true); err == nil {
 				t.Errorf("BoolE(%q) error = nil, want error", value)
 			}
+
 			if _, _, err := BoolExplicit("TEST_BOOL_TABLE"); err == nil {
 				t.Errorf("BoolExplicit(%q) error = nil, want error", value)
 			}
+
 			if got := dotenvBool("TEST_BOOL_TABLE", true); !got {
 				t.Errorf("dotenvBool(%q) = %v, want default true", value, got)
 			}
@@ -193,6 +242,7 @@ func TestBoolExplicit(t *testing.T) {
 		if err := os.Unsetenv("TEST_BOOL_EXPLICIT"); err != nil {
 			t.Fatalf("Unsetenv() error = %v", err)
 		}
+
 		value, explicit, err := BoolExplicit("TEST_BOOL_EXPLICIT")
 		if value || explicit || err != nil {
 			t.Fatalf("BoolExplicit(unset) = (%v, %v, %v), want (false, false, nil)", value, explicit, err)
@@ -201,6 +251,7 @@ func TestBoolExplicit(t *testing.T) {
 
 	t.Run("blank counts as unset", func(t *testing.T) {
 		t.Setenv("TEST_BOOL_EXPLICIT", "   ")
+
 		value, explicit, err := BoolExplicit("TEST_BOOL_EXPLICIT")
 		if value || explicit || err != nil {
 			t.Fatalf("BoolExplicit(blank) = (%v, %v, %v), want (false, false, nil)", value, explicit, err)
@@ -209,6 +260,7 @@ func TestBoolExplicit(t *testing.T) {
 
 	t.Run("explicit false", func(t *testing.T) {
 		t.Setenv("TEST_BOOL_EXPLICIT", "false")
+
 		value, explicit, err := BoolExplicit("TEST_BOOL_EXPLICIT")
 		if value || !explicit || err != nil {
 			t.Fatalf("BoolExplicit(false) = (%v, %v, %v), want (false, true, nil)", value, explicit, err)
@@ -217,17 +269,22 @@ func TestBoolExplicit(t *testing.T) {
 
 	t.Run("invalid does not leak value", func(t *testing.T) {
 		const canary = "raw-env-canary-do-not-echo-1234567890"
+
 		t.Setenv("TEST_BOOL_EXPLICIT", canary)
+
 		_, explicit, err := BoolExplicit("TEST_BOOL_EXPLICIT")
 		if err == nil {
 			t.Fatal("BoolExplicit(invalid) error = nil, want error")
 		}
+
 		if !explicit {
 			t.Error("BoolExplicit(invalid) explicit = false, want true")
 		}
+
 		if strings.Contains(err.Error(), canary) {
 			t.Fatalf("BoolExplicit(invalid) leaked raw value: %q", err)
 		}
+
 		if !errors.Is(err, strconv.ErrSyntax) {
 			t.Fatalf("BoolExplicit(invalid) error = %v, want strconv.ErrSyntax", err)
 		}
@@ -236,29 +293,36 @@ func TestBoolExplicit(t *testing.T) {
 
 func TestDurationE(t *testing.T) {
 	t.Setenv("TEST_DURATION_E", " 1h30m ")
+
 	got, err := DurationE("TEST_DURATION_E", time.Second)
 	if err != nil || got != 90*time.Minute {
 		t.Fatalf("DurationE() = (%v, %v), want (90m, nil)", got, err)
 	}
 
 	t.Setenv("TEST_DURATION_E", " ")
+
 	got, err = DurationE("TEST_DURATION_E", 5*time.Second)
 	if err != nil || got != 5*time.Second {
 		t.Fatalf("DurationE(blank) = (%v, %v), want (5s, nil)", got, err)
 	}
 
 	const canary = "raw-env-canary-do-not-echo-1234567890"
+
 	t.Setenv("TEST_DURATION_E", canary)
+
 	got, err = DurationE("TEST_DURATION_E", 5*time.Second)
 	if err == nil || got != 0 {
 		t.Fatalf("DurationE(invalid) = (%v, %v), want (0, error)", got, err)
 	}
+
 	if strings.Contains(err.Error(), canary) {
 		t.Fatalf("DurationE(invalid) leaked raw value: %q", err)
 	}
+
 	if !strings.Contains(err.Error(), "TEST_DURATION_E") {
 		t.Fatalf("DurationE(invalid) error = %q, want key", err)
 	}
+
 	if !errors.Is(err, strconv.ErrSyntax) {
 		t.Fatalf("DurationE(invalid) error = %v, want strconv.ErrSyntax", err)
 	}

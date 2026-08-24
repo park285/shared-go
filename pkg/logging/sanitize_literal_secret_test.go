@@ -29,6 +29,7 @@ func TestSanitizeKey_LiteralSecretNamesAreMasked(t *testing.T) {
 			if strings.Contains(output, value) {
 				t.Fatalf("literal secret value %q leaked in output: %s", value, output)
 			}
+
 			if !strings.Contains(output, "***REDACTED***") {
 				t.Fatalf("literal secret value %q was not redacted: %s", value, output)
 			}

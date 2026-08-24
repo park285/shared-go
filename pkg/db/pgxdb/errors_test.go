@@ -28,6 +28,7 @@ func TestIsDuplicateKey(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			if got := IsDuplicateKey(tt.err); got != tt.want {
 				t.Fatalf("IsDuplicateKey() = %v, want %v", got, tt.want)
 			}

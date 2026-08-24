@@ -65,21 +65,25 @@ var metricDescriptors = []metricDescriptor{
 func (r *Registry) Metrics(observedAt time.Time) ([]MetricFamily, error) {
 	envelope, err := r.Diagnostics(observedAt)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("diagnostics: %w", err)
 	}
+
 	families, byName := newMetricFamilies()
 	addProfileMetricSamples(byName, envelope, r.runtime)
 	r.addWorkerMetricSamples(byName, envelope)
+
 	return families, nil
 }
 
 func newMetricFamilies() ([]MetricFamily, map[string]*MetricFamily) {
 	families := make([]MetricFamily, len(metricDescriptors))
 	byName := make(map[string]*MetricFamily, len(metricDescriptors))
+
 	for index, descriptor := range metricDescriptors {
 		families[index] = MetricFamily{Name: descriptor.name, Help: descriptor.help, Type: descriptor.metricType}
 		byName[descriptor.name] = &families[index]
 	}
+
 	return families, byName
 }
 
@@ -90,6 +94,7 @@ func addProfileMetricSamples(byName map[string]*MetricFamily, envelope Diagnosti
 		"runtime":       string(runtime),
 	}
 	profileLabels := cloneLabels(processLabels)
+
 	profileLabels["contract_version"] = strconv.Itoa(ContractVersion)
 	profileLabels["profile_id"] = envelope.Profile.ID
 	profileLabels["profile_hash"] = envelope.Profile.Hash
@@ -103,7 +108,9 @@ func (r *Registry) addWorkerMetricSamples(byName map[string]*MetricFamily, envel
 	for workerID := range envelope.Workers {
 		workerIDs = append(workerIDs, workerID)
 	}
+
 	sort.Strings(workerIDs)
+
 	for _, workerID := range workerIDs {
 		r.addSingleWorkerMetricSamples(byName, envelope, workerID)
 	}
@@ -121,6 +128,7 @@ func (r *Registry) addSingleWorkerMetricSamples(byName map[string]*MetricFamily,
 		"queue_scope":   string(diagnostics.Queue.Scope),
 	}
 	policyLabels := cloneLabels(labels)
+
 	policyLabels["attempt_timeout_mode"] = string(profileWorker.Executor.AttemptTimeout.Mode)
 	policyLabels["queue_age_mode"] = string(profileWorker.Queue.MaxAge.Mode)
 	addSample(byName, "iris_stack_worker_policy_info", policyLabels, 1)
@@ -140,6 +148,7 @@ func addWorkerPolicySamples(byName map[string]*MetricFamily, labels map[string]s
 	if profileWorker.Executor.AttemptTimeout.Mode == DurationModeFixed {
 		addSample(byName, "iris_stack_worker_attempt_timeout_seconds", labels, millisecondsToSeconds(*profileWorker.Executor.AttemptTimeout.Milliseconds))
 	}
+
 	if profileWorker.Queue.MaxAge.Mode == DurationModeFixed {
 		addSample(byName, "iris_stack_worker_max_queue_age_seconds", labels, millisecondsToSeconds(*profileWorker.Queue.MaxAge.Milliseconds))
 	}
@@ -147,14 +156,18 @@ func addWorkerPolicySamples(byName map[string]*MetricFamily, labels map[string]s
 
 func addWorkerQueueSamples(byName map[string]*MetricFamily, labels map[string]string, diagnostics WorkerDiagnostics) {
 	addSample(byName, "iris_stack_worker_queue_bounded", labels, boolFloat(diagnostics.Queue.Bounded))
+
 	if diagnostics.Queue.Capacity != nil {
 		addSample(byName, "iris_stack_worker_queue_capacity", labels, float64(*diagnostics.Queue.Capacity))
 	}
+
 	if diagnostics.Queue.SnapshotStatus == QueueSnapshotCurrent {
 		addSample(byName, "iris_stack_worker_queue_depth", labels, float64(*diagnostics.Queue.Depth))
 		addSample(byName, "iris_stack_worker_oldest_queued_age_seconds", labels, millisecondsToSeconds(*diagnostics.Queue.OldestQueuedAgeMS))
 	}
+
 	addSample(byName, "iris_stack_worker_queue_snapshot_success", labels, boolFloat(diagnostics.Queue.SnapshotStatus == QueueSnapshotCurrent))
+
 	if diagnostics.Queue.LastSuccessAtEpochMS != nil {
 		addSample(byName, "iris_stack_worker_queue_snapshot_last_success_timestamp_seconds", labels, millisecondsToSeconds(*diagnostics.Queue.LastSuccessAtEpochMS))
 	}
@@ -166,6 +179,7 @@ func addAdmissionSamples(families map[string]*MetricFamily, labels map[string]st
 		value  uint64
 	}{{"accepted", totals.Accepted}, {"duplicate", totals.Duplicate}, {"rejected", totals.Rejected}, {"failed", totals.Failed}, {"outcome_unknown", totals.OutcomeUnknown}} {
 		resultLabels := cloneLabels(labels)
+
 		resultLabels["result"] = entry.result
 		addSample(families, "iris_stack_worker_admissions_total", resultLabels, float64(entry.value))
 	}
@@ -177,6 +191,7 @@ func addAttemptSamples(families map[string]*MetricFamily, labels map[string]stri
 		value   uint64
 	}{{"success", totals.Success}, {"failed", totals.Failed}, {"timeout", totals.Timeout}, {"canceled", totals.Canceled}, {"panic", totals.Panic}, {"outcome_unknown", totals.OutcomeUnknown}} {
 		outcomeLabels := cloneLabels(labels)
+
 		outcomeLabels["outcome"] = entry.outcome
 		addSample(families, "iris_stack_worker_attempts_total", outcomeLabels, float64(entry.value))
 	}
@@ -188,6 +203,7 @@ func addDiscardSamples(families map[string]*MetricFamily, labels map[string]stri
 		value  uint64
 	}{{"stale", totals.Stale}, {"shutdown", totals.Shutdown}} {
 		reasonLabels := cloneLabels(labels)
+
 		reasonLabels["reason"] = entry.reason
 		addSample(families, "iris_stack_worker_discarded_total", reasonLabels, float64(entry.value))
 	}
@@ -200,6 +216,7 @@ func addSample(families map[string]*MetricFamily, family string, labels map[stri
 func cloneLabels(labels map[string]string) map[string]string {
 	clone := make(map[string]string, len(labels)+1)
 	maps.Copy(clone, labels)
+
 	return clone
 }
 
@@ -207,6 +224,7 @@ func boolFloat(value bool) float64 {
 	if value {
 		return 1
 	}
+
 	return 0
 }
 
@@ -216,14 +234,16 @@ func millisecondsToSeconds(value int64) float64 { return float64(value) / 1000 }
 func WritePrometheus(writer io.Writer, families []MetricFamily) error {
 	for _, family := range families {
 		if _, err := fmt.Fprintf(writer, "# HELP %s %s\n# TYPE %s %s\n", family.Name, sanitizeHelp(family.Help), family.Name, family.Type); err != nil {
-			return err
+			return fmt.Errorf("fprintf: %w", err)
 		}
+
 		for _, sample := range family.Samples {
 			if _, err := fmt.Fprintf(writer, "%s%s %s\n", family.Name, formatMetricLabels(sample.Labels), strconv.FormatFloat(sample.Value, 'g', -1, 64)); err != nil {
-				return err
+				return fmt.Errorf("fprintf: %w", err)
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -231,29 +251,38 @@ func formatMetricLabels(labels map[string]string) string {
 	if len(labels) == 0 {
 		return ""
 	}
+
 	names := make([]string, 0, len(labels))
 	for name := range labels {
 		names = append(names, name)
 	}
+
 	sort.Strings(names)
+
 	var builder strings.Builder
+
 	builder.WriteByte('{')
+
 	for index, name := range names {
 		if index > 0 {
 			builder.WriteByte(',')
 		}
+
 		builder.WriteString(name)
 		builder.WriteString("=\"")
 		builder.WriteString(escapeLabel(labels[name]))
 		builder.WriteByte('"')
 	}
+
 	builder.WriteByte('}')
+
 	return builder.String()
 }
 
 func escapeLabel(value string) string {
 	value = strings.ReplaceAll(value, `\`, `\\`)
 	value = strings.ReplaceAll(value, "\n", `\n`)
+
 	return strings.ReplaceAll(value, `"`, `\"`)
 }
 

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	jsonv2 "encoding/json/v2"
+	"fmt"
 	"net/http"
 	"strings"
 )
@@ -34,6 +35,7 @@ type AdminAuthConfig struct {
 func ConstantTimeStringEqual(left, right string) bool {
 	leftHash := sha256.Sum256([]byte(left))
 	rightHash := sha256.Sum256([]byte(right))
+
 	return subtle.ConstantTimeCompare(leftHash[:], rightHash[:]) == 1 && len(left) == len(right)
 }
 
@@ -42,33 +44,46 @@ func APIKeyFromRequest(r *http.Request) string {
 	if r == nil {
 		return ""
 	}
+
 	if key := strings.TrimSpace(r.Header.Get(HeaderAPIKey)); key != "" {
 		return key
 	}
+
 	if after, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
 		return strings.TrimSpace(after)
 	}
+
 	return ""
 }
 
 // WriteJSON은 값을 JSON으로 인코딩해 HTTP 응답 본문으로 쓴다. HTML escape는 적용하지 않는다.
 func WriteJSON(w http.ResponseWriter, status int, v any) error {
 	var body bytes.Buffer
+
 	if err := jsonv2.MarshalWrite(&body, v); err != nil {
-		return err
+		return fmt.Errorf("marshal write: %w", err)
 	}
+
 	w.Header().Set(HeaderContentType, ContentTypeJSON)
 	w.WriteHeader(status)
-	_, err := w.Write(body.Bytes())
-	return err
+
+	if _, err := w.Write(body.Bytes()); err != nil {
+		return fmt.Errorf("write JSON body: %w", err)
+	}
+
+	return nil
 }
 
 // WriteErrorJSON은 표준 관리 HTTP JSON 에러 응답을 쓴다.
 func WriteErrorJSON(w http.ResponseWriter, status int, code, message string) error {
-	return WriteJSON(w, status, ErrorResponse{
+	if err := WriteJSON(w, status, ErrorResponse{
 		Error:   strings.TrimSpace(code),
 		Message: strings.TrimSpace(message),
-	})
+	}); err != nil {
+		return fmt.Errorf("write JSON: %w", err)
+	}
+
+	return nil
 }
 
 // AdminAuthMiddleware는 twentyq형 관리 API key 인증 middleware를 만든다.
@@ -79,6 +94,7 @@ func AdminAuthMiddleware(cfg AdminAuthConfig) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if cfg.Disabled {
 				next.ServeHTTP(w, r)
+
 				return
 			}
 
@@ -86,6 +102,7 @@ func AdminAuthMiddleware(cfg AdminAuthConfig) func(http.Handler) http.Handler {
 				if err := WriteErrorJSON(w, http.StatusServiceUnavailable, "AUTH_NOT_CONFIGURED", "Admin API key not configured"); err != nil {
 					return
 				}
+
 				return
 			}
 
@@ -94,6 +111,7 @@ func AdminAuthMiddleware(cfg AdminAuthConfig) func(http.Handler) http.Handler {
 				if err := WriteErrorJSON(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid or missing API key"); err != nil {
 					return
 				}
+
 				return
 			}
 

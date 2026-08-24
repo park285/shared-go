@@ -3,6 +3,7 @@ package lifecycle
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -15,7 +16,6 @@ const DefaultShutdownTimeout = 30 * time.Second
 type SignalNotifier func(signals ...os.Signal) (<-chan os.Signal, func())
 
 type Options struct {
-	BaseContext     context.Context
 	ShutdownTimeout time.Duration
 	Signals         []os.Signal
 	NotifySignals   SignalNotifier
@@ -26,38 +26,45 @@ type Options struct {
 	Shutdown        func(ctx context.Context) error
 }
 
-func Run(opts Options) error {
-	baseCtx := baseContext(opts.BaseContext)
+func Run(ctx context.Context, opts Options) error {
+	baseCtx := baseContext(ctx)
 	sigCh, stopSignals := signalSubscription(opts.NotifySignals, opts.Signals)
+
 	defer stopSignals()
 
 	runCtx, cancel := context.WithCancel(baseCtx)
 	defer cancel()
 
 	errCh := make(chan error, 1)
-	startRuntime(opts.Start, runCtx, errCh)
+	startRuntime(runCtx, opts.Start, errCh)
+
 	runtimeErr := waitForStop(baseCtx, sigCh, errCh, opts.OnSignal, opts.OnError)
 	beforeShutdown(opts.BeforeShutdown)
 
 	cancel()
 
-	shutdownCtx, shutdownCancel := shutdownContext(opts.ShutdownTimeout)
+	shutdownCtx, shutdownCancel := shutdownContext(baseCtx, opts.ShutdownTimeout)
 	defer shutdownCancel()
 
-	shutdownErr := shutdown(opts.Shutdown, shutdownCtx)
-	if runtimeErr == nil {
-		return shutdownErr
+	shutdownErr := shutdown(shutdownCtx, opts.Shutdown)
+
+	switch {
+	case runtimeErr == nil && shutdownErr == nil:
+		return nil
+	case runtimeErr == nil:
+		return fmt.Errorf("shutdown: %w", shutdownErr)
+	case shutdownErr == nil:
+		return fmt.Errorf("run: %w", runtimeErr)
 	}
-	if shutdownErr == nil {
-		return runtimeErr
-	}
-	return errors.Join(runtimeErr, shutdownErr)
+
+	return fmt.Errorf("run: %w", errors.Join(runtimeErr, shutdownErr))
 }
 
 func baseContext(ctx context.Context) context.Context {
 	if ctx != nil {
 		return ctx
 	}
+
 	return context.Background()
 }
 
@@ -65,6 +72,7 @@ func signalSubscription(notifySignals SignalNotifier, signals []os.Signal) (<-ch
 	if notifySignals == nil {
 		notifySignals = defaultSignalNotifier
 	}
+
 	if len(signals) == 0 {
 		signals = []os.Signal{syscall.SIGINT, syscall.SIGTERM}
 	}
@@ -73,10 +81,11 @@ func signalSubscription(notifySignals SignalNotifier, signals []os.Signal) (<-ch
 	if stopSignals != nil {
 		return sigCh, stopSignals
 	}
+
 	return sigCh, func() {}
 }
 
-func startRuntime(start func(ctx context.Context, errCh chan<- error), ctx context.Context, errCh chan<- error) {
+func startRuntime(ctx context.Context, start func(ctx context.Context, errCh chan<- error), errCh chan<- error) {
 	if start != nil {
 		start(ctx, errCh)
 	}
@@ -92,12 +101,22 @@ func waitForStop(
 	select {
 	case sig := <-sigCh:
 		handleSignal(onSignal, sig)
-		return drainRuntimeError(errCh, onError)
+
+		if err := drainRuntimeError(errCh, onError); err != nil {
+			return fmt.Errorf("drain runtime error: %w", err)
+		}
+
+		return nil
 	case err := <-errCh:
 		handleRuntimeError(onError, err)
+
 		return err
 	case <-baseCtx.Done():
-		return drainRuntimeError(errCh, onError)
+		if err := drainRuntimeError(errCh, onError); err != nil {
+			return fmt.Errorf("drain runtime error: %w", err)
+		}
+
+		return nil
 	}
 }
 
@@ -107,6 +126,7 @@ func drainRuntimeError(errCh <-chan error, onError func(error)) error {
 		if err != nil {
 			handleRuntimeError(onError, err)
 		}
+
 		return err
 	default:
 		return nil
@@ -131,23 +151,31 @@ func beforeShutdown(fn func()) {
 	}
 }
 
-func shutdownContext(timeout time.Duration) (context.Context, context.CancelFunc) {
+// 종료 절차는 baseCtx가 이미 취소된 뒤에 실행되므로 취소만 끊고 값은 그대로 물려받는다.
+func shutdownContext(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
 	if timeout <= 0 {
 		timeout = DefaultShutdownTimeout
 	}
-	return context.WithTimeout(context.Background(), timeout)
+
+	return context.WithTimeout(context.WithoutCancel(parent), timeout)
 }
 
-func shutdown(fn func(ctx context.Context) error, ctx context.Context) error {
+func shutdown(ctx context.Context, fn func(ctx context.Context) error) error {
 	if fn == nil {
 		return nil
 	}
-	return fn(ctx)
+
+	if err := fn(ctx); err != nil {
+		return fmt.Errorf("shutdown callback: %w", err)
+	}
+
+	return nil
 }
 
 func defaultSignalNotifier(signals ...os.Signal) (<-chan os.Signal, func()) {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, signals...)
+
 	return sigCh, func() {
 		signal.Stop(sigCh)
 	}

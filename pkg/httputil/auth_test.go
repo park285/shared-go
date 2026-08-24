@@ -5,6 +5,7 @@ import (
 	jsontext "encoding/json/jsontext"
 	jsonv2 "encoding/json/v2"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -20,9 +21,9 @@ func TestConstantTimeStringEqual(t *testing.T) {
 		right string
 		want  bool
 	}{
-		{name: "same", left: "secret", right: "secret", want: true},
-		{name: "case differs", left: "secret", right: "Secret", want: false},
-		{name: "length differs", left: "secret", right: "secret ", want: false},
+		{name: "same", left: testSecret, right: testSecret, want: true},
+		{name: "case differs", left: testSecret, right: "Secret", want: false},
+		{name: "length differs", left: testSecret, right: "secret ", want: false},
 		{name: "empty same", left: "", right: "", want: true},
 	}
 
@@ -46,7 +47,7 @@ func TestAPIKeyFromRequest(t *testing.T) {
 		authorization string
 		want          string
 	}{
-		{name: "x api key", apiKeyHeader: " secret ", want: "secret"},
+		{name: "x api key", apiKeyHeader: " secret ", want: testSecret},
 		{name: "bearer fallback", authorization: "Bearer token ", want: "token"},
 		{name: "x api key wins", apiKeyHeader: "key", authorization: "Bearer token", want: "key"},
 		{name: "bearer prefix case sensitive", authorization: "bearer token", want: ""},
@@ -57,10 +58,12 @@ func TestAPIKeyFromRequest(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", http.NoBody)
+
 			if tt.apiKeyHeader != "" {
 				req.Header.Set(HeaderAPIKey, tt.apiKeyHeader)
 			}
+
 			if tt.authorization != "" {
 				req.Header.Set("Authorization", tt.authorization)
 			}
@@ -76,16 +79,20 @@ func TestWriteJSON(t *testing.T) {
 	t.Parallel()
 
 	rec := httptest.NewRecorder()
+
 	err := WriteJSON(rec, http.StatusCreated, map[string]string{"html": "<b>&</b>"})
 	if err != nil {
 		t.Fatalf("WriteJSON() error = %v", err)
 	}
+
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusCreated)
 	}
+
 	if got := rec.Header().Get(HeaderContentType); got != ContentTypeJSON {
 		t.Fatalf("Content-Type = %q, want %q", got, ContentTypeJSON)
 	}
+
 	body := rec.Body.String()
 	if body != `{"html":"<b>&</b>"}` {
 		t.Fatalf("body = %q, want unescaped HTML JSON", body)
@@ -96,13 +103,16 @@ func TestWriteJSONEncodeFailureDoesNotCommitResponse(t *testing.T) {
 	t.Parallel()
 
 	w := &responseWriteProbe{header: make(http.Header)}
+
 	err := WriteJSON(w, http.StatusCreated, map[string]string{"invalid": "ok\xffbad"})
 	if err == nil {
 		t.Fatal("WriteJSON() error = nil, want invalid UTF-8 failure")
 	}
+
 	if _, ok := errors.AsType[*jsontext.SyntacticError](err); !ok {
 		t.Fatalf("error type = %T, want *jsontext.SyntacticError", err)
 	}
+
 	if w.status != 0 || w.body.Len() != 0 || w.header.Get(HeaderContentType) != "" {
 		t.Fatalf("response committed on encode failure: status=%d header=%q body=%q", w.status, w.header.Get(HeaderContentType), w.body.String())
 	}
@@ -115,16 +125,21 @@ func TestWriteErrorJSONTrimsAndUsesWriteJSON(t *testing.T) {
 	if err := WriteErrorJSON(rec, http.StatusBadRequest, "  CODE  ", "  msg  "); err != nil {
 		t.Fatalf("WriteErrorJSON() error = %v", err)
 	}
+
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
 	}
+
 	if got := rec.Header().Get(HeaderContentType); got != ContentTypeJSON {
 		t.Fatalf("Content-Type = %q, want %q", got, ContentTypeJSON)
 	}
+
 	var payload ErrorResponse
+
 	if err := jsonv2.Unmarshal([]byte(strings.TrimSpace(rec.Body.String())), &payload); err != nil {
 		t.Fatalf("unmarshal error body: %v", err)
 	}
+
 	if payload.Error != "CODE" || payload.Message != "msg" {
 		t.Fatalf("payload = %+v, want trimmed CODE/msg", payload)
 	}
@@ -133,19 +148,27 @@ func TestWriteErrorJSONTrimsAndUsesWriteJSON(t *testing.T) {
 func TestAdminAuthMiddleware(t *testing.T) {
 	t.Parallel()
 
-	okHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
+	for _, tt := range adminAuthMiddlewareCases() {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	tests := []struct {
-		name       string
-		cfg        AdminAuthConfig
-		apiKey     string
-		authHeader string
-		wantStatus int
-		wantCode   string
-		wantCalled bool
-	}{
+			runAdminAuthMiddlewareCase(t, tt)
+		})
+	}
+}
+
+type adminAuthMiddlewareCase struct {
+	name       string
+	cfg        AdminAuthConfig
+	apiKey     string
+	authHeader string
+	wantStatus int
+	wantCode   string
+	wantCalled bool
+}
+
+func adminAuthMiddlewareCases() []adminAuthMiddlewareCase {
+	return []adminAuthMiddlewareCase{
 		{
 			name:       "zero value empty secret fails closed",
 			cfg:        AdminAuthConfig{},
@@ -161,70 +184,80 @@ func TestAdminAuthMiddleware(t *testing.T) {
 		},
 		{
 			name:       "valid key via x api key",
-			cfg:        AdminAuthConfig{APIKey: "secret"},
-			apiKey:     "secret",
+			cfg:        AdminAuthConfig{APIKey: testSecret},
+			apiKey:     testSecret,
 			wantStatus: http.StatusOK,
 			wantCalled: true,
 		},
 		{
 			name:       "valid key via bearer",
-			cfg:        AdminAuthConfig{APIKey: "secret"},
+			cfg:        AdminAuthConfig{APIKey: testSecret},
 			authHeader: "Bearer secret",
 			wantStatus: http.StatusOK,
 			wantCalled: true,
 		},
 		{
 			name:       "invalid key",
-			cfg:        AdminAuthConfig{APIKey: "secret"},
+			cfg:        AdminAuthConfig{APIKey: testSecret},
 			apiKey:     "wrong",
 			wantStatus: http.StatusUnauthorized,
 			wantCode:   "UNAUTHORIZED",
 		},
 		{
 			name:       "missing key",
-			cfg:        AdminAuthConfig{APIKey: "secret"},
+			cfg:        AdminAuthConfig{APIKey: testSecret},
 			wantStatus: http.StatusUnauthorized,
 			wantCode:   "UNAUTHORIZED",
 		},
 	}
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
+func runAdminAuthMiddlewareCase(t *testing.T, tt adminAuthMiddlewareCase) {
+	t.Helper()
 
-			called := false
-			handler := AdminAuthMiddleware(tt.cfg)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				called = true
-				okHandler.ServeHTTP(w, r)
-			}))
-			req := httptest.NewRequest(http.MethodGet, "/admin/test", http.NoBody)
-			if tt.apiKey != "" {
-				req.Header.Set(HeaderAPIKey, tt.apiKey)
-			}
-			if tt.authHeader != "" {
-				req.Header.Set("Authorization", tt.authHeader)
-			}
+	okHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
 
-			rec := httptest.NewRecorder()
-			handler.ServeHTTP(rec, req)
-			if rec.Code != tt.wantStatus {
-				t.Fatalf("status = %d, want %d", rec.Code, tt.wantStatus)
-			}
-			if called != tt.wantCalled {
-				t.Fatalf("next called = %t, want %t", called, tt.wantCalled)
-			}
-			if tt.wantCode == "" {
-				return
-			}
+	called := false
+	handler := AdminAuthMiddleware(tt.cfg)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
 
-			var payload ErrorResponse
-			if err := jsonv2.Unmarshal([]byte(strings.TrimSpace(rec.Body.String())), &payload); err != nil {
-				t.Fatalf("unmarshal error body: %v", err)
-			}
-			if payload.Error != tt.wantCode {
-				t.Fatalf("error code = %q, want %q", payload.Error, tt.wantCode)
-			}
-		})
+		okHandler.ServeHTTP(w, r)
+	}))
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/admin/test", http.NoBody)
+
+	if tt.apiKey != "" {
+		req.Header.Set(HeaderAPIKey, tt.apiKey)
+	}
+
+	if tt.authHeader != "" {
+		req.Header.Set("Authorization", tt.authHeader)
+	}
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != tt.wantStatus {
+		t.Fatalf("status = %d, want %d", rec.Code, tt.wantStatus)
+	}
+
+	if called != tt.wantCalled {
+		t.Fatalf("next called = %t, want %t", called, tt.wantCalled)
+	}
+
+	if tt.wantCode == "" {
+		return
+	}
+
+	var payload ErrorResponse
+
+	if err := jsonv2.Unmarshal([]byte(strings.TrimSpace(rec.Body.String())), &payload); err != nil {
+		t.Fatalf("unmarshal error body: %v", err)
+	}
+
+	if payload.Error != tt.wantCode {
+		t.Fatalf("error code = %q, want %q", payload.Error, tt.wantCode)
 	}
 }
 
@@ -242,5 +275,11 @@ func (w *responseWriteProbe) Write(p []byte) (int, error) {
 	if w.status == 0 {
 		w.status = http.StatusOK
 	}
-	return w.body.Write(p)
+
+	out, err := w.body.Write(p)
+	if err != nil {
+		return out, fmt.Errorf("write: %w", err)
+	}
+
+	return out, nil
 }

@@ -24,21 +24,27 @@ func TestWithAdvisoryLockRetriesUntilAcquired(t *testing.T) {
 		if ctx == nil {
 			t.Fatal("fn context is nil")
 		}
+
 		called = true
+
 		return nil
 	})
 	if err != nil {
 		t.Fatalf("WithAdvisoryLock() error = %v", err)
 	}
+
 	if !called {
 		t.Fatal("WithAdvisoryLock() did not run fn")
 	}
+
 	if session.tryCalls != 3 {
 		t.Fatalf("try calls = %d, want 3", session.tryCalls)
 	}
+
 	if session.unlockCalls != 1 {
 		t.Fatalf("unlock calls = %d, want 1", session.unlockCalls)
 	}
+
 	if session.keys[0] != 42 || session.keys[len(session.keys)-1] != 42 {
 		t.Fatalf("lock keys = %v, want all 42", session.keys)
 	}
@@ -48,20 +54,24 @@ func TestWithAdvisoryLockTimesOut(t *testing.T) {
 	t.Parallel()
 
 	session := &fakeLockSession{}
+
 	err := WithAdvisoryLock(t.Context(), session, LockConfig{
 		Acquire: 5 * time.Millisecond,
 		Poll:    time.Millisecond,
 		Release: 5 * time.Millisecond,
 	}, func(context.Context) error {
 		t.Fatal("fn must not run without lock")
+
 		return nil
 	})
 	if err == nil {
 		t.Fatal("WithAdvisoryLock() error = nil, want timeout")
 	}
+
 	if !strings.Contains(err.Error(), "timed out") {
 		t.Fatalf("WithAdvisoryLock() error = %v, want timeout", err)
 	}
+
 	if session.unlockCalls != 0 {
 		t.Fatalf("unlock calls = %d, want 0", session.unlockCalls)
 	}
@@ -79,31 +89,34 @@ func TestWithAdvisoryLockUnlocksWhenFunctionErrors(t *testing.T) {
 	}, func(context.Context) error {
 		return runErr
 	})
+
 	if !errors.Is(err, runErr) {
 		t.Fatalf("WithAdvisoryLock() error = %v, want run error", err)
 	}
+
 	if session.unlockCalls != 1 {
 		t.Fatalf("unlock calls = %d, want 1", session.unlockCalls)
 	}
 }
 
-func TestWithAdvisoryLockUnlockErrorHandling(t *testing.T) {
-	t.Parallel()
+type unlockErrorCase struct {
+	name                string
+	runErr              error
+	unlockErr           error
+	unlockReleased      bool
+	unlockReleasedSet   bool
+	onUnlockError       bool
+	wantReturnErr       error
+	wantCallbackErr     bool
+	wantNotHeld         bool
+	wantCallbackNotHeld bool
+}
 
+func unlockErrorCases() []unlockErrorCase {
 	runErr := errors.New("run failed")
 	unlockErr := errors.New("unlock failed")
-	tests := []struct {
-		name                string
-		runErr              error
-		unlockErr           error
-		unlockReleased      bool
-		unlockReleasedSet   bool
-		onUnlockError       bool
-		wantReturnErr       error
-		wantCallbackErr     bool
-		wantNotHeld         bool
-		wantCallbackNotHeld bool
-	}{
+
+	return []unlockErrorCase{
 		{
 			name:          "unlock error",
 			unlockErr:     unlockErr,
@@ -144,7 +157,56 @@ func TestWithAdvisoryLockUnlockErrorHandling(t *testing.T) {
 			wantCallbackErr: true,
 		},
 	}
-	for _, tt := range tests {
+}
+
+func assertUnlockReturnErr(t *testing.T, tt unlockErrorCase, err error) {
+	t.Helper()
+
+	if tt.wantReturnErr == nil && !tt.wantNotHeld {
+		if err != nil {
+			t.Fatalf("WithAdvisoryLock() error = %v, want nil", err)
+		}
+	} else if tt.wantReturnErr != nil && !errors.Is(err, tt.wantReturnErr) {
+		t.Fatalf("WithAdvisoryLock() error = %v, want %v", err, tt.wantReturnErr)
+	}
+
+	if tt.runErr != nil && tt.unlockErr != nil && !tt.onUnlockError && !errors.Is(err, tt.unlockErr) {
+		t.Fatalf("WithAdvisoryLock() error = %v, want joined unlock error", err)
+	}
+
+	if tt.wantNotHeld && (err == nil || !strings.Contains(err.Error(), "lock was not held")) {
+		t.Fatalf("WithAdvisoryLock() error = %v, want lock not held", err)
+	}
+}
+
+func assertUnlockCallbackErr(t *testing.T, tt unlockErrorCase, callbackErr error) {
+	t.Helper()
+
+	if !tt.wantCallbackErr {
+		if callbackErr != nil {
+			t.Fatalf("OnUnlockError() error = %v, want nil", callbackErr)
+		}
+
+		return
+	}
+
+	if callbackErr == nil {
+		t.Fatal("OnUnlockError() error = nil, want unlock error")
+	}
+
+	if tt.unlockErr != nil && !errors.Is(callbackErr, tt.unlockErr) {
+		t.Fatalf("OnUnlockError() error = %v, want %v", callbackErr, tt.unlockErr)
+	}
+
+	if tt.wantCallbackNotHeld && !strings.Contains(callbackErr.Error(), "lock was not held") {
+		t.Fatalf("OnUnlockError() error = %v, want lock not held", callbackErr)
+	}
+}
+
+func TestWithAdvisoryLockUnlockErrorHandling(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range unlockErrorCases() {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -154,12 +216,15 @@ func TestWithAdvisoryLockUnlockErrorHandling(t *testing.T) {
 				unlockReleased:    tt.unlockReleased,
 				unlockReleasedSet: tt.unlockReleasedSet,
 			}
+
 			var callbackErr error
+
 			cfg := LockConfig{
 				Acquire: 20 * time.Millisecond,
 				Poll:    time.Millisecond,
 				Release: 20 * time.Millisecond,
 			}
+
 			if tt.onUnlockError {
 				cfg.OnUnlockError = func(err error) {
 					callbackErr = err
@@ -169,32 +234,10 @@ func TestWithAdvisoryLockUnlockErrorHandling(t *testing.T) {
 			err := WithAdvisoryLock(t.Context(), session, cfg, func(context.Context) error {
 				return tt.runErr
 			})
-			if tt.wantReturnErr == nil && !tt.wantNotHeld {
-				if err != nil {
-					t.Fatalf("WithAdvisoryLock() error = %v, want nil", err)
-				}
-			} else if tt.wantReturnErr != nil && !errors.Is(err, tt.wantReturnErr) {
-				t.Fatalf("WithAdvisoryLock() error = %v, want %v", err, tt.wantReturnErr)
-			}
-			if tt.runErr != nil && tt.unlockErr != nil && !tt.onUnlockError && !errors.Is(err, tt.unlockErr) {
-				t.Fatalf("WithAdvisoryLock() error = %v, want joined unlock error", err)
-			}
-			if tt.wantNotHeld && (err == nil || !strings.Contains(err.Error(), "lock was not held")) {
-				t.Fatalf("WithAdvisoryLock() error = %v, want lock not held", err)
-			}
-			if tt.wantCallbackErr {
-				if callbackErr == nil {
-					t.Fatal("OnUnlockError() error = nil, want unlock error")
-				}
-				if tt.unlockErr != nil && !errors.Is(callbackErr, tt.unlockErr) {
-					t.Fatalf("OnUnlockError() error = %v, want %v", callbackErr, tt.unlockErr)
-				}
-				if tt.wantCallbackNotHeld && !strings.Contains(callbackErr.Error(), "lock was not held") {
-					t.Fatalf("OnUnlockError() error = %v, want lock not held", callbackErr)
-				}
-			} else if callbackErr != nil {
-				t.Fatalf("OnUnlockError() error = %v, want nil", callbackErr)
-			}
+
+			assertUnlockReturnErr(t, tt, err)
+			assertUnlockCallbackErr(t, tt, callbackErr)
+
 			if session.unlockCalls != 1 {
 				t.Fatalf("unlock calls = %d, want 1", session.unlockCalls)
 			}
@@ -205,7 +248,7 @@ func TestWithAdvisoryLockUnlockErrorHandling(t *testing.T) {
 func TestWithAdvisoryLockExternalContextCancellationDuringPoll(t *testing.T) {
 	t.Parallel()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	session := &fakeLockSession{
 		tryResults: []bool{false},
 		afterTry:   cancel,
@@ -216,17 +259,22 @@ func TestWithAdvisoryLockExternalContextCancellationDuringPoll(t *testing.T) {
 		Release: 5 * time.Millisecond,
 	}, func(context.Context) error {
 		t.Fatal("fn must not run without lock")
+
 		return nil
 	})
+
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("WithAdvisoryLock() error = %v, want context.Canceled", err)
 	}
+
 	if strings.Contains(err.Error(), "timed out") {
 		t.Fatalf("WithAdvisoryLock() error = %v, want cancellation message", err)
 	}
+
 	if !strings.Contains(err.Error(), "canceled") {
 		t.Fatalf("WithAdvisoryLock() error = %v, want cancellation message", err)
 	}
+
 	if session.unlockCalls != 0 {
 		t.Fatalf("unlock calls = %d, want 0", session.unlockCalls)
 	}
@@ -237,11 +285,14 @@ func TestWithAdvisoryLockPanicStillUnlocks(t *testing.T) {
 
 	session := &fakeLockSession{tryResults: []bool{true}}
 	didPanic := false
+
 	func() {
 		defer func() {
 			didPanic = recover() != nil
 		}()
-		_ = WithAdvisoryLock(t.Context(), session, LockConfig{
+
+		//nolint:errcheck,gosec // 콜백이 panic하므로 반환값에 도달하지 않는다.
+		WithAdvisoryLock(t.Context(), session, LockConfig{
 			Acquire: 20 * time.Millisecond,
 			Poll:    time.Millisecond,
 			Release: 20 * time.Millisecond,
@@ -249,9 +300,11 @@ func TestWithAdvisoryLockPanicStillUnlocks(t *testing.T) {
 			panic("boom")
 		})
 	}()
+
 	if !didPanic {
 		t.Fatal("WithAdvisoryLock() did not panic")
 	}
+
 	if session.unlockCalls != 1 {
 		t.Fatalf("unlock calls = %d, want 1", session.unlockCalls)
 	}
@@ -272,9 +325,11 @@ func TestWithAdvisoryLockEvictsConnOnUnlockFailure(t *testing.T) {
 	}, func(context.Context) error {
 		return nil
 	})
+
 	if !errors.Is(err, unlockErr) {
 		t.Fatalf("WithAdvisoryLock() error = %v, want unlock error", err)
 	}
+
 	if session.evictCalls != 1 {
 		t.Fatalf("evict calls = %d, want 1", session.evictCalls)
 	}
@@ -286,6 +341,7 @@ func TestWithAdvisoryLockDoesNotEvictWhenUnlockSucceeds(t *testing.T) {
 	session := &fakeEvictingLockSession{
 		tryResults: []bool{true},
 	}
+
 	err := WithAdvisoryLock(t.Context(), session, LockConfig{
 		Acquire: 20 * time.Millisecond,
 		Poll:    time.Millisecond,
@@ -296,6 +352,7 @@ func TestWithAdvisoryLockDoesNotEvictWhenUnlockSucceeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WithAdvisoryLock() error = %v, want nil", err)
 	}
+
 	if session.evictCalls != 0 {
 		t.Fatalf("evict calls = %d, want 0", session.evictCalls)
 	}
@@ -315,9 +372,11 @@ func TestWithAdvisoryLockEvictsWhenLockNotHeld(t *testing.T) {
 	}, func(context.Context) error {
 		return nil
 	})
+
 	if err == nil || !strings.Contains(err.Error(), "lock was not held") {
 		t.Fatalf("WithAdvisoryLock() error = %v, want lock not held", err)
 	}
+
 	if session.evictCalls != 1 {
 		t.Fatalf("evict calls = %d, want 1", session.evictCalls)
 	}
@@ -331,7 +390,9 @@ func TestWithAdvisoryLockEvictsAndInvokesCallbackOnUnlockFailure(t *testing.T) {
 		tryResults: []bool{true},
 		unlockErr:  unlockErr,
 	}
+
 	var callbackErr error
+
 	err := WithAdvisoryLock(t.Context(), session, LockConfig{
 		Acquire:       20 * time.Millisecond,
 		Poll:          time.Millisecond,
@@ -343,9 +404,11 @@ func TestWithAdvisoryLockEvictsAndInvokesCallbackOnUnlockFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WithAdvisoryLock() error = %v, want nil (callback absorbs unlock error)", err)
 	}
+
 	if !errors.Is(callbackErr, unlockErr) {
 		t.Fatalf("OnUnlockError() error = %v, want unlock error", callbackErr)
 	}
+
 	if session.evictCalls != 1 {
 		t.Fatalf("evict calls = %d, want 1", session.evictCalls)
 	}
@@ -367,12 +430,15 @@ func TestWithAdvisoryLockEvictPanicKeepsUnlockErrorSemantics(t *testing.T) {
 	}, func(context.Context) error {
 		return nil
 	})
+
 	if !errors.Is(err, unlockErr) {
 		t.Fatalf("WithAdvisoryLock() error = %v, want unlock error preserved", err)
 	}
+
 	if err == nil || !strings.Contains(err.Error(), "panicked") {
 		t.Fatalf("WithAdvisoryLock() error = %v, want evict panic converted to error", err)
 	}
+
 	if session.evictCalls != 1 {
 		t.Fatalf("evict calls = %d, want 1", session.evictCalls)
 	}
@@ -387,7 +453,9 @@ func TestWithAdvisoryLockEvictPanicStillInvokesCallback(t *testing.T) {
 		unlockErr:  unlockErr,
 		evictPanic: true,
 	}
+
 	var callbackErr error
+
 	err := WithAdvisoryLock(t.Context(), session, LockConfig{
 		Acquire:       20 * time.Millisecond,
 		Poll:          time.Millisecond,
@@ -399,9 +467,11 @@ func TestWithAdvisoryLockEvictPanicStillInvokesCallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WithAdvisoryLock() error = %v, want nil (callback absorbs unlock error)", err)
 	}
+
 	if !errors.Is(callbackErr, unlockErr) {
 		t.Fatalf("OnUnlockError() error = %v, want unlock error", callbackErr)
 	}
+
 	if callbackErr == nil || !strings.Contains(callbackErr.Error(), "panicked") {
 		t.Fatalf("OnUnlockError() error = %v, want evict panic included", callbackErr)
 	}
@@ -424,12 +494,15 @@ func TestWithAdvisoryLockEvictPanicKeepsRunErrorJoin(t *testing.T) {
 	}, func(context.Context) error {
 		return runErr
 	})
+
 	if !errors.Is(err, runErr) {
 		t.Fatalf("WithAdvisoryLock() error = %v, want run error preserved", err)
 	}
+
 	if !errors.Is(err, unlockErr) {
 		t.Fatalf("WithAdvisoryLock() error = %v, want unlock error joined", err)
 	}
+
 	if err == nil || !strings.Contains(err.Error(), "panicked") {
 		t.Fatalf("WithAdvisoryLock() error = %v, want evict panic converted to error", err)
 	}
@@ -443,12 +516,16 @@ func TestWithAdvisoryLockEvictPanicDoesNotReplaceFnPanic(t *testing.T) {
 		unlockErr:  errors.New("unlock boom"),
 		evictPanic: true,
 	}
+
 	var recovered any
+
 	func() {
 		defer func() {
 			recovered = recover()
 		}()
-		_ = WithAdvisoryLock(t.Context(), session, LockConfig{
+
+		//nolint:errcheck,gosec // 콜백이 panic하므로 반환값에 도달하지 않는다.
+		WithAdvisoryLock(t.Context(), session, LockConfig{
 			Acquire: 20 * time.Millisecond,
 			Poll:    time.Millisecond,
 			Release: 20 * time.Millisecond,
@@ -456,9 +533,11 @@ func TestWithAdvisoryLockEvictPanicDoesNotReplaceFnPanic(t *testing.T) {
 			panic("original boom")
 		})
 	}()
+
 	if recovered != "original boom" {
 		t.Fatalf("recovered = %v, want fn's original panic value", recovered)
 	}
+
 	if session.evictCalls != 1 {
 		t.Fatalf("evict calls = %d, want 1", session.evictCalls)
 	}
@@ -468,21 +547,28 @@ func TestSQLLockSessionEvictsConnectionAfterUnlockFailure(t *testing.T) {
 	t.Parallel()
 
 	db := sql.OpenDB(&fakeSQLConnector{})
+
 	defer func() { _ = db.Close() }()
+
 	conn, err := db.Conn(t.Context())
 	if err != nil {
 		t.Fatalf("db.Conn() error = %v", err)
 	}
-	defer func() { _ = conn.Close() }()
+
+	// eviction 검증이 목적이라 Close는 이미 닫힌 연결에 대해 실패하는 것이 정상이다.
+	defer conn.Close() //nolint:errcheck // 축출된 연결이므로 close 실패가 기대 동작이다.
 
 	session := SQLLockSession(conn)
 	evicter, ok := session.(UnlockFailureEvicter)
+
 	if !ok {
 		t.Fatal("SQLLockSession() does not implement UnlockFailureEvicter")
 	}
+
 	if err := evicter.EvictAfterUnlockFailure(); err != nil {
 		t.Fatalf("EvictAfterUnlockFailure() error = %v", err)
 	}
+
 	if err := conn.PingContext(t.Context()); !errors.Is(err, sql.ErrConnDone) {
 		t.Fatalf("PingContext() error = %v, want sql.ErrConnDone after eviction", err)
 	}
@@ -490,6 +576,7 @@ func TestSQLLockSessionEvictsConnectionAfterUnlockFailure(t *testing.T) {
 
 type fakeEvictingLockSession struct {
 	fakeLockSession
+
 	evictCalls int
 	evictPanic bool
 	evictErr   error
@@ -500,6 +587,7 @@ func (s *fakeEvictingLockSession) EvictAfterUnlockFailure() error {
 	if s.evictPanic {
 		panic("evict boom")
 	}
+
 	return s.evictErr
 }
 
@@ -517,23 +605,29 @@ type fakeLockSession struct {
 func (s *fakeLockSession) TryAdvisoryLock(_ context.Context, key int64) (bool, error) {
 	s.keys = append(s.keys, key)
 	s.tryCalls++
+
 	defer func() {
 		if s.afterTry != nil {
 			s.afterTry()
 		}
 	}()
+
 	if s.tryCalls <= len(s.tryResults) {
 		return s.tryResults[s.tryCalls-1], nil
 	}
+
 	return false, nil
 }
 
 func (s *fakeLockSession) AdvisoryUnlock(_ context.Context, key int64) (bool, error) {
 	s.keys = append(s.keys, key)
 	s.unlockCalls++
+
 	released := true
+
 	if s.unlockReleasedSet {
 		released = s.unlockReleased
 	}
+
 	return released, s.unlockErr
 }

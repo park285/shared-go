@@ -24,6 +24,7 @@ func protectWrappedCode(input string, dst *store) string {
 			if name := strings.TrimSpace(inner[2]); name != "" {
 				lang = name
 			}
+
 			display = "```\n" + strings.TrimRight(inner[3], "\n") + "\n```"
 		}
 
@@ -35,6 +36,7 @@ func protectCodeBlocks(input string, dst *store) string {
 	return reCodeBlock.ReplaceAllStringFunc(input, func(match string) string {
 		parts := reCodeBlock.FindStringSubmatch(match)
 		lang := strings.TrimSpace(parts[2])
+
 		if lang == "" {
 			lang = "Code"
 		}
@@ -55,6 +57,7 @@ func codeBox(indent, lang, body string) string {
 	bottom := 10 + (utf8.RuneCountInString(lang)+1)/2
 
 	var b strings.Builder
+
 	b.Grow(len(indent)*2 + len(lang) + len(body) + bottom + 24)
 	b.WriteByte('\n')
 	b.WriteString(indent)

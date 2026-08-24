@@ -17,7 +17,9 @@ func TestEmbeddedRulepackHardeningCorpusV3(t *testing.T) {
 			if evaluation.Decision != tc.ExpectedDecision {
 				t.Fatalf("decision = %q, want %q (hits=%v)", evaluation.Decision, tc.ExpectedDecision, matchedRuleIDs(evaluation.Hits))
 			}
+
 			actualRules := matchedRuleIDs(evaluation.Hits)
+
 			for _, expected := range tc.ExpectedRules {
 				if !slices.Contains(actualRules, expected) {
 					t.Errorf("rules = %v, want %q", actualRules, expected)

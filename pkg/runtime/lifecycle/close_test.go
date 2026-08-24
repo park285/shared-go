@@ -15,13 +15,14 @@ func TestRunCloseSteps_RunsInSliceOrder(t *testing.T) {
 	t.Parallel()
 
 	var order []string
+
 	steps := []CloseStep{
 		{Name: "a", Close: func(context.Context) error { order = append(order, "a"); return nil }},
 		{Name: "b", Close: func(context.Context) error { order = append(order, "b"); return nil }},
 		{Name: "c", Close: func(context.Context) error { order = append(order, "c"); return nil }},
 	}
 
-	if err := RunCloseSteps(context.Background(), nil, steps); err != nil {
+	if err := RunCloseSteps(t.Context(), nil, steps); err != nil {
 		t.Fatalf("RunCloseSteps() error = %v, want nil", err)
 	}
 
@@ -37,13 +38,14 @@ func TestRunCloseSteps_ContinuesAfterErrorAndAggregates(t *testing.T) {
 	errC := errors.New("c failed")
 
 	var order []string
+
 	steps := []CloseStep{
 		{Name: "a", Close: func(context.Context) error { order = append(order, "a"); return nil }},
 		{Name: "b", Close: func(context.Context) error { order = append(order, "b"); return errB }},
 		{Name: "c", Close: func(context.Context) error { order = append(order, "c"); return errC }},
 	}
 
-	err := RunCloseSteps(context.Background(), nil, steps)
+	err := RunCloseSteps(t.Context(), nil, steps)
 	if err == nil {
 		t.Fatal("RunCloseSteps() error = nil, want aggregated error")
 	}
@@ -71,13 +73,14 @@ func TestRunCloseSteps_RecoversPanicAndContinues(t *testing.T) {
 	errPanic := errors.New("b exploded")
 
 	var order []string
+
 	steps := []CloseStep{
 		{Name: "a", Close: func(context.Context) error { order = append(order, "a"); return nil }},
 		{Name: "b", Close: func(context.Context) error { order = append(order, "b"); panic(errPanic) }},
 		{Name: "c", Close: func(context.Context) error { order = append(order, "c"); return nil }},
 	}
 
-	err := RunCloseSteps(context.Background(), nil, steps)
+	err := RunCloseSteps(t.Context(), nil, steps)
 	if err == nil {
 		t.Fatal("RunCloseSteps() error = nil, want aggregated panic error")
 	}
@@ -98,9 +101,10 @@ func TestRunCloseSteps_RecoversPanicAndContinues(t *testing.T) {
 func TestRunCloseSteps_PassesContextToStep(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.WithValue(context.Background(), closeCtxKey{}, "value")
+	ctx := context.WithValue(t.Context(), closeCtxKey{}, "value")
 
 	var got string
+
 	steps := []CloseStep{
 		{Name: "a", Close: func(c context.Context) error {
 			if v, ok := c.Value(closeCtxKey{}).(string); ok {
@@ -127,7 +131,7 @@ func TestRunCloseSteps_NilLoggerSafeOnErrorPath(t *testing.T) {
 		{Name: "a", Close: func(context.Context) error { return errors.New("boom") }},
 	}
 
-	if err := RunCloseSteps(context.Background(), nil, steps); err == nil {
+	if err := RunCloseSteps(t.Context(), nil, steps); err == nil {
 		t.Fatal("RunCloseSteps() error = nil, want error")
 	}
 }
@@ -135,11 +139,11 @@ func TestRunCloseSteps_NilLoggerSafeOnErrorPath(t *testing.T) {
 func TestRunCloseSteps_EmptyStepsNoOp(t *testing.T) {
 	t.Parallel()
 
-	if err := RunCloseSteps(context.Background(), nil, nil); err != nil {
+	if err := RunCloseSteps(t.Context(), nil, nil); err != nil {
 		t.Fatalf("RunCloseSteps(nil) error = %v, want nil", err)
 	}
 
-	if err := RunCloseSteps(context.Background(), nil, []CloseStep{}); err != nil {
+	if err := RunCloseSteps(t.Context(), nil, []CloseStep{}); err != nil {
 		t.Fatalf("RunCloseSteps(empty) error = %v, want nil", err)
 	}
 }
@@ -148,12 +152,13 @@ func TestRunCloseSteps_SkipsNilClose(t *testing.T) {
 	t.Parallel()
 
 	var ran bool
+
 	steps := []CloseStep{
 		{Name: "nil-step"},
 		{Name: "b", Close: func(context.Context) error { ran = true; return nil }},
 	}
 
-	if err := RunCloseSteps(context.Background(), nil, steps); err != nil {
+	if err := RunCloseSteps(t.Context(), nil, steps); err != nil {
 		t.Fatalf("RunCloseSteps() error = %v, want nil", err)
 	}
 
@@ -169,7 +174,7 @@ func TestRunCloseSteps_EmptyNameFallback(t *testing.T) {
 		{Close: func(context.Context) error { return errors.New("boom") }},
 	}
 
-	err := RunCloseSteps(context.Background(), nil, steps)
+	err := RunCloseSteps(t.Context(), nil, steps)
 	if err == nil || !strings.Contains(err.Error(), "step[0]") {
 		t.Fatalf("RunCloseSteps() error = %v, want step[0] fallback name", err)
 	}
@@ -179,13 +184,16 @@ func TestRunCloseSteps_LogsFailuresThroughLogger(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
+
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	steps := []CloseStep{
 		{Name: "database", Close: func(context.Context) error { return errors.New("closed") }},
 	}
 
-	_ = RunCloseSteps(context.Background(), logger, steps)
+	if err := RunCloseSteps(t.Context(), logger, steps); err == nil {
+		t.Fatal("RunCloseSteps() error = nil, want the failing step to surface")
+	}
 
 	out := buf.String()
 	if !strings.Contains(out, "close step failed") {
@@ -200,10 +208,11 @@ func TestRunCloseSteps_LogsFailuresThroughLogger(t *testing.T) {
 func TestRunCloseSteps_RunsAllStepsWhenContextAlreadyCancelled(t *testing.T) {
 	t.Parallel()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
 	var order []string
+
 	steps := []CloseStep{
 		{Name: "a", Close: func(context.Context) error { order = append(order, "a"); return nil }},
 		{Name: "b", Close: func(context.Context) error { order = append(order, "b"); return nil }},
@@ -214,6 +223,6 @@ func TestRunCloseSteps_RunsAllStepsWhenContextAlreadyCancelled(t *testing.T) {
 	}
 
 	if got := strings.Join(order, ","); got != "a,b" {
-		t.Fatalf("close order = %q, want %q (cancelled ctx must not skip steps)", got, "a,b")
+		t.Fatalf("close order = %q, want %q (canceled ctx must not skip steps)", got, "a,b")
 	}
 }

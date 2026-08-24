@@ -12,7 +12,7 @@ const (
 	maxDecodedTotalBytes   = 64 << 10
 	maxDecodeDepth         = 2
 	maxDecodeScans         = 256
-	// 열거·기여 검사 시도 예산. junk 기각이 무과금으로 바뀐 뒤에는 고유 suspect의
+	// 열거·기여 검사 시도 예산이며, junk 기각이 무과금으로 바뀐 뒤에는 고유 suspect의
 	// 경계 열거(스팬 길이 제곱)만 이 예산을 쓰므로, 25KB급 정상 답변의 열거 총량
 	// (~수만)을 여유 있게 덮되 대량 고유-junk 스터핑은 소진→fail-closed로 남긴다.
 	maxProtectedDecodeTries = 1 << 18
@@ -83,6 +83,7 @@ func DecodeCandidates(input string) DecodeResult {
 	if !potential {
 		return DecodeResult{}
 	}
+
 	result := DecodeResult{
 		Candidates:       make([]string, 0, maxDecodeCandidates),
 		standaloneBase64: standaloneBase64,
@@ -90,39 +91,52 @@ func DecodeCandidates(input string) DecodeResult {
 	queue := []decodeQueueEntry{{text: input}}
 	visited := map[string]struct{}{input: {}}
 	total, scans := 0, 0
+
 	for len(queue) > 0 {
 		current := queue[0]
+
 		queue = queue[1:]
+
 		for _, candidate := range decodeSurfaces(current.text, &scans, &result.Status) {
 			if candidate == current.text {
 				continue
 			}
+
 			if _, ok := visited[candidate]; ok {
 				continue
 			}
+
 			visited[candidate] = struct{}{}
 			if !IsReadableString(candidate) {
 				continue
 			}
+
 			if len(candidate) > maxDecodedCandidateLen || total+len(candidate) > maxDecodedTotalBytes {
 				result.Status |= DecodeByteLimit
 				continue
 			}
+
 			if current.depth >= maxDecodeDepth {
 				result.Status |= DecodeDepthLimit
 				continue
 			}
+
 			if len(result.Candidates) >= maxDecodeCandidates {
 				result.Status |= DecodeCandidateLimit
 				continue
 			}
+
 			result.Candidates = append(result.Candidates, candidate)
+
 			total += len(candidate)
+
 			candidateDepth := current.depth + 1
+
 			result.maxDepth = max(result.maxDepth, candidateDepth)
 			queue = append(queue, decodeQueueEntry{text: candidate, depth: candidateDepth})
 		}
 	}
+
 	return result
 }
 
@@ -133,59 +147,74 @@ func hasPotentialDecodeSurface(input string) bool {
 }
 
 func classifyPotentialDecodeSurface(input string) (bool, bool) {
-	if strings.ContainsAny(input, `%&\`) || containsASCIIFold(input, "hex") {
+	if strings.ContainsAny(input, `%&\`) || containsHexFold(input) {
 		return true, false
 	}
+
 	for i := 0; i < len(input); {
-		start := i
+		start := i //nolint:copyloopvar // 루프 변수가 본문에서 전진하므로 시작 위치를 따로 보존한다.
 		match := nextBase64Candidate(input, i)
+
 		i = match.next
+
 		if len(match.value) >= minBase64CandidateLen && !declaredNonTextDataPayload(input, start) {
 			return true, start == 0 && match.next == len(input)
 		}
 	}
+
 	return false, false
 }
 
-func containsASCIIFold(input, target string) bool {
+func containsHexFold(input string) bool {
+	const target = "hex"
+
 	for i := 0; i+len(target) <= len(input); i++ {
 		matched := true
+
 		for j := range len(target) {
 			value := input[i+j]
 			if value >= 'A' && value <= 'Z' {
 				value += 'a' - 'A'
 			}
+
 			if value != target[j] {
 				matched = false
 				break
 			}
 		}
+
 		if matched {
 			return true
 		}
 	}
+
 	return false
 }
 
 func decodeSurfaces(input string, scans *int, status *DecodeStatus) []string {
 	values := make([]string, 0, 5)
 	families := transformFamilies(input)
+
 	for familiesPending(families) {
 		for i := range families {
 			family := &families[i]
 			if family.next >= len(family.spans) {
 				continue
 			}
+
 			if *scans >= maxDecodeScans {
 				*status |= DecodeScanLimit
 				return values
 			}
+
 			*scans++
+
 			if candidate, ok := family.attempt(); ok {
 				values = append(values, candidate)
 			}
 		}
 	}
+
 	return values
 }
 
@@ -209,7 +238,9 @@ func transformFamiliesWithShortContext(
 	status *DecodeStatus,
 ) []transformFamily {
 	hexSpans := hexSpansForPattern(input, hexPayloadPattern)
+
 	var base64Spans []encodedSpan
+
 	switch {
 	case includeShort:
 		base64Spans = protectedBase64Spans(input, seenWholes, mayContribute, embeddedContextMayContribute, work, status)
@@ -219,6 +250,7 @@ func transformFamiliesWithShortContext(
 	default:
 		base64Spans = contextualBase64SpansAtLeast(input, minBase64CandidateLen)
 	}
+
 	families := []transformFamily{
 		{kind: decodeBase64, input: input, spans: base64Spans},
 		{kind: decodePercent, input: input, spans: percentSpans(input)},
@@ -226,6 +258,7 @@ func transformFamiliesWithShortContext(
 		{kind: decodeJSON, input: input, spans: jsonEscapeSpans(input)},
 		{kind: decodeHex, input: input, spans: hexSpans},
 	}
+
 	return families
 }
 
@@ -235,12 +268,14 @@ func familiesPending(families []transformFamily) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
 func (f *transformFamily) attempt() (string, bool) {
 	span := f.spans[f.next]
 	f.next++
+
 	switch f.kind {
 	case decodeBase64:
 		decoded, err := DecodeBase64Candidate(f.input[span.start:span.end])
@@ -249,17 +284,21 @@ func (f *transformFamily) attempt() (string, bool) {
 		if f.next != len(f.spans) {
 			return "", false
 		}
+
 		return decodePercentRuns(f.input)
 	case decodeHTML:
 		if f.next != len(f.spans) {
 			return "", false
 		}
+
 		decoded := html.UnescapeString(f.input)
+
 		return decoded, decoded != f.input
 	case decodeJSON:
 		if f.next != len(f.spans) {
 			return "", false
 		}
+
 		return decodeJSONStringEscapes(f.input)
 	case decodeHex:
 		decoded, err := decodeHexPayload(f.input[span.start:span.end])

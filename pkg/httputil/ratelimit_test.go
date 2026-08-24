@@ -17,12 +17,15 @@ func TestParseTrustedProxies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseTrustedProxies() error = %v", err)
 	}
+
 	if len(got) != 3 {
 		t.Fatalf("ParseTrustedProxies() len = %d, want 3", len(got))
 	}
+
 	if got[1].String() != "192.0.2.10/32" {
 		t.Fatalf("single IPv4 prefix = %s, want 192.0.2.10/32", got[1])
 	}
+
 	if got[2].String() != "2001:db8::1/128" {
 		t.Fatalf("single IPv6 prefix = %s, want 2001:db8::1/128", got[2])
 	}
@@ -51,11 +54,14 @@ func TestParseTrustedProxyCSV(t *testing.T) {
 				if err == nil {
 					t.Fatal("ParseTrustedProxyCSV() error = nil, want error")
 				}
+
 				return
 			}
+
 			if err != nil {
 				t.Fatalf("ParseTrustedProxyCSV() error = %v", err)
 			}
+
 			if len(got) != tt.wantLen {
 				t.Fatalf("ParseTrustedProxyCSV() len = %d, want %d", len(got), tt.wantLen)
 			}
@@ -66,97 +72,7 @@ func TestParseTrustedProxyCSV(t *testing.T) {
 func TestClientIPTrustedForwardedModes(t *testing.T) {
 	t.Parallel()
 
-	trusted, err := ParseTrustedProxies([]string{"10.0.0.0/8"})
-	if err != nil {
-		t.Fatalf("ParseTrustedProxies() error = %v", err)
-	}
-
-	tests := []struct {
-		name string
-		req  func() *http.Request
-		opts ClientIPOptions
-		want string
-	}{
-		{
-			name: "untrusted peer ignores xff",
-			req: func() *http.Request {
-				req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
-				req.RemoteAddr = "203.0.113.50:4321"
-				req.Header.Set("X-Forwarded-For", "198.51.100.7")
-				return req
-			},
-			opts: ClientIPOptions{TrustForwarded: true, TrustedProxies: trusted},
-			want: "203.0.113.50",
-		},
-		{
-			name: "leftmost mode matches twentyq",
-			req: func() *http.Request {
-				req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
-				req.RemoteAddr = "10.1.2.3:4321"
-				req.Header.Set("X-Forwarded-For", "203.0.113.7, 10.0.0.1")
-				return req
-			},
-			opts: ClientIPOptions{TrustForwarded: true, TrustedProxies: trusted, ForwardedMode: ForwardedHeaderLeftmost},
-			want: "203.0.113.7",
-		},
-		{
-			name: "leftmost mode accepts host port xff hop",
-			req: func() *http.Request {
-				req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
-				req.RemoteAddr = "10.1.2.3:4321"
-				req.Header.Set("X-Forwarded-For", "203.0.113.7:1234, 10.0.0.1")
-				return req
-			},
-			opts: ClientIPOptions{TrustForwarded: true, TrustedProxies: trusted, ForwardedMode: ForwardedHeaderLeftmost},
-			want: "203.0.113.7",
-		},
-		{
-			name: "rightmost non trusted mode matches admin dashboard",
-			req: func() *http.Request {
-				req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
-				req.RemoteAddr = "10.1.2.3:4321"
-				req.Header.Set("X-Forwarded-For", "198.51.100.8, 203.0.113.7, 10.0.0.1")
-				return req
-			},
-			opts: ClientIPOptions{TrustForwarded: true, TrustedProxies: trusted, ForwardedMode: ForwardedHeaderRightmostNonTrusted},
-			want: "203.0.113.7",
-		},
-		{
-			name: "rightmost mode rejects host port xff hop",
-			req: func() *http.Request {
-				req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
-				req.RemoteAddr = "10.1.2.3:4321"
-				req.Header.Set("X-Forwarded-For", "203.0.113.7:1234, 10.0.0.1")
-				return req
-			},
-			opts: ClientIPOptions{TrustForwarded: true, TrustedProxies: trusted, ForwardedMode: ForwardedHeaderRightmostNonTrusted},
-			want: "10.1.2.3",
-		},
-		{
-			name: "forwarding disabled uses peer",
-			req: func() *http.Request {
-				req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
-				req.RemoteAddr = "10.1.2.3:4321"
-				req.Header.Set("X-Forwarded-For", "203.0.113.7")
-				return req
-			},
-			opts: ClientIPOptions{TrustForwarded: false, TrustedProxies: trusted},
-			want: "10.1.2.3",
-		},
-		{
-			name: "x real ip fallback",
-			req: func() *http.Request {
-				req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
-				req.RemoteAddr = "10.1.2.3:4321"
-				req.Header.Set("X-Real-IP", "203.0.113.9")
-				return req
-			},
-			opts: ClientIPOptions{TrustForwarded: true, TrustedProxies: trusted},
-			want: "203.0.113.9",
-		},
-	}
-
-	for _, tt := range tests {
+	for _, tt := range clientIPTrustedForwardedCases(t) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -167,18 +83,95 @@ func TestClientIPTrustedForwardedModes(t *testing.T) {
 	}
 }
 
+type clientIPTrustedForwardedCase struct {
+	name string
+	req  func() *http.Request
+	opts ClientIPOptions
+	want string
+}
+
+func clientIPTrustedForwardedCases(t *testing.T) []clientIPTrustedForwardedCase {
+	t.Helper()
+
+	trusted, err := ParseTrustedProxies([]string{"10.0.0.0/8"})
+	if err != nil {
+		t.Fatalf("ParseTrustedProxies() error = %v", err)
+	}
+
+	return []clientIPTrustedForwardedCase{
+		{
+			name: "untrusted peer ignores xff",
+			req:  forwardedHeaderRequest(t, "203.0.113.50:4321", "X-Forwarded-For", "198.51.100.7"),
+			opts: ClientIPOptions{TrustForwarded: true, TrustedProxies: trusted},
+			want: "203.0.113.50",
+		},
+		{
+			name: "leftmost mode matches twentyq",
+			req:  forwardedHeaderRequest(t, testValue101234, "X-Forwarded-For", "203.0.113.7, 10.0.0.1"),
+			opts: ClientIPOptions{TrustForwarded: true, TrustedProxies: trusted, ForwardedMode: ForwardedHeaderLeftmost},
+			want: "203.0.113.7",
+		},
+		{
+			name: "leftmost mode accepts host port xff hop",
+			req:  forwardedHeaderRequest(t, testValue101234, "X-Forwarded-For", "203.0.113.7:1234, 10.0.0.1"),
+			opts: ClientIPOptions{TrustForwarded: true, TrustedProxies: trusted, ForwardedMode: ForwardedHeaderLeftmost},
+			want: "203.0.113.7",
+		},
+		{
+			name: "rightmost non trusted mode matches admin dashboard",
+			req:  forwardedHeaderRequest(t, testValue101234, "X-Forwarded-For", "198.51.100.8, 203.0.113.7, 10.0.0.1"),
+			opts: ClientIPOptions{TrustForwarded: true, TrustedProxies: trusted, ForwardedMode: ForwardedHeaderRightmostNonTrusted},
+			want: "203.0.113.7",
+		},
+		{
+			name: "rightmost mode rejects host port xff hop",
+			req:  forwardedHeaderRequest(t, testValue101234, "X-Forwarded-For", "203.0.113.7:1234, 10.0.0.1"),
+			opts: ClientIPOptions{TrustForwarded: true, TrustedProxies: trusted, ForwardedMode: ForwardedHeaderRightmostNonTrusted},
+			want: "10.1.2.3",
+		},
+		{
+			name: "forwarding disabled uses peer",
+			req:  forwardedHeaderRequest(t, testValue101234, "X-Forwarded-For", "203.0.113.7"),
+			opts: ClientIPOptions{TrustForwarded: false, TrustedProxies: trusted},
+			want: "10.1.2.3",
+		},
+		{
+			name: "x real ip fallback",
+			req:  forwardedHeaderRequest(t, testValue101234, "X-Real-IP", "203.0.113.9"),
+			opts: ClientIPOptions{TrustForwarded: true, TrustedProxies: trusted},
+			want: "203.0.113.9",
+		},
+	}
+}
+
+func forwardedHeaderRequest(t *testing.T, remoteAddr, header, value string) func() *http.Request {
+	t.Helper()
+
+	return func() *http.Request {
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", http.NoBody)
+
+		req.RemoteAddr = remoteAddr
+		req.Header.Set(header, value)
+
+		return req
+	}
+}
+
 func TestRateLimitIdentity(t *testing.T) {
 	t.Parallel()
 
-	req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", http.NoBody)
+
 	req.RemoteAddr = "198.51.100.10:1234"
 
 	if got := RateLimitIdentity(req, "same-key", ClientIPOptions{}); !strings.HasPrefix(got, "key:") {
 		t.Fatalf("RateLimitIdentity(api key) = %q, want key prefix", got)
 	}
+
 	if got := RateLimitIdentity(req, "", ClientIPOptions{}); got != "ip:198.51.100.10" {
 		t.Fatalf("RateLimitIdentity(ip) = %q, want ip:198.51.100.10", got)
 	}
+
 	if got := RateLimitIdentity(nil, "", ClientIPOptions{}); got != "ip:unknown" {
 		t.Fatalf("RateLimitIdentity(nil) = %q, want ip:unknown", got)
 	}
@@ -195,20 +188,25 @@ func TestFixedWindowRateLimiterAllow(t *testing.T) {
 	if !limiter.Allow("admin-1") {
 		t.Fatal("first Allow() = false")
 	}
+
 	if !limiter.Allow("admin-1") {
 		t.Fatal("second Allow() = false")
 	}
+
 	if limiter.Allow("admin-1") {
 		t.Fatal("third Allow() = true, want false")
 	}
 
 	now = now.Add(time.Minute)
+
 	if !limiter.Allow("admin-1") {
 		t.Fatal("Allow() after window reset = false")
 	}
+
 	if limiter.Allow(" ") {
 		t.Fatal("Allow(empty identity) = true, want false")
 	}
+
 	if !(*FixedWindowRateLimiter)(nil).Allow("any") {
 		t.Fatal("nil limiter Allow() = false, want true")
 	}
@@ -227,14 +225,17 @@ func TestFixedWindowRateLimiterTTLAndEviction(t *testing.T) {
 	if !limiter.Allow("first") {
 		t.Fatal("Allow(first) = false")
 	}
+
 	if !limiter.Allow("second") {
 		t.Fatal("Allow(second) = false")
 	}
+
 	if !limiter.Allow("first") {
 		t.Fatal("Allow(first after eviction) = false")
 	}
 
 	now = now.Add(time.Hour)
+
 	if !limiter.Allow("first") {
 		t.Fatal("Allow(first after ttl) = false")
 	}
@@ -252,11 +253,15 @@ func TestFixedWindowRateLimiterClampsEntryTTLToWindow(t *testing.T) {
 	if !limiter.Allow("session") {
 		t.Fatal("first Allow(session) = false")
 	}
+
 	now = now.Add(time.Second)
+
 	if limiter.Allow("session") {
 		t.Fatal("Allow(session) after configured short ttl = true, want quota preserved")
 	}
+
 	now = now.Add(time.Hour - time.Second)
+
 	if !limiter.Allow("session") {
 		t.Fatal("Allow(session) at window boundary = false")
 	}
@@ -275,18 +280,22 @@ func TestFixedWindowRateLimiterEvictsLeastRecentlySeenInConstantOrder(t *testing
 	if !limiter.Allow("first") || !limiter.Allow("second") {
 		t.Fatal("initial identities were not admitted")
 	}
+
 	if !limiter.Allow("first") {
 		t.Fatal("touching first identity failed")
 	}
+
 	if !limiter.Allow("third") {
 		t.Fatal("third identity was not admitted after eviction")
 	}
 
 	limiter.mu.Lock()
+
 	_, hasFirst := limiter.entries["first"]
 	_, hasSecond := limiter.entries["second"]
 	_, hasThird := limiter.entries["third"]
 	limiter.mu.Unlock()
+
 	if !hasFirst || hasSecond || !hasThird {
 		t.Fatalf("entries after LRU eviction = first:%t second:%t third:%t", hasFirst, hasSecond, hasThird)
 	}
@@ -296,14 +305,18 @@ func TestFixedWindowRateLimiterConcurrentHotIdentity(t *testing.T) {
 	t.Parallel()
 
 	const requests = 128
+
 	limiter := NewFixedWindowRateLimiter(requests, time.Minute, FixedWindowOptions{})
 	results := make(chan bool, requests)
+
 	var wg sync.WaitGroup
+
 	for range requests {
 		wg.Go(func() {
 			results <- limiter.Allow("shared")
 		})
 	}
+
 	wg.Wait()
 	close(results)
 
@@ -312,6 +325,7 @@ func TestFixedWindowRateLimiterConcurrentHotIdentity(t *testing.T) {
 			t.Fatal("one of the in-window requests was rejected")
 		}
 	}
+
 	if limiter.Allow("shared") {
 		t.Fatal("request beyond concurrent quota was allowed")
 	}
@@ -329,10 +343,12 @@ func TestFixedWindowRateLimiterZeroOptionsApplySafeDefaults(t *testing.T) {
 		if !limiter.Allow(fmt.Sprintf("identity-%05d", i)) {
 			t.Fatalf("Allow(identity-%05d) = false", i)
 		}
+
 		now = now.Add(time.Nanosecond)
 	}
 
 	limiter.mu.Lock()
+
 	entryCount := len(limiter.entries)
 	_, hasFirst := limiter.entries["identity-00000"]
 	_, hasNewest := limiter.entries[fmt.Sprintf("identity-%05d", defaultFixedWindowMaxIdentities)]
@@ -341,9 +357,11 @@ func TestFixedWindowRateLimiterZeroOptionsApplySafeDefaults(t *testing.T) {
 	if entryCount != defaultFixedWindowMaxIdentities {
 		t.Fatalf("entry count = %d, want %d", entryCount, defaultFixedWindowMaxIdentities)
 	}
+
 	if hasFirst {
 		t.Fatal("oldest identity was not evicted")
 	}
+
 	if !hasNewest {
 		t.Fatal("newest identity was evicted")
 	}
@@ -354,7 +372,9 @@ func TestFixedWindowRateLimiterZeroOptionsApplySafeDefaults(t *testing.T) {
 	if !ttlLimiter.Allow("session") {
 		t.Fatal("Allow(session) = false")
 	}
+
 	now = now.Add(defaultFixedWindowEntryTTL)
+
 	if ttlLimiter.Allow("session") {
 		t.Fatal("Allow(session after clamped default ttl) = true, want quota preserved until window")
 	}
@@ -380,26 +400,33 @@ func TestFixedWindowRateLimitMiddleware(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	first := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
+	first := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", http.NoBody)
+
 	first.RemoteAddr = "198.51.100.10:12000"
+
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, first)
+
 	if rec.Code != http.StatusOK {
 		t.Fatalf("first status = %d, want 200", rec.Code)
 	}
 
-	second := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
+	second := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", http.NoBody)
+
 	second.RemoteAddr = "198.51.100.10:13000"
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, second)
+
 	if rec.Code != http.StatusTooManyRequests {
 		t.Fatalf("second status = %d, want 429", rec.Code)
 	}
 
-	optionsReq := httptest.NewRequest(http.MethodOptions, "/", http.NoBody)
+	optionsReq := httptest.NewRequestWithContext(t.Context(), http.MethodOptions, "/", http.NoBody)
+
 	optionsReq.RemoteAddr = "198.51.100.10:14000"
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, optionsReq)
+
 	if rec.Code != http.StatusOK {
 		t.Fatalf("OPTIONS status = %d, want 200", rec.Code)
 	}

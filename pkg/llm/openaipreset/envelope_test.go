@@ -33,6 +33,7 @@ func TestLooksLikeToolCallEnvelope(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			if got := openaipreset.LooksLikeToolCallEnvelope(tt.text); got != tt.want {
 				t.Fatalf("LooksLikeToolCallEnvelope(%q) = %v, want %v", tt.text, got, tt.want)
 			}
@@ -47,6 +48,7 @@ func TestLooksLikeToolCallEnvelopeTruncatedTailStillDetected(t *testing.T) {
 	if !openaipreset.LooksLikeToolCallEnvelope(`{"tool_calls":[{"name":"search"`) {
 		t.Fatal("truncated tool-call envelope should still be suppressed")
 	}
+
 	if openaipreset.LooksLikeToolCallEnvelope(`{"answer":"partial`) {
 		t.Fatal("truncated ordinary object must not be treated as a tool-call envelope")
 	}

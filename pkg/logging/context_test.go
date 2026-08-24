@@ -1,14 +1,14 @@
 package logging
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
 func TestContextAttrs(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
+
 	ctx = WithRuntime(ctx, "bot")
 	ctx = WithComponent(ctx, "command")
 	ctx = WithRequestID(ctx, "req-1")
