@@ -142,8 +142,9 @@ func TestRun_StopsOnRuntimeErrorAndReturnsRuntimeAndShutdownErrors(t *testing.T)
 func TestRun_NilContext(t *testing.T) {
 	t.Parallel()
 
-	//nolint:staticcheck // nil ctx가 Background로 대체되는 방어 경로를 검증한다.
-	err := Run(nil, Options{
+	var nilCtx context.Context
+
+	err := Run(nilCtx, Options{
 		NotifySignals: func(...os.Signal) (<-chan os.Signal, func()) {
 			return make(chan os.Signal), func() {}
 		},

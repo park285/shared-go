@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"context"
 	"log/slog"
 	"testing"
 )
@@ -51,8 +52,9 @@ func TestNormalizeRuntimeBuildInputs_NilLogger(t *testing.T) {
 func TestNormalizeRuntimeBuildInputs_NilCtx(t *testing.T) {
 	t.Parallel()
 
-	//nolint:staticcheck // nil ctx fallback 경로를 검증하려고 의도적으로 nil을 넘긴다.
-	ctx, err := NormalizeRuntimeBuildInputs(nil, &struct{}{}, slog.New(slog.DiscardHandler))
+	var nilCtx context.Context
+
+	ctx, err := NormalizeRuntimeBuildInputs(nilCtx, &struct{}{}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatalf("NormalizeRuntimeBuildInputs() error = %v", err)
 	}

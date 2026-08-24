@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -109,10 +110,11 @@ func TestJSONClientNewJSONRequestRejectsUnsupportedV2Shapes(t *testing.T) {
 		},
 		{
 			name: "malformed struct tag",
-			payload: struct {
-				//nolint:staticcheck // v2가 잘못된 struct tag를 SemanticError로 거절하는지 검증하려고 일부러 둔 fixture다.
-				Value string `json:"value,"`
-			}{Value: "x"},
+			payload: reflect.New(reflect.StructOf([]reflect.StructField{{
+				Name: "Value",
+				Type: reflect.TypeFor[string](),
+				Tag:  `json:"value,"`,
+			}})).Elem().Interface(),
 		},
 	}
 
