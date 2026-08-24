@@ -22,7 +22,6 @@ lines:pkg/outputguard/protected.go
 lines:pkg/promptguard/guard.go
 lines:pkg/promptguard/rulepack_compile.go
 lines:pkg/promptguard/rulepack_load.go
-lines:pkg/promptguard/rulepack_v3_test.go
 lines:pkg/retry/retry_test.go
 lines:pkg/runtime/bootstrap/bootstrap_test.go
 lines:pkg/telemetry/http_test.go
