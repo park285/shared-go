@@ -16,7 +16,7 @@ run_stage() {
 }
 
 run_stage bash scripts/check-sql-ownership.sh
-run_stage bash scripts/check-responsibility-gate.sh
+run_stage bash scripts/ci/check-structure.sh --mode hard --format text
 run_stage bash scripts/ci/check-release-provenance.sh
 run_stage make lint
 run_stage make test

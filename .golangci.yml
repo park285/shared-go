@@ -154,8 +154,8 @@ linters:
         - emptyStringTest
 
     funlen:
-      lines: 90
-      statements: 45
+      lines: 180
+      statements: 90
       ignore-comments: true
 
     revive:

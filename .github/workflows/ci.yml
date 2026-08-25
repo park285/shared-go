@@ -46,6 +46,9 @@ jobs:
       - name: SQL ownership
         run: bash scripts/check-sql-ownership.sh
 
+      - name: Hard structure gate
+        run: bash scripts/ci/check-structure.sh --mode hard --format text
+
       - name: gofmt
         run: |
           mapfile -t files < <(find . -path './.git' -prune -o -name '*.go' -print)
