@@ -260,10 +260,14 @@ func strictParseCause(err error) error {
 	return strconv.ErrSyntax
 }
 
-func List(key string) []string {
-	raw := StringOrFile(key, "")
+func List(key string) ([]string, error) {
+	raw, err := StringOrSecretFile(key, "")
+	if err != nil {
+		return nil, fmt.Errorf("read list env %s: %w", key, err)
+	}
+
 	if raw == "" {
-		return nil
+		return nil, nil
 	}
 
 	parts := strings.FieldsFunc(raw, func(r rune) bool {
@@ -286,13 +290,17 @@ func List(key string) []string {
 		out = append(out, part)
 	}
 
-	return out
+	return out, nil
 }
 
-func Map(key string) map[string]string {
-	raw := StringOrFile(key, "")
+func Map(key string) (map[string]string, error) {
+	raw, err := StringOrSecretFile(key, "")
+	if err != nil {
+		return nil, fmt.Errorf("read map env %s: %w", key, err)
+	}
+
 	if raw == "" {
-		return nil
+		return nil, nil
 	}
 
 	parts := strings.FieldsFunc(raw, func(r rune) bool {
@@ -300,7 +308,7 @@ func Map(key string) map[string]string {
 	})
 
 	out := make(map[string]string, len(parts))
-	for _, part := range parts {
+	for index, part := range parts {
 		part = strings.TrimSpace(part)
 		if part == "" {
 			continue
@@ -308,22 +316,26 @@ func Map(key string) map[string]string {
 
 		idx := strings.IndexAny(part, ":=")
 		if idx <= 0 || idx >= len(part)-1 {
-			continue
+			return nil, fmt.Errorf("invalid map env %s entry #%d", key, index+1)
 		}
 
 		entryKey := strings.TrimSpace(part[:idx])
 
 		value := strings.TrimSpace(part[idx+1:])
 		if entryKey == "" || value == "" {
-			continue
+			return nil, fmt.Errorf("invalid map env %s entry #%d", key, index+1)
+		}
+
+		if _, exists := out[entryKey]; exists {
+			return nil, fmt.Errorf("duplicate map env %s key at entry #%d", key, index+1)
 		}
 
 		out[entryKey] = value
 	}
 
 	if len(out) == 0 {
-		return nil
+		return nil, nil
 	}
 
-	return out
+	return out, nil
 }

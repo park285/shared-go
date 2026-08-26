@@ -60,35 +60,6 @@ type Options struct {
 	OTel bool
 }
 
-func EnableFileLogging(config Config, fileName string) (*slog.Logger, error) {
-	logger, err := EnableFileLoggingWithOTel(config, fileName, false)
-	if err != nil {
-		return nil, fmt.Errorf("enable file logging with otel: %w", err)
-	}
-
-	return logger, nil
-}
-
-func EnableFileLoggingWithLevel(config Config, fileName, level string) (*slog.Logger, error) {
-	config.Level = level
-
-	logger, err := EnableFileLogging(config, fileName)
-	if err != nil {
-		return nil, fmt.Errorf("enable file logging: %w", err)
-	}
-
-	return logger, nil
-}
-
-func EnableFileLoggingWithOTel(config Config, fileName string, enableOTel bool) (*slog.Logger, error) {
-	logger, _, err := EnableFileLoggingWithOptions(config, fileName, Options{OTel: enableOTel})
-	if err != nil {
-		return nil, fmt.Errorf("enable file logging with options: %w", err)
-	}
-
-	return logger, nil
-}
-
 // EnableFileLoggingWithOptions는 io.Closer를 함께 반환한다. Closer는 비동기 stdout lane의
 // 잔여 드레인과 lumberjack 파일 핸들 정리를 담당하며, 콘솔 전용 구성에서는 nil이다.
 //

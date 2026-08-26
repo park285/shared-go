@@ -152,7 +152,10 @@ func TestConfig_Validation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := EnableFileLogging(tt.config, "test.log")
+			_, closer, err := EnableFileLoggingWithOptions(tt.config, "test.log", Options{})
+			if closer != nil {
+				t.Cleanup(func() { _ = closer.Close() })
+			}
 			if tt.wantErr && err == nil {
 				t.Error("expected error but got nil")
 			}
@@ -180,8 +183,12 @@ func TestEnableFileLogging_UsesRestrictedFileAndDirectoryPerms(t *testing.T) {
 		MaxAgeDays: 7,
 	}
 
-	if _, err := EnableFileLogging(config, "service.log"); err != nil {
-		t.Fatalf("EnableFileLogging failed: %v", err)
+	_, closer, err := EnableFileLoggingWithOptions(config, "service.log", Options{})
+	if err != nil {
+		t.Fatalf("EnableFileLoggingWithOptions failed: %v", err)
+	}
+	if closer != nil {
+		t.Cleanup(func() { _ = closer.Close() })
 	}
 
 	fileInfo, err := os.Stat(serviceLogPath)
@@ -203,7 +210,7 @@ func TestEnableFileLogging_UsesRestrictedFileAndDirectoryPerms(t *testing.T) {
 	}
 }
 
-func TestEnableFileLoggingWithLevel(t *testing.T) {
+func TestEnableFileLoggingWithOptionsAppliesLevel(t *testing.T) {
 	logDir := t.TempDir()
 	config := Config{
 		Dir:        logDir,
@@ -213,13 +220,17 @@ func TestEnableFileLoggingWithLevel(t *testing.T) {
 		Compress:   false,
 	}
 
-	logger, err := EnableFileLoggingWithLevel(config, "with-level.log", "warn")
+	config.Level = "warn"
+	logger, closer, err := EnableFileLoggingWithOptions(config, "with-level.log", Options{})
 	if err != nil {
-		t.Fatalf("EnableFileLoggingWithLevel failed: %v", err)
+		t.Fatalf("EnableFileLoggingWithOptions failed: %v", err)
+	}
+	if closer != nil {
+		t.Cleanup(func() { _ = closer.Close() })
 	}
 
 	if logger == nil {
-		t.Fatal("EnableFileLoggingWithLevel returned nil")
+		t.Fatal("EnableFileLoggingWithOptions returned nil")
 	}
 }
 
@@ -235,8 +246,12 @@ func TestEnableFileLogging_DoesNotCreateCombinedLog(t *testing.T) {
 		MaxAgeDays: 7,
 	}
 
-	if _, err := EnableFileLogging(config, "service.log"); err != nil {
-		t.Fatalf("EnableFileLogging() error = %v", err)
+	_, closer, err := EnableFileLoggingWithOptions(config, "service.log", Options{})
+	if err != nil {
+		t.Fatalf("EnableFileLoggingWithOptions() error = %v", err)
+	}
+	if closer != nil {
+		t.Cleanup(func() { _ = closer.Close() })
 	}
 
 	if _, err := os.Stat(filepath.Join(logDir, "combined.log")); !errors.Is(err, os.ErrNotExist) {

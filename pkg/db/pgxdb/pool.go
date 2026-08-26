@@ -126,6 +126,8 @@ func buildConfigPool(cfg *Config, opts Options) (*pgxpool.Config, error) {
 }
 
 func newPoolAndPing(ctx context.Context, poolCfg *pgxpool.Config, opts Options) (*pgxpool.Pool, error) {
+	boundInitialConnectTimeout(poolCfg, opts.pingTimeout())
+
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
 		return nil, fmt.Errorf("pgxdb: create pool: %w", err)
@@ -156,6 +158,16 @@ func newPoolAndPing(ctx context.Context, poolCfg *pgxpool.Config, opts Options) 
 	)
 
 	return pool, nil
+}
+
+func boundInitialConnectTimeout(poolCfg *pgxpool.Config, pingTimeout time.Duration) {
+	if poolCfg == nil || poolCfg.ConnConfig == nil || poolCfg.MinConns <= 0 || pingTimeout <= 0 {
+		return
+	}
+
+	if current := poolCfg.ConnConfig.ConnectTimeout; current <= 0 || current > pingTimeout {
+		poolCfg.ConnConfig.ConnectTimeout = pingTimeout
+	}
 }
 
 func applyPoolConfig(poolCfg *pgxpool.Config, pool PoolConfig) error {

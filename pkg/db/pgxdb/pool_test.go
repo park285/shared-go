@@ -40,6 +40,38 @@ func TestOptionsPingTimeout(t *testing.T) {
 	}
 }
 
+func TestBoundInitialConnectTimeout(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		minConns   int32
+		current    time.Duration
+		pingBudget time.Duration
+		want       time.Duration
+	}{
+		{name: "positive minimum derives budget", minConns: 1, pingBudget: 750 * time.Millisecond, want: 750 * time.Millisecond},
+		{name: "larger explicit timeout is bounded", minConns: 1, current: 5 * time.Second, pingBudget: time.Second, want: time.Second},
+		{name: "smaller explicit timeout is preserved", minConns: 1, current: 250 * time.Millisecond, pingBudget: time.Second, want: 250 * time.Millisecond},
+		{name: "zero minimum has no initial connect budget", current: 5 * time.Second, pingBudget: time.Second, want: 5 * time.Second},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := mustParse(t, "postgres://u@127.0.0.1:5432/db?sslmode=disable")
+			cfg.MinConns = tc.minConns
+			cfg.ConnConfig.ConnectTimeout = tc.current
+			boundInitialConnectTimeout(cfg, tc.pingBudget)
+
+			if got := cfg.ConnConfig.ConnectTimeout; got != tc.want {
+				t.Fatalf("ConnectTimeout = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestApplyPoolConfig_SetsAllFields(t *testing.T) {
 	pc := mustParse(t, "postgres://u@127.0.0.1:5432/db?sslmode=disable")
 

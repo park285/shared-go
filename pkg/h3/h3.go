@@ -1,9 +1,12 @@
 package h3
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/pem"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -166,14 +169,52 @@ func newClientQUICConfig() *quic.Config {
 }
 
 func loadRootCAs(path string) (*x509.CertPool, error) {
+	return LoadCertificatePool(path)
+}
+
+// LoadCertificatePool은 경로의 모든 PEM 블록을 인증서로 검증해 새 pool을 반환한다.
+// 인증서 외 블록, 손상된 블록, 앞뒤의 비공백 데이터는 모두 거부한다.
+func LoadCertificatePool(path string) (*x509.CertPool, error) {
 	pemBytes, err := os.ReadFile(path) //nolint:gosec // 운영자가 지정하는 CA 경로
 	if err != nil {
 		return nil, fmt.Errorf("read h3 CA file: %w", err)
 	}
 
+	return parseCertificatePool(pemBytes)
+}
+
+func parseCertificatePool(pemBytes []byte) (*x509.CertPool, error) {
 	roots := x509.NewCertPool()
-	if !roots.AppendCertsFromPEM(pemBytes) {
-		return nil, fmt.Errorf("read h3 CA file: no PEM certificates in %s", path)
+	remaining := pemBytes
+	count := 0
+
+	for len(bytes.TrimSpace(remaining)) > 0 {
+		trimmed := bytes.TrimSpace(remaining)
+		if !bytes.HasPrefix(trimmed, []byte("-----BEGIN ")) {
+			return nil, errors.New("parse h3 CA file: non-PEM data")
+		}
+
+		block, rest := pem.Decode(trimmed)
+		if block == nil {
+			return nil, errors.New("parse h3 CA file: malformed PEM block")
+		}
+
+		if block.Type != "CERTIFICATE" || len(block.Headers) != 0 {
+			return nil, errors.New("parse h3 CA file: unexpected PEM block")
+		}
+
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			return nil, errors.New("parse h3 CA file: invalid certificate")
+		}
+
+		roots.AddCert(cert)
+		count++
+		remaining = rest
+	}
+
+	if count == 0 {
+		return nil, errors.New("parse h3 CA file: no certificates")
 	}
 
 	return roots, nil

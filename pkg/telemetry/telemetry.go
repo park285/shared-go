@@ -96,7 +96,24 @@ func validateConfig(config Config) (Config, error) {
 	if isEndpointURL(config.OTLPEndpoint) {
 		parsed, err := url.Parse(config.OTLPEndpoint)
 		if err != nil || parsed.Host == "" {
-			return Config{}, fmt.Errorf("invalid telemetry config: OTLPEndpoint URL must include a host: %q", config.OTLPEndpoint)
+			return Config{}, errors.New("invalid telemetry config: OTLPEndpoint URL must include a host")
+		}
+
+		if parsed.User != nil {
+			return Config{}, errors.New("invalid telemetry config: OTLPEndpoint URL must not include userinfo")
+		}
+
+		switch parsed.Scheme {
+		case "http":
+			if !config.OTLPInsecure {
+				return Config{}, errors.New("invalid telemetry config: http OTLPEndpoint requires OTLPInsecure")
+			}
+		case "https":
+			if config.OTLPInsecure {
+				return Config{}, errors.New("invalid telemetry config: https OTLPEndpoint forbids OTLPInsecure")
+			}
+		default:
+			return Config{}, errors.New("invalid telemetry config: OTLPEndpoint URL scheme must be http or https")
 		}
 	}
 

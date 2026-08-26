@@ -283,7 +283,8 @@ func TestList(t *testing.T) {
 				require.NoError(t, os.Unsetenv(tt.key))
 			}
 
-			result := List(tt.key)
+			result, err := List(tt.key)
+			require.NoError(t, err)
 			require.Equal(t, tt.expected, result)
 		})
 	}
@@ -297,7 +298,18 @@ func TestListFromFile(t *testing.T) {
 	require.NoError(t, os.Unsetenv("TEST_LIST_FILESRC"))
 	t.Setenv("TEST_LIST_FILESRC_FILE", filePath)
 
-	require.Equal(t, []string{"x", "y", "z"}, List("TEST_LIST_FILESRC"))
+	got, err := List("TEST_LIST_FILESRC")
+	require.NoError(t, err)
+	require.Equal(t, []string{"x", "y", "z"}, got)
+}
+
+func TestListFromFileError(t *testing.T) {
+	require.NoError(t, os.Unsetenv("TEST_LIST_FILE_ERROR"))
+	t.Setenv("TEST_LIST_FILE_ERROR_FILE", filepath.Join(t.TempDir(), "missing"))
+
+	got, err := List("TEST_LIST_FILE_ERROR")
+	require.Error(t, err)
+	require.Nil(t, got)
 }
 
 func TestMap(t *testing.T) {
@@ -310,11 +322,8 @@ func TestMap(t *testing.T) {
 	}{
 		{"colon and equals", testTestMap, "k1:v1,k2=v2", true, map[string]string{"k1": "v1", "k2": "v2"}},
 		{"value with spaces preserved", testTestMap, "k:v with space", true, map[string]string{"k": "v with space"}},
-		{"missing value skipped", testTestMap, "k:,k2:v2", true, map[string]string{"k2": "v2"}},
-		{"missing key skipped", testTestMap, "=v,k2:v2", true, map[string]string{"k2": "v2"}},
 		{"newline tab delimiters", testTestMap, "k1:v1\nk2:v2\tk3:v3", true, map[string]string{"k1": "v1", "k2": "v2", "k3": "v3"}},
 		{"empty value returns nil", testTestMap, "", true, nil},
-		{"no valid pairs returns nil", testTestMap, "k:,=v", true, nil},
 		{"unset returns nil", testTestMap, "", false, nil},
 	}
 
@@ -326,8 +335,18 @@ func TestMap(t *testing.T) {
 				require.NoError(t, os.Unsetenv(tt.key))
 			}
 
-			result := Map(tt.key)
+			result, err := Map(tt.key)
+			require.NoError(t, err)
 			require.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+func TestMapRejectsMalformedPresentValue(t *testing.T) {
+	t.Setenv(testTestMap, "valid:value,missing-separator")
+
+	got, err := Map(testTestMap)
+	require.Error(t, err)
+	require.Nil(t, got)
+	require.NotContains(t, err.Error(), "missing-separator")
 }

@@ -19,17 +19,17 @@ import (
 	"github.com/park285/shared-go/v2/pkg/internal/testsupport"
 )
 
-func TestGuardedClientRequireGuardedDialNeverWeakensValidation(t *testing.T) {
+func TestGuardedClientOpaqueOptOutNeverWeakensValidation(t *testing.T) {
 	t.Parallel()
 
-	for _, requireGuardedDial := range []bool{false, true} {
-		t.Run("require_guarded_dial", func(t *testing.T) {
+	for _, allowUnguardedDial := range []bool{false, true} {
+		t.Run("allow_unguarded_dial", func(t *testing.T) {
 			t.Parallel()
 
 			stub := &dialGuardedRoundTripper{}
 			policy := Policy{
 				Resolver:           staticResolver{"internal.test": {net.ParseIP("127.0.0.1")}},
-				RequireGuardedDial: requireGuardedDial,
+				AllowUnguardedDial: allowUnguardedDial,
 			}
 
 			respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://internal.test/secret", http.NoBody)
@@ -43,11 +43,11 @@ func TestGuardedClientRequireGuardedDialNeverWeakensValidation(t *testing.T) {
 			}
 
 			if !errors.Is(err, ErrBlockedIP) {
-				t.Fatalf("RequireGuardedDial=%v error = %v, want ErrBlockedIP", requireGuardedDial, err)
+				t.Fatalf("AllowUnguardedDial=%v error = %v, want ErrBlockedIP", allowUnguardedDial, err)
 			}
 
 			if stub.calls != 0 {
-				t.Fatalf("RequireGuardedDial=%v declared RoundTripper calls = %d, want 0", requireGuardedDial, stub.calls)
+				t.Fatalf("AllowUnguardedDial=%v declared RoundTripper calls = %d, want 0", allowUnguardedDial, stub.calls)
 			}
 		})
 	}
@@ -77,7 +77,11 @@ func TestGuardedRoundTripperClosesRequestBodyOnReject(t *testing.T) {
 			transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 				return nil, errors.New("must not call")
 			}),
-			policy:  blockedPolicy,
+			policy: Policy{
+				Resolver:           blockedPolicy.Resolver,
+				AllowedHosts:       blockedPolicy.AllowedHosts,
+				AllowUnguardedDial: true,
+			},
 			wantErr: ErrHostNotAllowed,
 		},
 		{
@@ -85,7 +89,7 @@ func TestGuardedRoundTripperClosesRequestBodyOnReject(t *testing.T) {
 			transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 				return nil, errors.New("must not call")
 			}),
-			policy:  Policy{RequireGuardedDial: true},
+			policy:  Policy{},
 			wantErr: ErrUnguardedTransport,
 		},
 	}

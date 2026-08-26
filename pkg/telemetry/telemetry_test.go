@@ -339,22 +339,31 @@ func TestValidateConfig_EndpointForms(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		endpoint string
+		insecure bool
 		wantErr  bool
 	}{
 		{name: "host port", endpoint: "otel-collector:4317"},
-		{name: "http url", endpoint: "http://100.100.1.3:4317"},
+		{name: "http url", endpoint: "http://100.100.1.3:4317", insecure: true},
 		{name: "https url", endpoint: "https://otel-collector:4317"},
 		{name: "url without host", endpoint: "http://", wantErr: true},
 		{name: "url with colon path", endpoint: "http:///4317", wantErr: true},
+		{name: "userinfo", endpoint: "https://user:password@otel-collector:4317", wantErr: true},
+		{name: "unsupported scheme", endpoint: "grpc://otel-collector:4317", wantErr: true},
+		{name: "http requires insecure", endpoint: "http://otel-collector:4317", wantErr: true},
+		{name: "https forbids insecure", endpoint: "https://otel-collector:4317", insecure: true, wantErr: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := validateConfig(Config{ServiceName: "svc", OTLPEndpoint: tc.endpoint, SampleRate: 0.1})
+			_, err := validateConfig(Config{ServiceName: "svc", OTLPEndpoint: tc.endpoint, OTLPInsecure: tc.insecure, SampleRate: 0.1})
 			if tc.wantErr && err == nil {
 				t.Fatalf("expected %q to be rejected", tc.endpoint)
 			}
 
 			if !tc.wantErr && err != nil {
 				t.Fatalf("expected %q to be accepted: %v", tc.endpoint, err)
+			}
+
+			if tc.wantErr && strings.Contains(err.Error(), tc.endpoint) {
+				t.Fatalf("validation error exposed endpoint %q: %v", tc.endpoint, err)
 			}
 		})
 	}

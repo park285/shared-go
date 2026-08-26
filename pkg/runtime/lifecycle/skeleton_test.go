@@ -80,6 +80,59 @@ func TestRun_StopsOnSignalAndRunsShutdownWithTimeout(t *testing.T) {
 	}
 }
 
+func TestRun_ReleasesSignalOwnershipBeforeShutdownHooks(t *testing.T) {
+	t.Parallel()
+
+	signalCh := make(chan os.Signal, 1)
+	stopped := false
+
+	err := Run(t.Context(), Options{
+		NotifySignals: func(...os.Signal) (<-chan os.Signal, func()) {
+			return signalCh, func() { stopped = true }
+		},
+		Start: func(context.Context, chan<- error) {
+			signalCh <- syscall.SIGTERM
+		},
+		BeforeShutdown: func() {
+			if !stopped {
+				t.Error("signal ownership was not released before BeforeShutdown")
+			}
+		},
+		Shutdown: func(context.Context) error {
+			if !stopped {
+				t.Error("signal ownership was not released before Shutdown")
+			}
+
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+}
+
+func TestRun_DoesNotInvokeOnErrorForNilRuntimeResult(t *testing.T) {
+	t.Parallel()
+
+	called := false
+	err := Run(t.Context(), Options{
+		NotifySignals: func(...os.Signal) (<-chan os.Signal, func()) {
+			return make(chan os.Signal), func() {}
+		},
+		Start: func(_ context.Context, errCh chan<- error) {
+			errCh <- nil
+		},
+		OnError: func(error) { called = true },
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	if called {
+		t.Fatal("OnError() was called for nil runtime result")
+	}
+}
+
 func assertShutdownDeadlineWithin(t *testing.T, deadline time.Time, ok bool, budget time.Duration) {
 	t.Helper()
 

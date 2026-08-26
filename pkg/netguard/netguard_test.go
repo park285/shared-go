@@ -107,9 +107,7 @@ func TestPolicyValidateTarget(t *testing.T) {
 func TestPolicyValidateTargetRejectsResolvedPrivateIP(t *testing.T) {
 	t.Parallel()
 
-	policy := Policy{
-		Resolver: staticResolver{"internal.test": {net.ParseIP("127.0.0.1")}},
-	}
+	policy := Policy{Resolver: staticResolver{"internal.test": {net.ParseIP("127.0.0.1")}}}
 	_, err := policy.ValidateURL(t.Context(), "https://internal.test/secret")
 
 	if !errors.Is(err, ErrBlockedIP) {
@@ -277,7 +275,8 @@ func TestGuardedClientWrapsNonTransportRoundTripper(t *testing.T) {
 		}),
 	}
 	policy := Policy{
-		Resolver: staticResolver{"internal.test": {net.ParseIP("127.0.0.1")}},
+		Resolver:           staticResolver{"internal.test": {net.ParseIP("127.0.0.1")}},
+		AllowUnguardedDial: true,
 	}
 
 	req, reqErr := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://internal.test/secret", http.NoBody)
@@ -488,7 +487,7 @@ func TestGuardedClientRejectsRebindingToBlockedAnswer(t *testing.T) {
 	}
 }
 
-func TestGuardedClientRequireGuardedDialRejectsOpaqueTransport(t *testing.T) {
+func TestGuardedClientRejectsOpaqueTransportByDefault(t *testing.T) {
 	t.Parallel()
 
 	called := false
@@ -498,10 +497,7 @@ func TestGuardedClientRequireGuardedDialRejectsOpaqueTransport(t *testing.T) {
 			return nil, errors.New("must not call")
 		}),
 	}
-	policy := Policy{
-		Resolver:           staticResolver{testExampleCom: {net.ParseIP("93.184.216.34")}},
-		RequireGuardedDial: true,
-	}
+	policy := Policy{Resolver: staticResolver{testExampleCom: {net.ParseIP("93.184.216.34")}}}
 
 	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://example.com/resource", http.NoBody)
 	if err != nil {
@@ -518,7 +514,7 @@ func TestGuardedClientRequireGuardedDialRejectsOpaqueTransport(t *testing.T) {
 	}
 
 	if called {
-		t.Fatal("opaque RoundTripper was called under RequireGuardedDial")
+		t.Fatal("opaque RoundTripper was called without AllowUnguardedDial")
 	}
 }
 
@@ -527,9 +523,8 @@ func TestGuardedClientAcceptsDeclaredDialGuardedTransport(t *testing.T) {
 
 	stub := &dialGuardedRoundTripper{}
 	policy := Policy{
-		Resolver:           staticResolver{testExampleCom: {net.ParseIP("93.184.216.34")}},
-		AllowedHosts:       []string{testExampleCom},
-		RequireGuardedDial: true,
+		Resolver:     staticResolver{testExampleCom: {net.ParseIP("93.184.216.34")}},
+		AllowedHosts: []string{testExampleCom},
 	}
 	client := GuardedClient(&http.Client{Transport: stub}, policy)
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -29,7 +30,7 @@ type Options struct {
 func Run(ctx context.Context, opts Options) error {
 	baseCtx := baseContext(ctx)
 	sigCh, stopSignals := signalSubscription(opts.NotifySignals, opts.Signals)
-
+	stopSignals = sync.OnceFunc(stopSignals)
 	defer stopSignals()
 
 	runCtx, cancel := context.WithCancel(baseCtx)
@@ -39,6 +40,7 @@ func Run(ctx context.Context, opts Options) error {
 	startRuntime(runCtx, opts.Start, errCh)
 
 	runtimeErr := waitForStop(baseCtx, sigCh, errCh, opts.OnSignal, opts.OnError)
+	stopSignals()
 	beforeShutdown(opts.BeforeShutdown)
 
 	cancel()
@@ -108,7 +110,9 @@ func waitForStop(
 
 		return nil
 	case err := <-errCh:
-		handleRuntimeError(onError, err)
+		if err != nil {
+			handleRuntimeError(onError, err)
+		}
 
 		return err
 	case <-baseCtx.Done():

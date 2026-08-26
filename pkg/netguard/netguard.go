@@ -24,7 +24,7 @@ var (
 	ErrTooManyRedirects = errors.New("netguard: too many redirects")
 	// ErrUnsupportedScheme는 URL scheme이 정책에서 허용되지 않을 때의 오류다.
 	ErrUnsupportedScheme = errors.New("netguard: unsupported URL scheme")
-	// ErrUnguardedTransport는 RequireGuardedDial이 dial 무보증 RoundTripper를 거부할 때의 오류다.
+	// ErrUnguardedTransport는 dial 무보증 RoundTripper를 거부할 때의 오류다.
 	ErrUnguardedTransport = errors.New("netguard: transport does not guard its dial path")
 )
 
@@ -90,8 +90,9 @@ type Policy struct {
 	AllowedPorts []string
 	// Schemes는 허용할 URL scheme 목록이다.
 	Schemes []string
-	// RequireGuardedDial은 dial 무보증 RoundTripper를 GuardedClient에서 fail-closed로 거부한다.
-	RequireGuardedDial bool
+	// AllowUnguardedDial은 dial 경로를 증명할 수 없는 opaque RoundTripper를 명시적으로 허용한다.
+	// 기본값 false는 fail-closed다. 이 예외를 켜도 요청 시점 URL/IP 검증은 유지된다.
+	AllowUnguardedDial bool
 
 	// AllowedHosts를 ASCII 정규화한 사본이다. guard 생성 시 한 번 채우며, 비어 있으면
 	// 요청 시점에 AllowedHosts로부터 다시 계산해 값으로 만든 Policy도 같은 결과를 낸다.
@@ -388,12 +389,12 @@ func GuardedClient(client *http.Client, p Policy) *http.Client {
 		declaredDialGuarded = capable.NetguardDialGuarded()
 	}
 
-	if !declaredDialGuarded && p.RequireGuardedDial {
+	if !declaredDialGuarded && !p.AllowUnguardedDial {
 		cloned.Transport = unguardedRoundTripper{}
 		return &cloned
 	}
 
-	// 선언은 RequireGuardedDial 요구를 충족할 뿐이며 검증 강도를 낮추지 않는다.
+	// 선언과 명시적 예외는 요청 시점 검증 강도를 낮추지 않는다.
 	cloned.Transport = guardedRoundTripper{base: cloned.Transport, policy: p}
 
 	return &cloned

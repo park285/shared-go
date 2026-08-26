@@ -24,7 +24,7 @@ type Options[Config any, Runtime runtime] struct {
 	Initialize             func(version string)
 	LoadConfig             func() (Config, error)
 	LoadConfigErrorMessage string
-	NewLogger              func(config Config) (*slog.Logger, error)
+	NewLogger              func(config Config) (*slog.Logger, io.Closer, error)
 	LoggerConfig           func(config Config) sharedlogging.Config
 	LoggerFileName         string
 	LoggerLevel            func(config Config) string
@@ -47,9 +47,12 @@ func (opts Options[Config, Runtime]) Run() int {
 		return printBootstrapError(stderr, fallback(opts.LoadConfigErrorMessage, "Failed to load config"), err)
 	}
 
-	logger, err := opts.newLogger(config)
+	logger, loggerCloser, err := opts.newLogger(config)
 	if err != nil {
 		return printBootstrapError(stderr, "Failed to initialize logger", err)
+	}
+	if loggerCloser != nil {
+		defer func() { _ = loggerCloser.Close() }()
 	}
 
 	if message := opts.StartupMessage; message != "" {
@@ -123,14 +126,14 @@ func printBootstrapError(stderr io.Writer, message string, err error) int {
 	return 1
 }
 
-func (opts Options[Config, Runtime]) newLogger(config Config) (*slog.Logger, error) {
+func (opts Options[Config, Runtime]) newLogger(config Config) (*slog.Logger, io.Closer, error) {
 	if opts.NewLogger != nil {
-		out, err := opts.NewLogger(config)
+		out, closer, err := opts.NewLogger(config)
 		if err != nil {
-			return nil, fmt.Errorf("logger hook: %w", err)
+			return nil, nil, fmt.Errorf("logger hook: %w", err)
 		}
 
-		return out, nil
+		return out, closer, nil
 	}
 
 	logConfig := sharedlogging.Config{}
@@ -144,13 +147,14 @@ func (opts Options[Config, Runtime]) newLogger(config Config) (*slog.Logger, err
 	if opts.LoggerLevel != nil {
 		level = opts.LoggerLevel(config)
 	}
+	logConfig.Level = level
 
-	out, err := sharedlogging.EnableFileLoggingWithLevel(logConfig, opts.LoggerFileName, level)
+	out, closer, err := sharedlogging.EnableFileLoggingWithOptions(logConfig, opts.LoggerFileName, sharedlogging.Options{})
 	if err != nil {
-		return nil, fmt.Errorf("enable file logging: %w", err)
+		return nil, nil, fmt.Errorf("enable file logging: %w", err)
 	}
 
-	return out, nil
+	return out, closer, nil
 }
 
 func (opts Options[Config, Runtime]) startupFields(config Config) []any {

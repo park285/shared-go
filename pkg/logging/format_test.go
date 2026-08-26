@@ -473,9 +473,6 @@ func TestEnableFileLogging_RejectsUnknownFormat(t *testing.T) {
 				t.Fatalf("error %q does not name the offending format", err)
 			}
 
-			if _, err := EnableFileLogging(config, "service.log"); err == nil {
-				t.Fatal("EnableFileLogging() error = nil, want rejection")
-			}
 		})
 	}
 }
