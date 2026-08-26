@@ -464,6 +464,7 @@ func declaredNonTextDataPayload(input string, payloadStart int) bool {
 	windowStart := max(0, payloadStart-256)
 	metadata := strings.ToLower(input[windowStart : payloadStart-1])
 	_, dataMetadata, found := strings.CutLast(metadata, "data:")
+
 	if !found {
 		return false
 	}
