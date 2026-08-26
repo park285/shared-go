@@ -242,18 +242,14 @@ func TestAsyncDropWriter_ConcurrentCloseDoesNotRaceOnTarget(t *testing.T) {
 
 	var wg sync.WaitGroup
 
-	wg.Add(closers)
-
 	for range closers {
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			<-start
 
 			if err := w.Close(); err != nil {
 				t.Errorf("Close() error = %v", err)
 			}
-		}()
+		})
 	}
 
 	close(start)

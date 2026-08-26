@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	jsonv2 "encoding/json/v2"
 	"slices"
-	"sort"
 )
 
 const EngineVersion = "promptguard-engine-v3.2.3"
@@ -34,7 +33,7 @@ type digestRule struct {
 	Phrases        []string `json:"phrases,omitempty"`
 	Weight         float64  `json:"weight"`
 	MatchMode      string   `json:"match_mode,omitempty"`
-	MaxOccurrences int      `json:"max_occurrences,omitempty"`
+	MaxOccurrences int      `json:"max_occurrences"`
 }
 
 type digestDocument struct {
@@ -83,7 +82,7 @@ func floatMapForDigest[K ~string](values map[K]float64) []digestEntry[float64] {
 		byKey[name] = value
 	}
 
-	sort.Strings(keys)
+	slices.Sort(keys)
 
 	entries := make([]digestEntry[float64], 0, len(keys))
 	for _, key := range keys {
@@ -103,10 +102,10 @@ func rulesForDigest(rules []compiledRule) []digestRule {
 			segments = append(segments, string(segment))
 		}
 
-		sort.Strings(segments)
+		slices.Sort(segments)
 
 		phrases := slices.Clone(rule.Phrases)
-		sort.Strings(phrases)
+		slices.Sort(phrases)
 
 		pattern := ""
 

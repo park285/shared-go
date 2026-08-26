@@ -38,9 +38,8 @@ func TestCheckEmitsEventsForOversizeAndFallback(t *testing.T) {
 
 	evaluation, err := guard.Check(CheckRequest{Text: "input", Source: SourceMemoryCandidate, Enforcement: EnforcementPersistent})
 
-	var blocked *BlockedError
-
-	if !errors.As(err, &blocked) || !evaluation.FallbackBlocked || !slices.Contains(blocked.Rules, ruleEvaluationFallback) {
+	blocked, ok := errors.AsType[*BlockedError](err)
+	if !ok || !evaluation.FallbackBlocked || !slices.Contains(blocked.Rules, ruleEvaluationFallback) {
 		t.Fatalf("fallback result = (%#v, %v)", evaluation, err)
 	}
 

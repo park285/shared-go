@@ -43,9 +43,9 @@ func BenchmarkSG03ExtractLargeNoJSONLinear_39575489(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for range b.N {
-		if _, err := Extract(input); err != nil {
-			b.Fatalf("Extract() error = %v", err)
+	for b.Loop() {
+		if _, err := Extract(input); !errors.Is(err, ErrNoJSONFound) {
+			b.Fatalf("Extract() error = %v, want ErrNoJSONFound", err)
 		}
 	}
 }

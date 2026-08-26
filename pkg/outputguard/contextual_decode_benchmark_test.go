@@ -27,7 +27,7 @@ func BenchmarkOutputGuardContextualDecodeMaximumOutput(b *testing.B) {
 	b.SetBytes(int64(len(text)))
 	b.ResetTimer()
 
-	for range b.N {
+	for b.Loop() {
 		_ = bound.Check(text)
 	}
 }
@@ -48,7 +48,7 @@ func BenchmarkOutputGuardProtectedOversizeContext(b *testing.B) {
 	b.SetBytes(int64(len(text)))
 	b.ResetTimer()
 
-	for range b.N {
+	for b.Loop() {
 		_ = bound.Check(text)
 	}
 }
@@ -76,7 +76,7 @@ func BenchmarkOutputGuardReadableFlood(b *testing.B) {
 	b.SetBytes(int64(len(text)))
 	b.ResetTimer()
 
-	for range b.N {
+	for b.Loop() {
 		_ = bound.Check(text)
 	}
 }
@@ -98,7 +98,7 @@ func BenchmarkOutputGuardStructuredCitationsWithEncodedMetadata(b *testing.B) {
 	b.SetBytes(int64(len(text)))
 	b.ResetTimer()
 
-	for range b.N {
+	for b.Loop() {
 		_ = bound.Check(text)
 	}
 }

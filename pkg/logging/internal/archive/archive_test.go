@@ -334,14 +334,10 @@ func TestCompressedLogArchiverTrigger_ConcurrentRunsAtMostOnce(t *testing.T) {
 
 	var wg sync.WaitGroup
 
-	wg.Add(triggers)
-
 	for range triggers {
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			archiver.Trigger()
-		}()
+		})
 	}
 
 	wg.Wait()

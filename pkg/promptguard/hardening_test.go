@@ -185,9 +185,8 @@ func TestHardeningPreservesInteractiveAndPersistentEnforcement(t *testing.T) {
 			Enforcement: enforcement,
 		})
 
-		var blocked *BlockedError
-
-		if !errors.As(err, &blocked) || blocked.Decision != DecisionBlock {
+		blocked, ok := errors.AsType[*BlockedError](err)
+		if !ok || blocked.Decision != DecisionBlock {
 			t.Fatalf("enforcement %q error = %v, want block", enforcement, err)
 		}
 	}

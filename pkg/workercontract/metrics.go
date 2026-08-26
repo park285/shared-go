@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -109,7 +109,7 @@ func (r *Registry) addWorkerMetricSamples(byName map[string]*MetricFamily, envel
 		workerIDs = append(workerIDs, workerID)
 	}
 
-	sort.Strings(workerIDs)
+	slices.Sort(workerIDs)
 
 	for _, workerID := range workerIDs {
 		r.addSingleWorkerMetricSamples(byName, envelope, workerID)
@@ -257,7 +257,7 @@ func formatMetricLabels(labels map[string]string) string {
 		names = append(names, name)
 	}
 
-	sort.Strings(names)
+	slices.Sort(names)
 
 	var builder strings.Builder
 

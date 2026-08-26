@@ -216,14 +216,10 @@ func newManagedPool(config ManagedConfig) *ManagedPool {
 	pool.workAvailable = sync.NewCond(&pool.mu)
 
 	for range config.Workers {
-		pool.workerWG.Add(1)
-
-		go pool.worker()
+		pool.workerWG.Go(pool.worker)
 	}
 
-	pool.reaperWG.Add(1)
-
-	go pool.reaper()
+	pool.reaperWG.Go(pool.reaper)
 
 	return pool
 }
@@ -445,7 +441,6 @@ func (p *ManagedPool) worker() {
 
 		p.runningWorkers--
 		p.mu.Unlock()
-		p.workerWG.Done()
 	}()
 
 	for {
@@ -558,8 +553,6 @@ func (p *ManagedPool) run(job *managedJob) {
 }
 
 func (p *ManagedPool) reaper() {
-	defer p.reaperWG.Done()
-
 	for {
 		deadline, ok := p.nextExpiry()
 		if !ok {

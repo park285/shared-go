@@ -98,9 +98,7 @@ func SafeError(err error) error {
 		return context.DeadlineExceeded
 	}
 
-	var apiErr *openai.Error
-
-	if errors.As(err, &apiErr) && apiErr != nil {
+	if apiErr, ok := errors.AsType[*openai.Error](err); ok && apiErr != nil {
 		return safeProviderError{
 			statusCode: apiErr.StatusCode,
 			code:       apiErr.Code,

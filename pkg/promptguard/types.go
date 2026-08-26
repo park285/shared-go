@@ -76,13 +76,13 @@ type Evaluation struct {
 	Score                 float64  `json:"score"`
 	Hits                  []Match  `json:"hits"`
 	Threshold             float64  `json:"threshold"`
-	ReviewThreshold       float64  `json:"review_threshold,omitempty"`
-	DistinctFamilies      int      `json:"distinct_families,omitempty"`
+	ReviewThreshold       float64  `json:"review_threshold"`
+	DistinctFamilies      int      `json:"distinct_families"`
 	Source                Source   `json:"source,omitempty"`
-	OversizeBlocked       bool     `json:"oversize_blocked,omitempty"`
-	FallbackBlocked       bool     `json:"fallback_blocked,omitempty"`
-	SegmentBudgetExceeded bool     `json:"segment_budget_exceeded,omitempty"`
-	DecodeIncomplete      bool     `json:"decode_incomplete,omitempty"`
+	OversizeBlocked       bool     `json:"oversize_blocked"`
+	FallbackBlocked       bool     `json:"fallback_blocked"`
+	SegmentBudgetExceeded bool     `json:"segment_budget_exceeded"`
+	DecodeIncomplete      bool     `json:"decode_incomplete"`
 	DecodeLimits          []string `json:"decode_limits,omitempty"`
 }
 

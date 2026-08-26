@@ -62,7 +62,7 @@ func TestJSONClientNewJSONRequestUsesV2WireSemantics(t *testing.T) {
 	type requestPayload struct {
 		Map       map[string]int `json:"map"`
 		Slice     []int          `json:"slice"`
-		Count     int            `json:"count,omitempty"`
+		Count     int            `json:"count"`
 		OmitZero  int            `json:"omitZero,omitzero"`
 		Digest    [2]byte        `json:"digest"`
 		CreatedAt time.Time      `json:"createdAt"`

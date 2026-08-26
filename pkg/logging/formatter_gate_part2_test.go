@@ -194,7 +194,10 @@ func importPathsByName(file *ast.File) (map[string]string, []string) {
 			continue
 		}
 
-		name := path[strings.LastIndex(path, "/")+1:]
+		name := path
+		if _, suffix, found := strings.CutLast(path, "/"); found {
+			name = suffix
+		}
 
 		if spec.Name != nil {
 			name = spec.Name.Name

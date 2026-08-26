@@ -28,7 +28,7 @@ func BenchmarkProtectedExactCache(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for range b.N {
+			for b.Loop() {
 				_ = bound.Check(text)
 			}
 
@@ -38,7 +38,7 @@ func BenchmarkProtectedExactCache(b *testing.B) {
 		b.Run(fmt.Sprintf("%d/Miss", count), func(b *testing.B) {
 			b.ReportAllocs()
 
-			for range b.N {
+			for b.Loop() {
 				bound, err := NewGuard().Bind(protected)
 				if err != nil {
 					b.Fatal(err)
@@ -67,7 +67,7 @@ func BenchmarkProtectedExactMaximumOutput(b *testing.B) {
 	b.SetBytes(int64(len(text)))
 	b.ResetTimer()
 
-	for range b.N {
+	for b.Loop() {
 		_ = bound.Check(text)
 	}
 }
@@ -96,7 +96,7 @@ func BenchmarkProtectedExactCommonPrefixNoMatch(b *testing.B) {
 	b.SetBytes(int64(len(text)))
 	b.ResetTimer()
 
-	for range b.N {
+	for b.Loop() {
 		_ = bound.Check(text)
 	}
 }
@@ -118,7 +118,7 @@ func BenchmarkProtectedExactRepeatedPrefixNoMatch(b *testing.B) {
 	b.SetBytes(int64(len(text)))
 	b.ResetTimer()
 
-	for range b.N {
+	for b.Loop() {
 		_ = bound.Check(text)
 	}
 }
@@ -138,7 +138,7 @@ func BenchmarkProtectedExactJoinedSeparator(b *testing.B) {
 	b.SetBytes(int64(len(text)))
 	b.ResetTimer()
 
-	for range b.N {
+	for b.Loop() {
 		_ = bound.Check(text)
 	}
 }
@@ -160,7 +160,7 @@ func BenchmarkProtectedExactLongSeparatorRun(b *testing.B) {
 			b.SetBytes(int64(len(text)))
 			b.ResetTimer()
 
-			for range b.N {
+			for b.Loop() {
 				_ = bound.Check(text)
 			}
 		})

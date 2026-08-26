@@ -463,13 +463,12 @@ func declaredNonTextDataPayload(input string, payloadStart int) bool {
 
 	windowStart := max(0, payloadStart-256)
 	metadata := strings.ToLower(input[windowStart : payloadStart-1])
-	dataStart := strings.LastIndex(metadata, "data:")
-
-	if dataStart < 0 {
+	_, dataMetadata, found := strings.CutLast(metadata, "data:")
+	if !found {
 		return false
 	}
 
-	parts := strings.Split(metadata[dataStart+len("data:"):], ";")
+	parts := strings.Split(dataMetadata, ";")
 	if len(parts) < 2 || !containsFoldedValue(parts[1:], "base64") {
 		return false
 	}

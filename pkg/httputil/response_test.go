@@ -83,9 +83,8 @@ func TestCheckStatusReturnsTypedAPIError(t *testing.T) {
 		t.Fatal("CheckStatus() expected error")
 	}
 
-	var apiErr *APIError
-
-	if !errors.As(err, &apiErr) {
+	apiErr, ok := errors.AsType[*APIError](err)
+	if !ok {
 		t.Fatalf("CheckStatus() error type = %T, want *APIError", err)
 	}
 
@@ -468,9 +467,8 @@ func TestCheckStatus_TruncatesLargeBody(t *testing.T) {
 		t.Fatal("CheckStatus() expected error")
 	}
 
-	var apiErr *APIError
-
-	if !errors.As(err, &apiErr) {
+	apiErr, ok := errors.AsType[*APIError](err)
+	if !ok {
 		t.Fatalf("error type = %T, want *APIError", err)
 	}
 

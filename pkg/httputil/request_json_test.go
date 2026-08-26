@@ -194,9 +194,8 @@ func TestDecodeJSONRequestMalformedJSONTaxonomy(t *testing.T) {
 			err := DecodeJSONRequest(httptest.NewRecorder(), req, &got, DecodeJSONRequestOptions{})
 			assertJSONRequestStatus(t, err, http.StatusBadRequest)
 
-			var requestErr *JSONRequestError
-
-			if !errors.As(err, &requestErr) {
+			requestErr, ok := errors.AsType[*JSONRequestError](err)
+			if !ok {
 				t.Fatalf("error type = %T, want *JSONRequestError", err)
 			}
 
@@ -262,9 +261,8 @@ func assertJSONRequestStatus(t *testing.T, err error, want int) {
 		t.Fatalf("error = nil, want status %d", want)
 	}
 
-	var requestErr *JSONRequestError
-
-	if !errors.As(err, &requestErr) {
+	requestErr, ok := errors.AsType[*JSONRequestError](err)
+	if !ok {
 		t.Fatalf("error type = %T, want *JSONRequestError", err)
 	}
 

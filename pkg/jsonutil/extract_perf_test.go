@@ -58,7 +58,7 @@ func BenchmarkExtractWholeDocument(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for range b.N {
+	for b.Loop() {
 		if _, err := Extract(input); err != nil {
 			b.Fatalf("Extract() error = %v", err)
 		}
@@ -71,7 +71,7 @@ func BenchmarkExtractFencedDocument(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for range b.N {
+	for b.Loop() {
 		if _, err := Extract(input); err != nil {
 			b.Fatalf("Extract() error = %v", err)
 		}
@@ -84,7 +84,7 @@ func BenchmarkExtractEmbeddedDocument(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for range b.N {
+	for b.Loop() {
 		if _, err := Extract(input); err != nil {
 			b.Fatalf("Extract() error = %v", err)
 		}
