@@ -94,26 +94,8 @@ func validateConfig(config Config) (Config, error) {
 	}
 
 	if isEndpointURL(config.OTLPEndpoint) {
-		parsed, err := url.Parse(config.OTLPEndpoint)
-		if err != nil || parsed.Host == "" {
-			return Config{}, errors.New("invalid telemetry config: OTLPEndpoint URL must include a host")
-		}
-
-		if parsed.User != nil {
-			return Config{}, errors.New("invalid telemetry config: OTLPEndpoint URL must not include userinfo")
-		}
-
-		switch parsed.Scheme {
-		case "http":
-			if !config.OTLPInsecure {
-				return Config{}, errors.New("invalid telemetry config: http OTLPEndpoint requires OTLPInsecure")
-			}
-		case "https":
-			if config.OTLPInsecure {
-				return Config{}, errors.New("invalid telemetry config: https OTLPEndpoint forbids OTLPInsecure")
-			}
-		default:
-			return Config{}, errors.New("invalid telemetry config: OTLPEndpoint URL scheme must be http or https")
+		if err := validateEndpointURL(config.OTLPEndpoint, config.OTLPInsecure); err != nil {
+			return Config{}, fmt.Errorf("validate OTLPEndpoint URL: %w", err)
 		}
 	}
 
@@ -122,6 +104,32 @@ func validateConfig(config Config) (Config, error) {
 	}
 
 	return config, nil
+}
+
+func validateEndpointURL(endpoint string, insecure bool) error {
+	parsed, err := url.Parse(endpoint)
+	if err != nil || parsed.Host == "" {
+		return errors.New("invalid telemetry config: OTLPEndpoint URL must include a host")
+	}
+
+	if parsed.User != nil {
+		return errors.New("invalid telemetry config: OTLPEndpoint URL must not include userinfo")
+	}
+
+	switch parsed.Scheme {
+	case "http":
+		if !insecure {
+			return errors.New("invalid telemetry config: http OTLPEndpoint requires OTLPInsecure")
+		}
+	case "https":
+		if insecure {
+			return errors.New("invalid telemetry config: https OTLPEndpoint forbids OTLPInsecure")
+		}
+	default:
+		return errors.New("invalid telemetry config: OTLPEndpoint URL scheme must be http or https")
+	}
+
+	return nil
 }
 
 func buildResource(config Config) *resource.Resource {

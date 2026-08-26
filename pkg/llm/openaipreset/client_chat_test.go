@@ -3,11 +3,9 @@ package openaipreset_test
 import (
 	jsonv2 "encoding/json/v2"
 	"errors"
-
 	"net/http"
 	"net/http/httptest"
 	"strings"
-
 	"testing"
 
 	"github.com/park285/shared-go/v2/pkg/llm/openaipreset"

@@ -2,6 +2,7 @@ package h3
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/pem"
 	"os"
 	"testing"
@@ -19,9 +20,28 @@ func TestParseCertificatePoolAcceptsEveryValidCertificateBlock(t *testing.T) {
 		t.Fatalf("parseCertificatePool() error = %v", err)
 	}
 
-	if got := len(pool.Subjects()); got != 2 {
-		t.Fatalf("certificate subjects = %d, want 2", got)
+	for _, certPEM := range [][]byte{first, second} {
+		cert := mustParseCertificate(t, certPEM)
+		if _, err := cert.Verify(x509.VerifyOptions{Roots: pool}); err != nil {
+			t.Fatalf("certificate was not added to pool: %v", err)
+		}
 	}
+}
+
+func mustParseCertificate(t *testing.T, certPEM []byte) *x509.Certificate {
+	t.Helper()
+
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		t.Fatal("certificate PEM block is missing")
+	}
+
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatalf("parse certificate: %v", err)
+	}
+
+	return cert
 }
 
 func TestParseCertificatePoolRejectsMalformedOrNonCertificateData(t *testing.T) {
@@ -50,6 +70,7 @@ func TestParseCertificatePoolRejectsMalformedOrNonCertificateData(t *testing.T) 
 
 func TestCertificateReloaderAppliesChangeAndKeepsCachedCertificateOnFailure(t *testing.T) {
 	certFile, keyFile := writeSelfSignedCert(t, "reload.test")
+
 	r, err := NewCertificateReloader(certFile, keyFile, CertificateReloaderOptions{ReloadInterval: time.Second})
 	if err != nil {
 		t.Fatalf("NewCertificateReloader() error = %v", err)

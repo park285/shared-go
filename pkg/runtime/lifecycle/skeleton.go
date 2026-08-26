@@ -30,7 +30,9 @@ type Options struct {
 func Run(ctx context.Context, opts Options) error {
 	baseCtx := baseContext(ctx)
 	sigCh, stopSignals := signalSubscription(opts.NotifySignals, opts.Signals)
+
 	stopSignals = sync.OnceFunc(stopSignals)
+
 	defer stopSignals()
 
 	runCtx, cancel := context.WithCancel(baseCtx)
@@ -40,6 +42,7 @@ func Run(ctx context.Context, opts Options) error {
 	startRuntime(runCtx, opts.Start, errCh)
 
 	runtimeErr := waitForStop(baseCtx, sigCh, errCh, opts.OnSignal, opts.OnError)
+
 	stopSignals()
 	beforeShutdown(opts.BeforeShutdown)
 

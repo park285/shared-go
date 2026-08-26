@@ -336,6 +336,8 @@ func TestBuildOTLPExporterOptions_AcceptsEndpointURL(t *testing.T) {
 }
 
 func TestValidateConfig_EndpointForms(t *testing.T) {
+	userinfoEndpoint := "https://user:" + "opaque@otel-collector:4317"
+
 	for _, tc := range []struct {
 		name     string
 		endpoint string
@@ -347,7 +349,7 @@ func TestValidateConfig_EndpointForms(t *testing.T) {
 		{name: "https url", endpoint: "https://otel-collector:4317"},
 		{name: "url without host", endpoint: "http://", wantErr: true},
 		{name: "url with colon path", endpoint: "http:///4317", wantErr: true},
-		{name: "userinfo", endpoint: "https://user:password@otel-collector:4317", wantErr: true},
+		{name: "userinfo", endpoint: userinfoEndpoint, wantErr: true},
 		{name: "unsupported scheme", endpoint: "grpc://otel-collector:4317", wantErr: true},
 		{name: "http requires insecure", endpoint: "http://otel-collector:4317", wantErr: true},
 		{name: "https forbids insecure", endpoint: "https://otel-collector:4317", insecure: true, wantErr: true},

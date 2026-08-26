@@ -156,6 +156,7 @@ func TestConfig_Validation(t *testing.T) {
 			if closer != nil {
 				t.Cleanup(func() { _ = closer.Close() })
 			}
+
 			if tt.wantErr && err == nil {
 				t.Error("expected error but got nil")
 			}
@@ -187,6 +188,7 @@ func TestEnableFileLogging_UsesRestrictedFileAndDirectoryPerms(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnableFileLoggingWithOptions failed: %v", err)
 	}
+
 	if closer != nil {
 		t.Cleanup(func() { _ = closer.Close() })
 	}
@@ -221,10 +223,12 @@ func TestEnableFileLoggingWithOptionsAppliesLevel(t *testing.T) {
 	}
 
 	config.Level = "warn"
+
 	logger, closer, err := EnableFileLoggingWithOptions(config, "with-level.log", Options{})
 	if err != nil {
 		t.Fatalf("EnableFileLoggingWithOptions failed: %v", err)
 	}
+
 	if closer != nil {
 		t.Cleanup(func() { _ = closer.Close() })
 	}
@@ -250,6 +254,7 @@ func TestEnableFileLogging_DoesNotCreateCombinedLog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnableFileLoggingWithOptions() error = %v", err)
 	}
+
 	if closer != nil {
 		t.Cleanup(func() { _ = closer.Close() })
 	}

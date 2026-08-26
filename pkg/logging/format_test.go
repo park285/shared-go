@@ -472,7 +472,6 @@ func TestEnableFileLogging_RejectsUnknownFormat(t *testing.T) {
 			if !strings.Contains(err.Error(), `"yaml"`) {
 				t.Fatalf("error %q does not name the offending format", err)
 			}
-
 		})
 	}
 }

@@ -10,7 +10,6 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"net/url"
-
 	"strings"
 	"sync"
 	"testing"

@@ -115,6 +115,7 @@ func TestRun_DoesNotInvokeOnErrorForNilRuntimeResult(t *testing.T) {
 	t.Parallel()
 
 	called := false
+
 	err := Run(t.Context(), Options{
 		NotifySignals: func(...os.Signal) (<-chan os.Signal, func()) {
 			return make(chan os.Signal), func() {}

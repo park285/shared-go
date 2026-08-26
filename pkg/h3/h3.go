@@ -169,7 +169,12 @@ func newClientQUICConfig() *quic.Config {
 }
 
 func loadRootCAs(path string) (*x509.CertPool, error) {
-	return LoadCertificatePool(path)
+	roots, err := LoadCertificatePool(path)
+	if err != nil {
+		return nil, fmt.Errorf("load root CAs: %w", err)
+	}
+
+	return roots, nil
 }
 
 // LoadCertificatePool은 경로의 모든 PEM 블록을 인증서로 검증해 새 pool을 반환한다.
@@ -180,7 +185,12 @@ func LoadCertificatePool(path string) (*x509.CertPool, error) {
 		return nil, fmt.Errorf("read h3 CA file: %w", err)
 	}
 
-	return parseCertificatePool(pemBytes)
+	roots, err := parseCertificatePool(pemBytes)
+	if err != nil {
+		return nil, fmt.Errorf("parse h3 CA pool: %w", err)
+	}
+
+	return roots, nil
 }
 
 func parseCertificatePool(pemBytes []byte) (*x509.CertPool, error) {
@@ -209,7 +219,9 @@ func parseCertificatePool(pemBytes []byte) (*x509.CertPool, error) {
 		}
 
 		roots.AddCert(cert)
+
 		count++
+
 		remaining = rest
 	}
 

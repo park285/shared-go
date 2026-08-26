@@ -120,9 +120,11 @@ func (r *CertificateReloader) reloadIfDue(now time.Time) {
 	}
 
 	r.lastCheck = now
+
 	cert, fingerprint, err := loadCertificatePair(r.certFile, r.keyFile)
 	if err != nil {
 		r.recordFailure(err)
+
 		return
 	}
 
@@ -180,5 +182,6 @@ func (r *CertificateReloader) recordFailure(err error) {
 func (r *CertificateReloader) clearFailure() {
 	r.failureMu.Lock()
 	defer r.failureMu.Unlock()
+
 	r.lastError = ""
 }

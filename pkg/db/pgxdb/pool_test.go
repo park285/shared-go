@@ -61,6 +61,7 @@ func TestBoundInitialConnectTimeout(t *testing.T) {
 			t.Parallel()
 
 			cfg := mustParse(t, "postgres://u@127.0.0.1:5432/db?sslmode=disable")
+
 			cfg.MinConns = tc.minConns
 			cfg.ConnConfig.ConnectTimeout = tc.current
 			boundInitialConnectTimeout(cfg, tc.pingBudget)

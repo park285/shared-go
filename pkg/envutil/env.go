@@ -300,7 +300,7 @@ func Map(key string) (map[string]string, error) {
 	}
 
 	if raw == "" {
-		return nil, nil
+		return nil, nil //nolint:nilnil // 설정되지 않은 map의 canonical 값은 nil이며 오류가 아니다.
 	}
 
 	parts := strings.FieldsFunc(raw, func(r rune) bool {
@@ -334,7 +334,7 @@ func Map(key string) (map[string]string, error) {
 	}
 
 	if len(out) == 0 {
-		return nil, nil
+		return nil, nil //nolint:nilnil // 구분자-only map도 설정되지 않은 map과 같은 canonical 값이다.
 	}
 
 	return out, nil

@@ -51,6 +51,7 @@ func (opts Options[Config, Runtime]) Run() int {
 	if err != nil {
 		return printBootstrapError(stderr, "Failed to initialize logger", err)
 	}
+
 	if loggerCloser != nil {
 		defer func() { _ = loggerCloser.Close() }()
 	}
@@ -147,6 +148,7 @@ func (opts Options[Config, Runtime]) newLogger(config Config) (*slog.Logger, io.
 	if opts.LoggerLevel != nil {
 		level = opts.LoggerLevel(config)
 	}
+
 	logConfig.Level = level
 
 	out, closer, err := sharedlogging.EnableFileLoggingWithOptions(logConfig, opts.LoggerFileName, sharedlogging.Options{})

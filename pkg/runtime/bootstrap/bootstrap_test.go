@@ -56,6 +56,7 @@ func TestRunClosesLoggerResource(t *testing.T) {
 			return &testRuntime{}, nil
 		},
 	}.Run()
+
 	if exitCode != 0 {
 		t.Fatalf("Run() exitCode = %d, want 0", exitCode)
 	}
@@ -67,6 +68,10 @@ func TestRunClosesLoggerResource(t *testing.T) {
 
 func newUnsanitizedTestLogger(buf *bytes.Buffer) *slog.Logger {
 	return slog.New(slog.NewTextHandler(buf, nil))
+}
+
+func testLoggerWithoutCloser(logger *slog.Logger) (*slog.Logger, io.Closer, error) {
+	return logger, nil, nil //nolint:nilnil // logger closer는 계약상 선택 사항이다.
 }
 
 func TestRun_ReturnsExitCodeOneWhenLoadConfigFails(t *testing.T) {
@@ -87,7 +92,7 @@ func TestRun_ReturnsExitCodeOneWhenLoadConfigFails(t *testing.T) {
 		LoadConfigErrorMessage: "Failed to load test config",
 		NewLogger: func(*testConfig) (*slog.Logger, io.Closer, error) {
 			loggerCalled = true
-			return slog.New(slog.DiscardHandler), nil, nil
+			return testLoggerWithoutCloser(slog.New(slog.DiscardHandler))
 		},
 		BuildRuntime: func(context.Context, *testConfig, *slog.Logger) (*testRuntime, error) {
 			buildCalled = true
@@ -230,7 +235,7 @@ func TestRun_BuildsRunsAndClosesRuntime(t *testing.T) {
 		LoadConfig:             func() (*testConfig, error) { return &testConfig{Port: 30001}, nil },
 		LoadConfigErrorMessage: "Failed to load test config",
 		NewLogger: func(*testConfig) (*slog.Logger, io.Closer, error) {
-			return slog.New(slog.DiscardHandler), nil, nil
+			return testLoggerWithoutCloser(slog.New(slog.DiscardHandler))
 		},
 		StartupMessage: "Test runtime starting...",
 		StartupFields: func(config *testConfig) []any {
@@ -295,7 +300,7 @@ func TestRun_ReturnsExitCodeOneWhenRuntimeRunFails(t *testing.T) {
 		Initialize: func(string) {},
 		LoadConfig: func() (*testConfig, error) { return &testConfig{}, nil },
 		NewLogger: func(*testConfig) (*slog.Logger, io.Closer, error) {
-			return newUnsanitizedTestLogger(&logs), nil, nil
+			return testLoggerWithoutCloser(newUnsanitizedTestLogger(&logs))
 		},
 		BuildRuntime: func(context.Context, *testConfig, *slog.Logger) (*testRuntime, error) {
 			return rt, nil
@@ -332,7 +337,7 @@ func TestRun_RedactsRuntimeRunError(t *testing.T) {
 		Initialize: func(string) {},
 		LoadConfig: func() (*testConfig, error) { return &testConfig{}, nil },
 		NewLogger: func(*testConfig) (*slog.Logger, io.Closer, error) {
-			return newUnsanitizedTestLogger(&logs), nil, nil
+			return testLoggerWithoutCloser(newUnsanitizedTestLogger(&logs))
 		},
 		BuildRuntime: func(context.Context, *testConfig, *slog.Logger) (*testRuntime, error) {
 			return &testRuntime{runErr: errors.New("API_TOKEN=" + canary)}, nil
@@ -365,7 +370,7 @@ func TestRun_ZeroBuildTimeoutMeansNoDeadline(t *testing.T) {
 		Initialize: func(string) {},
 		LoadConfig: func() (*testConfig, error) { return &testConfig{}, nil },
 		NewLogger: func(*testConfig) (*slog.Logger, io.Closer, error) {
-			return slog.New(slog.DiscardHandler), nil, nil
+			return testLoggerWithoutCloser(slog.New(slog.DiscardHandler))
 		},
 		BuildTimeout: 0,
 		BuildRuntime: func(ctx context.Context, _ *testConfig, _ *slog.Logger) (*testRuntime, error) {
@@ -402,7 +407,7 @@ func TestRun_ReturnsExitCodeOneWhenBuildRuntimeFails(t *testing.T) {
 		Initialize: func(string) {},
 		LoadConfig: func() (*testConfig, error) { return &testConfig{}, nil },
 		NewLogger: func(*testConfig) (*slog.Logger, io.Closer, error) {
-			return slog.New(slog.DiscardHandler), nil, nil
+			return testLoggerWithoutCloser(slog.New(slog.DiscardHandler))
 		},
 		BuildTimeout: 50 * time.Millisecond,
 		BuildRuntime: func(context.Context, *testConfig, *slog.Logger) (*testRuntime, error) {
@@ -428,7 +433,7 @@ func TestRun_RedactsBuildRuntimeErrorObject(t *testing.T) {
 		Initialize: func(string) {},
 		LoadConfig: func() (*testConfig, error) { return &testConfig{}, nil },
 		NewLogger: func(*testConfig) (*slog.Logger, io.Closer, error) {
-			return newUnsanitizedTestLogger(&logs), nil, nil
+			return testLoggerWithoutCloser(newUnsanitizedTestLogger(&logs))
 		},
 		BuildRuntime: func(context.Context, *testConfig, *slog.Logger) (*testRuntime, error) {
 			return nil, errors.New("API_TOKEN=" + canary)
@@ -456,7 +461,7 @@ func TestRun_BuildRuntimeFailUsesDefaultErrorMessage(t *testing.T) {
 		Initialize: func(string) {},
 		LoadConfig: func() (*testConfig, error) { return &testConfig{}, nil },
 		NewLogger: func(*testConfig) (*slog.Logger, io.Closer, error) {
-			return slog.New(slog.DiscardHandler), nil, nil
+			return testLoggerWithoutCloser(slog.New(slog.DiscardHandler))
 		},
 		BuildTimeout: 50 * time.Millisecond,
 		BuildRuntime: func(context.Context, *testConfig, *slog.Logger) (*testRuntime, error) {
@@ -479,7 +484,7 @@ func TestRun_SkipsStartupMessageWhenEmpty(t *testing.T) {
 		Initialize: func(string) {},
 		LoadConfig: func() (*testConfig, error) { return &testConfig{}, nil },
 		NewLogger: func(*testConfig) (*slog.Logger, io.Closer, error) {
-			return slog.New(slog.DiscardHandler), nil, nil
+			return testLoggerWithoutCloser(slog.New(slog.DiscardHandler))
 		},
 		BuildTimeout: 50 * time.Millisecond,
 		BuildRuntime: func(_ context.Context, _ *testConfig, _ *slog.Logger) (*testRuntime, error) {
@@ -507,7 +512,7 @@ func TestRun_DefaultLoadConfigErrorMessage(t *testing.T) {
 		Initialize: func(string) {},
 		LoadConfig: func() (*testConfig, error) { return nil, errors.New("oops") },
 		NewLogger: func(*testConfig) (*slog.Logger, io.Closer, error) {
-			return slog.New(slog.DiscardHandler), nil, nil
+			return testLoggerWithoutCloser(slog.New(slog.DiscardHandler))
 		},
 		BuildTimeout: 50 * time.Millisecond,
 		BuildRuntime: func(context.Context, *testConfig, *slog.Logger) (*testRuntime, error) {
@@ -532,7 +537,7 @@ func TestRun_NilInitializeUsesDefault(t *testing.T) {
 	exitCode := Options[*testConfig, *testRuntime]{
 		LoadConfig: func() (*testConfig, error) { return &testConfig{}, nil },
 		NewLogger: func(*testConfig) (*slog.Logger, io.Closer, error) {
-			return slog.New(slog.DiscardHandler), nil, nil
+			return testLoggerWithoutCloser(slog.New(slog.DiscardHandler))
 		},
 		BuildTimeout: 50 * time.Millisecond,
 		BuildRuntime: func(_ context.Context, _ *testConfig, _ *slog.Logger) (*testRuntime, error) {
@@ -567,6 +572,7 @@ func TestNewLogger_DefaultPathWithLoggerConfig(t *testing.T) {
 	if logger == nil {
 		t.Fatal("newLogger() returned nil logger")
 	}
+
 	if closer != nil {
 		t.Cleanup(func() { _ = closer.Close() })
 	}
@@ -587,6 +593,7 @@ func TestNewLogger_DefaultPathAllNil(t *testing.T) {
 	if logger == nil {
 		t.Fatal("newLogger() returned nil logger")
 	}
+
 	if closer != nil {
 		t.Cleanup(func() { _ = closer.Close() })
 	}

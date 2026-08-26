@@ -3,15 +3,12 @@ package netguard
 import (
 	"context"
 	"errors"
-
 	"net"
 	"net/http"
-
 	"net/netip"
 	"net/url"
 	"slices"
 	"strings"
-
 	"testing"
 	"time"
 
