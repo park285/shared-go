@@ -220,9 +220,9 @@ func TestEnableFileLoggingWithOptionsAppliesLevel(t *testing.T) {
 		MaxBackups: 5,
 		MaxAgeDays: 7,
 		Compress:   false,
-	}
 
-	config.Level = "warn"
+		Level: "warn",
+	}
 
 	logger, closer, err := EnableFileLoggingWithOptions(config, "with-level.log", Options{})
 	if err != nil {
