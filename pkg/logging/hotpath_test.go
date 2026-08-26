@@ -206,7 +206,7 @@ func BenchmarkLogCommonPath(b *testing.B) {
 
 	b.ReportAllocs()
 
-	for range b.N {
+	for b.Loop() {
 		Log(ctx, logger, slog.LevelInfo, "request.completed", "request completed",
 			slog.String("method", "GET"),
 			slog.Int("status", 200),
@@ -225,7 +225,7 @@ func BenchmarkSanitizeCleanGroup(b *testing.B) {
 
 	b.ReportAllocs()
 
-	for range b.N {
+	for b.Loop() {
 		out, _ = sanitizeAttrChanged(attr)
 	}
 

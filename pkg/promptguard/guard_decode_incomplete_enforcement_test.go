@@ -26,9 +26,8 @@ func requireBenignDecodeIncompleteReview(t *testing.T, guard *Guard, input strin
 
 	_, err := guard.Check(CheckRequest{Text: input, Source: SourceUserPrompt, Enforcement: EnforcementPersistent})
 
-	var blocked *BlockedError
-
-	if !errors.As(err, &blocked) {
+	blocked, ok := errors.AsType[*BlockedError](err)
+	if !ok {
 		t.Fatalf("persistent Check() error = %v, want *BlockedError", err)
 	}
 
@@ -61,9 +60,8 @@ func requireBlockedUnderEveryEnforcement(t *testing.T, guard *Guard, input strin
 	for _, enforcement := range []Enforcement{EnforcementInteractive, EnforcementPersistent} {
 		_, err := guard.Check(CheckRequest{Text: input, Source: SourceUserPrompt, Enforcement: enforcement})
 
-		var blocked *BlockedError
-
-		if !errors.As(err, &blocked) || blocked.Decision != DecisionBlock {
+		blocked, ok := errors.AsType[*BlockedError](err)
+		if !ok || blocked.Decision != DecisionBlock {
 			t.Fatalf("enforcement %d Check() error = %v, want block", enforcement, err)
 		}
 	}
@@ -161,9 +159,8 @@ func TestGuardDecodeIncompleteDoesNotOverrideRealDecision(t *testing.T) {
 		for _, enforcement := range []Enforcement{EnforcementInteractive, EnforcementPersistent} {
 			_, err := guard.Check(CheckRequest{Text: input, Source: SourceUserPrompt, Enforcement: enforcement})
 
-			var blocked *BlockedError
-
-			if !errors.As(err, &blocked) || blocked.Decision != DecisionBlock {
+			blocked, ok := errors.AsType[*BlockedError](err)
+			if !ok || blocked.Decision != DecisionBlock {
 				t.Fatalf("enforcement %d error = %v, want block", enforcement, err)
 			}
 		}
@@ -186,9 +183,8 @@ func TestGuardDecodeIncompleteDoesNotOverrideRealDecision(t *testing.T) {
 
 		_, err := guard.Check(CheckRequest{Text: input, Source: SourceUserPrompt, Enforcement: EnforcementPersistent})
 
-		var blocked *BlockedError
-
-		if !errors.As(err, &blocked) || blocked.Decision != DecisionReview {
+		blocked, ok := errors.AsType[*BlockedError](err)
+		if !ok || blocked.Decision != DecisionReview {
 			t.Fatalf("persistent error = %v, want review rejection", err)
 		}
 	})

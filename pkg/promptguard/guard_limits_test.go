@@ -70,9 +70,8 @@ func TestSG01GuardOversizeInputBlocks_cb5f8136(t *testing.T) {
 		t.Fatal("Check(oversize) error = nil, want *BlockedError")
 	}
 
-	var blocked *BlockedError
-
-	if !errors.As(blockedErr, &blocked) {
+	blocked, ok := errors.AsType[*BlockedError](blockedErr)
+	if !ok {
 		t.Fatalf("Check(oversize) error type = %T, want *BlockedError", blockedErr)
 	}
 

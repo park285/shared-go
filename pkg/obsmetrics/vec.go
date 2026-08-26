@@ -1,9 +1,10 @@
 package obsmetrics
 
 import (
+	"cmp"
 	"io"
 	"math"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -183,8 +184,8 @@ func (s *seriesStore) collect[T any]() []*seriesEntry[T] {
 
 		return true
 	})
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].key < entries[j].key
+	slices.SortFunc(entries, func(left, right *seriesEntry[T]) int {
+		return cmp.Compare(left.key, right.key)
 	})
 
 	return entries
@@ -543,8 +544,8 @@ func labelsFromMap(labels Labels) []labelPair {
 		pairs = append(pairs, labelPair{name: name, value: value})
 	}
 
-	sort.Slice(pairs, func(i, j int) bool {
-		return pairs[i].name < pairs[j].name
+	slices.SortFunc(pairs, func(left, right labelPair) int {
+		return cmp.Compare(left.name, right.name)
 	})
 
 	return pairs

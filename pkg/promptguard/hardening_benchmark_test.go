@@ -12,7 +12,7 @@ func BenchmarkPromptGuardShortRuleContext(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for range b.N {
+	for b.Loop() {
 		_ = guard.evaluateRaw(input)
 	}
 }
@@ -24,7 +24,7 @@ func BenchmarkPromptGuardRollingAggregate(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for range b.N {
+	for b.Loop() {
 		_ = guard.evaluateRaw(input)
 	}
 }

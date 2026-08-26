@@ -64,16 +64,12 @@ func TestHistogramConcurrentObserveSnapshotInvariants(t *testing.T) {
 
 	var wg sync.WaitGroup
 
-	wg.Add(workers)
-
 	for worker := range workers {
-		go func(worker int) {
-			defer wg.Done()
-
+		wg.Go(func() {
 			for i := range iterations {
 				hist.Observe(testLatencyBuckets[(worker+i)%len(testLatencyBuckets)])
 			}
-		}(worker)
+		})
 	}
 
 	wg.Wait()

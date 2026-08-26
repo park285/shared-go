@@ -14,7 +14,7 @@ func BenchmarkOutputGuardBaseline(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for range b.N {
+	for b.Loop() {
 		_ = guard.Check(request)
 	}
 }
@@ -31,7 +31,7 @@ func BenchmarkOutputGuardProtectedOverlap(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for range b.N {
+	for b.Loop() {
 		bound, err := guard.Bind(protected)
 		if err != nil {
 			b.Fatal(err)
@@ -50,7 +50,7 @@ func BenchmarkOutputGuardProtectedIndex(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for range b.N {
+	for b.Loop() {
 		_ = buildProtectedIndex(protected)
 	}
 }
@@ -66,7 +66,7 @@ func BenchmarkOutputGuardExactNoMatch(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for range b.N {
+	for b.Loop() {
 		_ = index.overlapsText(text)
 	}
 }
@@ -90,7 +90,7 @@ func BenchmarkOutputGuardExactCommonPrefix(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for range b.N {
+	for b.Loop() {
 		_ = index.overlapsText(text)
 	}
 }
@@ -106,7 +106,7 @@ func BenchmarkOutputGuardExactRepeatedPrefix(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for range b.N {
+	for b.Loop() {
 		_ = index.overlapsText(text)
 	}
 }

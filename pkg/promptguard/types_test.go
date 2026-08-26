@@ -9,6 +9,7 @@ import (
 func errorsAs(t *testing.T, err error, target any) bool {
 	t.Helper()
 
+	// modern-go:allow errors.As target is supplied dynamically by the test helper.
 	return errors.As(err, target)
 }
 

@@ -302,9 +302,8 @@ func TestV3SegmentBoundaryBudgetBlocksDeterministically(t *testing.T) {
 		Enforcement: EnforcementPersistent,
 	})
 
-	var blocked *BlockedError
-
-	if !errors.As(err, &blocked) || !evaluation.SegmentBudgetExceeded {
+	blocked, ok := errors.AsType[*BlockedError](err)
+	if !ok || !evaluation.SegmentBudgetExceeded {
 		t.Fatalf("Check() = (%#v, %v), want segment-budget block", evaluation, err)
 	}
 

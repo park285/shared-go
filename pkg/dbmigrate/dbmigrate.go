@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -248,7 +248,7 @@ func (o options) validateOnly(entries []string) error {
 		return nil
 	}
 
-	sort.Strings(missing)
+	slices.Sort(missing)
 
 	return fmt.Errorf("dbmigrate: WithOnly names not in manifest: %s", strings.Join(missing, ", "))
 }

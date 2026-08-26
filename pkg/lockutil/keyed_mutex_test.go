@@ -102,12 +102,8 @@ func TestKeyedMutexRaceSafety(t *testing.T) {
 		iterations = 1000
 	)
 
-	wg.Add(goroutines)
-
 	for worker := range goroutines {
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			for index := range iterations {
 				position := (worker + index) % len(keys)
 				mu.Lock(keys[position])
@@ -115,7 +111,7 @@ func TestKeyedMutexRaceSafety(t *testing.T) {
 				counters[position]++
 				mu.Unlock(keys[position])
 			}
-		}()
+		})
 	}
 
 	wg.Wait()

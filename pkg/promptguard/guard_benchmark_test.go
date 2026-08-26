@@ -15,7 +15,7 @@ func BenchmarkPromptGuardBenignFastPath(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for range b.N {
+	for b.Loop() {
 		_ = guard.evaluateRaw(input)
 	}
 }
@@ -27,7 +27,7 @@ func BenchmarkPromptGuardAggregateBoundary(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for range b.N {
+	for b.Loop() {
 		_ = guard.evaluateRaw(input)
 	}
 }
@@ -40,7 +40,7 @@ func BenchmarkPromptGuardDecoderHeavy(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for range b.N {
+	for b.Loop() {
 		_ = guard.evaluateRaw(input)
 	}
 }

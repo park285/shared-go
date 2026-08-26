@@ -88,10 +88,15 @@ func shortenSource(groups []string, attr slog.Attr) slog.Attr {
 // 빈 경로에 ""를 돌려주는 것이 load-bearing이다. Filepath 판본은 "."를 만들어, File만
 // 비어 있고 Line이 살아 있는 record에 ".:42" 같은 허위 경로를 남긴다.
 func lastPathSegments(path string) string {
-	base := strings.LastIndexByte(path, '/')
-	if base < 0 {
+	prefix, _, found := strings.CutLast(path, "/")
+	if !found {
 		return path
 	}
 
-	return path[strings.LastIndexByte(path[:base], '/')+1:]
+	grandparent, _, found := strings.CutLast(prefix, "/")
+	if !found {
+		return path
+	}
+
+	return path[len(grandparent)+1:]
 }

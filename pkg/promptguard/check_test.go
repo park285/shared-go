@@ -47,9 +47,8 @@ func TestCheckEnforcementMatrixForEverySource(t *testing.T) {
 
 					wantRejected := enforcementRejects(mode, decision)
 
-					var blocked *BlockedError
-
-					if errors.As(err, &blocked) != wantRejected {
+					blocked, rejected := errors.AsType[*BlockedError](err)
+					if rejected != wantRejected {
 						t.Fatalf("Check() error = %v, rejected=%v", err, wantRejected)
 					}
 

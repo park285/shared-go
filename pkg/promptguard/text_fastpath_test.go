@@ -51,7 +51,7 @@ func benchmarkNormalizeViews(b *testing.B, input string) {
 
 	b.ReportAllocs()
 
-	for range b.N {
+	for b.Loop() {
 		benchmarkNormalizeViewsSink = normalizeViews(input)
 	}
 }

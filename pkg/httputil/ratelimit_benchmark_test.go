@@ -2,6 +2,7 @@ package httputil
 
 import (
 	"fmt"
+	"math"
 	"testing"
 	"time"
 )
@@ -10,7 +11,7 @@ func BenchmarkFixedWindowAllowHotIdentity(b *testing.B) {
 	for _, cardinality := range []int{1, 10000} {
 		b.Run(fmt.Sprintf("%d", cardinality), func(b *testing.B) {
 			now := time.Date(2026, time.July, 28, 10, 0, 0, 0, time.UTC)
-			limiter := NewFixedWindowRateLimiter(b.N+cardinality+1, time.Hour, FixedWindowOptions{
+			limiter := NewFixedWindowRateLimiter(math.MaxInt, time.Hour, FixedWindowOptions{
 				MaxIdentities: cardinality,
 				EntryTTL:      time.Hour,
 				Now:           func() time.Time { return now },
@@ -23,7 +24,7 @@ func BenchmarkFixedWindowAllowHotIdentity(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for range b.N {
+			for b.Loop() {
 				limiter.Allow("identity-00000")
 			}
 		})
@@ -45,8 +46,10 @@ func BenchmarkFixedWindowAllowUniqueAtCapacity(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for i := range b.N {
+	i := 0
+	for b.Loop() {
 		limiter.Allow(fmt.Sprintf("churn-%08d", i))
+		i++
 	}
 }
 
@@ -67,7 +70,7 @@ func BenchmarkLoginFailureIsAllowedSaturatedMiss(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for range b.N {
+			for b.Loop() {
 				limiter.IsAllowed("unseen-at-capacity")
 			}
 		})

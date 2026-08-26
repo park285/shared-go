@@ -56,22 +56,18 @@ func TestCachedMemStats_ConcurrentScrapersAreSafe(t *testing.T) {
 
 	var wg sync.WaitGroup
 
-	wg.Add(scrapers)
-
 	start := make(chan struct{})
 	now := time.Now()
 
 	for i := range scrapers {
-		go func(i int) {
-			defer wg.Done()
-
+		wg.Go(func() {
 			<-start
 
 			got := cachedMemStats(now.Add(time.Duration(i) * time.Millisecond))
 			if got.NextGC == 0 {
 				t.Errorf("scraper %d got an empty snapshot", i)
 			}
-		}(i)
+		})
 	}
 
 	close(start)
