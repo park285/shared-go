@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -173,13 +172,8 @@ func RateLimitIdentity(r *http.Request, apiKey string, opts ClientIPOptions) str
 // RateLimitKeyHash는 rate-limit key/log용 짧은 SHA-256 해시를 반환한다.
 func RateLimitKeyHash(value string) string {
 	sum := sha256.Sum256([]byte(value))
-	encoded := hex.EncodeToString(sum[:])
 
-	if len(encoded) <= 16 {
-		return encoded
-	}
-
-	return encoded[:16]
+	return hex.EncodeToString(sum[:8])
 }
 
 // NewFixedWindowRateLimiter는 fixed-window limiter를 생성한다.
@@ -402,21 +396,25 @@ func firstForwardedFor(headerValue string) string {
 }
 
 func rightmostNonTrustedForwardedFor(headerValue string, trustedProxies []netip.Prefix) string {
-	hops := strings.Split(headerValue, ",")
-	for _, hop := range slices.Backward(hops) {
+	remaining := headerValue
+
+	for {
+		before, hop, found := strings.CutLast(remaining, ",")
+		if !found {
+			hop = remaining
+		}
+
 		candidate, ok := parsePlainIPCandidate(hop)
-		if !ok {
-			continue
+		if ok && !isTrustedProxy(candidate, trustedProxies) {
+			return candidate
 		}
 
-		if isTrustedProxy(candidate, trustedProxies) {
-			continue
+		if !found {
+			return ""
 		}
 
-		return candidate
+		remaining = before
 	}
-
-	return ""
 }
 
 func parsePlainIPCandidate(value string) (string, bool) {

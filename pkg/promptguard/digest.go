@@ -1,6 +1,7 @@
 package promptguard
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	jsonv2 "encoding/json/v2"
@@ -72,22 +73,15 @@ func policyForDigest(policy compiledPolicy) digestPolicy {
 }
 
 func floatMapForDigest[K ~string](values map[K]float64) []digestEntry[float64] {
-	keys := make([]string, 0, len(values))
-	byKey := make(map[string]float64, len(values))
+	entries := make([]digestEntry[float64], 0, len(values))
 
 	for key, value := range values {
-		name := string(key)
-
-		keys = append(keys, name)
-		byKey[name] = value
+		entries = append(entries, digestEntry[float64]{Name: string(key), Value: value})
 	}
 
-	slices.Sort(keys)
-
-	entries := make([]digestEntry[float64], 0, len(keys))
-	for _, key := range keys {
-		entries = append(entries, digestEntry[float64]{Name: key, Value: byKey[key]})
-	}
+	slices.SortFunc(entries, func(left, right digestEntry[float64]) int {
+		return cmp.Compare(left.Name, right.Name)
+	})
 
 	return entries
 }

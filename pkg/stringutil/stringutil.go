@@ -3,15 +3,42 @@ package stringutil
 import (
 	"slices"
 	"strings"
+	"unicode/utf8"
 )
 
 func TruncateString(s string, maxRunes int) string {
-	runes := []rune(s)
-	if len(runes) <= maxRunes {
+	if maxRunes < 0 {
+		panic("maxRunes must be non-negative")
+	}
+
+	if len(s) <= maxRunes {
 		return s
 	}
 
-	return string(runes[:maxRunes]) + "..."
+	runeCount := 0
+	prefixHasInvalidUTF8 := false
+
+	for byteIndex, current := range s {
+		if runeCount == maxRunes {
+			prefix := s[:byteIndex]
+
+			if prefixHasInvalidUTF8 {
+				return string([]rune(prefix)) + "..."
+			}
+
+			return prefix + "..."
+		}
+
+		if current == utf8.RuneError {
+			_, size := utf8.DecodeRuneInString(s[byteIndex:])
+
+			prefixHasInvalidUTF8 = prefixHasInvalidUTF8 || size == 1
+		}
+
+		runeCount++
+	}
+
+	return s
 }
 
 func ContainsString(slice []string, item string) bool {

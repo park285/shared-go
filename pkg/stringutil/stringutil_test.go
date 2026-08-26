@@ -1,6 +1,11 @@
 package stringutil
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
+
+var truncateStringSink string
 
 func TestTruncateString(t *testing.T) {
 	tests := []struct {
@@ -54,6 +59,38 @@ func TestTruncateString(t *testing.T) {
 				t.Errorf("TruncateString(%q, %d) = %q, want %q", tt.input, tt.maxRunes, result, tt.want)
 			}
 		})
+	}
+}
+
+func TestTruncateStringPanicsForNegativeLimit(t *testing.T) {
+	t.Parallel()
+
+	defer func() {
+		if recover() == nil {
+			t.Fatal("TruncateString() did not panic for a negative limit")
+		}
+	}()
+
+	_ = TruncateString("value", -1)
+}
+
+func TestTruncateStringPreservesInvalidUTF8Replacement(t *testing.T) {
+	t.Parallel()
+
+	input := string([]byte{'a', 0xff, 'b'})
+	if got, want := TruncateString(input, 2), "a\ufffd..."; got != want {
+		t.Fatalf("TruncateString() = %q, want %q", got, want)
+	}
+}
+
+func TestTruncateStringNoTruncationAllocations(t *testing.T) {
+	input := strings.Repeat("가", 16*1024)
+	allocations := testing.AllocsPerRun(100, func() {
+		truncateStringSink = TruncateString(input, 32*1024)
+	})
+
+	if allocations != 0 {
+		t.Fatalf("TruncateString() allocations = %v, want 0", allocations)
 	}
 }
 

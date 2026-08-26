@@ -141,8 +141,7 @@ type managedInFlight struct {
 // ManagedPool은 dequeue-time budget과 단일 finalization을 소유하는 worker pool이다.
 type ManagedPool struct {
 	mu                 sync.Mutex
-	queue              []*managedJob
-	queueSize          int
+	queue              boundedQueue[*managedJob]
 	configuredWorkers  int
 	runningWorkers     int
 	closed             bool
@@ -194,8 +193,7 @@ func NewManagedPool(config ManagedConfig) (*ManagedPool, error) {
 
 func newManagedPool(config ManagedConfig) *ManagedPool {
 	pool := &ManagedPool{
-		queue:             make([]*managedJob, 0, config.QueueSize),
-		queueSize:         config.QueueSize,
+		queue:             newBoundedQueue[*managedJob](config.QueueSize),
 		configuredWorkers: config.Workers,
 		reaperNotify:      make(chan struct{}, 1),
 		stopCh:            make(chan struct{}),
@@ -236,7 +234,7 @@ func (p *ManagedPool) Snapshot() ManagedSnapshot {
 	snapshot := ManagedSnapshot{
 		ConfiguredWorkers:  p.configuredWorkers,
 		RunningWorkers:     p.runningWorkers,
-		QueueDepth:         len(p.queue),
+		QueueDepth:         p.queue.Len(),
 		InFlight:           len(p.inFlight),
 		Outcomes:           make(map[JobOutcome]uint64, len(p.outcomes)),
 		Attempts:           make(map[JobOutcome]uint64, len(p.attempts)),
@@ -244,8 +242,8 @@ func (p *ManagedPool) Snapshot() ManagedSnapshot {
 		AdmissionsAccepted: p.admissionsAccepted,
 		AdmissionsRejected: p.admissionsRejected,
 	}
-	if len(p.queue) > 0 {
-		snapshot.OldestQueueAge = max(time.Since(p.queue[0].enqueuedAt), 0)
+	if oldest, ok := p.queue.Front(); ok {
+		snapshot.OldestQueueAge = max(time.Since(oldest.enqueuedAt), 0)
 	}
 
 	for _, inFlight := range p.inFlight {
@@ -301,13 +299,12 @@ func (p *ManagedPool) trySubmit(spec JobSpec) ManagedSubmitResult {
 
 	p.mu.Lock()
 
-	if p.closed || len(p.queue) >= p.queueSize {
+	if p.closed || !p.queue.Push(job) {
 		p.mu.Unlock()
 
 		return p.rejectSubmission(job)
 	}
 
-	p.queue = append(p.queue, job)
 	p.admissionsAccepted++
 	p.workAvailable.Signal()
 	p.mu.Unlock()
@@ -402,9 +399,7 @@ func (p *ManagedPool) shutdown() {
 
 	p.closed = true
 
-	queued := p.queue
-
-	p.queue = nil
+	queued := p.queue.Drain()
 
 	cancels := make([]context.CancelCauseFunc, 0, len(p.inFlight))
 
@@ -457,7 +452,7 @@ func (p *ManagedPool) take() (*managedJob, bool) {
 	for {
 		p.mu.Lock()
 
-		for !p.closed && len(p.queue) == 0 {
+		for !p.closed && p.queue.Len() == 0 {
 			p.workAvailable.Wait()
 		}
 
@@ -467,10 +462,13 @@ func (p *ManagedPool) take() (*managedJob, bool) {
 			return nil, false
 		}
 
-		job := p.queue[0]
+		job, ok := p.queue.Pop()
+		if !ok {
+			p.mu.Unlock()
 
-		p.queue[0] = nil
-		p.queue = p.queue[1:]
+			continue
+		}
+
 		p.mu.Unlock()
 
 		if !job.expiresAt.IsZero() && !time.Now().Before(job.expiresAt) {
@@ -598,7 +596,8 @@ func (p *ManagedPool) nextExpiry() (time.Time, bool) {
 
 	var earliest time.Time
 
-	for _, job := range p.queue {
+	for index := range p.queue.Len() {
+		job, _ := p.queue.At(index)
 		if job.expiresAt.IsZero() || (!earliest.IsZero() && !job.expiresAt.Before(earliest)) {
 			continue
 		}
@@ -613,22 +612,21 @@ func (p *ManagedPool) expireStale(now time.Time) {
 	p.mu.Lock()
 
 	stale := make([]*managedJob, 0)
-	kept := p.queue[:0]
+	queued := p.queue.Len()
 
-	for _, job := range p.queue {
+	for range queued {
+		job, _ := p.queue.Pop()
 		if !job.expiresAt.IsZero() && !now.Before(job.expiresAt) {
 			stale = append(stale, job)
+
 			continue
 		}
 
-		kept = append(kept, job)
+		if !p.queue.Push(job) {
+			panic("workerpool: managed queue lost capacity while reaping")
+		}
 	}
 
-	for index := len(kept); index < len(p.queue); index++ {
-		p.queue[index] = nil
-	}
-
-	p.queue = kept
 	p.mu.Unlock()
 
 	for _, job := range stale {

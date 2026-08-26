@@ -38,7 +38,7 @@ type managedFinalizerResult struct {
 
 type managedFinalizer struct {
 	mu       sync.Mutex
-	queue    []*managedFinalizerTask
+	queue    boundedQueue[*managedFinalizerTask]
 	snapshot ManagedFinalizerSnapshot
 	closed   bool
 	done     chan struct{}
@@ -49,7 +49,7 @@ type managedFinalizer struct {
 
 func newManagedFinalizer(concurrency, queueSize int, timeout time.Duration, logger *slog.Logger) *managedFinalizer {
 	finalizer := &managedFinalizer{
-		queue: make([]*managedFinalizerTask, 0, queueSize),
+		queue: newBoundedQueue[*managedFinalizerTask](queueSize),
 		done:  make(chan struct{}),
 		snapshot: ManagedFinalizerSnapshot{
 			Concurrency: concurrency,
@@ -119,7 +119,9 @@ func (f *managedFinalizer) Schedule(spec JobSpec, outcome JobOutcome, reserved b
 
 	f.snapshot.Claimed++
 
-	f.queue = append(f.queue, task)
+	if !f.queue.Push(task) {
+		panic("workerpool: finalizer reservation exceeded queue capacity")
+	}
 
 	tasks := f.dispatchLocked()
 	f.mu.Unlock()
@@ -146,27 +148,24 @@ func (f *managedFinalizer) Snapshot() ManagedFinalizerSnapshot {
 
 	snapshot := f.snapshot
 
-	snapshot.QueueDepth = len(f.queue)
+	snapshot.QueueDepth = f.queue.Len()
 
 	return snapshot
 }
 
 func (f *managedFinalizer) dispatchLocked() []*managedFinalizerTask {
 	available := f.snapshot.Concurrency - f.snapshot.InFlight
-	count := min(len(f.queue), available)
+	count := min(f.queue.Len(), available)
 	tasks := make([]*managedFinalizerTask, 0, count)
 
 	for range count {
-		task := f.queue[0]
-
-		f.queue[0] = nil
-		f.queue = f.queue[1:]
+		task, _ := f.queue.Pop()
 		f.snapshot.InFlight++
 
 		tasks = append(tasks, task)
 	}
 
-	if f.closed && f.pending == 0 && len(f.queue) == 0 {
+	if f.closed && f.pending == 0 && f.queue.Len() == 0 {
 		f.snapshot.DispatchDrained = true
 	}
 
@@ -176,7 +175,7 @@ func (f *managedFinalizer) dispatchLocked() []*managedFinalizerTask {
 }
 
 func (f *managedFinalizer) markQuiescedLocked() {
-	if !f.closed || f.pending != 0 || len(f.queue) != 0 || f.snapshot.InFlight != 0 || f.snapshot.Reservations != 0 || f.snapshot.Quiesced {
+	if !f.closed || f.pending != 0 || f.queue.Len() != 0 || f.snapshot.InFlight != 0 || f.snapshot.Reservations != 0 || f.snapshot.Quiesced {
 		return
 	}
 
