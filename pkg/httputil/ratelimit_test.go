@@ -1,6 +1,8 @@
 package httputil
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +11,19 @@ import (
 	"testing"
 	"time"
 )
+
+func TestRateLimitKeyHashPreservesFullDigestPrefix(t *testing.T) {
+	t.Parallel()
+
+	const value = "some-api-key"
+
+	sum := sha256.Sum256([]byte(value))
+	want := hex.EncodeToString(sum[:])[:16]
+
+	if got := RateLimitKeyHash(value); got != want {
+		t.Fatalf("RateLimitKeyHash() = %q, want %q", got, want)
+	}
+}
 
 func TestParseTrustedProxies(t *testing.T) {
 	t.Parallel()

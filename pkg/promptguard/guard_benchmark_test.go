@@ -8,6 +8,18 @@ import (
 	"testing"
 )
 
+var benchmarkCacheKeySink string
+
+func BenchmarkPromptGuardCacheKey(b *testing.B) {
+	input := strings.Repeat("prompt-guard-input-", 64)
+
+	b.ReportAllocs()
+
+	for b.Loop() {
+		benchmarkCacheKeySink = cacheKey(input)
+	}
+}
+
 func BenchmarkPromptGuardBenignFastPath(b *testing.B) {
 	guard := newBenchmarkGuard(b)
 	input := "오늘 회의 일정과 점심 메뉴를 정리해 주세요."

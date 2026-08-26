@@ -1,6 +1,8 @@
 package promptguard
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
@@ -8,6 +10,19 @@ import (
 	"testing"
 	"time"
 )
+
+func TestCacheKeyUsesFullHexSHA256(t *testing.T) {
+	t.Parallel()
+
+	const input = "cache-key-input"
+
+	sum := sha256.Sum256([]byte(input))
+	want := hex.EncodeToString(sum[:])
+
+	if got := cacheKey(input); got != want {
+		t.Fatalf("cacheKey() = %q, want full SHA-256 hex digest %q", got, want)
+	}
+}
 
 func TestGuardBlocksAndReviewsWithV3Rulepack(t *testing.T) {
 	t.Parallel()
