@@ -2,7 +2,6 @@ package promptguard
 
 import (
 	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
@@ -11,16 +10,14 @@ import (
 	"time"
 )
 
-func TestCacheKeyUsesFullHexSHA256(t *testing.T) {
+func TestCacheKeyUsesFullBinarySHA256(t *testing.T) {
 	t.Parallel()
 
 	const input = "cache-key-input"
 
-	sum := sha256.Sum256([]byte(input))
-	want := hex.EncodeToString(sum[:])
-
-	if got := cacheKey(input); got != want {
-		t.Fatalf("cacheKey() = %q, want full SHA-256 hex digest %q", got, want)
+	want := sha256.Sum256([]byte(input))
+	if got := cacheKey(input); got != string(want[:]) {
+		t.Fatalf("cacheKey() length = %d, want %d-byte digest", len(got), sha256.Size)
 	}
 }
 

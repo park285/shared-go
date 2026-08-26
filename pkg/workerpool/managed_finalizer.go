@@ -180,6 +180,7 @@ func (f *managedFinalizer) markQuiescedLocked() {
 	}
 
 	f.snapshot.Quiesced = true
+	f.queue = boundedQueue[*managedFinalizerTask]{}
 	close(f.done)
 }
 

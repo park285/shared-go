@@ -1,6 +1,7 @@
 package promptguard
 
 import (
+	"crypto/sha256"
 	"errors"
 	"log/slog"
 	"slices"
@@ -234,8 +235,8 @@ func TestCacheKeyIsFixedLengthDigest(t *testing.T) {
 	}
 
 	for _, k := range keys {
-		if len(k) != 64 {
-			t.Fatalf("cache key %q len = %d, want 64 (sha256 hex)", k, len(k))
+		if len(k) != sha256.Size {
+			t.Fatalf("cache key len = %d, want %d-byte SHA-256 digest", len(k), sha256.Size)
 		}
 	}
 

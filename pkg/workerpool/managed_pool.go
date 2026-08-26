@@ -401,6 +401,8 @@ func (p *ManagedPool) shutdown() {
 
 	queued := p.queue.Drain()
 
+	p.queue = boundedQueue[*managedJob]{}
+
 	cancels := make([]context.CancelCauseFunc, 0, len(p.inFlight))
 
 	for _, inFlight := range p.inFlight {
