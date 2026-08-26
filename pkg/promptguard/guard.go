@@ -2,6 +2,7 @@ package promptguard
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -213,7 +214,7 @@ func (g *Guard) evaluate(input string, source Source) Evaluation {
 func cacheKey(input string) string {
 	sum := sha256.Sum256([]byte(input))
 
-	return string(sum[:])
+	return hex.EncodeToString(sum[:])
 }
 
 // fallbackEvaluation은 guard 평가가 실패했을 때의 conservative fallback이다.
