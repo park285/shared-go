@@ -16,7 +16,7 @@ security = Path(".github/workflows/security.yml").read_text(encoding="utf-8")
 required = [
     "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1",
     "python-version-file: .python-version",
-    "python -m pip install --disable-pip-version-check --no-cache-dir uv==0.12.7",
+    "python -m pip install --disable-pip-version-check --no-cache-dir --no-deps uv==0.12.7",
     "scripts/ci/python-runner.sh --print-interpreter",
     "CI_PYTHON_BIN",
     "push:",
