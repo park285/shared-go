@@ -1,6 +1,7 @@
 package cipolicy_test
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -19,6 +20,7 @@ func TestWorkflowPolicyRegressionSuite(t *testing.T) {
 	cmd := exec.CommandContext(t.Context(), "bash", "scripts/ci/check-workflow-secrets_test.sh")
 
 	cmd.Dir = repoRoot
+	cmd.Env = append(os.Environ(), "CI_PYTHON_BIN=", "CI_PYTHON_RUNTIME_ROOT=")
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {

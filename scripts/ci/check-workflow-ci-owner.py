@@ -61,9 +61,9 @@ REMOTE_LIBRARY_CANONICAL_WORKFLOW_SHA256 = {
 REMOTE_LIBRARY_FIXTURE_MODULE = "example.invalid/workflow-ci-owner-fixture"
 REMOTE_LIBRARY_FIXTURE_WORKFLOW_SHA256 = "132a3046c47792056c3253f2d0c1f42c084afba13368e8ff9eaa507c471ba973"
 APP_CANONICAL_WORKFLOW_SHA256 = {
-    "github.com/kapu/chat-bot-go-kakao": "d0007c4a098e8142f40eb9859632d8ca494f6a68c2d5dd00128f1dece2fbbaf1",
-    "github.com/park285/twentyq-bot": "deab0b58c8342bbadf12d4b4c4e564ff0c55c6bde42b2dba2b42b93ddd147003",
-    "github.com/kapu/hololive-bot-workspace": "0f4c13342db9f9d00983e4574710453d0a2ae9f6ceb89f5cdad8ee6c7fdafcec",
+    "github.com/kapu/chat-bot-go-kakao": "8398fb4f5553aca13e788e01c5e6fea6698c9d03a6e610a5ee52e10241da26b2",
+    "github.com/park285/twentyq-bot": "6906c79233c2a0aca301201ae81437529a6d97510ca219ed9d2592d4ce06c066",
+    "github.com/kapu/hololive-bot-workspace": "18a45236a8e91f68dcbee83ffff0fa8f90e455fd58aa41a7dc7fc94b7db438f8",
 }
 LOCAL_APP_FIXTURE_MODULE = "example.invalid/workflow-ci-owner-local-app-fixture"
 LOCAL_APP_FIXTURE_WORKFLOW_SHA256 = "6f937654a6c5204be51d19d4242e65d6a022f07b54780ac37e2b59c40de4fe86"
