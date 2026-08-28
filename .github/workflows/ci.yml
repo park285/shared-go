@@ -24,6 +24,20 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Setup Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version-file: .python-version
+
+      - name: Setup uv
+        run: python -m pip install --disable-pip-version-check --no-cache-dir uv==0.12.7
+
+      - name: Initialize Python runtime
+        run: |
+          interpreter="$(bash scripts/ci/python-runner.sh --print-interpreter)"
+          printf 'CI_PYTHON_BIN=%s\n' "$interpreter" >>"$GITHUB_ENV"
+          printf 'CI_PYTHON_RUNTIME_ROOT=%s\n' "$GITHUB_WORKSPACE" >>"$GITHUB_ENV"
+
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -37,8 +51,8 @@ jobs:
 
       - name: Workflow CI ownership contract
         run: |
-          python3 scripts/ci/check-workflow-ci-owner.py
-          python3 scripts/ci/check-workflow-ci-owner_test.py
+          "$CI_PYTHON_BIN" scripts/ci/check-workflow-ci-owner.py
+          "$CI_PYTHON_BIN" scripts/ci/check-workflow-ci-owner_test.py
 
       - name: Release provenance contract
         run: bash scripts/ci/check-release-provenance.sh
@@ -66,7 +80,7 @@ jobs:
         run: go vet ./...
 
       - name: golangci-lint
-        run: make lint
+        run: bash scripts/ci/go-tooling.sh golangci-lint run -c .golangci.yml ./...
 
       - name: Deterministic allocation ceilings
         run: |

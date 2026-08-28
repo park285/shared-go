@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+. "${SCRIPT_DIR}/python-runtime.sh"
+repo_python_init
+
 if (( $# != 4 )); then
   echo "usage: $0 <bundle-dir> <owner/repository> <tag> <commit>" >&2
   exit 2
@@ -14,7 +18,7 @@ repository_name="${repository##*/}"
 archive="${repository_name}-${tag}.tar.gz"
 sbom="${repository_name}-${tag}.spdx.json"
 
-python3 - "$bundle_dir/release-manifest.json" "$repository" "$tag" "$commit" "$archive" "$sbom" <<'PY'
+"${CI_PYTHON_BIN}" - "$bundle_dir/release-manifest.json" "$repository" "$tag" "$commit" "$archive" "$sbom" <<'PY'
 import json
 import sys
 
@@ -34,7 +38,7 @@ if manifest != expected:
     raise SystemExit("release bundle: manifest identity mismatch")
 PY
 
-python3 - "$bundle_dir/$sbom" <<'PY'
+"${CI_PYTHON_BIN}" - "$bundle_dir/$sbom" <<'PY'
 import json
 import sys
 

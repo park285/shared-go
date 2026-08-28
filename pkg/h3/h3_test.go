@@ -108,6 +108,15 @@ func TestNewClientRejectsMissingCAFile(t *testing.T) {
 	}
 }
 
+func TestNewClientRejectsIncompleteClientCertificatePair(t *testing.T) {
+	t.Parallel()
+
+	_, _, err := NewClient(0, ClientOptions{ClientCertFile: "client.crt"})
+	if err == nil {
+		t.Fatal("NewClient() error = nil, want incomplete client certificate rejection")
+	}
+}
+
 func TestNewServerRejectsMissingCertPair(t *testing.T) {
 	t.Parallel()
 

@@ -10,6 +10,7 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"strings"
 	"syscall"
 	"time"
 
@@ -19,8 +20,10 @@ import (
 )
 
 const (
-	ServerNameEnv = "HEALTHCHECK_SERVER_NAME"
-	CACertFileEnv = "HEALTHCHECK_CA_CERT_FILE"
+	ServerNameEnv     = "HEALTHCHECK_SERVER_NAME"
+	CACertFileEnv     = "HEALTHCHECK_CA_CERT_FILE"
+	ClientCertFileEnv = "HEALTHCHECK_CLIENT_CERT_FILE"
+	ClientKeyFileEnv  = "HEALTHCHECK_CLIENT_KEY_FILE"
 
 	requestTimeout = 5 * time.Second
 
@@ -29,10 +32,11 @@ const (
 )
 
 var (
-	ErrBodyTooLarge     = errors.New("healthprobe: response body exceeds limit")
-	ErrHostNotAllowed   = errors.New("healthprobe: host not in allowlist")
-	ErrPrivateNetwork   = errors.New("healthprobe: target resolves to a private or loopback address")
-	ErrTooManyRedirects = errors.New("healthprobe: too many redirects")
+	ErrBodyTooLarge         = errors.New("healthprobe: response body exceeds limit")
+	ErrHostNotAllowed       = errors.New("healthprobe: host not in allowlist")
+	ErrPrivateNetwork       = errors.New("healthprobe: target resolves to a private or loopback address")
+	ErrTooManyRedirects     = errors.New("healthprobe: too many redirects")
+	ErrCredentialedRedirect = errors.New("healthprobe: client certificate redirect changes origin")
 )
 
 type FetchOptions struct {
@@ -163,23 +167,34 @@ func newClient(parsed *url.URL, opts FetchOptions) (*http.Client, func(), error)
 	}
 
 	if parsed.Scheme == "https" {
+		clientCertFile := os.Getenv(ClientCertFileEnv)
+		clientKeyFile := os.Getenv(ClientKeyFileEnv)
+
 		h3Client, closeFn, clientErr := h3.NewClient(0, h3.ClientOptions{
-			CACertFile: os.Getenv(CACertFileEnv),
-			ServerName: os.Getenv(ServerNameEnv),
-			DialGuard:  guard,
+			CACertFile:     os.Getenv(CACertFileEnv),
+			ClientCertFile: clientCertFile,
+			ClientKeyFile:  clientKeyFile,
+			ServerName:     os.Getenv(ServerNameEnv),
+			DialGuard:      guard,
 		})
 		if clientErr != nil {
 			return nil, nil, fmt.Errorf("client: %w", clientErr)
 		}
 
-		h3Client.CheckRedirect = redirectPolicy(opts)
+		var credentialOrigin *url.URL
+
+		if clientCertFile != "" || clientKeyFile != "" {
+			credentialOrigin = parsed
+		}
+
+		h3Client.CheckRedirect = redirectPolicy(opts, credentialOrigin)
 
 		return h3Client, closeFn, nil
 	}
 
 	client := &http.Client{
 		Timeout:       requestTimeout,
-		CheckRedirect: redirectPolicy(opts),
+		CheckRedirect: redirectPolicy(opts, nil),
 	}
 
 	if guard == nil {
@@ -231,7 +246,7 @@ func guardedHTTPTransport(guard func(net.IP) error) *http.Transport {
 	}
 }
 
-func redirectPolicy(opts FetchOptions) func(req *http.Request, via []*http.Request) error {
+func redirectPolicy(opts FetchOptions, credentialOrigin *url.URL) func(req *http.Request, via []*http.Request) error {
 	policy := netguard.RedirectPolicy(netguard.RedirectConfig{
 		Policy:         networkPolicy(opts),
 		MaxRedirects:   maxRedirects - 1,
@@ -240,8 +255,34 @@ func redirectPolicy(opts FetchOptions) func(req *http.Request, via []*http.Reque
 	})
 
 	return func(req *http.Request, via []*http.Request) error {
+		if credentialOrigin != nil && !sameOrigin(credentialOrigin, req.URL) {
+			return ErrCredentialedRedirect
+		}
+
 		return mapPolicyError(policy(req, via))
 	}
+}
+
+func sameOrigin(left, right *url.URL) bool {
+	return strings.EqualFold(left.Scheme, right.Scheme) &&
+		strings.EqualFold(left.Hostname(), right.Hostname()) &&
+		effectivePort(left) == effectivePort(right)
+}
+
+func effectivePort(target *url.URL) string {
+	if port := target.Port(); port != "" {
+		return port
+	}
+
+	if strings.EqualFold(target.Scheme, "https") {
+		return "443"
+	}
+
+	if strings.EqualFold(target.Scheme, "http") {
+		return "80"
+	}
+
+	return ""
 }
 
 // body의 close 소유권은 httputil.ReadAllAndClose에 있다. 호출부는 따로 닫지 않는다.

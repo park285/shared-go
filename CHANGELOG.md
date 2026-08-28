@@ -5,6 +5,27 @@
 
 ## 미출시
 
+## v2.1.0 - 2026-08-29
+
+### 추가
+
+- H3 client에 `ClientCertFile`·`ClientKeyFile`을 추가하고 healthprobe의
+  `HEALTHCHECK_CLIENT_CERT_FILE`·`HEALTHCHECK_CLIENT_KEY_FILE` 환경 변수로 mTLS client
+  identity를 로드합니다. 두 파일은 항상 함께 설정해야 합니다.
+
+### 보안
+
+- client certificate를 사용하는 healthprobe redirect를 최초 scheme·hostname·effective port에
+  결속합니다. 다른 origin으로 redirect되면 TLS request 전에 거부해 credential이 두 번째
+  서비스에 제시되지 않습니다.
+- public library workflow 전체를 module-specific SHA-256 snapshot에 결속해 필수 gate 삭제,
+  early exit, folded/flow YAML, custom shell, environment injection과 PR-controlled Make 실행을
+  fail-closed로 거부합니다.
+- 저장소 Actions 허용 정책 안에서 실행되도록 Python은 공식 `setup-python` action으로 고정하고,
+  `uv`는 검증된 버전을 Python module로 설치합니다.
+
+## v2.0.4 - 2026-08-26
+
 ### 호환성이 깨지는 변경
 
 - `httputil.DecodeJSON`과 `JSONClient.DecodeJSON`이 out 파라미터 대신 타입 매개변수를 받습니다.

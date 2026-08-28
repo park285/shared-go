@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import os
 import re
 import sys
 from pathlib import Path
@@ -15,15 +17,58 @@ SECURITY_CANDIDATES = (
     Path(".github/workflows/security-full.yml"),
     Path(".github/workflows/security-full.yaml"),
 )
-KNOWN_EVENTS = {
-    "pull_request",
-    "pull_request_target",
-    "push",
-    "schedule",
-    "workflow_call",
-    "workflow_dispatch",
-    "workflow_run",
+REMOTE_LIBRARY_ALLOWED_RUN_LINES = frozenset(
+    {
+        "echo ok",
+        "bash scripts/ci/check-workflow-secrets.sh",
+        "bash scripts/ci/check-workflow-secrets_test.sh",
+        'interpreter="$(bash scripts/ci/python-runner.sh --print-interpreter)"',
+        "printf 'CI_PYTHON_BIN=%s\\n' \"$interpreter\" >>\"$GITHUB_ENV\"",
+        "printf 'CI_PYTHON_RUNTIME_ROOT=%s\\n' \"$GITHUB_WORKSPACE\" >>\"$GITHUB_ENV\"",
+        '\"$CI_PYTHON_BIN\" scripts/ci/check-workflow-ci-owner.py',
+        '\"$CI_PYTHON_BIN\" scripts/ci/check-workflow-ci-owner_test.py',
+        "bash scripts/ci/check-release-provenance.sh",
+        "bash scripts/ci/check-crosscutting-boundaries.sh",
+        "bash scripts/check-sql-ownership.sh",
+        "bash scripts/ci/check-structure.sh --mode hard --format text",
+        "mapfile -t files < <(find . -path './.git' -prune -o -name '*.go' -print)",
+        "if (( ${#files[@]} == 0 )); then",
+        "exit 0",
+        "fi",
+        'unformatted="$(gofmt -l "${files[@]}")"',
+        'if [[ -n "${unformatted}" ]]; then',
+        'echo "::error::gofmt required for the following files:"',
+        'echo "${unformatted}"',
+        "exit 1",
+        "go vet ./...",
+        "python -m pip install --disable-pip-version-check --no-cache-dir uv==0.12.7",
+        "bash scripts/check-hmac-boundary.sh",
+        "bash scripts/check-hmac-boundary_test.sh",
+        "bash scripts/ci/go-tooling.sh golangci-lint run -c .golangci.yml ./...",
+        "go test -count=1 ./...",
+        "go test -race",
+        "go test -race -count=1 ./...",
+        "go mod tidy -diff",
+        "IRIS_CLIENT_VALKEY_TEST_ADDR=127.0.0.1:6379 go test -race -count=1 -v ./internal/dedup/",
+        "go test -count=1 -run '^TestPromptGuardAllocationCeilings$' ./pkg/promptguard",
+        "go test -count=1 -run '^TestLoggingAllocationCeilings$' ./pkg/logging",
+    }
+)
+REMOTE_LIBRARY_CANONICAL_WORKFLOW_SHA256 = {
+    "github.com/park285/iris-client-go/v2": "2080ca550e8e0b406223e8c4d94e1140e6c9bba68f91c26931f7d2ec4c774eb4",
+    "github.com/park285/shared-go/v2": "93fec9368f126d70456b222f64771969d45f91a0c942d5205839db68b43d5b4a",
 }
+REMOTE_LIBRARY_FIXTURE_MODULE = "example.invalid/workflow-ci-owner-fixture"
+REMOTE_LIBRARY_FIXTURE_WORKFLOW_SHA256 = "132a3046c47792056c3253f2d0c1f42c084afba13368e8ff9eaa507c471ba973"
+APP_CANONICAL_WORKFLOW_SHA256 = {
+    "github.com/kapu/chat-bot-go-kakao": "d0007c4a098e8142f40eb9859632d8ca494f6a68c2d5dd00128f1dece2fbbaf1",
+    "github.com/park285/twentyq-bot": "deab0b58c8342bbadf12d4b4c4e564ff0c55c6bde42b2dba2b42b93ddd147003",
+    "github.com/kapu/hololive-bot-workspace": "0f4c13342db9f9d00983e4574710453d0a2ae9f6ceb89f5cdad8ee6c7fdafcec",
+}
+LOCAL_APP_FIXTURE_MODULE = "example.invalid/workflow-ci-owner-local-app-fixture"
+LOCAL_APP_FIXTURE_WORKFLOW_SHA256 = "6f937654a6c5204be51d19d4242e65d6a022f07b54780ac37e2b59c40de4fe86"
+REMOTE_APP_FIXTURE_MODULE = "example.invalid/workflow-ci-owner-remote-app-fixture"
+REMOTE_APP_FIXTURE_WORKFLOW_SHA256 = "2d35debf1a90023b08a6c598268a9e47635d6358d593ee4eb7780beb3c26a13e"
 
 
 class ContractError(ValueError):
@@ -106,11 +151,17 @@ def workflow_events(text: str) -> set[str]:
         events = inline_events(parsed[1])
         if parsed[1]:
             return events
+        event_indent: int | None = None
         for child in lines[index + 1 :]:
             if not meaningful(child):
                 continue
-            if indent(child) == 0:
+            child_indent = indent(child)
+            if child_indent == 0:
                 break
+            if event_indent is None:
+                event_indent = child_indent
+            if child_indent != event_indent:
+                continue
             child_source = strip_yaml_comment(child).strip()
             if child_source.startswith("- "):
                 event = unquote(child_source[2:].strip())
@@ -119,8 +170,7 @@ def workflow_events(text: str) -> set[str]:
                 if child_parsed is None:
                     continue
                 event = child_parsed[0]
-            if event in KNOWN_EVENTS:
-                events.add(event)
+            events.add(event)
         return events
     raise ContractError("workflow is missing a top-level on declaration")
 
@@ -157,11 +207,166 @@ def require_markers(label: str, text: str, markers: tuple[str, ...]) -> list[str
     return [f"{label}: required marker missing: {marker}" for marker in markers if marker not in text]
 
 
+def workflow_run_scripts(text: str) -> list[str]:
+    lines = text.splitlines()
+    scripts: list[str] = []
+    for index, raw in enumerate(lines):
+        parsed = parse_key_value(raw)
+        if parsed is None or parsed[0] != "run":
+            continue
+        value = unquote(parsed[1])
+        if re.fullmatch(r"[|>](?:[1-9][+-]?|[+-][1-9]?)?", value):
+            base_indent = indent(raw)
+            block: list[str] = []
+            for child in lines[index + 1 :]:
+                if child.strip() and indent(child) <= base_indent:
+                    break
+                block.append(child)
+            scripts.append("\n".join(block))
+        elif value:
+            scripts.append(value)
+    return scripts
+
+
+def executable_shell_text(script: str) -> str:
+    lines = [strip_shell_comment(line) for line in script.replace("\\\n", " ").splitlines()]
+    return "\n".join(line for line in lines if line.strip())
+
+
+def strip_shell_comment(raw: str) -> str:
+    out: list[str] = []
+    quote: str | None = None
+    escaped = False
+    for index, char in enumerate(raw):
+        if escaped:
+            out.append(char)
+            escaped = False
+            continue
+        if char == "\\" and quote != "'":
+            out.append(char)
+            escaped = True
+            continue
+        if char in {"'", '"'}:
+            if quote is None:
+                quote = char
+            elif quote == char:
+                quote = None
+            out.append(char)
+            continue
+        if (
+            char == "#"
+            and quote is None
+            and (index == 0 or raw[index - 1].isspace() or raw[index - 1] in ";&|()")
+        ):
+            break
+        out.append(char)
+    return "".join(out).rstrip()
+
+
+def invokes_command(script: str, command: str) -> bool:
+    source = executable_shell_text(script)
+    boundary = r"(?:^|[\s;&|(){}!'\"\x60])"
+    executable_path = r"(?:[^\s;&|(){}!'\"\x60]*/)?"
+    terminator = r"(?=$|[\s;&|(){}!'\"\x60])"
+    return re.search(
+        boundary + executable_path + re.escape(command) + terminator,
+        source,
+        re.MULTILINE,
+    ) is not None
+
+
+def has_only_canonical_remote_library_commands(scripts: list[str]) -> bool:
+    return all(
+        line.strip() in REMOTE_LIBRARY_ALLOWED_RUN_LINES
+        for script in scripts
+        for line in executable_shell_text(script).splitlines()
+        if line.strip()
+    )
+
+
+def has_go_compile_smoke(scripts: list[str]) -> bool:
+    pattern = re.compile(r"^go\s+test\s+-run\s+(['\"])[\^][$]\1(?:\s|$)")
+    return any(
+        pattern.search(line.strip()) is not None
+        for script in scripts
+        for line in executable_shell_text(script).splitlines()
+        if line.strip()
+    )
+
+
+def invokes_repo_script_directly(scripts: list[str], script_path: str) -> bool:
+    pattern = re.compile(r"^bash\s+" + re.escape(script_path) + r"(?:\s|$)")
+    return any(
+        pattern.search(line.strip()) is not None
+        for script in scripts
+        for line in executable_shell_text(script).splitlines()
+        if line.strip()
+    )
+
+
+def module_path(root: Path) -> str:
+    path = root / "go.mod"
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        raise ContractError(f"cannot read go.mod: {exc}") from exc
+    for raw in lines:
+        line = raw.strip()
+        if not line or line.startswith("//"):
+            continue
+        match = re.fullmatch(r"module\s+([^\s]+)", line)
+        if match is None:
+            raise ContractError("go.mod must declare module before other directives")
+        return match.group(1)
+    raise ContractError("go.mod is missing a module declaration")
+
+
+def expected_remote_library_workflow_sha256(root: Path) -> str:
+    module = module_path(root)
+    expected = REMOTE_LIBRARY_CANONICAL_WORKFLOW_SHA256.get(module)
+    if expected is not None:
+        return expected
+    if (
+        module == REMOTE_LIBRARY_FIXTURE_MODULE
+        and os.environ.get("WORKFLOW_CI_OWNER_CONTRACT_FIXTURE") == "1"
+    ):
+        return REMOTE_LIBRARY_FIXTURE_WORKFLOW_SHA256
+    raise ContractError(f"remote library module has no canonical workflow snapshot: {module}")
+
+
+def expected_app_workflow_sha256(root: Path, owner: str) -> str:
+    module = module_path(root)
+    expected = APP_CANONICAL_WORKFLOW_SHA256.get(module)
+    if expected is not None:
+        return expected
+    if os.environ.get("WORKFLOW_CI_OWNER_CONTRACT_FIXTURE") == "1":
+        if module == LOCAL_APP_FIXTURE_MODULE and owner == "local":
+            return LOCAL_APP_FIXTURE_WORKFLOW_SHA256
+        if module == REMOTE_APP_FIXTURE_MODULE and owner == "remote":
+            return REMOTE_APP_FIXTURE_WORKFLOW_SHA256
+    raise ContractError(f"{owner} app module has no canonical workflow snapshot: {module}")
+
+
+def invokes_go_race_test(script: str) -> bool:
+    source = executable_shell_text(script)
+    prefix = r"(?:^|[;&|]\s*|\b(?:then|do)\s+)\s*"
+    wrappers = r"(?:(?:env|command)\s+)*(?:[A-Za-z_][A-Za-z0-9_]*=[^\s;&|]+\s+)*"
+    return (
+        re.search(
+            prefix + wrappers + r"go\s+test\b[^\n;&|]*?(?:^|\s)-race(?:\s|$)",
+            source,
+            re.MULTILINE,
+        )
+        is not None
+    )
+
+
 def validate(root: Path) -> tuple[str, str, list[str]]:
     profile = read_declaration(root, PROFILE_PATH, {"app", "lib"})
     owner = read_declaration(root, OWNER_PATH, {"local", "remote"})
     primary = read_workflow(root, PRIMARY_PATH)
     security_path, security = find_security_workflow(root)
+    run_scripts = workflow_run_scripts(primary)
 
     failures: list[str] = []
     try:
@@ -180,6 +385,20 @@ def validate(root: Path) -> tuple[str, str, list[str]]:
     if {"pull_request", "pull_request_target"} & security_events:
         failures.append(f"{security_path}: security workflow must not run on PR events")
 
+    if profile == "app":
+        try:
+            expected_workflow_sha256 = expected_app_workflow_sha256(root, owner)
+        except ContractError as exc:
+            failures.append(f"{PRIMARY_PATH}: {exc}")
+        else:
+            actual_workflow_sha256 = hashlib.sha256(primary.encode("utf-8")).hexdigest()
+            if actual_workflow_sha256 != expected_workflow_sha256:
+                failures.append(
+                    f"{PRIMARY_PATH}: {owner} app gate must match its exact canonical workflow "
+                    "snapshot, including triggers, permissions, env, defaults, uses, shells, "
+                    "and ordered steps"
+                )
+
     if owner == "local":
         expected_primary = {"workflow_dispatch"}
         expected_security = {"workflow_dispatch"}
@@ -192,7 +411,10 @@ def validate(root: Path) -> tuple[str, str, list[str]]:
                 f"{security_path}: local owner events {sorted(security_events)} != {sorted(expected_security)}"
             )
         if profile == "app":
-            failures.extend(require_markers(str(PRIMARY_PATH), primary, ("go test -run '^$'",)))
+            if not has_go_compile_smoke(run_scripts):
+                failures.append(
+                    f"{PRIMARY_PATH}: local app gate must execute go test -run '^$' directly"
+                )
     else:
         expected_primary = {"pull_request", "push", "workflow_dispatch"}
         expected_security = {"push", "schedule", "workflow_dispatch"}
@@ -205,15 +427,38 @@ def validate(root: Path) -> tuple[str, str, list[str]]:
                 f"{security_path}: remote owner events {sorted(security_events)} != {sorted(expected_security)}"
             )
         if profile == "app":
-            failures.extend(
-                require_markers(
-                    str(PRIMARY_PATH),
-                    primary,
-                    ("public-pr-go-gate.sh", "public-pr-frontend-gate.sh"),
+            for script_path in (
+                "scripts/ci/public-pr-go-gate.sh",
+                "scripts/ci/public-pr-frontend-gate.sh",
+            ):
+                if not invokes_repo_script_directly(run_scripts, script_path):
+                    failures.append(
+                        f"{PRIMARY_PATH}: remote app gate must invoke {script_path} directly"
+                    )
+        else:
+            try:
+                expected_workflow_sha256 = expected_remote_library_workflow_sha256(root)
+            except ContractError as exc:
+                failures.append(f"{PRIMARY_PATH}: {exc}")
+            else:
+                actual_workflow_sha256 = hashlib.sha256(primary.encode("utf-8")).hexdigest()
+                if actual_workflow_sha256 != expected_workflow_sha256:
+                    failures.append(
+                        f"{PRIMARY_PATH}: remote library PR gate must match its exact canonical "
+                        "workflow snapshot, including triggers, permissions, env, defaults, uses, "
+                        "shells, and ordered steps"
+                    )
+            if not any(invokes_go_race_test(script) for script in run_scripts):
+                failures.append(f"{PRIMARY_PATH}: remote library PR gate must execute go test -race directly")
+            if not has_only_canonical_remote_library_commands(run_scripts):
+                failures.append(
+                    f"{PRIMARY_PATH}: remote library PR gate must use canonical direct commands; "
+                    "PR-controlled Make targets and dynamic command construction are forbidden"
                 )
-            )
-        elif "make test-race" not in primary and "go test -race" not in primary:
-            failures.append(f"{PRIMARY_PATH}: remote library PR gate must contain a race-test marker")
+            if any(invokes_command(script, "make") for script in run_scripts):
+                failures.append(
+                    f"{PRIMARY_PATH}: remote library PR gate must invoke security checks directly, not through PR-controlled Make targets"
+                )
 
     return profile, owner, failures
 

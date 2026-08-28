@@ -63,7 +63,9 @@ func newServerQUICConfig() *quic.Config {
 }
 
 type ClientOptions struct {
-	CACertFile string
+	CACertFile     string
+	ClientCertFile string
+	ClientKeyFile  string
 	// SAN에 없는 주소(127.0.0.1, docker DNS)로 접속할 때 SAN에 있는 이름으로 검증한다.
 	ServerName string
 	DialGuard  func(net.IP) error
@@ -82,6 +84,19 @@ func NewClient(timeout time.Duration, opts ClientOptions) (*http.Client, func(),
 		}
 
 		tlsConfig.RootCAs = roots
+	}
+
+	if (opts.ClientCertFile == "") != (opts.ClientKeyFile == "") {
+		return nil, nil, errors.New("h3 client certificate and key must be configured together")
+	}
+
+	if opts.ClientCertFile != "" {
+		certificate, err := tls.LoadX509KeyPair(opts.ClientCertFile, opts.ClientKeyFile)
+		if err != nil {
+			return nil, nil, fmt.Errorf("load h3 client certificate pair: %w", err)
+		}
+
+		tlsConfig.Certificates = []tls.Certificate{certificate}
 	}
 
 	transport := &http3.Transport{

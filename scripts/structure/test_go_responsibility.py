@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -45,7 +46,7 @@ class AnalyzerTest(unittest.TestCase):
         changed: list[str] | None = None,
         env: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
-        command = ["python3", str(ANALYZER), "--root", str(self.root), "--policy", str(self.policy),
+        command = [sys.executable, str(ANALYZER), "--root", str(self.root), "--policy", str(self.policy),
                    "--mode", mode, "--format", "json"]
         if changed is not None:
             path = self.root / "changed"

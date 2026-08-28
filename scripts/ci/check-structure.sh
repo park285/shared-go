@@ -2,6 +2,8 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+. "${repo_root}/scripts/ci/python-runtime.sh"
+repo_python_init
 root="$repo_root"
 args=()
 while (($#)); do
@@ -10,5 +12,5 @@ while (($#)); do
     *) args+=("$1"); shift ;;
   esac
 done
-exec python3 "$root/scripts/structure/go_responsibility.py" \
+exec "${CI_PYTHON_BIN}" "$root/scripts/structure/go_responsibility.py" \
   --policy "$root/scripts/structure/policy.json" "${args[@]}"

@@ -184,7 +184,7 @@ func TestHealthprobeMapsNetguardRedirectLimit(t *testing.T) {
 		via[index] = &http.Request{URL: mustParseURL(t, "https://example.com/hop")}
 	}
 
-	err := redirectPolicy(FetchOptions{FollowRedirects: true, AllowPrivateNetworks: true})(req, via)
+	err := redirectPolicy(FetchOptions{FollowRedirects: true, AllowPrivateNetworks: true}, nil)(req, via)
 	if !errors.Is(err, ErrTooManyRedirects) || !errors.Is(err, netguard.ErrTooManyRedirects) {
 		t.Fatalf("redirectPolicy() error = %v, want healthprobe and netguard redirect errors", err)
 	}

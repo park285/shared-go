@@ -8,7 +8,11 @@
 # 전체 go test 를 정당하게 실행하므로 lib 프로필에서는 적용하지 않는다.
 set -euo pipefail
 
-python3 - "$@" <<'PY'
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+. "${SCRIPT_DIR}/python-runtime.sh"
+repo_python_init
+
+"${CI_PYTHON_BIN}" - "$@" <<'PY'
 from __future__ import annotations
 
 import re

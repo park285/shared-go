@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -141,6 +142,17 @@ func TestCheckURLAcceptsHTTP3LoopbackWithServerNameOverride(t *testing.T) {
 
 	defer testsupport.CloseNow(t, "listener.Close", listener.Close)
 
+	clientRoots := x509.NewCertPool()
+
+	clientCertificatePEM, err := os.ReadFile(certFile) //nolint:gosec // test-owned temporary certificate path
+	if err != nil {
+		t.Fatalf("read client certificate: %v", err)
+	}
+
+	if !clientRoots.AppendCertsFromPEM(clientCertificatePEM) {
+		t.Fatal("append client certificate root")
+	}
+
 	server := &http3.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path != "/ready" {
@@ -152,6 +164,8 @@ func TestCheckURLAcceptsHTTP3LoopbackWithServerNameOverride(t *testing.T) {
 		TLSConfig: &tls.Config{
 			MinVersion:   tls.VersionTLS13,
 			Certificates: []tls.Certificate{cert},
+			ClientAuth:   tls.RequireAndVerifyClientCert,
+			ClientCAs:    clientRoots,
 		},
 	}
 
@@ -168,12 +182,91 @@ func TestCheckURLAcceptsHTTP3LoopbackWithServerNameOverride(t *testing.T) {
 	}()
 
 	t.Setenv(CACertFileEnv, certFile)
+	t.Setenv(ClientCertFileEnv, certFile)
+	t.Setenv(ClientKeyFileEnv, keyFile)
 	t.Setenv(ServerNameEnv, "healthprobe-h3.local")
 
 	url := "https://" + listener.LocalAddr().String() + "/ready"
 	if err := CheckURLInternal(url); err != nil {
 		t.Fatalf("CheckURLInternal(%q): %v", url, err)
 	}
+}
+
+func TestCheckURLRejectsCrossOriginRedirectBeforePresentingClientCertificate(t *testing.T) {
+	certFile, keyFile := writeSelfSignedCert(t, "healthprobe-h3.local")
+
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		t.Fatalf("load cert: %v", err)
+	}
+
+	clientRoots := x509.NewCertPool()
+
+	clientCertificatePEM, err := os.ReadFile(certFile) //nolint:gosec // test-owned temporary certificate path
+	if err != nil {
+		t.Fatalf("read client certificate: %v", err)
+	}
+
+	if !clientRoots.AppendCertsFromPEM(clientCertificatePEM) {
+		t.Fatal("append client certificate root")
+	}
+
+	serverTLS := func() *tls.Config {
+		return &tls.Config{
+			MinVersion:   tls.VersionTLS13,
+			Certificates: []tls.Certificate{cert},
+			ClientAuth:   tls.RequireAndVerifyClientCert,
+			ClientCAs:    clientRoots,
+		}
+	}
+
+	var redirectedRequests atomic.Int64
+
+	redirectTarget := startHTTP3TestServer(t, serverTLS(), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		redirectedRequests.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	origin := startHTTP3TestServer(t, serverTLS(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, redirectTarget+"/ready", http.StatusFound)
+	}))
+
+	t.Setenv(CACertFileEnv, certFile)
+	t.Setenv(ClientCertFileEnv, certFile)
+	t.Setenv(ClientKeyFileEnv, keyFile)
+	t.Setenv(ServerNameEnv, "healthprobe-h3.local")
+
+	err = CheckURLInternal(origin + "/ready")
+	if !errors.Is(err, ErrCredentialedRedirect) {
+		t.Fatalf("CheckURLInternal() error = %v, want ErrCredentialedRedirect", err)
+	}
+
+	if got := redirectedRequests.Load(); got != 0 {
+		t.Fatalf("redirect target requests = %d, want 0", got)
+	}
+}
+
+func startHTTP3TestServer(t *testing.T, tlsConfig *tls.Config, handler http.Handler) string {
+	t.Helper()
+
+	listener, err := (&net.ListenConfig{}).ListenPacket(t.Context(), "udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	server := &http3.Server{Handler: handler, TLSConfig: tlsConfig}
+	serveErr := make(chan error, 1)
+
+	go func() { serveErr <- server.Serve(listener) }()
+
+	t.Cleanup(func() {
+		testsupport.CloseNow(t, "server.Close", server.Close)
+
+		if err := <-serveErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
+			t.Errorf("Serve() error = %v", err)
+		}
+	})
+
+	return "https://" + listener.LocalAddr().String()
 }
 
 func writeSelfSignedCert(t *testing.T, serverName string) (string, string) {
@@ -191,7 +284,7 @@ func writeSelfSignedCert(t *testing.T, serverName string) (string, string) {
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().Add(time.Hour),
 		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
 		BasicConstraintsValid: true,
 		IsCA:                  true,
 	}
