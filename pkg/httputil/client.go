@@ -43,7 +43,7 @@ func NewClient(timeout time.Duration) *http.Client {
 	return &http.Client{Timeout: timeout, Transport: baseProfiledTransport()}
 }
 
-// 기본 keep-alive, proxy, TLS 기본 동작은 유지하고 timeout/pool 정책을 profile로 주입합니다.
+// proxy·keep-alive·pool baseline은 DefaultTransport에서 가져오고, HTTP는 HTTP/1.1만 사용합니다.
 func NewProfiledClient(profile TransportProfile) *http.Client {
 	transport := baseProfiledTransport()
 	applyTransportProfile(transport, profile)
@@ -58,15 +58,13 @@ func baseProfiledTransport() *http.Transport {
 	protocols := new(http.Protocols)
 	protocols.SetHTTP1(true)
 
-	baseTransport, ok := http.DefaultTransport.(*http.Transport)
-	if ok && baseTransport != nil {
-		transport := baseTransport.Clone()
+	transport := newHTTP1ProfiledTransport(protocols)
+	copyDefaultTransportBaseline(transport)
 
-		transport.Protocols = protocols
+	return transport
+}
 
-		return transport
-	}
-
+func newHTTP1ProfiledTransport(protocols *http.Protocols) *http.Transport {
 	return &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
 		Protocols:             protocols,
@@ -75,6 +73,30 @@ func baseProfiledTransport() *http.Transport {
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: time.Second,
 	}
+}
+
+func copyDefaultTransportBaseline(transport *http.Transport) {
+	baseTransport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok || baseTransport == nil {
+		return
+	}
+
+	transport.Proxy = baseTransport.Proxy
+	transport.OnProxyConnectResponse = baseTransport.OnProxyConnectResponse
+	transport.DialContext = baseTransport.DialContext
+	transport.DisableKeepAlives = baseTransport.DisableKeepAlives
+	transport.DisableCompression = baseTransport.DisableCompression
+	transport.MaxIdleConns = baseTransport.MaxIdleConns
+	transport.MaxIdleConnsPerHost = baseTransport.MaxIdleConnsPerHost
+	transport.MaxConnsPerHost = baseTransport.MaxConnsPerHost
+	transport.IdleConnTimeout = baseTransport.IdleConnTimeout
+	transport.ResponseHeaderTimeout = baseTransport.ResponseHeaderTimeout
+	transport.ExpectContinueTimeout = baseTransport.ExpectContinueTimeout
+	transport.ProxyConnectHeader = baseTransport.ProxyConnectHeader.Clone()
+	transport.GetProxyConnectHeader = baseTransport.GetProxyConnectHeader
+	transport.MaxResponseHeaderBytes = baseTransport.MaxResponseHeaderBytes
+	transport.WriteBufferSize = baseTransport.WriteBufferSize
+	transport.ReadBufferSize = baseTransport.ReadBufferSize
 }
 
 func applyTransportProfile(transport *http.Transport, profile TransportProfile) {

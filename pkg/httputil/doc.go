@@ -4,8 +4,9 @@
 // # 패키지 개요
 //
 // 이 패키지는 서비스 간 HTTP 호출과 외부 API 호출에서 반복되는 client timeout,
-// connection pool 정책을 TransportProfile로 맞춥니다. 기본 transport의 proxy,
-// keep-alive, TLS 기본값은 유지하고 호출 목적에 맞는 profile만 주입합니다.
+// connection pool 정책을 TransportProfile로 맞춥니다. 기본 transport의 proxy와
+// keep-alive는 유지하고, HTTP는 HTTP/1.1만 사용하며 호출 목적에 맞는 profile만
+// 주입합니다.
 //
 // JSON request 생성, API key header 적용, response body decode/discard, non-2xx
 // response를 APIError로 변환하는 흐름도 이 패키지에서 제공합니다. 호출부는 error

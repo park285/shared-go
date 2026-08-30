@@ -5,7 +5,13 @@
 
 ## 미출시
 
-## v2.1.0 - 2026-08-29
+## v2.1.1 - 2026-08-31
+
+### 수정
+
+- `httputil`이 `http.DefaultTransport.Clone()`을 쓰면서 TLS ALPN에 상위 프로토콜을
+  남긴 채 HTTP/1.1만 파싱하던 문제를 고쳤습니다. 두 프로토콜을 모두 지원하는
+  상류에서 SETTINGS frame을 HTTP/1.x malformed response로 오인하지 않습니다.
 
 ### 추가
 
