@@ -13,6 +13,12 @@
   남긴 채 HTTP/1.1만 파싱하던 문제를 고쳤습니다. 두 프로토콜을 모두 지원하는
   상류에서 SETTINGS frame을 HTTP/1.x malformed response로 오인하지 않습니다.
 
+### 운영
+
+- release provenance uv 경로와 workflow 소유권 hash를 정렬합니다.
+
+## v2.1.0 - 2026-08-29
+
 ### 추가
 
 - H3 client에 `ClientCertFile`·`ClientKeyFile`을 추가하고 healthprobe의
