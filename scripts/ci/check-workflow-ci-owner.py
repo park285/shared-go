@@ -61,7 +61,7 @@ REMOTE_LIBRARY_ALLOWED_RUN_LINES = frozenset(
 )
 REMOTE_LIBRARY_CANONICAL_WORKFLOW_SHA256 = {
     "github.com/park285/iris-client-go/v2": "57efba63e478a3771e9be90d8c2505ad5945d099642f044d0b3b34329050cd30",
-    "github.com/park285/shared-go/v2": "f9945ba7db3e56e0133161daa86f25ed6507b6fdc4d2f78470cbc5d65c8d6aa3",
+    "github.com/park285/shared-go/v2": "5df96c0064b2739d68d1e61eb9b3e09229ab0759be32d5f4bcbf67e1302c067e",
 }
 REMOTE_LIBRARY_FIXTURE_MODULE = "example.invalid/workflow-ci-owner-fixture"
 REMOTE_LIBRARY_FIXTURE_WORKFLOW_SHA256 = "132a3046c47792056c3253f2d0c1f42c084afba13368e8ff9eaa507c471ba973"
