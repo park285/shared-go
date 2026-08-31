@@ -116,6 +116,35 @@ def main() -> int:
         )
         expect_failure("comment-only local compile smoke", run(local_app), "must execute go test")
 
+        local_durable_app = base / "local-durable-app"
+        write(local_durable_app / "scripts/ci/workflow-gate-profile", "app\n")
+        write(local_durable_app / "scripts/ci/workflow-ci-owner", "local\n")
+        write(
+            local_durable_app / "go.mod",
+            "module example.invalid/workflow-ci-owner-local-durable-fast-app-fixture\n",
+        )
+        write(
+            local_durable_app / ".github/workflows/ci.yml",
+            workflow(
+                ["workflow_dispatch", "pull_request", "push"],
+                ("go test -run '^$'",),
+            ),
+        )
+        write(
+            local_durable_app / ".github/workflows/security.yml",
+            workflow(["workflow_dispatch"], ("security",)),
+        )
+        expect_success("valid local durable fast app", run(local_durable_app))
+        write(
+            local_durable_app / ".github/workflows/ci.yml",
+            workflow(["workflow_dispatch", "pull_request"], ("go test -run '^$'",)),
+        )
+        expect_failure(
+            "local durable fast app missing push",
+            run(local_durable_app),
+            "local owner events",
+        )
+
         remote_app = base / "remote-app"
         fixture(remote_app, "app", "remote")
         expect_success("valid remote app", run(remote_app, {"WORKFLOW_CI_OWNER": "local"}))
