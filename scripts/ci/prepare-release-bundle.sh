@@ -39,8 +39,11 @@ if [[ -n "${GITHUB_SHA:-}" && "$GITHUB_SHA" != "$commit" ]]; then
   echo "release bundle: GitHub SHA does not match requested commit" >&2
   exit 1
 fi
-if git show-ref --verify --quiet refs/remotes/origin/main \
-  && ! git merge-base --is-ancestor "$commit" refs/remotes/origin/main; then
+if ! git show-ref --verify --quiet refs/remotes/origin/main; then
+  echo "release bundle: canonical origin/main authority is unavailable" >&2
+  exit 1
+fi
+if ! git merge-base --is-ancestor "$commit" refs/remotes/origin/main; then
   echo "release bundle: tag target is not contained in origin/main" >&2
   exit 1
 fi

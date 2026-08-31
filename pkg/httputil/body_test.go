@@ -21,6 +21,30 @@ type countingBody struct {
 	readE  error
 }
 
+type phasedErrorBody struct {
+	errors []error
+	closes int
+	closeE error
+}
+
+func (b *phasedErrorBody) Read([]byte) (int, error) {
+	if len(b.errors) == 0 {
+		return 0, io.EOF
+	}
+
+	err := b.errors[0]
+
+	b.errors = b.errors[1:]
+
+	return 0, err
+}
+
+func (b *phasedErrorBody) Close() error {
+	b.closes++
+
+	return b.closeE
+}
+
 func (b *countingBody) Read(p []byte) (int, error) {
 	if b.readE != nil {
 		return 0, b.readE
@@ -78,6 +102,46 @@ func TestReadAllAndCloseRejectsOversizedBody(t *testing.T) {
 
 	if body.read > 16+1+DefaultDrainLimit+1 {
 		t.Fatalf("read bytes = %d, want bounded by limit plus drain", body.read)
+	}
+}
+
+func TestReadAllAndCloseWithDrainLimitPreservesCallerBudget(t *testing.T) {
+	t.Parallel()
+
+	body := &countingBody{reader: strings.NewReader(strings.Repeat("a", 4096))}
+	_, err := ReadAllAndCloseWithDrainLimit(body, 16, 64)
+
+	if !errors.Is(err, ErrResponseBodyTooLarge) {
+		t.Fatalf("ReadAllAndCloseWithDrainLimit() error = %v, want ErrResponseBodyTooLarge", err)
+	}
+
+	if body.read > 16+1+64+1 {
+		t.Fatalf("read bytes = %d, want bounded by read and caller drain limits", body.read)
+	}
+
+	if body.closes != 1 {
+		t.Fatalf("close calls = %d, want 1", body.closes)
+	}
+}
+
+func TestReadAllAndCloseWithDrainLimitJoinsReadDrainAndCloseErrors(t *testing.T) {
+	t.Parallel()
+
+	readErr := errors.New("read boom")
+	drainErr := errors.New("drain boom")
+	closeErr := errors.New("close boom")
+	body := &phasedErrorBody{errors: []error{readErr, drainErr}, closeE: closeErr}
+
+	_, err := ReadAllAndCloseWithDrainLimit(body, 64, 64)
+
+	for _, want := range []error{readErr, drainErr, closeErr} {
+		if !errors.Is(err, want) {
+			t.Fatalf("ReadAllAndCloseWithDrainLimit() error = %v, want joined %v", err, want)
+		}
+	}
+
+	if body.closes != 1 {
+		t.Fatalf("close calls = %d, want 1", body.closes)
 	}
 }
 
@@ -195,6 +259,38 @@ func TestReadAllLimitedMaxInt64LimitDoesNotTruncate(t *testing.T) {
 	}
 }
 
+func TestReadAllLimitedAcceptsExactLimitAndRejectsLimitPlusOne(t *testing.T) {
+	t.Parallel()
+
+	got, err := ReadAllLimited(strings.NewReader("12345"), 5)
+	if err != nil || string(got) != "12345" {
+		t.Fatalf("ReadAllLimited(exact) = %q, %v, want 12345, nil", got, err)
+	}
+
+	if _, err := ReadAllLimited(strings.NewReader("123456"), 5); !errors.Is(err, ErrResponseBodyTooLarge) {
+		t.Fatalf("ReadAllLimited(limit+1) error = %v, want ErrResponseBodyTooLarge", err)
+	}
+}
+
+func TestReadAllAndDrainLeavesBodyOpen(t *testing.T) {
+	t.Parallel()
+
+	body := &countingBody{reader: strings.NewReader(strings.Repeat("a", 128))}
+	_, err := ReadAllAndDrain(body, 8, 32)
+
+	if !errors.Is(err, ErrResponseBodyTooLarge) {
+		t.Fatalf("ReadAllAndDrain() error = %v, want ErrResponseBodyTooLarge", err)
+	}
+
+	if body.read > 8+1+32+1 {
+		t.Fatalf("read bytes = %d, want bounded by read and drain limits", body.read)
+	}
+
+	if body.closes != 0 {
+		t.Fatalf("close calls = %d, want 0", body.closes)
+	}
+}
+
 func TestReadAllLimitedPropagatesReadError(t *testing.T) {
 	t.Parallel()
 
@@ -237,6 +333,19 @@ func TestDrainAndCloseZeroLimitOnlyCloses(t *testing.T) {
 
 	if body.closes != 1 {
 		t.Fatalf("close calls = %d, want 1", body.closes)
+	}
+}
+
+func TestDrainAndCloseMaxInt64ReachesEOF(t *testing.T) {
+	t.Parallel()
+
+	body := &countingBody{reader: strings.NewReader("payload")}
+	if err := DrainAndClose(body, math.MaxInt64); err != nil {
+		t.Fatalf("DrainAndClose(MaxInt64) error = %v, want nil", err)
+	}
+
+	if body.read != int64(len("payload")) || body.closes != 1 {
+		t.Fatalf("body state = read %d, closes %d, want %d, 1", body.read, body.closes, len("payload"))
 	}
 }
 

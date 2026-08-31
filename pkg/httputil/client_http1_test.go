@@ -49,7 +49,11 @@ func TestNewExternalAPIClientTLSClientHelloOffersOnlyHTTP1(t *testing.T) {
 
 			mu.Unlock()
 
-			return nil, nil //nolint:nilnil // GetConfigForClient는 nil config와 nil error로 부모 TLS 설정을 쓰라는 계약이다.
+			cfg := server.TLS.Clone()
+
+			cfg.GetConfigForClient = nil
+
+			return cfg, nil
 		},
 	}
 	server.StartTLS()

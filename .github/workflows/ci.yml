@@ -57,6 +57,19 @@ jobs:
       - name: Release provenance contract
         run: bash scripts/ci/check-release-provenance.sh
 
+      - name: README package catalog contract
+        run: bash scripts/ci/check-readme-package-catalog_test.sh
+
+      - name: Module graph tidy drift
+        run: GOWORK=off go mod tidy -diff
+
+      - name: Pinned Unicode generated table
+        run: GOWORK=off go run ./pkg/internal/guardtext/genconfusables.go -confusables-source ./pkg/internal/guardtext/testdata/confusables-17.0.0.txt.gz -unicode-data-baseline-source ./pkg/internal/guardtext/testdata/UnicodeData-15.0.0.txt.gz -unicode-data-source ./pkg/internal/guardtext/testdata/UnicodeData-17.0.0.txt.gz -output ./pkg/internal/guardtext/confusables_table_generated.go -check
+
+      - name: Fast gate mutation fixtures
+        run: |
+          "$CI_PYTHON_BIN" scripts/ci/check-fast-gate-contract_test.py
+
       - name: SQL ownership
         run: bash scripts/check-sql-ownership.sh
 
