@@ -24,6 +24,8 @@ func TestConstantTimeStringEqual(t *testing.T) {
 		{name: "same", left: testSecret, right: testSecret, want: true},
 		{name: "case differs", left: testSecret, right: "Secret", want: false},
 		{name: "length differs", left: testSecret, right: "secret ", want: false},
+		{name: "empty left", left: "", right: testSecret, want: false},
+		{name: "empty right", left: testSecret, right: "", want: false},
 		{name: "empty same", left: "", right: "", want: true},
 	}
 

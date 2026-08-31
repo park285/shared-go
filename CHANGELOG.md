@@ -5,6 +5,23 @@
 
 ## 미출시
 
+## v2.2.0 - 2026-08-31
+
+### 추가
+
+- `pkg/panicguard`의 `Run`과 `RunE`를 추가해 스택 소비자의 동기 callback panic-to-log
+  경계를 공용화합니다. Hololive background task와 ChatBotGo goroutine의 기존 event/key
+  스키마는 `LogContract`로 그대로 보존합니다.
+- `httputil.ReadAllAndDrain`과 `ReadAllAndCloseWithDrainLimit`를 추가해 호출자가 응답 body
+  read 상한과 drain 상한을 각각 명시할 수 있게 합니다.
+
+### 수정
+
+- bounded body read가 read, drain, close 실패를 모두 보존하고 exact limit, limit+1과
+  `MaxInt64` 경계에서 overflow 없이 동작하도록 고칩니다.
+- README package catalog와 remote fast-gate의 tidy/generated-asset 검증을 현재 source tree에
+  맞추고, release gate를 `GOWORK=off` 모듈 입력에 결속합니다.
+
 ## v2.1.1 - 2026-08-31
 
 ### 수정

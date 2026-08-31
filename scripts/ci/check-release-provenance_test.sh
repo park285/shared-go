@@ -16,6 +16,20 @@ git -C "$repo" add go.mod README.md
 git -C "$repo" commit -qm fixture
 git -C "$repo" tag v1.2.3
 commit="$(git -C "$repo" rev-parse HEAD)"
+remote="$fixture/remote.git"
+git init -q --bare "$remote"
+git -C "$repo" remote add origin "$remote"
+git -C "$repo" push -q -u origin HEAD:main --tags
+
+git -C "$repo" update-ref -d refs/remotes/origin/main
+if (
+  cd "$repo"
+  bash "$root/scripts/ci/prepare-release-bundle.sh" owner/release-fixture v1.2.3 "$commit" missing-authority
+) >/dev/null 2>&1; then
+  echo "release provenance test: missing canonical origin/main was accepted" >&2
+  exit 1
+fi
+git -C "$repo" fetch -q origin refs/heads/main:refs/remotes/origin/main
 
 (
   cd "$repo"

@@ -21,20 +21,28 @@ go get github.com/park285/shared-go/v2@latest
 | `pkg/db/sqldb` | pgx 무의존 표준 `database/sql` `*sql.DB` 커넥션 풀 파라미터 적용 도구 |
 | `pkg/dbmigrate` | embed.FS의 `manifest.txt` 순서대로 SQL 마이그레이션 파일을 실행하는 공통 처리 모듈 (`database/sql` 또는 pgx 실행 함수 주입 방식) |
 | `pkg/envutil` | 환경 변수 로드 및 `*_FILE` 형태의 파일 경로로 보안 토큰/시크릿 값을 주입하는 도구 |
-| `pkg/ginjson` | Gin 웹 프레임워크용 Sonic 라이브러리 기반 고성능 JSON 렌더링 및 바인딩 모듈 |
+| `pkg/ginjson` | Go 1.27 `encoding/json/v2` JSON을 HTML-safe로 인코딩하는 Gin renderer와 response helper |
 | `pkg/h3` | HTTP/3 전송 프로토콜 설정 도구 (자체 CA 번들 등록, TLS 상세 사양 정의) |
 | `pkg/healthprobe` | 서비스 헬스체크 및 프로브(Readiness / Liveness Probe) 도구 |
 | `pkg/httputil` | HTTP 클라이언트 커넥션 풀링 및 프로파일 구성 도구 |
-| `pkg/json` | Sonic 엔진을 내장한 고성능 JSON 인코딩/디코딩 추상화 계층 |
 | `pkg/jsonutil` | 텍스트 혹은 HTTP 응답 문자열로부터 유효한 JSON을 정규화하여 추출하는 헬퍼 유틸리티 |
-| `pkg/llm` | LLM provider 클라이언트 추상화 (`JSONGenerator` 인터페이스, OpenAI Responses 호환 JSON 생성, Codex CLI 실행/로그인, 응답 redaction) |
+| `pkg/kakaoformat` | Markdown 표현을 카카오 일반 채팅용 평문과 링크로 변환하는 formatter |
+| `pkg/llm` | LLM provider 클라이언트 추상화 (`JSONGenerator`, OpenAI 호환 JSON 생성·가드, 진단 redaction) |
+| `pkg/llm/openaipreset` | `pkg/llm`의 OpenAI 호환 JSON 생성 경로를 functional options로 구성하는 재사용 preset |
+| `pkg/lockutil` | FNV-1a hash로 key를 고정 256개 shard에 배정하는 bounded keyed mutex |
 | `pkg/logging` | Slog 기반의 구조화된 로깅 모듈 (비동기 처리, 민감한 키 정보 마스킹 및 실시간 로그 로테이션 지원) |
 | `pkg/netguard` | 외부 HTTP 대상 URL 및 dial 주소를 fail-closed로 검증하는 네트워크 가드 (private/loopback/link-local/ULA 대역 차단, `Policy.AllowedHosts` allowlist 지원) |
 | `pkg/obsmetrics` | `client_golang` 의존성 없이 Prometheus 평문 텍스트 exposition을 생성하는 메트릭 키트 (webhook/런타임 메트릭, prefix 네임스페이스 분리) |
 | `pkg/outputguard` | LLM 생성 출력 가드 (구조화된 차단 사유, 출력·보호 텍스트 크기 제한, 역할/시크릿/보호 지침 중첩 탐지, bounded TTL index cache) |
+| `pkg/panicguard` | callback panic을 복구해 구조화된 진단을 남기는 실행 경계 |
 | `pkg/promptguard` | source-aware 프롬프트 인젝션 가드 (embedded v3 한/영 baseline, optional rules-only overlay, bounded decoding, policy digest, TTL cache) |
+| `pkg/reflectutil` | interface에 담긴 nilable 값을 안전하게 판별하는 reflection helper |
 | `pkg/retry` | `pkg/backoff`의 지연 값 계산을 사용해 context 취소를 존중하며 sleep·재시도·중단을 수행하는 재시도 루프(`WithRetry`) 구현체 |
-| `pkg/runtime` | Go 런타임 최적화를 포함한 프로세스 부트스트랩 도구 (`automaxprocs`, 애플리케이션 라이프사이클 관리, HTTPServer) |
+| `pkg/runtime/automaxprocs` | container CPU quota에 맞게 `GOMAXPROCS`를 설정하는 process bootstrap helper |
+| `pkg/runtime/bootstrap` | 프로세스 시작 입력을 검증하고 runtime 구성을 적용하는 bootstrap helper |
+| `pkg/runtime/httpserver` | HTTP server 시작·실행·graceful shutdown 소유권을 단일화하는 lifecycle helper |
+| `pkg/runtime/lifecycle` | 기동·주기 실행·종료 정리와 다중 close를 조정하는 runtime lifecycle helper |
+| `pkg/sqlutil` | embed FS의 SQL asset을 읽고 공백을 제거하며 누락·빈 query에서 panic하는 loader |
 | `pkg/stringutil` | 범용 문자열 처리 유틸리티 |
 | `pkg/telemetry` | OpenTelemetry 기반의 분산 트레이싱(Tracing) 정보 설정 및 컨텍스트 전파 유틸리티 |
 | `pkg/workercontract` | strict worker profile 로드, diagnostics registry, 공통 Prometheus exposition 모듈 |

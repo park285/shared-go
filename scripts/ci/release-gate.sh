@@ -24,8 +24,8 @@ run_stage make lint
 run_stage make test
 run_stage make test-race
 run_stage make vulncheck
-run_stage go mod tidy -diff
-run_stage go run ./pkg/internal/guardtext/genconfusables.go \
+run_stage env GOWORK=off go mod tidy -diff
+run_stage env GOWORK=off go run ./pkg/internal/guardtext/genconfusables.go \
   -confusables-source ./pkg/internal/guardtext/testdata/confusables-17.0.0.txt.gz \
   -unicode-data-baseline-source ./pkg/internal/guardtext/testdata/UnicodeData-15.0.0.txt.gz \
   -unicode-data-source ./pkg/internal/guardtext/testdata/UnicodeData-17.0.0.txt.gz \
