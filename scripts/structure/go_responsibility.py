@@ -34,6 +34,7 @@ FUNC_NAME_RE = re.compile(r"^func\s+(?:\([^)]*\)\s+)?([A-Za-z_][A-Za-z0-9_]*)")
 METHOD_RE = re.compile(r"^func\s+\(([^)]*)\)\s+([A-Za-z_][A-Za-z0-9_]*)")
 STRUCT_RE = re.compile(r"^type\s+([A-Za-z_][A-Za-z0-9_]*)\s+struct\s*{")
 PACKAGE_RE = re.compile(r"^package\s+(\w+)")
+PARTITION_FILE_RE = re.compile(r"_part[0-9]+(?:_test)?\.go$")
 
 
 @dataclass(frozen=True)
@@ -96,6 +97,8 @@ def load_policy(path: Path) -> dict[str, Any]:
         for key, value in baselines.items()
     ):
         raise PolicyError("legacy_hard_baselines is invalid")
+    if not isinstance(policy.get("forbid_partition_files", False), bool):
+        raise PolicyError("forbid_partition_files must be a boolean")
     return policy
 
 
@@ -141,6 +144,7 @@ def scan(root: Path, policy: dict[str, Any]) -> tuple[int, list[Finding]]:
     budgets: dict[str, dict[str, int]] = policy["budgets"]
     allowlist = set(policy.get("struct_field_allowlist", []))
     baselines: dict[str, int] = policy.get("legacy_hard_baselines", {})
+    forbid_partition: bool = policy.get("forbid_partition_files", False)
     findings: list[Finding] = []
     over_hard_ids: set[str] = set()
     method_counts: Counter[tuple[str, str]] = Counter()
@@ -177,6 +181,13 @@ def scan(root: Path, policy: dict[str, Any]) -> tuple[int, list[Finding]]:
         scanned_files += 1
         relative = absolute.relative_to(root)
         path = relative.as_posix()
+        if forbid_partition and PARTITION_FILE_RE.search(absolute.name):
+            # DEC-20260902-structure-gate-cohesion-over-line-budget: 줄 수 예산이 만든 _partN 분할은 invariant 위반이다.
+            findings.append(Finding(
+                id=f"partition_file:{path}", rule="partition_file", path=path, actual=1,
+                advisory_limit=0, hard_limit=0, level="hard_invariant",
+                message="file name carries a _partN split suffix; merge it or rename it by responsibility",
+            ))
         try:
             lines = absolute.read_text(encoding="utf-8").splitlines()
         except (OSError, UnicodeError) as exc:

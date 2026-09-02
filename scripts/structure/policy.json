@@ -1,14 +1,15 @@
 {
   "schema_version": 1,
   "budgets": {
-    "production_file_lines": {"advisory": 400, "hard": 800},
-    "test_file_lines": {"advisory": 400, "hard": 800},
+    "production_file_lines": {"advisory": 800, "hard": 800},
+    "test_file_lines": {"advisory": 800, "hard": 800},
     "funcs_per_file": {"advisory": 40, "hard": 80},
     "methods_per_type": {"advisory": 40, "hard": 80},
     "struct_fields": {"advisory": 45, "hard": 90},
     "aggregate_fields": {"advisory": 90, "hard": 180},
     "function_lines": {"advisory": 90, "hard": 180}
   },
+  "forbid_partition_files": true,
   "struct_field_allowlist": [],
   "legacy_hard_baselines": {}
 }

@@ -32,10 +32,16 @@ class AnalyzerTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp.cleanup()
 
-    def write_policy(self, *, baselines: dict[str, int] | None = None) -> None:
+    def write_policy(
+        self,
+        *,
+        baselines: dict[str, int] | None = None,
+        forbid_partition_files: bool = False,
+    ) -> None:
         self.policy.write_text(json.dumps({
             "schema_version": 1,
             "budgets": BUDGETS,
+            "forbid_partition_files": forbid_partition_files,
             "struct_field_allowlist": [],
             "legacy_hard_baselines": baselines or {},
         }), encoding="utf-8")
@@ -110,6 +116,20 @@ class AnalyzerTest(unittest.TestCase):
         self.assertEqual(report.returncode, 0)
         self.assertEqual(json.loads(report.stdout)["findings"][0]["level"], "advisory")
 
+
+    def test_partition_file_suffix_is_hard_invariant(self) -> None:
+        (self.root / "a_part2.go").write_text("package p\n", encoding="utf-8")
+        (self.root / "b_part3_test.go").write_text("package p\n", encoding="utf-8")
+        self.assertEqual(self.run_analyzer("hard").returncode, 0)
+        self.write_policy(forbid_partition_files=True)
+        report = self.run_analyzer("hard")
+        self.assertEqual(report.returncode, 1)
+        findings = json.loads(report.stdout)["findings"]
+        self.assertEqual([item["id"] for item in findings],
+                         ["partition_file:a_part2.go", "partition_file:b_part3_test.go"])
+        self.assertEqual({item["level"] for item in findings}, {"hard_invariant"})
+        self.policy.write_text('{"schema_version":1,"budgets":{},"forbid_partition_files":"yes"}', encoding="utf-8")
+        self.assertEqual(self.run_analyzer("hard").returncode, 2)
 
 if __name__ == "__main__":
     unittest.main()
