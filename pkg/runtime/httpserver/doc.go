@@ -10,5 +10,7 @@
 //
 // runtime 은 lifecycle.Run 의 Start hook 에서 Start(server, logger, errCh) 를
 // 호출하고, Shutdown hook 에서 Shutdown(ctx, server, "shutdown http server") 를
-// 호출합니다. server construction 과 router 조립은 호출부의 기존 책임으로 남깁니다.
+// 호출합니다. NewServer 는 수신 한계와 OpenTelemetry 계측을 가진 http.Server 를 만들고,
+// WithBodyReadTimeout 은 handler 진입 이후의 본문 읽기 예산을 둡니다. router 조립은
+// 호출부의 책임으로 남깁니다.
 package httpserver

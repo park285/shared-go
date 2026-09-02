@@ -5,6 +5,12 @@
 
 ## 미출시
 
+### 추가
+
+- `pkg/runtime/httpserver`에 `NewServer`와 `WithBodyReadTimeout`을 추가해 TwentyQ가 보유하던
+  수신 한계·OTel 계측 server 생성과 handler 진입 이후 본문 읽기 예산을 공용화합니다
+  (2026-09-02 재감사 T06).
+
 ## v2.2.0 - 2026-08-31
 
 ### 추가

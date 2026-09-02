@@ -40,7 +40,7 @@ go get github.com/park285/shared-go/v2@latest
 | `pkg/retry` | `pkg/backoff`의 지연 값 계산을 사용해 context 취소를 존중하며 sleep·재시도·중단을 수행하는 재시도 루프(`WithRetry`) 구현체 |
 | `pkg/runtime/automaxprocs` | container CPU quota에 맞게 `GOMAXPROCS`를 설정하는 process bootstrap helper |
 | `pkg/runtime/bootstrap` | 프로세스 시작 입력을 검증하고 runtime 구성을 적용하는 bootstrap helper |
-| `pkg/runtime/httpserver` | HTTP server 시작·실행·graceful shutdown 소유권을 단일화하는 lifecycle helper |
+| `pkg/runtime/httpserver` | HTTP server 생성(수신 한계·OTel 계측)·본문 읽기 예산·시작·실행·graceful shutdown 소유권을 단일화하는 lifecycle helper |
 | `pkg/runtime/lifecycle` | 기동·주기 실행·종료 정리와 다중 close를 조정하는 runtime lifecycle helper |
 | `pkg/sqlutil` | embed FS의 SQL asset을 읽고 공백을 제거하며 누락·빈 query에서 panic하는 loader |
 | `pkg/stringutil` | 범용 문자열 처리 유틸리티 |
