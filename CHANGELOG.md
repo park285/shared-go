@@ -3,10 +3,15 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
-## 미출시
+## v2.3.0 - 2026-09-02
 
 ### 추가
 
+- `pkg/irisdurable`을 추가해 세 봇이 각자 정의하던 Iris 수신 admission(`Admitter`)·nonce dedup
+  (`NonceStore`)·reply outbox 상태(`ReplyStatus`) 계약과 typed 상수(`IrisReplyAdmissionRetention`,
+  `AutomaticReplayHorizon`, `ReplyOutboxMinRetention`), `CLIENT_REQUEST_ID_FAILED` reissue ladder
+  (`ReissueLadder`)를 한 곳에 두고, `pkg/irisdurable/contracttest`로 각 봇 어댑터가 같은 계약
+  스위트를 실행하게 합니다 (2026-09-02 재감사 T08).
 - `pkg/runtime/httpserver`에 `NewServer`와 `WithBodyReadTimeout`을 추가해 TwentyQ가 보유하던
   수신 한계·OTel 계측 server 생성과 handler 진입 이후 본문 읽기 예산을 공용화합니다
   (2026-09-02 재감사 T06).
@@ -15,6 +20,13 @@
 - `pkg/workercontract`에 `ProfileFileEnv`·`LoadProfileFromEnv`·`DecodeWorkerSettings`·`WorkerShape`·
   `ShapeProblems`를 추가해 세 봇의 worker profile 로더가 반복하던 env 경로 검증, settings 정확 키
   decode, executor·queue mode 검증을 공용화합니다.
+
+### 변경
+
+- golangci-lint 설정을 스택 공용 템플릿에 맞추고 `//nolint:wrapcheck` 지점 억제를 모두 제거합니다
+  (재감사 T03).
+- `_partN` 분할 파일 11건을 책임 이름의 파일로 병합하고 구조 게이트에 `partition_file`
+  hard_invariant를 도입합니다 (재감사 T04).
 
 ## v2.2.0 - 2026-08-31
 
