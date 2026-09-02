@@ -142,7 +142,6 @@ func DecodeJSONLimited[T any](resp *http.Response, maxBytes int64) (T, error) {
 	}
 
 	if decodeErr != nil {
-		//nolint:wrapcheck // 호출부에서 컨텍스트 추가
 		return out, decodeErr
 	}
 
@@ -160,7 +159,6 @@ func DecodeJSONLimited[T any](resp *http.Response, maxBytes int64) (T, error) {
 		return out, nil
 	}
 
-	//nolint:wrapcheck // 호출부에서 컨텍스트 추가
 	return out, trailingErr
 }
 
@@ -174,6 +172,5 @@ func (c *countingReader) Read(p []byte) (int, error) {
 
 	c.n += int64(n)
 
-	//nolint:wrapcheck // io.Reader 계약상 io.EOF를 포함한 하위 reader의 오류를 감싸지 않고 그대로 전달해야 한다.
 	return n, err
 }

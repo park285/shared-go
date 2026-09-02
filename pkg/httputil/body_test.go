@@ -54,7 +54,6 @@ func (b *countingBody) Read(p []byte) (int, error) {
 
 	b.read += int64(n)
 
-	//nolint:wrapcheck // io.Reader 계약상 io.EOF를 포함한 하위 reader의 오류를 감싸지 않고 그대로 전달해야 한다.
 	return n, err
 }
 

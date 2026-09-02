@@ -202,12 +202,10 @@ func (r *jsonRequestBodyReader) Read(p []byte) (int, error) {
 		default:
 			r.sawNonSpace = true
 
-			//nolint:wrapcheck // io.Reader 계약상 io.EOF를 포함한 하위 reader의 오류를 감싸지 않고 그대로 전달해야 한다.
 			return n, err
 		}
 	}
 
-	//nolint:wrapcheck // io.Reader 계약상 io.EOF를 포함한 하위 reader의 오류를 감싸지 않고 그대로 전달해야 한다.
 	return n, err
 }
 

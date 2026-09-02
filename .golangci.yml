@@ -1,7 +1,9 @@
+# 이 파일은 tools/lint/golangci.template.yml에서 생성된다. 직접 고치지 말고 템플릿을 고친 뒤
+# bash tools/lint/render-golangci.sh 를 실행한다. 저장소별 차이는 tools/lint/golangci-repos.tsv의 module path·import prefix뿐이다.
 version: "2"
 
 run:
-  timeout: 5m
+  timeout: 10m
   tests: true
   modules-download-mode: readonly
   relative-path-mode: gomod
@@ -220,10 +222,12 @@ linters:
       qualified-name: true
 
     wrapcheck:
-      report-internal-errors: true
+      # 같은 패키지 helper의 오류는 그 helper가 이미 맥락을 붙였으므로 다시 감싸지 않는다(2026-09-02 재감사 T03: 지점 억제 337건의 원인).
+      report-internal-errors: false
       ignore-sigs:
         - .Errorf(
         - errors.New(
+        - errors.Join(
         - errors.Unwrap(
         - .Error()
         - .Err()
@@ -235,19 +239,35 @@ linters:
         - .Shutdown(
         - .DialContext(
         - .ReadAll(
+        # io.Reader 계약은 io.EOF를 포함한 하위 reader 오류를 그대로 전달한다.
+        - .Read(
         - .AsInt64(
         - .NewPool(
       ignore-package-globs:
+        # 표준 라이브러리 leaf 오류(취소·EOF·파싱·검증 sentinel)는 호출자가 그대로 보존한다.
+        - context
+        - crypto/rand
         - encoding/*
+        - io
+        - net/http
+        # H3 RoundTripper 어댑터는 net/http와 같은 전송 leaf 계약으로 하위 오류를 그대로 전달한다.
+        - github.com/quic-go/quic-go/*
+        - net/netip
+        # PostgreSQL adapter는 SQL 연산 맥락을 소유하고, 호출자는 repository/service 경계에서 pgx 오류 판별을 유지한 채 감싼다.
+        - github.com/jackc/pgx/v5
+        - github.com/jackc/pgx/v5/*
+        - github.com/go-playground/validator/v10
+        - github.com/panjf2000/ants/*
         - github.com/stretchr/testify/*
         - github.com/valkey-io/valkey-go
         - github.com/valkey-io/valkey-go/*
-        - github.com/panjf2000/ants/*
         - google.golang.org/grpc
         - google.golang.org/grpc/*
-        - io
-        - net/http
-        - context
+        # 콜백 오류를 그대로 돌려주는 combinator다.
+        - golang.org/x/sync/*
+        # 타입이 있는 오류 생성자 패키지와 SDK 내부 구현은 호출자가 그 오류를 그대로 공개 표면으로 낸다.
+        - github.com/kapu/hololive-youtube-collector/internal/runtime/collecterr
+        - github.com/park285/iris-client-go/v2/internal/*
 
     usestdlibvars:
       http-method: true
