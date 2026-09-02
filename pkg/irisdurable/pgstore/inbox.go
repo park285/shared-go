@@ -6,9 +6,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/park285/shared-go/v2/pkg/irisdurable"
 	"github.com/park285/shared-go/v2/pkg/workercontract"
@@ -39,9 +41,29 @@ func (s *Store) Admit(ctx context.Context, input irisdurable.AdmissionInput) (wo
 		return workercontract.AdmissionAccepted, nil
 	case errors.Is(err, pgx.ErrNoRows):
 		return workercontract.AdmissionDuplicate, nil
+	}
+
+	return admissionFailure(err), fmt.Errorf("pgstore: admit %s: %w", input.MessageID, err)
+}
+
+// admissionFailure는 실패한 admit의 commit 여부를 판정한다.
+//
+// 서버가 SQLSTATE를 돌려줬다면 단일 문의 암묵 트랜잭션이 rollback된 것이므로 commit되지 않은 것이
+// 확실하다. 그중 22(data exception)와 23(integrity constraint violation)은 같은 payload를 다시 보내도
+// 같은 결과라 재전송이 무의미하므로 Rejected이고, 나머지 서버 오류는 재전송이 성공할 수 있어
+// Failed다. 응답 자체가 없으면(네트워크 단절·취소·타임아웃) commit 여부를 알 수 없으므로
+// OutcomeUnknown이고, 호출자가 503으로 매핑해 Iris 재전송을 유도한다.
+func admissionFailure(err error) workercontract.AdmissionResult {
+	pgErr, ok := errors.AsType[*pgconn.PgError](err)
+	if !ok {
+		return workercontract.AdmissionOutcomeUnknown
+	}
+
+	switch {
+	case strings.HasPrefix(pgErr.Code, "22"), strings.HasPrefix(pgErr.Code, "23"):
+		return workercontract.AdmissionRejected
 	default:
-		// commit 여부를 알 수 없으므로 호출자가 503으로 매핑해 Iris 재전송을 유도한다.
-		return workercontract.AdmissionOutcomeUnknown, fmt.Errorf("pgstore: admit %s: %w", input.MessageID, err)
+		return workercontract.AdmissionFailed
 	}
 }
 

@@ -50,9 +50,11 @@ CREATE INDEX IF NOT EXISTS idx_iris_webhook_inbox_head
     ON iris_webhook_inbox (scope, ordering_key, created_at, id)
     WHERE status IN ('pending', 'processing');
 
-CREATE INDEX IF NOT EXISTS idx_iris_webhook_inbox_terminal_at
-    ON iris_webhook_inbox (terminal_at, id)
-    WHERE status IN ('completed', 'manual_review');
+-- prune은 scope의 completed 행만 지운다. manual_review 행은 사람이 처리할 때까지 남으므로
+-- 술어에 넣으면 지워지지 않는 행이 스캔 앞머리에 영구히 쌓인다.
+CREATE INDEX IF NOT EXISTS idx_iris_webhook_inbox_prune
+    ON iris_webhook_inbox (scope, terminal_at, id)
+    WHERE status = 'completed';
 
 CREATE TABLE IF NOT EXISTS iris_nonce (
     scope text NOT NULL,
@@ -64,8 +66,8 @@ CREATE TABLE IF NOT EXISTS iris_nonce (
         CHECK (length(btrim(nonce_key)) > 0)
 );
 
-CREATE INDEX IF NOT EXISTS idx_iris_nonce_expires_at
-    ON iris_nonce (expires_at);
+CREATE INDEX IF NOT EXISTS idx_iris_nonce_prune
+    ON iris_nonce (scope, expires_at);
 
 CREATE TABLE IF NOT EXISTS iris_reply_outbox (
     id bigserial PRIMARY KEY,
@@ -129,8 +131,9 @@ CREATE INDEX IF NOT EXISTS idx_iris_reply_outbox_claimable
     ON iris_reply_outbox (scope, available_at, created_at, id)
     WHERE status IN ('pending', 'submitting', 'retryable_pre_dispatch', 'outcome_unknown');
 
-CREATE INDEX IF NOT EXISTS idx_iris_reply_outbox_sequence
-    ON iris_reply_outbox (scope, message_id, phase, ordinal);
+-- (scope, message_id, phase, ordinal) 조회는 uq_iris_reply_outbox_identity가 만드는 unique
+-- 인덱스가 이미 받으므로 같은 열의 인덱스를 더 두지 않는다.
 
-CREATE INDEX IF NOT EXISTS idx_iris_reply_outbox_expires_at
-    ON iris_reply_outbox (expires_at, id);
+CREATE INDEX IF NOT EXISTS idx_iris_reply_outbox_prune
+    ON iris_reply_outbox (scope, expires_at, id)
+    WHERE status <> 'manual_review';

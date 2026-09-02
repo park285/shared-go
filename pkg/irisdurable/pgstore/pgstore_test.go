@@ -17,6 +17,7 @@ import (
 	"github.com/park285/shared-go/v2/pkg/irisdurable"
 	"github.com/park285/shared-go/v2/pkg/irisdurable/contracttest"
 	"github.com/park285/shared-go/v2/pkg/irisdurable/pgstore"
+	"github.com/park285/shared-go/v2/pkg/workercontract"
 )
 
 const (
@@ -99,6 +100,57 @@ func TestOptionsRejectRetentionShorterThanIrisAdmission(t *testing.T) {
 
 	if _, err := pgstore.New(pool, pgstore.Options{AutomaticReplayHorizon: irisdurable.AutomaticReplayHorizon + time.Hour}); err == nil {
 		t.Fatal("New with a replay horizon beyond the stack horizon must fail")
+	}
+
+	if _, err := pgstore.New(pool, pgstore.Options{InboxTerminalRetention: time.Hour}); err == nil {
+		t.Fatal("New with an inbox terminal retention shorter than the stack replay horizon must fail")
+	}
+}
+
+// TestLoweredReplayHorizonKeepsInboxDedupWindow는 인스턴스 지평을 낮춰도 inbox 종단 보존이
+// 스택 재전송 창을 덮는지 본다. 호출자 지평에서 파생하면 이 구성이 dedup 창을 함께 줄여
+// 재전송된 webhook이 중복으로 걸러지지 않고 다시 실행된다.
+func TestLoweredReplayHorizonKeepsInboxDedupWindow(t *testing.T) {
+	t.Parallel()
+
+	store, err := pgstore.New(&pgxpool.Pool{}, pgstore.Options{AutomaticReplayHorizon: time.Hour})
+	if err != nil {
+		t.Fatalf("New with a lowered replay horizon: %v", err)
+	}
+
+	if got := store.Options().InboxTerminalRetention; got < irisdurable.AutomaticReplayHorizon {
+		t.Fatalf("InboxTerminalRetention = %s; want at least the stack replay horizon %s", got, irisdurable.AutomaticReplayHorizon)
+	}
+}
+
+// TestAdmitClassifiesDeterministicRejections는 서버가 거절한 것이 확실한 admit을 결과 미상이
+// 아니라 거절로 보고하는지 본다. 결과 미상은 호출자가 503으로 매핑해 Iris 재전송을 부르므로,
+// 같은 payload로는 영원히 실패하는 입력이 재전송 루프에 갇힌다.
+func TestAdmitClassifiesDeterministicRejections(t *testing.T) {
+	pool := newMigratedPool(t)
+	store := newScopedStore(t, pool)
+	ctx := t.Context()
+
+	cases := map[string][]byte{
+		"payload is a JSON array, not an object": []byte(`["not","an","object"]`),
+		"payload is not JSON at all":             []byte(`{`),
+	}
+
+	for name, payload := range cases {
+		t.Run(name, func(t *testing.T) {
+			result, err := store.Admit(ctx, irisdurable.AdmissionInput{
+				MessageID:   fmt.Sprintf("msg-reject-%d", scopeCounter.Add(1)),
+				OrderingKey: "room-reject",
+				Payload:     payload,
+			})
+			if err == nil {
+				t.Fatal("admit with an unstorable payload must fail")
+			}
+
+			if result != workercontract.AdmissionRejected {
+				t.Fatalf("admit result = %q; want %q, because the server rejected the statement and nothing was committed", result, workercontract.AdmissionRejected)
+			}
+		})
 	}
 }
 

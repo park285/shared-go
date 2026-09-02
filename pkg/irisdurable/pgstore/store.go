@@ -78,8 +78,9 @@ func (o Options) withDefaults() Options {
 		o.ReplyRetention = irisdurable.ReplyOutboxMinRetention
 	}
 
+	// 재전송 창은 Iris가 정하므로 이 저장소의 지평이 아니라 스택 상수를 따른다.
 	if o.InboxTerminalRetention <= 0 {
-		o.InboxTerminalRetention = o.AutomaticReplayHorizon
+		o.InboxTerminalRetention = irisdurable.AutomaticReplayHorizon
 	}
 
 	return o
@@ -103,8 +104,10 @@ func (o Options) validate() error {
 		return fmt.Errorf("pgstore: AutomaticReplayHorizon %s leaves less than %s before ReplyRetention %s", o.AutomaticReplayHorizon, irisdurable.ReplayHorizonMargin, o.ReplyRetention)
 	}
 
-	if o.InboxTerminalRetention < o.AutomaticReplayHorizon {
-		return fmt.Errorf("pgstore: InboxTerminalRetention %s is shorter than AutomaticReplayHorizon %s; a redelivered webhook would re-execute instead of dedup", o.InboxTerminalRetention, o.AutomaticReplayHorizon)
+	// 인스턴스 지평을 낮춰도 Iris 재전송 창은 그대로이므로 스택 상수와 비교한다. 호출자 값과
+	// 비교하면 지평을 낮춘 구성이 New를 통과하고도 contracttest의 Retention 절에서 떨어진다.
+	if o.InboxTerminalRetention < irisdurable.AutomaticReplayHorizon {
+		return fmt.Errorf("pgstore: InboxTerminalRetention %s is shorter than the stack replay horizon %s; a redelivered webhook would re-execute instead of dedup", o.InboxTerminalRetention, irisdurable.AutomaticReplayHorizon)
 	}
 
 	return nil
