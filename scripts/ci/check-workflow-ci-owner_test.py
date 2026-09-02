@@ -338,6 +338,28 @@ def main() -> int:
             write(remote_lib / ".github/workflows/ci.yml", mutated_workflow)
             expect_failure(label, run(remote_lib), "exact canonical workflow snapshot")
 
+        action_drift = base / "python-runtime-action-drift"
+        fixture(action_drift, "lib", "remote")
+        write(
+            action_drift / ".github/workflows/ci.yml",
+            workflow(["workflow_dispatch", "pull_request", "push"], ("go test -race",)).replace(
+                "      - run: echo ok\n",
+                "      - uses: ./.github/actions/python-runtime\n      - run: echo ok\n",
+            ),
+        )
+        write(action_drift / ".github/actions/python-runtime/action.yml", "runs:\n  using: composite\n")
+        expect_failure(
+            "python-runtime composite action drift",
+            run(action_drift),
+            "python-runtime composite action must match",
+        )
+        (action_drift / ".github/actions/python-runtime/action.yml").unlink()
+        expect_failure(
+            "python-runtime composite action missing",
+            run(action_drift),
+            "cannot read python-runtime composite action",
+        )
+
         missing_owner = base / "missing-owner"
         fixture(missing_owner, "app", "local")
         (missing_owner / "scripts/ci/workflow-ci-owner").unlink()

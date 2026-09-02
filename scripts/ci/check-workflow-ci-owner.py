@@ -11,6 +11,11 @@ from pathlib import Path
 PROFILE_PATH = Path("scripts/ci/workflow-gate-profile")
 OWNER_PATH = Path("scripts/ci/workflow-ci-owner")
 PRIMARY_PATH = Path(".github/workflows/ci.yml")
+# workflow 가 호출하는 스택 공통 Python composite action 의 바이트 스냅샷. 저장소 간 사본 parity 와
+# 핀 값은 iris-stack 의 check-ci-consistency.sh 와 check-stack-toolchain-pins.py 가 본다.
+PYTHON_RUNTIME_ACTION_PATH = Path(".github/actions/python-runtime/action.yml")
+PYTHON_RUNTIME_ACTION_USES = "uses: ./.github/actions/python-runtime"
+PYTHON_RUNTIME_ACTION_SHA256 = "9d804984c76933bbd05b5c544a38beb4c2b5820f79c176449acd74902b93fcc6"
 SECURITY_CANDIDATES = (
     Path(".github/workflows/security.yml"),
     Path(".github/workflows/security.yaml"),
@@ -22,9 +27,6 @@ REMOTE_LIBRARY_ALLOWED_RUN_LINES = frozenset(
         "echo ok",
         "bash scripts/ci/check-workflow-secrets.sh",
         "bash scripts/ci/check-workflow-secrets_test.sh",
-        'interpreter="$(bash scripts/ci/python-runner.sh --print-interpreter)"',
-        "printf 'CI_PYTHON_BIN=%s\\n' \"$interpreter\" >>\"$GITHUB_ENV\"",
-        "printf 'CI_PYTHON_RUNTIME_ROOT=%s\\n' \"$GITHUB_WORKSPACE\" >>\"$GITHUB_ENV\"",
         '\"$CI_PYTHON_BIN\" scripts/ci/check-workflow-ci-owner.py',
         '\"$CI_PYTHON_BIN\" scripts/ci/check-workflow-ci-owner_test.py',
         '\"$CI_PYTHON_BIN\" scripts/ci/check-fast-gate-contract_test.py',
@@ -44,7 +46,6 @@ REMOTE_LIBRARY_ALLOWED_RUN_LINES = frozenset(
         'echo "${unformatted}"',
         "exit 1",
         "go vet ./...",
-        "python -m pip install --disable-pip-version-check --no-cache-dir --no-deps uv==0.12.7",
         "bash scripts/check-hmac-boundary.sh",
         "bash scripts/check-hmac-boundary_test.sh",
         "bash scripts/ci/go-tooling.sh golangci-lint run -c .golangci.yml ./...",
@@ -60,15 +61,15 @@ REMOTE_LIBRARY_ALLOWED_RUN_LINES = frozenset(
     }
 )
 REMOTE_LIBRARY_CANONICAL_WORKFLOW_SHA256 = {
-    "github.com/park285/iris-client-go/v2": "57efba63e478a3771e9be90d8c2505ad5945d099642f044d0b3b34329050cd30",
-    "github.com/park285/shared-go/v2": "5df96c0064b2739d68d1e61eb9b3e09229ab0759be32d5f4bcbf67e1302c067e",
+    "github.com/park285/iris-client-go/v2": "54e215b115700abfe0e6e51d7fc28d6463105b772199ccf8c2459ec679ffefb8",
+    "github.com/park285/shared-go/v2": "6d17393339039937ae480ef22c1a8eebc10cd1d4fb8af33e6ecdc8b1b27fe6de",
 }
 REMOTE_LIBRARY_FIXTURE_MODULE = "example.invalid/workflow-ci-owner-fixture"
 REMOTE_LIBRARY_FIXTURE_WORKFLOW_SHA256 = "132a3046c47792056c3253f2d0c1f42c084afba13368e8ff9eaa507c471ba973"
 APP_CANONICAL_WORKFLOW_SHA256 = {
-    "github.com/kapu/chat-bot-go-kakao": "408fd3ffd058a4daaf3b6e9826c1c739e6aec267d9c2d9c43c49835d55a07dfe",
-    "github.com/park285/twentyq-bot": "11640e6a0c9dc995c5f7d74b0aa482a35e46782b9ea333f4e2face5878072dc8",
-    "github.com/kapu/hololive-bot-workspace": "831a78239b6b62d9c3d1a531c831d79668f32984c3a39a951ceda2a6dbeb1130",
+    "github.com/kapu/chat-bot-go-kakao": "e1b92d0bb3fec340ebe849b0302368f7f28b15c2d76898e0b0114b54f46b019f",
+    "github.com/park285/twentyq-bot": "953856eba5f5029f8b081b5d6240ab56a29e7bfa686a2cf821b95957587a60f8",
+    "github.com/kapu/hololive-bot-workspace": "d43ed0e6aae125640d4230efd21521e32d1227d748b4ad4d6aff8b36f0edb356",
 }
 LOCAL_DURABLE_FAST_APP_MODULES = frozenset(
     {
@@ -389,6 +390,19 @@ def validate(root: Path) -> tuple[str, str, list[str]]:
     module = module_path(root)
 
     failures: list[str] = []
+    if PYTHON_RUNTIME_ACTION_USES in primary:
+        try:
+            action_sha256 = hashlib.sha256(
+                (root / PYTHON_RUNTIME_ACTION_PATH).read_bytes()
+            ).hexdigest()
+        except OSError as exc:
+            failures.append(f"{PYTHON_RUNTIME_ACTION_PATH}: cannot read python-runtime composite action: {exc}")
+        else:
+            if action_sha256 != PYTHON_RUNTIME_ACTION_SHA256:
+                failures.append(
+                    f"{PYTHON_RUNTIME_ACTION_PATH}: python-runtime composite action must match "
+                    "the stack canonical snapshot"
+                )
     try:
         primary_events = workflow_events(primary)
     except ContractError as exc:
