@@ -10,6 +10,11 @@
 - `pkg/runtime/httpserver`에 `NewServer`와 `WithBodyReadTimeout`을 추가해 TwentyQ가 보유하던
   수신 한계·OTel 계측 server 생성과 handler 진입 이후 본문 읽기 예산을 공용화합니다
   (2026-09-02 재감사 T06).
+- `pkg/health`를 추가해 Hololive `pkg/health`와 TwentyQ `internal/common/health`가 각자 들고 있던
+  version·uptime·component 상태 스냅샷과 /health·/ready 응답 본문 계약을 하나로 합칩니다.
+- `pkg/workercontract`에 `ProfileFileEnv`·`LoadProfileFromEnv`·`DecodeWorkerSettings`·`WorkerShape`·
+  `ShapeProblems`를 추가해 세 봇의 worker profile 로더가 반복하던 env 경로 검증, settings 정확 키
+  decode, executor·queue mode 검증을 공용화합니다.
 
 ## v2.2.0 - 2026-08-31
 

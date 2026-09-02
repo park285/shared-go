@@ -23,6 +23,7 @@ go get github.com/park285/shared-go/v2@latest
 | `pkg/envutil` | 환경 변수 로드 및 `*_FILE` 형태의 파일 경로로 보안 토큰/시크릿 값을 주입하는 도구 |
 | `pkg/ginjson` | Go 1.27 `encoding/json/v2` JSON을 HTML-safe로 인코딩하는 Gin renderer와 response helper |
 | `pkg/h3` | HTTP/3 전송 프로토콜 설정 도구 (자체 CA 번들 등록, TLS 상세 사양 정의) |
+| `pkg/health` | version·uptime·component 상태 스냅샷과 /health·/ready 응답 본문 계약을 보관하는 server 측 health 모듈 |
 | `pkg/healthprobe` | 서비스 헬스체크 및 프로브(Readiness / Liveness Probe) 도구 |
 | `pkg/httputil` | HTTP 클라이언트 커넥션 풀링 및 프로파일 구성 도구 |
 | `pkg/jsonutil` | 텍스트 혹은 HTTP 응답 문자열로부터 유효한 JSON을 정규화하여 추출하는 헬퍼 유틸리티 |
@@ -45,7 +46,7 @@ go get github.com/park285/shared-go/v2@latest
 | `pkg/sqlutil` | embed FS의 SQL asset을 읽고 공백을 제거하며 누락·빈 query에서 panic하는 loader |
 | `pkg/stringutil` | 범용 문자열 처리 유틸리티 |
 | `pkg/telemetry` | OpenTelemetry 기반의 분산 트레이싱(Tracing) 정보 설정 및 컨텍스트 전파 유틸리티 |
-| `pkg/workercontract` | strict worker profile 로드, diagnostics registry, 공통 Prometheus exposition 모듈 |
+| `pkg/workercontract` | strict worker profile 로드(env 경로·identity), service-owned settings decode·shape 검증, diagnostics registry, 공통 Prometheus exposition 모듈 |
 | `pkg/workerpool` | 큐(Queue) 기반의 동시성 제어 워커 풀 구현체 |
 
 새로운 공통 기능이 필요할 경우, `pkg/` 하위에 신규 패키지 형식으로 추가해 주십시오.
