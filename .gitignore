@@ -1,3 +1,8 @@
 artifacts/perf/
 .omc/
 **/.omc/
+
+# Claude Code local metadata (settings, skill mirrors, instruction file)
+.claude/
+**/.claude/
+CLAUDE.md
