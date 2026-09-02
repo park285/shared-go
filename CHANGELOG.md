@@ -3,6 +3,19 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## 미출시
+
+### 추가
+
+- `pkg/irisdurable/pgstore`를 추가해 `irisdurable` 계약의 PostgreSQL 구현을 공용화합니다. `Store`
+  하나가 `Admitter`·`NonceStore`·`ReplyOutbox`를 제공하며, inbox는 ordering key당 FIFO를 별도 head
+  테이블 없이 파생하고 claim·complete·release·renew·reclaim·prune을, reply outbox는
+  stage·begin·settle·inspect와 redrive·retire·manual review·prune을 제공합니다. 런타임 SQL은
+  `queries/*.sql` 자산이 소유합니다. `iris_webhook_inbox`·`iris_nonce`·`iris_reply_outbox`의 DDL은
+  스택 SQL 소유권 계약대로 소비 저장소 migration이 소유하고, 이 패키지는 `testdata/schema.sql`을
+  참조 스키마로 두어 `contracttest` 스위트로 적합성을 증명합니다. `New`가 Iris admission 보존과
+  자동 replay 지평 관계를 기동 시점에 검증합니다 (2026-09-02 재감사 잔여 종결 T04).
+
 ## v2.3.0 - 2026-09-02
 
 ### 추가
