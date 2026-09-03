@@ -10,7 +10,9 @@
 - `pkg/irisdurable/pgstore`를 추가해 `irisdurable` 계약의 PostgreSQL 구현을 공용화합니다. `Store`
   하나가 `Admitter`·`NonceStore`·`ReplyOutbox`를 제공하며, inbox는 ordering key당 FIFO를 별도 head
   테이블 없이 파생하고 claim·complete·release·renew·reclaim·prune을, reply outbox는
-  stage·begin·settle·inspect와 redrive·retire·manual review·prune을 제공합니다. 런타임 SQL은
+  stage·begin·renew·settle·inspect와 redrive·retire·manual review·prune을 제공합니다. 파생 head
+  규칙이 성립하도록 `Admit`은 ordering key마다 advisory transaction lock으로 삽입을 직렬화하고,
+  `Retire`는 아직 정착되지 않은 시도를 종단으로 보내지 않습니다. 런타임 SQL은
   `queries/*.sql` 자산이 소유합니다. `iris_webhook_inbox`·`iris_nonce`·`iris_reply_outbox`의 DDL은
   스택 SQL 소유권 계약대로 소비 저장소 migration이 소유하고, 이 패키지는 `testdata/schema.sql`을
   참조 스키마로 두어 `contracttest` 스위트로 적합성을 증명합니다. `New`가 Iris admission 보존과

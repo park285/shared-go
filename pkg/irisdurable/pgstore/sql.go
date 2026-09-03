@@ -30,6 +30,7 @@ var (
 	queryStoredReplyPayloadHash     = mustQuery("queries/stored_reply_payload_hash.sql")
 	queryMarkReplyPayloadDivergence = mustQuery("queries/mark_reply_payload_divergence.sql")
 	queryBeginReplyAttempt          = mustQuery("queries/begin_reply_attempt.sql")
+	queryRenewReplyLease            = mustQuery("queries/renew_reply_lease.sql")
 	queryReplyExists                = mustQuery("queries/reply_exists.sql")
 	querySettleReply                = mustQuery("queries/settle_reply.sql")
 	queryManualReviewReply          = mustQuery("queries/manual_review_reply.sql")

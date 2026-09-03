@@ -11,6 +11,9 @@
 //
 // ordering key당 FIFO는 별도 head 테이블 대신 inbox 자신에서 파생한다. Claim은 같은
 // ordering key에 더 오래된 미종단 행이 없는 후보만 잡으므로 head가 두 번째 진실이 되지 않는다.
+// 파생 규칙은 admit이 직렬화될 때만 성립한다. READ COMMITTED에서 Claim은 아직 commit되지 않은
+// 행을 볼 수 없으므로, Admit이 ordering key마다 advisory transaction lock을 잡아 같은 key의
+// 삽입 순서와 가시성 순서를 일치시킨다.
 //
 // 봇별 확장(operator grant, replay/discard audit, image fallback 행, chunk 진행)은 이 패키지가
 // 만든 행 id를 참조하는 봇 소유 side table이나 phase 값으로 표현하고 공용 상태 기계를 우회하지

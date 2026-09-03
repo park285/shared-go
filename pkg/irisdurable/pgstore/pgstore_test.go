@@ -12,11 +12,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/park285/shared-go/v2/pkg/irisdurable"
 	"github.com/park285/shared-go/v2/pkg/irisdurable/contracttest"
 	"github.com/park285/shared-go/v2/pkg/irisdurable/pgstore"
+	"github.com/park285/shared-go/v2/pkg/workercontract"
 )
 
 const (
@@ -99,6 +101,57 @@ func TestOptionsRejectRetentionShorterThanIrisAdmission(t *testing.T) {
 
 	if _, err := pgstore.New(pool, pgstore.Options{AutomaticReplayHorizon: irisdurable.AutomaticReplayHorizon + time.Hour}); err == nil {
 		t.Fatal("New with a replay horizon beyond the stack horizon must fail")
+	}
+
+	if _, err := pgstore.New(pool, pgstore.Options{InboxTerminalRetention: time.Hour}); err == nil {
+		t.Fatal("New with an inbox terminal retention shorter than the stack replay horizon must fail")
+	}
+}
+
+// TestLoweredReplayHorizonKeepsInboxDedupWindow는 인스턴스 지평을 낮춰도 inbox 종단 보존이
+// 스택 재전송 창을 덮는지 본다. 호출자 지평에서 파생하면 이 구성이 dedup 창을 함께 줄여
+// 재전송된 webhook이 중복으로 걸러지지 않고 다시 실행된다.
+func TestLoweredReplayHorizonKeepsInboxDedupWindow(t *testing.T) {
+	t.Parallel()
+
+	store, err := pgstore.New(&pgxpool.Pool{}, pgstore.Options{AutomaticReplayHorizon: time.Hour})
+	if err != nil {
+		t.Fatalf("New with a lowered replay horizon: %v", err)
+	}
+
+	if got := store.Options().InboxTerminalRetention; got < irisdurable.AutomaticReplayHorizon {
+		t.Fatalf("InboxTerminalRetention = %s; want at least the stack replay horizon %s", got, irisdurable.AutomaticReplayHorizon)
+	}
+}
+
+// TestAdmitClassifiesDeterministicRejections는 서버가 거절한 것이 확실한 admit을 결과 미상이
+// 아니라 거절로 보고하는지 본다. 결과 미상은 호출자가 503으로 매핑해 Iris 재전송을 부르므로,
+// 같은 payload로는 영원히 실패하는 입력이 재전송 루프에 갇힌다.
+func TestAdmitClassifiesDeterministicRejections(t *testing.T) {
+	pool := newMigratedPool(t)
+	store := newScopedStore(t, pool)
+	ctx := t.Context()
+
+	cases := map[string][]byte{
+		"payload is a JSON array, not an object": []byte(`["not","an","object"]`),
+		"payload is not JSON at all":             []byte(`{`),
+	}
+
+	for name, payload := range cases {
+		t.Run(name, func(t *testing.T) {
+			result, err := store.Admit(ctx, irisdurable.AdmissionInput{
+				MessageID:   fmt.Sprintf("msg-reject-%d", scopeCounter.Add(1)),
+				OrderingKey: "room-reject",
+				Payload:     payload,
+			})
+			if err == nil {
+				t.Fatal("admit with an unstorable payload must fail")
+			}
+
+			if result != workercontract.AdmissionRejected {
+				t.Fatalf("admit result = %q; want %q, because the server rejected the statement and nothing was committed", result, workercontract.AdmissionRejected)
+			}
+		})
 	}
 }
 
@@ -201,6 +254,99 @@ func TestInboxRenewAndRelease(t *testing.T) {
 	}
 }
 
+// TestAdmitSerializesOrderingKeyAcrossTransactions는 같은 ordering key의 admit이 직렬화되는지
+// 확인한다. 직렬화가 없으면 아직 commit되지 않은 앞 메시지를 Claim의 head 규칙이 보지 못해,
+// 뒤 메시지를 head로 잡고 앞 메시지가 보이게 된 뒤 두 행이 동시에 처리된다.
+func TestAdmitSerializesOrderingKeyAcrossTransactions(t *testing.T) {
+	pool := newMigratedPool(t)
+	store := newScopedStore(t, pool)
+	ctx := t.Context()
+	orderingKey := "room-serialize-" + strconv.FormatUint(scopeCounter.Add(1), 10)
+	firstID := "msg-" + orderingKey + "-first"
+
+	tx := beginAdmittedTx(t, pool, store.Options().Scope, firstID, orderingKey)
+	second := admitAsync(store, "msg-"+orderingKey+"-second", orderingKey)
+
+	select {
+	case admitErr := <-second:
+		t.Fatalf("the second admit returned (%v) while the first was uncommitted; the ordering key was not serialized", admitErr)
+	case <-time.After(500 * time.Millisecond):
+	}
+
+	if commitErr := tx.Commit(ctx); commitErr != nil {
+		t.Fatalf("commit the first admit: %v", commitErr)
+	}
+
+	select {
+	case admitErr := <-second:
+		if admitErr != nil {
+			t.Fatalf("the second admit after the commit: %v", admitErr)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("the second admit never finished after the first transaction committed")
+	}
+
+	claim, claimed, err := store.Claim(ctx)
+	if err != nil || !claimed {
+		t.Fatalf("claim = (%v, %v); want the first message", claimed, err)
+	}
+
+	if claim.MessageID != firstID {
+		t.Fatalf("claimed %s; want %s, the message admitted first", claim.MessageID, firstID)
+	}
+}
+
+// beginAdmittedTx는 열린 트랜잭션 안에서 메시지 하나를 admit하고 그 트랜잭션을 돌려준다.
+// 호출자가 commit할 때까지 그 행은 다른 세션에 보이지 않는다.
+func beginAdmittedTx(t *testing.T, pool *pgxpool.Pool, scope, messageID, orderingKey string) pgx.Tx {
+	t.Helper()
+
+	tx, err := pool.Begin(t.Context())
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+
+	t.Cleanup(func() {
+		//nolint:usetesting // rollback은 commit 여부와 무관하게 돌아야 하므로 이미 취소된 t.Context()를 쓸 수 없다.
+		if rollbackErr := tx.Rollback(context.Background()); rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
+			t.Errorf("rollback: %v", rollbackErr)
+		}
+	})
+
+	store, err := pgstore.New(tx, pgstore.Options{Scope: scope})
+	if err != nil {
+		t.Fatalf("new store on the transaction: %v", err)
+	}
+
+	if _, admitErr := store.Admit(t.Context(), irisdurable.AdmissionInput{
+		MessageID:   messageID,
+		OrderingKey: orderingKey,
+		Payload:     []byte(`{"ordinal":0}`),
+	}); admitErr != nil {
+		t.Fatalf("admit inside the open transaction: %v", admitErr)
+	}
+
+	return tx
+}
+
+// admitAsync는 별도 goroutine에서 admit을 시작하고 결과 채널을 돌려준다. 같은 ordering key의
+// 앞 트랜잭션이 열려 있는 동안 이 호출은 막혀 있어야 한다.
+func admitAsync(store *pgstore.Store, messageID, orderingKey string) <-chan error {
+	done := make(chan error, 1)
+
+	go func() {
+		// 이 goroutine은 앞 트랜잭션이 끝날 때까지 살아 있어야 하므로 테스트 컨텍스트를 쓰지 않는다.
+		_, err := store.Admit(context.Background(), irisdurable.AdmissionInput{
+			MessageID:   messageID,
+			OrderingKey: orderingKey,
+			Payload:     []byte(`{"ordinal":1}`),
+		})
+		done <- err
+	}()
+
+	return done
+}
+
 // TestReplyRedriveAndRetire는 유지보수 연산이 재발송 후보와 소진 행을 갈라내는지 확인한다.
 func TestReplyRedriveAndRetire(t *testing.T) {
 	pool := newMigratedPool(t)
@@ -264,6 +410,102 @@ func TestReplyRedriveAndRetire(t *testing.T) {
 	}
 }
 
+// TestRetireLeavesInFlightAttemptAlone은 시작만 하고 아직 정착되지 않은 시도를 Retire가 종단으로
+// 보내지 않는지 확인한다. BeginAttempt가 보내기 전에 attempts를 올리므로 마지막 시도는 시작하는
+// 순간 이미 소진 조건을 만족하고, lease가 전송보다 짧으면 전송 중에 payload가 지워진다.
+func TestRetireLeavesInFlightAttemptAlone(t *testing.T) {
+	pool := newMigratedPool(t)
+	store := newScopedStoreWithOptions(t, pool, pgstore.Options{
+		Scope:       fmt.Sprintf("test-%d-%d", time.Now().UnixNano(), scopeCounter.Add(1)),
+		MaxAttempts: 1,
+		Lease:       time.Millisecond,
+	})
+	fixture := &replyFixture{Store: store}
+	ctx := t.Context()
+
+	record := fixture.NewRecord(t, []byte(`{"type":"text","text":"in flight"}`))
+	if _, err := store.Stage(ctx, record); err != nil {
+		t.Fatalf("stage: %v", err)
+	}
+
+	attempt, err := store.BeginAttempt(ctx, record.ReplyIdentity)
+	if err != nil {
+		t.Fatalf("begin attempt: %v", err)
+	}
+
+	retired, err := store.Retire(ctx, 10)
+	if err != nil {
+		t.Fatalf("retire while the attempt is in flight: %v", err)
+	}
+
+	if retired != 0 {
+		t.Fatalf("retired %d rows; want none while the attempt has not settled", retired)
+	}
+
+	state, err := store.Inspect(ctx, record.ReplyIdentity)
+	if err != nil {
+		t.Fatalf("inspect: %v", err)
+	}
+
+	if state.Status != irisdurable.ReplyStatusSubmitting || !state.PayloadPresent {
+		t.Fatalf("state during the attempt = %+v; want submitting with the payload intact", state)
+	}
+
+	if settleErr := store.Settle(ctx, attempt, irisdurable.ReplyOutcome{
+		Status:          irisdurable.ReplyStatusOutcomeUnknown,
+		ClientRequestID: attempt.ClientRequestID,
+	}); settleErr != nil {
+		t.Fatalf("settle after the lease lapsed: %v", settleErr)
+	}
+
+	retired, err = store.Retire(ctx, 10)
+	if err != nil {
+		t.Fatalf("retire after the attempt settled: %v", err)
+	}
+
+	if retired != 1 {
+		t.Fatalf("retired %d rows; want the settled attempt-exhausted row", retired)
+	}
+}
+
+// TestRenewReplyHoldsTheAttemptLease는 전송이 lease보다 길어질 수 있는 호출자가 소유권을
+// 유지하는 경로를 확인한다.
+func TestRenewReplyHoldsTheAttemptLease(t *testing.T) {
+	pool := newMigratedPool(t)
+	store := newScopedStore(t, pool)
+	fixture := &replyFixture{Store: store}
+	ctx := t.Context()
+
+	record := fixture.NewRecord(t, []byte(`{"type":"text","text":"renew"}`))
+	if _, err := store.Stage(ctx, record); err != nil {
+		t.Fatalf("stage: %v", err)
+	}
+
+	attempt, err := store.BeginAttempt(ctx, record.ReplyIdentity)
+	if err != nil {
+		t.Fatalf("begin attempt: %v", err)
+	}
+
+	before := replyLeaseUntil(t, pool, record.ReplyIdentity, store.Options().Scope)
+
+	if renewErr := store.RenewReply(ctx, attempt); renewErr != nil {
+		t.Fatalf("renew: %v", renewErr)
+	}
+
+	if after := replyLeaseUntil(t, pool, record.ReplyIdentity, store.Options().Scope); !after.After(before) {
+		t.Fatalf("lease_until %s did not move past %s", after, before)
+	}
+
+	stale := irisdurable.ReplyAttempt{
+		ReplyIdentity: attempt.ReplyIdentity,
+		ClaimToken:    attempt.ClaimToken + "-stale",
+	}
+
+	if renewErr := store.RenewReply(ctx, stale); !errors.Is(renewErr, pgstore.ErrClaimLost) {
+		t.Fatalf("renew with a foreign token = %v; want ErrClaimLost", renewErr)
+	}
+}
+
 type replyFixture struct {
 	*pgstore.Store
 }
@@ -288,6 +530,21 @@ func leaseUntil(t *testing.T, pool *pgxpool.Pool, id int64) time.Time {
 
 	if err := pool.QueryRow(t.Context(), "SELECT lease_until FROM iris_webhook_inbox WHERE id = $1", id).Scan(&lease); err != nil {
 		t.Fatalf("read lease_until of %d: %v", id, err)
+	}
+
+	return lease
+}
+
+func replyLeaseUntil(t *testing.T, pool *pgxpool.Pool, identity irisdurable.ReplyIdentity, scope string) time.Time {
+	t.Helper()
+
+	var lease time.Time
+
+	const query = `SELECT lease_until FROM iris_reply_outbox
+WHERE scope = $1 AND message_id = $2 AND phase = $3 AND ordinal = $4`
+
+	if err := pool.QueryRow(t.Context(), query, scope, identity.MessageID, identity.Phase, identity.Ordinal).Scan(&lease); err != nil {
+		t.Fatalf("read lease_until of %s/%s/%d: %v", identity.MessageID, identity.Phase, identity.Ordinal, err)
 	}
 
 	return lease
