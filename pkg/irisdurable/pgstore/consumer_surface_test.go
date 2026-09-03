@@ -2,7 +2,7 @@ package pgstore_test
 
 import (
 	"context"
-	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"reflect"
@@ -184,11 +184,11 @@ func requireSameJSON(t *testing.T, got, want []byte, label string) {
 
 	var gotValue, wantValue any
 
-	if err := json.Unmarshal(got, &gotValue); err != nil {
+	if err := jsonv2.Unmarshal(got, &gotValue); err != nil {
 		t.Fatalf("%s: decode %s: %v", label, got, err)
 	}
 
-	if err := json.Unmarshal(want, &wantValue); err != nil {
+	if err := jsonv2.Unmarshal(want, &wantValue); err != nil {
 		t.Fatalf("%s: decode the expected %s: %v", label, want, err)
 	}
 
