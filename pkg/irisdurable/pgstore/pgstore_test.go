@@ -385,8 +385,8 @@ func TestReplyRedriveAndRetire(t *testing.T) {
 		t.Fatalf("retire: %v", err)
 	}
 
-	if retired != 0 {
-		t.Fatalf("retired %d rows; want none while attempts remain", retired)
+	if len(retired) != 0 {
+		t.Fatalf("retired %d rows; want none while attempts remain", len(retired))
 	}
 
 	exhausted := newScopedStoreWithOptions(t, pool, pgstore.Options{MaxAttempts: 1, Scope: store.Options().Scope})
@@ -396,8 +396,8 @@ func TestReplyRedriveAndRetire(t *testing.T) {
 		t.Fatalf("retire with exhausted attempts: %v", err)
 	}
 
-	if retired != 1 {
-		t.Fatalf("retired %d rows; want the attempt-exhausted row", retired)
+	if len(retired) != 1 {
+		t.Fatalf("retired %d rows; want the attempt-exhausted row", len(retired))
 	}
 
 	state, err := store.Inspect(ctx, record.ReplyIdentity)
@@ -438,8 +438,8 @@ func TestRetireLeavesInFlightAttemptAlone(t *testing.T) {
 		t.Fatalf("retire while the attempt is in flight: %v", err)
 	}
 
-	if retired != 0 {
-		t.Fatalf("retired %d rows; want none while the attempt has not settled", retired)
+	if len(retired) != 0 {
+		t.Fatalf("retired %d rows; want none while the attempt has not settled", len(retired))
 	}
 
 	state, err := store.Inspect(ctx, record.ReplyIdentity)
@@ -463,8 +463,8 @@ func TestRetireLeavesInFlightAttemptAlone(t *testing.T) {
 		t.Fatalf("retire after the attempt settled: %v", err)
 	}
 
-	if retired != 1 {
-		t.Fatalf("retired %d rows; want the settled attempt-exhausted row", retired)
+	if len(retired) != 1 {
+		t.Fatalf("retired %d rows; want the settled attempt-exhausted row", len(retired))
 	}
 }
 
