@@ -684,3 +684,45 @@ func explainQuery(ctx context.Context, t *testing.T, conn *pgxpool.Conn, label, 
 
 	return strings.Join(lines, "\n")
 }
+
+// TestCountRepliesByStatusLeavesOutTerminalRows는 상태별 개수가 backlog만 담는지 확인한다.
+// 종단 행까지 세면 그 값은 backlog가 아니게 되고, 술어가 부분 인덱스를 벗어나 보존 기간
+// 전체를 훑는다.
+func TestCountRepliesByStatusLeavesOutTerminalRows(t *testing.T) {
+	pool := newMigratedPool(t)
+	store := newScopedStore(t, pool)
+	fixture := &replyFixture{Store: store}
+	ctx := t.Context()
+
+	pending := fixture.NewRecord(t, []byte(`{"type":"text","text":"pending"}`))
+	if _, err := store.Stage(ctx, pending); err != nil {
+		t.Fatalf("stage the pending reply: %v", err)
+	}
+
+	settled := fixture.NewRecord(t, []byte(`{"type":"text","text":"settled"}`))
+	if _, err := store.Stage(ctx, settled); err != nil {
+		t.Fatalf("stage the settled reply: %v", err)
+	}
+
+	attempt, err := store.BeginAttempt(ctx, settled.ReplyIdentity)
+	if err != nil {
+		t.Fatalf("begin attempt: %v", err)
+	}
+
+	if settleErr := store.Settle(ctx, attempt, irisdurable.ReplyOutcome{Status: irisdurable.ReplyStatusAccepted}); settleErr != nil {
+		t.Fatalf("settle: %v", settleErr)
+	}
+
+	counts, err := store.CountRepliesByStatus(ctx)
+	if err != nil {
+		t.Fatalf("count replies by status: %v", err)
+	}
+
+	if counts[irisdurable.ReplyStatusPending] != 1 {
+		t.Fatalf("pending count = %d; want the one row still waiting to go out", counts[irisdurable.ReplyStatusPending])
+	}
+
+	if _, present := counts[irisdurable.ReplyStatusAccepted]; present {
+		t.Fatalf("accepted count = %d; want the terminal status absent", counts[irisdurable.ReplyStatusAccepted])
+	}
+}

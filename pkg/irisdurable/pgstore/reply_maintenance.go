@@ -116,8 +116,9 @@ func (s *Store) Retire(ctx context.Context, limit int) ([]RetiredReply, error) {
 	return retired, nil
 }
 
-// CountRepliesByStatus는 scope의 outbox 행을 상태별로 센다. 어느 상태에도 행이 없으면 그 키는
-// 결과에 없다.
+// CountRepliesByStatus는 scope에서 아직 보낼 수 있는 행을 상태별로 센다. 종단 행은 세지 않는다.
+// 그 수는 backlog 관측에 쓸 값이 아니고, 세려면 보존 기간 전체를 훑어야 한다. 어느 상태에도 행이
+// 없으면 그 키는 결과에 없다.
 func (s *Store) CountRepliesByStatus(ctx context.Context) (map[irisdurable.ReplyStatus]int64, error) {
 	rows, err := s.db.Query(ctx, queryCountRepliesByStatus, s.opts.Scope)
 	if err != nil {
