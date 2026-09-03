@@ -1,6 +1,6 @@
 module github.com/park285/shared-go/v2
 
-go 1.27.0
+go 1.27.1
 
 require (
 	github.com/gin-gonic/gin v1.12.0
