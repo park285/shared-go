@@ -71,6 +71,45 @@ func (s *Store) Retire(ctx context.Context, limit int) (int64, error) {
 	return tag.RowsAffected(), nil
 }
 
+// CountRepliesByStatus는 scope의 outbox 행을 상태별로 센다. 어느 상태에도 행이 없으면 그 키는
+// 결과에 없다.
+func (s *Store) CountRepliesByStatus(ctx context.Context) (map[irisdurable.ReplyStatus]int64, error) {
+	rows, err := s.db.Query(ctx, queryCountRepliesByStatus, s.opts.Scope)
+	if err != nil {
+		return nil, fmt.Errorf("pgstore: count replies by status: %w", err)
+	}
+	defer rows.Close()
+
+	counts := make(map[irisdurable.ReplyStatus]int64)
+
+	for rows.Next() {
+		var (
+			status string
+			count  int64
+		)
+
+		if err := rows.Scan(&status, &count); err != nil {
+			return nil, fmt.Errorf("pgstore: scan reply status count: %w", err)
+		}
+
+		counts[irisdurable.ReplyStatus(status)] = count
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("pgstore: read reply status counts: %w", err)
+	}
+
+	return counts, nil
+}
+
+// ReplyReadySnapshot은 Redrive가 지금 돌려줄 수 있는 행을 센다. 술어는
+// list_redrivable_replies.sql과 같다.
+func (s *Store) ReplyReadySnapshot(ctx context.Context) (ReadySnapshot, error) {
+	return s.readySnapshot(ctx, "reply ready snapshot", queryReplyReadySnapshot,
+		s.opts.Scope, s.opts.MaxAttempts, s.opts.AutomaticReplayHorizon.Seconds(),
+	)
+}
+
 // PruneReplies는 보존이 지난 행을 지우고 지운 수를 반환한다.
 // 사람이 처리할 때까지 manual_review 행은 남긴다.
 func (s *Store) PruneReplies(ctx context.Context, limit int) (int64, error) {

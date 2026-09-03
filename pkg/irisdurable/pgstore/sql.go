@@ -14,20 +14,22 @@ func mustQuery(name string) string {
 }
 
 var (
-	queryAdmitInbox        = mustQuery("queries/admit_inbox.sql")
-	queryClaimInbox        = mustQuery("queries/claim_inbox.sql")
-	queryCompleteInbox     = mustQuery("queries/complete_inbox.sql")
-	queryRenewInboxLease   = mustQuery("queries/renew_inbox_lease.sql")
-	queryReleaseInbox      = mustQuery("queries/release_inbox.sql")
-	queryManualReviewInbox = mustQuery("queries/manual_review_inbox.sql")
-	queryReclaimInbox      = mustQuery("queries/reclaim_inbox.sql")
-	queryPruneInbox        = mustQuery("queries/prune_inbox.sql")
+	queryAdmitInbox           = mustQuery("queries/admit_inbox.sql")
+	queryClaimInbox           = mustQuery("queries/claim_inbox.sql")
+	queryCompleteInbox        = mustQuery("queries/complete_inbox.sql")
+	queryRenewInboxLease      = mustQuery("queries/renew_inbox_lease.sql")
+	queryReleaseInbox         = mustQuery("queries/release_inbox.sql")
+	queryDeferInbox           = mustQuery("queries/defer_inbox.sql")
+	queryManualReviewInbox    = mustQuery("queries/manual_review_inbox.sql")
+	queryReclaimInbox         = mustQuery("queries/reclaim_inbox.sql")
+	queryPruneInbox           = mustQuery("queries/prune_inbox.sql")
+	queryInboxRuntimeSnapshot = mustQuery("queries/inbox_runtime_snapshot.sql")
+	queryInboxReadySnapshot   = mustQuery("queries/inbox_ready_snapshot.sql")
 
 	queryInsertNonce = mustQuery("queries/insert_nonce.sql")
 	queryPruneNonce  = mustQuery("queries/prune_nonce.sql")
 
 	queryStageReply                 = mustQuery("queries/stage_reply.sql")
-	queryStoredReplyPayloadHash     = mustQuery("queries/stored_reply_payload_hash.sql")
 	queryMarkReplyPayloadDivergence = mustQuery("queries/mark_reply_payload_divergence.sql")
 	queryBeginReplyAttempt          = mustQuery("queries/begin_reply_attempt.sql")
 	queryRenewReplyLease            = mustQuery("queries/renew_reply_lease.sql")
@@ -39,4 +41,6 @@ var (
 	queryListRedrivableReplies  = mustQuery("queries/list_redrivable_replies.sql")
 	queryRetireExhaustedReplies = mustQuery("queries/retire_exhausted_replies.sql")
 	queryPruneReplies           = mustQuery("queries/prune_replies.sql")
+	queryCountRepliesByStatus   = mustQuery("queries/count_replies_by_status.sql")
+	queryReplyReadySnapshot     = mustQuery("queries/reply_ready_snapshot.sql")
 )

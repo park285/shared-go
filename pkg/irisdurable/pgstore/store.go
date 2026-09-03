@@ -51,6 +51,9 @@ type Options struct {
 	ReplyRetention time.Duration
 	// InboxTerminalRetention은 inbox 종단 행의 보존이다. 자동 replay 지평보다 짧을 수 없다.
 	InboxTerminalRetention time.Duration
+	// InboxManualReviewRetention은 inbox manual_review 행의 보존이다. 사람이 볼 payload를 남기는
+	// 갈래라 종단 보존과 따로 잡는다. 0이면 PruneInbox가 이 갈래를 지우지 않는다.
+	InboxManualReviewRetention time.Duration
 }
 
 func (o Options) withDefaults() Options {
@@ -108,6 +111,12 @@ func (o Options) validate() error {
 	// 비교하면 지평을 낮춘 구성이 New를 통과하고도 contracttest의 Retention 절에서 떨어진다.
 	if o.InboxTerminalRetention < irisdurable.AutomaticReplayHorizon {
 		return fmt.Errorf("pgstore: InboxTerminalRetention %s is shorter than the stack replay horizon %s; a redelivered webhook would re-execute instead of dedup", o.InboxTerminalRetention, irisdurable.AutomaticReplayHorizon)
+	}
+
+	// manual_review는 사람이 처리할 때까지 남기는 갈래이므로 종단 보존보다 짧으면 안 된다. 짧으면
+	// 아직 검토하지 않은 행이 이미 검토가 끝난 completed 행보다 먼저 사라진다.
+	if o.InboxManualReviewRetention > 0 && o.InboxManualReviewRetention < o.InboxTerminalRetention {
+		return fmt.Errorf("pgstore: InboxManualReviewRetention %s is shorter than InboxTerminalRetention %s", o.InboxManualReviewRetention, o.InboxTerminalRetention)
 	}
 
 	return nil

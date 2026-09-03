@@ -98,9 +98,15 @@ func (s *Store) Claim(ctx context.Context) (claim InboxClaim, ok bool, err error
 	return claim, true, nil
 }
 
-// Complete는 처리가 끝난 행을 종단으로 보내고 payload를 지운다.
-func (s *Store) Complete(ctx context.Context, claim InboxClaim) error {
-	return s.execFenced(ctx, "complete inbox", queryCompleteInbox, s.opts.Scope, claim.ID, claim.ClaimToken)
+// Complete는 처리가 끝난 행을 종단으로 보내고 payload를 지운다. 인자 reason은 "재시도해도 같은
+// 결과인 입력 결함"처럼 성공이 아닌 완료의 사유를 남기는 자리이고, 빈 값이면 기록하지 않는다.
+//
+// Fence는 claim token에 더해 message_id와 살아 있는 lease를 대조한다. 그 이유는
+// queries/complete_inbox.sql이 적는다.
+func (s *Store) Complete(ctx context.Context, claim InboxClaim, reason string) error {
+	return s.execFenced(ctx, "complete inbox", queryCompleteInbox,
+		s.opts.Scope, claim.ID, claim.ClaimToken, reason, claim.MessageID,
+	)
 }
 
 // RenewInbox는 처리 중인 행의 lease를 Options.Lease만큼 연장한다. 처리 시간이 lease보다 긴
@@ -117,6 +123,18 @@ func (s *Store) Release(ctx context.Context, claim InboxClaim, retryAfter time.D
 	}
 
 	return s.execFenced(ctx, "release inbox", queryReleaseInbox, s.opts.Scope, claim.ID, claim.ClaimToken, retryAfter.Seconds())
+}
+
+// Defer는 처리를 시작하지 못한 행의 소유권만 반납하고 Claim이 올린 attempts를 되돌린다.
+// 처리 결과가 아니므로 재시도 예산을 쓰지 않는 점이 Release와 다르다.
+func (s *Store) Defer(ctx context.Context, claim InboxClaim, retryAfter time.Duration) error {
+	if retryAfter < 0 {
+		retryAfter = 0
+	}
+
+	return s.execFenced(ctx, "defer inbox", queryDeferInbox,
+		s.opts.Scope, claim.ID, claim.ClaimToken, claim.MessageID, retryAfter.Seconds(),
+	)
 }
 
 // ManualReviewInbox는 자동으로 판정할 수 없는 행을 사람이 볼 안전 경계 상태로 보낸다.
@@ -139,19 +157,85 @@ func (s *Store) ReclaimInbox(ctx context.Context) (int64, error) {
 	return tag.RowsAffected(), nil
 }
 
-// PruneInbox는 보존이 지난 completed 행을 지우고 지운 수를 반환한다.
-// 사람이 처리할 때까지 manual_review 행은 남긴다.
+// PruneInbox는 보존이 지난 종단 행을 지우고 지운 수를 반환한다. 두 갈래의 보존은 따로이고,
+// completed는 Options.InboxTerminalRetention을, manual_review는
+// Options.InboxManualReviewRetention을 따른다. 후자가 0이면 사람이 처리할 때까지 남긴다.
 func (s *Store) PruneInbox(ctx context.Context, limit int) (int64, error) {
 	if limit <= 0 {
 		return 0, errors.New("pgstore: prune limit must be positive")
 	}
 
-	tag, err := s.db.Exec(ctx, queryPruneInbox, s.opts.Scope, s.opts.InboxTerminalRetention.Seconds(), limit)
+	tag, err := s.db.Exec(ctx, queryPruneInbox,
+		s.opts.Scope, s.opts.InboxTerminalRetention.Seconds(), s.opts.InboxManualReviewRetention.Seconds(), limit,
+	)
 	if err != nil {
 		return 0, fmt.Errorf("pgstore: prune inbox: %w", err)
 	}
 
 	return tag.RowsAffected(), nil
+}
+
+// InboxRuntimeSnapshot은 inbox의 상태별 적재와 밀린 정도다.
+type InboxRuntimeSnapshot struct {
+	Pending      int64
+	Processing   int64
+	ManualReview int64
+	// Due는 지금 손이 가야 하는 행 수다. pending은 available_at이, processing은 만료된 lease가 기준이다.
+	Due int64
+	// OldestDueAge는 가장 오래 밀린 행이 밀린 시간이다. 밀린 행이 없으면 0이다.
+	OldestDueAge time.Duration
+}
+
+// ReadySnapshot은 지금 claim할 수 있는 행의 수와 가장 오래된 행의 나이다.
+type ReadySnapshot struct {
+	Ready     int64
+	OldestAge time.Duration
+}
+
+// RuntimeSnapshot은 inbox 적재를 관측용으로 읽는다.
+func (s *Store) RuntimeSnapshot(ctx context.Context) (InboxRuntimeSnapshot, error) {
+	var (
+		snapshot InboxRuntimeSnapshot
+		ageSecs  float64
+	)
+
+	err := s.db.QueryRow(ctx, queryInboxRuntimeSnapshot, s.opts.Scope).
+		Scan(&snapshot.Pending, &snapshot.Processing, &snapshot.ManualReview, &snapshot.Due, &ageSecs)
+	if err != nil {
+		return InboxRuntimeSnapshot{}, fmt.Errorf("pgstore: inbox runtime snapshot: %w", err)
+	}
+
+	snapshot.OldestDueAge = secondsToDuration(ageSecs)
+
+	return snapshot, nil
+}
+
+// InboxReadySnapshot은 Claim이 지금 집을 수 있는 행을 센다. 술어는 claim_inbox.sql과 같다.
+func (s *Store) InboxReadySnapshot(ctx context.Context) (ReadySnapshot, error) {
+	return s.readySnapshot(ctx, "inbox ready snapshot", queryInboxReadySnapshot, s.opts.Scope)
+}
+
+func (s *Store) readySnapshot(ctx context.Context, action, sql string, args ...any) (ReadySnapshot, error) {
+	var (
+		snapshot ReadySnapshot
+		ageSecs  float64
+	)
+
+	if err := s.db.QueryRow(ctx, sql, args...).Scan(&snapshot.Ready, &ageSecs); err != nil {
+		return ReadySnapshot{}, fmt.Errorf("pgstore: %s: %w", action, err)
+	}
+
+	snapshot.OldestAge = secondsToDuration(ageSecs)
+
+	return snapshot, nil
+}
+
+func secondsToDuration(seconds float64) time.Duration {
+	if seconds <= 0 {
+		return 0
+	}
+
+	return time.Duration(seconds * float64(time.Second))
 }
 
 func (s *Store) execFenced(ctx context.Context, action, sql string, args ...any) error {

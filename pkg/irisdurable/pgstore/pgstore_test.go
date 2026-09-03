@@ -183,7 +183,7 @@ func TestInboxOrderingKeyServesOneMessageAtATime(t *testing.T) {
 		t.Fatalf("second claim ok = %v (err %v); want no claim while the ordering key head is held", claimedAgain, claimAgainErr)
 	}
 
-	if completeErr := store.Complete(ctx, first); completeErr != nil {
+	if completeErr := store.Complete(ctx, first, ""); completeErr != nil {
 		t.Fatalf("complete first: %v", completeErr)
 	}
 

@@ -13,49 +13,84 @@ import (
 	"github.com/park285/shared-go/v2/pkg/irisdurable"
 )
 
+// StagedReply는 StageRow가 돌려주는, stage 직후의 저장된 행이다. Outcome이
+// ReplyOrdinalSuperseded면 행이 없으므로 나머지 항목은 0값이다.
+type StagedReply struct {
+	irisdurable.ReplyIdentity
+
+	Outcome         irisdurable.ReplyStageOutcome
+	ID              int64
+	Status          irisdurable.ReplyStatus
+	ClientRequestID string
+	Payload         []byte
+	PayloadHash     string
+	Attempts        int
+}
+
 // Stage는 응답을 outbox에 멱등하게 기록한다. 같은 식별자에 다른 payload가 오면 저장본을 유지하고
 // ReplyPayloadDiverged를 반환한다.
 func (s *Store) Stage(ctx context.Context, record irisdurable.ReplyRecord) (irisdurable.ReplyStageOutcome, error) {
+	staged, err := s.StageRow(ctx, record)
+
+	return staged.Outcome, err
+}
+
+// StageRow는 Stage와 같은 일을 하고 저장된 행을 함께 돌려준다. 발송 여부를 저장본의 상태와
+// 시도 횟수로 판단하는 호출자가 Stage 뒤에 Inspect를 한 번 더 하지 않게 한다.
+func (s *Store) StageRow(ctx context.Context, record irisdurable.ReplyRecord) (StagedReply, error) {
 	if record.MessageID == "" || record.Phase == "" || record.RoomID == "" || record.ClientRequestID == "" {
-		return "", errors.New("pgstore: reply record requires messageID, phase, roomID and clientRequestID")
+		return StagedReply{}, errors.New("pgstore: reply record requires messageID, phase, roomID and clientRequestID")
 	}
 
 	if len(record.Payload) == 0 {
-		return "", errors.New("pgstore: reply record requires a payload")
+		return StagedReply{}, errors.New("pgstore: reply record requires a payload")
 	}
 
 	hash := payloadHash(record.Payload)
+	staged := StagedReply{ReplyIdentity: record.ReplyIdentity}
 
-	var id int64
+	var (
+		status   string
+		payload  *string
+		inserted bool
+	)
 
 	err := s.db.QueryRow(ctx, queryStageReply,
 		s.opts.Scope, record.MessageID, record.Phase, record.Ordinal,
 		record.RoomID, record.ClientRequestID, string(record.Payload), hash,
 		s.opts.ReplyRetention.Seconds(),
-	).Scan(&id)
+	).Scan(&staged.ID, &status, &staged.ClientRequestID, &payload, &staged.PayloadHash, &staged.Attempts, &inserted)
 
 	switch {
-	case err == nil:
-		return irisdurable.ReplyStaged, nil
-	case !errors.Is(err, pgx.ErrNoRows):
-		return "", fmt.Errorf("pgstore: stage reply %s/%s/%d: %w", record.MessageID, record.Phase, record.Ordinal, err)
+	case errors.Is(err, pgx.ErrNoRows):
+		// 삽입도 조회도 행을 내지 않는 유일한 경우는 후속 ordinal 가드가 새 행을 막은 것이다.
+		staged.Outcome = irisdurable.ReplyOrdinalSuperseded
+
+		return staged, nil
+	case err != nil:
+		return StagedReply{}, fmt.Errorf("pgstore: stage reply %s/%s/%d: %w", record.MessageID, record.Phase, record.Ordinal, err)
 	}
 
-	var stored string
+	staged.Status = irisdurable.ReplyStatus(status)
 
-	if err := s.db.QueryRow(ctx, queryStoredReplyPayloadHash, s.opts.Scope, record.MessageID, record.Phase, record.Ordinal).Scan(&stored); err != nil {
-		return "", fmt.Errorf("pgstore: read stored reply hash %s/%s/%d: %w", record.MessageID, record.Phase, record.Ordinal, err)
+	if payload != nil {
+		staged.Payload = []byte(*payload)
 	}
 
-	if stored == hash {
-		return irisdurable.ReplyAlreadyStaged, nil
+	switch {
+	case inserted:
+		staged.Outcome = irisdurable.ReplyStaged
+	case staged.PayloadHash == hash:
+		staged.Outcome = irisdurable.ReplyAlreadyStaged
+	default:
+		if _, err := s.db.Exec(ctx, queryMarkReplyPayloadDivergence, s.opts.Scope, record.MessageID, record.Phase, record.Ordinal); err != nil {
+			return StagedReply{}, fmt.Errorf("pgstore: mark reply divergence %s/%s/%d: %w", record.MessageID, record.Phase, record.Ordinal, err)
+		}
+
+		staged.Outcome = irisdurable.ReplyPayloadDiverged
 	}
 
-	if _, err := s.db.Exec(ctx, queryMarkReplyPayloadDivergence, s.opts.Scope, record.MessageID, record.Phase, record.Ordinal); err != nil {
-		return "", fmt.Errorf("pgstore: mark reply divergence %s/%s/%d: %w", record.MessageID, record.Phase, record.Ordinal, err)
-	}
-
-	return irisdurable.ReplyPayloadDiverged, nil
+	return staged, nil
 }
 
 // BeginAttempt는 재발송 가능한 행의 소유권을 잡는다. 종단이거나 lease가 살아 있으면
@@ -133,7 +168,7 @@ func (s *Store) Settle(ctx context.Context, attempt irisdurable.ReplyAttempt, ou
 
 	return s.execFenced(ctx, "settle reply", querySettleReply,
 		s.opts.Scope, attempt.MessageID, attempt.Phase, attempt.Ordinal, attempt.ClaimToken,
-		string(outcome.Status), outcome.ClientRequestID, outcome.IrisRequestID, retryAfter,
+		string(outcome.Status), outcome.ClientRequestID, outcome.IrisRequestID, retryAfter, outcome.Progressed,
 	)
 }
 
