@@ -1,6 +1,7 @@
 package pgstore_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/park285/shared-go/v2/pkg/irisdurable"
@@ -454,4 +456,102 @@ func backdateTerminalAt(t *testing.T, pool *pgxpool.Pool, id int64, age time.Dur
 	if _, err := pool.Exec(t.Context(), query, id, age.Seconds()); err != nil {
 		t.Fatalf("backdate terminal_at of %d: %v", id, err)
 	}
+}
+
+// TestStageSerializesTheOrdinalSequence는 같은 (message, phase)의 stage가 직렬화되는지 확인한다.
+// 직렬화가 없으면 두 stage가 서로의 미commit 행을 보지 못해 후속 ordinal 가드를 양쪽 다
+// 통과하고, 늦게 도착한 낮은 순번이 행으로 남아 이미 보낸 응답 뒤에 앞 순번이 다시 나간다.
+func TestStageSerializesTheOrdinalSequence(t *testing.T) {
+	pool := newMigratedPool(t)
+	store := newScopedStore(t, pool)
+	fixture := &replyFixture{Store: store}
+	ctx := t.Context()
+
+	base := fixture.NewRecord(t, []byte(`{"type":"text","text":"sequence"}`))
+	second := irisdurable.ReplyRecord{
+		MessageID: base.MessageID, Phase: base.Phase, Ordinal: 1,
+		RoomID:          base.RoomID,
+		ClientRequestID: base.ClientRequestID + ".1",
+		Payload:         base.Payload,
+	}
+
+	tx := beginStagedTx(t, pool, store.Options().Scope, second)
+
+	first := irisdurable.ReplyRecord{
+		MessageID: base.MessageID, Phase: base.Phase, Ordinal: 0,
+		RoomID:          base.RoomID,
+		ClientRequestID: base.ClientRequestID + ".0",
+		Payload:         []byte(`{"type":"text","text":"late lower"}`),
+	}
+
+	late := stageAsync(store, first)
+
+	select {
+	case outcome := <-late:
+		t.Fatalf("the late lower ordinal staged as %+v while ordinal 1 was uncommitted; the sequence was not serialized", outcome)
+	case <-time.After(500 * time.Millisecond):
+	}
+
+	if commitErr := tx.Commit(ctx); commitErr != nil {
+		t.Fatalf("commit the staged successor: %v", commitErr)
+	}
+
+	select {
+	case outcome := <-late:
+		switch {
+		case outcome.err != nil:
+			t.Fatalf("the late lower ordinal after the commit: %v", outcome.err)
+		case outcome.staged != irisdurable.ReplyOrdinalSuperseded:
+			t.Fatalf("the late lower ordinal staged as %q; want %q", outcome.staged, irisdurable.ReplyOrdinalSuperseded)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("the late lower ordinal never finished after the successor committed")
+	}
+}
+
+type stageResult struct {
+	staged irisdurable.ReplyStageOutcome
+	err    error
+}
+
+// beginStagedTx는 열린 트랜잭션 안에서 응답 하나를 stage하고 그 트랜잭션을 돌려준다.
+func beginStagedTx(t *testing.T, pool *pgxpool.Pool, scope string, record irisdurable.ReplyRecord) pgx.Tx {
+	t.Helper()
+
+	tx, err := pool.Begin(t.Context())
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+
+	t.Cleanup(func() {
+		//nolint:usetesting // rollback은 commit 여부와 무관하게 돌아야 하므로 이미 취소된 t.Context()를 쓸 수 없다.
+		if rollbackErr := tx.Rollback(context.Background()); rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
+			t.Errorf("rollback: %v", rollbackErr)
+		}
+	})
+
+	store, err := pgstore.New(tx, pgstore.Options{Scope: scope})
+	if err != nil {
+		t.Fatalf("new store on the transaction: %v", err)
+	}
+
+	if _, stageErr := store.Stage(t.Context(), record); stageErr != nil {
+		t.Fatalf("stage inside the open transaction: %v", stageErr)
+	}
+
+	return tx
+}
+
+// stageAsync는 별도 goroutine에서 stage를 시작하고 결과 채널을 돌려준다. 같은 순번열의 앞
+// 트랜잭션이 열려 있는 동안 이 호출은 막혀 있어야 한다.
+func stageAsync(store *pgstore.Store, record irisdurable.ReplyRecord) <-chan stageResult {
+	done := make(chan stageResult, 1)
+
+	go func() {
+		// 이 goroutine은 앞 트랜잭션이 끝날 때까지 살아 있어야 하므로 테스트 컨텍스트를 쓰지 않는다.
+		staged, err := store.Stage(context.Background(), record)
+		done <- stageResult{staged: staged, err: err}
+	}()
+
+	return done
 }

@@ -37,6 +37,11 @@ func (s *Store) Stage(ctx context.Context, record irisdurable.ReplyRecord) (iris
 
 // StageRow는 Stage와 같은 일을 하고 저장된 행을 함께 돌려준다. 발송 여부를 저장본의 상태와
 // 시도 횟수로 판단하는 호출자가 Stage 뒤에 Inspect를 한 번 더 하지 않게 한다.
+//
+// 같은 (scope, message_id, phase)의 stage는 advisory transaction lock으로 직렬화한다. 잠금과
+// 삽입은 반드시 서로 다른 문이어야 한다. 후속 ordinal 가드는 스냅샷 읽기인데 READ COMMITTED의
+// 문 스냅샷은 잠금을 얻기 전에 잡히므로, 한 문에 담으면 대기가 풀려도 방금 commit된 후속 행을
+// 보지 못한다. 그래서 Querier가 이미 트랜잭션이 아니면 여기서 트랜잭션을 연다.
 func (s *Store) StageRow(ctx context.Context, record irisdurable.ReplyRecord) (StagedReply, error) {
 	if record.MessageID == "" || record.Phase == "" || record.RoomID == "" || record.ClientRequestID == "" {
 		return StagedReply{}, errors.New("pgstore: reply record requires messageID, phase, roomID and clientRequestID")
@@ -44,6 +49,28 @@ func (s *Store) StageRow(ctx context.Context, record irisdurable.ReplyRecord) (S
 
 	if len(record.Payload) == 0 {
 		return StagedReply{}, errors.New("pgstore: reply record requires a payload")
+	}
+
+	var staged StagedReply
+
+	err := s.inTransaction(ctx, "stage reply", func(db Querier) error {
+		var stageErr error
+
+		staged, stageErr = s.stageRow(ctx, db, record)
+
+		return stageErr
+	})
+	if err != nil {
+		return StagedReply{}, err
+	}
+
+	return staged, nil
+}
+
+// stageRow는 이미 열린 트랜잭션 안에서 순번열을 잠그고 stage한다.
+func (s *Store) stageRow(ctx context.Context, db Querier, record irisdurable.ReplyRecord) (StagedReply, error) {
+	if _, err := db.Exec(ctx, queryLockReplySequence, s.opts.Scope, record.MessageID, record.Phase); err != nil {
+		return StagedReply{}, fmt.Errorf("pgstore: lock reply sequence %s/%s: %w", record.MessageID, record.Phase, err)
 	}
 
 	hash := payloadHash(record.Payload)
@@ -55,7 +82,7 @@ func (s *Store) StageRow(ctx context.Context, record irisdurable.ReplyRecord) (S
 		inserted bool
 	)
 
-	err := s.db.QueryRow(ctx, queryStageReply,
+	err := db.QueryRow(ctx, queryStageReply,
 		s.opts.Scope, record.MessageID, record.Phase, record.Ordinal,
 		record.RoomID, record.ClientRequestID, string(record.Payload), hash,
 		s.opts.ReplyRetention.Seconds(),
@@ -83,7 +110,7 @@ func (s *Store) StageRow(ctx context.Context, record irisdurable.ReplyRecord) (S
 	case staged.PayloadHash == hash:
 		staged.Outcome = irisdurable.ReplyAlreadyStaged
 	default:
-		if _, err := s.db.Exec(ctx, queryMarkReplyPayloadDivergence, s.opts.Scope, record.MessageID, record.Phase, record.Ordinal); err != nil {
+		if _, err := db.Exec(ctx, queryMarkReplyPayloadDivergence, s.opts.Scope, record.MessageID, record.Phase, record.Ordinal); err != nil {
 			return StagedReply{}, fmt.Errorf("pgstore: mark reply divergence %s/%s/%d: %w", record.MessageID, record.Phase, record.Ordinal, err)
 		}
 
