@@ -3,7 +3,7 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
-## 미출시
+## v2.4.0 - 2026-09-03
 
 ### 추가
 
@@ -34,6 +34,22 @@
   `PruneInbox`는 `Options.InboxManualReviewRetention`이 0이면 종전대로 `manual_review` 행을
   남깁니다. 참조 스키마의 `chk_iris_webhook_inbox_terminal_reason`이 `completed` 행의 사유를
   허용하고, 두 갈래 prune을 위해 `idx_iris_webhook_inbox_prune_manual_review`가 늘었습니다.
+- `pgstore.Store.Retire`가 정리한 행을 종단으로 보내기 직전의 상태·payload와 함께 돌려줍니다.
+  호출자가 그 payload에서 대체본을 파생해 같은 트랜잭션에서 stage할 수 있어야, 원본 payload가
+  지워진 뒤 대체본만 유실되는 창이 없습니다. `UPDATE ... RETURNING`은 이미 비워진 값을 주므로
+  삭제 전 사본을 돌려줍니다.
+- `pgstore.Store.CountRepliesByStatus`가 아직 보낼 수 있는 행만 셉니다. 종단 행까지 세면 보존
+  기간 전체를 순차로 훑어야 하고 그 수는 backlog 관측에 쓸 값이 아닙니다. 좁힌 술어는
+  `idx_iris_reply_outbox_claimable`과 같아 부분 인덱스만 읽습니다.
+
+### 수정
+
+- `pgstore.Store.StageRow`가 `(scope, message_id, phase)` 순번열을 advisory transaction lock으로
+  직렬화합니다. 잠금과 삽입은 서로 다른 문이어야 합니다. 후속 ordinal 가드는 스냅샷 읽기이고
+  READ COMMITTED의 문 스냅샷은 잠금을 얻기 전에 잡히므로, 한 문에 담으면 대기가 풀려도 방금
+  commit된 후속 행을 보지 못합니다. 그러면 동시에 도착한 두 stage가 양쪽 다 가드를 통과하고,
+  늦게 도착한 낮은 순번이 행으로 남아 이미 보낸 응답 뒤에 앞 순번이 다시 나갑니다. `Querier`가
+  이미 트랜잭션이 아니면 `StageRow`가 자기 트랜잭션을 엽니다.
 
 ## v2.3.0 - 2026-09-02
 
