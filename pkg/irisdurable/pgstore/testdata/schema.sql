@@ -28,10 +28,14 @@ CREATE TABLE IF NOT EXISTS iris_webhook_inbox (
         CHECK (attempts >= 0),
     CONSTRAINT chk_iris_webhook_inbox_status
         CHECK (status IN ('pending', 'processing', 'completed', 'manual_review')),
+    -- manual_review는 사람이 볼 사유가 반드시 있어야 하고, completed는 "재시도해도 같은 결과인
+    -- 입력 결함"처럼 성공이 아닌 완료의 사유를 남길 수 있다. 사유 어휘는 소비자가 자기 migration의
+    -- CHECK로 좁힌다.
     CONSTRAINT chk_iris_webhook_inbox_terminal_reason
         CHECK (
             (status = 'manual_review' AND length(btrim(coalesce(terminal_reason, ''))) > 0)
-            OR (status <> 'manual_review' AND terminal_reason IS NULL)
+            OR (status = 'completed' AND (terminal_reason IS NULL OR length(btrim(terminal_reason)) > 0))
+            OR (status NOT IN ('manual_review', 'completed') AND terminal_reason IS NULL)
         ),
     CONSTRAINT chk_iris_webhook_inbox_lease
         CHECK (
@@ -50,11 +54,16 @@ CREATE INDEX IF NOT EXISTS idx_iris_webhook_inbox_head
     ON iris_webhook_inbox (scope, ordering_key, created_at, id)
     WHERE status IN ('pending', 'processing');
 
--- prune은 scope의 completed 행만 지운다. manual_review 행은 사람이 처리할 때까지 남으므로
--- 술어에 넣으면 지워지지 않는 행이 스캔 앞머리에 영구히 쌓인다.
+-- prune의 두 갈래는 보존이 다르므로 인덱스도 나눈다. 하나로 합치면
+-- InboxManualReviewRetention이 0인 구성에서 지워지지 않는 manual_review 행이 스캔 앞머리에
+-- 영구히 쌓인다.
 CREATE INDEX IF NOT EXISTS idx_iris_webhook_inbox_prune
     ON iris_webhook_inbox (scope, terminal_at, id)
     WHERE status = 'completed';
+
+CREATE INDEX IF NOT EXISTS idx_iris_webhook_inbox_prune_manual_review
+    ON iris_webhook_inbox (scope, terminal_at, id)
+    WHERE status = 'manual_review';
 
 CREATE TABLE IF NOT EXISTS iris_nonce (
     scope text NOT NULL,

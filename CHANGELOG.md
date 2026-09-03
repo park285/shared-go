@@ -17,6 +17,23 @@
   스택 SQL 소유권 계약대로 소비 저장소 migration이 소유하고, 이 패키지는 `testdata/schema.sql`을
   참조 스키마로 두어 `contracttest` 스위트로 적합성을 증명합니다. `New`가 Iris admission 보존과
   자동 replay 지평 관계를 기동 시점에 검증합니다 (2026-09-02 재감사 잔여 종결 T04).
+- `pkg/irisdurable/pgstore`가 twentyq 이전에 필요한 표면을 갖춥니다 (2026-09-02 재감사 잔여 종결
+  T05). `irisdurable.ReplyOutcome.Progressed`가 "이번 시도가 전달을 전진시켰다"를 나르고 전진한
+  시도는 재시도 예산을 쓰지 않습니다. 없으면 한 응답을 여러 조각으로 나눠 보내는 호출자에서
+  조각 수가 (상한 / 조각당 왕복)을 넘는 순간 상한이 먼저 소진돼 응답의 꼬리가 유실됩니다.
+  `Stage`는 같은 `(message, phase)`에 더 높은 ordinal이 있으면 새 행을 만들지 않고
+  `irisdurable.ReplyOrdinalSuperseded`를 돌려주며, `StageRow`가 stage 직후 저장본을 추가 왕복 없이
+  함께 돌려줍니다. inbox `Complete`는 성공이 아닌 완료의 사유를 받고 claim token에 더해
+  message_id와 살아 있는 lease를 대조합니다. 처리를 시작하지 못하고 소유권만 반납하는 `Defer`,
+  적재 관측 `RuntimeSnapshot`·`InboxReadySnapshot`·`CountRepliesByStatus`·`ReplyReadySnapshot`,
+  `Options.InboxManualReviewRetention`으로 나뉜 두 갈래 보존을 추가했습니다.
+
+### 변경
+
+- `pgstore.Store.Complete`가 완료 사유 인자를 받습니다. 사유가 없는 호출은 빈 문자열을 넘깁니다.
+  `PruneInbox`는 `Options.InboxManualReviewRetention`이 0이면 종전대로 `manual_review` 행을
+  남깁니다. 참조 스키마의 `chk_iris_webhook_inbox_terminal_reason`이 `completed` 행의 사유를
+  허용하고, 두 갈래 prune을 위해 `idx_iris_webhook_inbox_prune_manual_review`가 늘었습니다.
 
 ## v2.3.0 - 2026-09-02
 
