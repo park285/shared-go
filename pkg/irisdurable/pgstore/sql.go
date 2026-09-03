@@ -29,6 +29,7 @@ var (
 	queryInsertNonce = mustQuery("queries/insert_nonce.sql")
 	queryPruneNonce  = mustQuery("queries/prune_nonce.sql")
 
+	queryLockReplySequence          = mustQuery("queries/lock_reply_sequence.sql")
 	queryStageReply                 = mustQuery("queries/stage_reply.sql")
 	queryMarkReplyPayloadDivergence = mustQuery("queries/mark_reply_payload_divergence.sql")
 	queryBeginReplyAttempt          = mustQuery("queries/begin_reply_attempt.sql")

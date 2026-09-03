@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/park285/shared-go/v2/pkg/db/pgxdb"
 	"github.com/park285/shared-go/v2/pkg/irisdurable"
 )
 
@@ -17,6 +18,21 @@ type Querier interface {
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+// 인터페이스 txQuerier는 이미 트랜잭션 안에 있는 Querier다. 이 계약은 pgx.Tx가 만족한다.
+type txQuerier interface {
+	Querier
+
+	Commit(ctx context.Context) error
+	Rollback(ctx context.Context) error
+}
+
+// 인터페이스 beginner는 자기 트랜잭션을 열 수 있는 Querier다. 이 계약은 pgxpool.Pool이 만족한다.
+type beginner interface {
+	Querier
+
+	Begin(ctx context.Context) (pgx.Tx, error)
 }
 
 const (
@@ -151,6 +167,34 @@ func New(db Querier, opts Options) (*Store, error) {
 // Options는 기본값이 채워진 실제 정책이다.
 func (s *Store) Options() Options {
 	return s.opts
+}
+
+// inTransaction은 여러 문이 한 트랜잭션에서 돌아야 하는 연산을 실행한다. 이미 트랜잭션 안이면
+// 그 트랜잭션을 그대로 쓰고(호출자가 commit 시점을 소유한다), pool이면 자기 트랜잭션을 연다.
+func (s *Store) inTransaction(ctx context.Context, action string, run func(Querier) error) (resultErr error) {
+	switch db := s.db.(type) {
+	case txQuerier:
+		return run(db)
+	case beginner:
+		tx, err := db.Begin(ctx)
+		if err != nil {
+			return fmt.Errorf("pgstore: begin %s: %w", action, err)
+		}
+
+		defer pgxdb.RollbackDeferred(ctx, tx, &resultErr)
+
+		if err := run(tx); err != nil {
+			return err
+		}
+
+		if err := tx.Commit(ctx); err != nil {
+			return fmt.Errorf("pgstore: commit %s: %w", action, err)
+		}
+
+		return nil
+	default:
+		return fmt.Errorf("pgstore: %s needs a querier that is a transaction or can begin one", action)
+	}
 }
 
 // backoffSeconds는 attempt번째 재시도의 대기 시간을 초 단위로 돌려준다.
