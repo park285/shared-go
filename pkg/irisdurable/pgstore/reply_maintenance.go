@@ -57,18 +57,63 @@ func (s *Store) Redrive(ctx context.Context, limit int) ([]RedriveCandidate, err
 	return candidates, nil
 }
 
-// Retire는 더 보낼 수 없는 행을 dead로 보내고 payload를 지운 뒤 그 수를 반환한다.
-func (s *Store) Retire(ctx context.Context, limit int) (int64, error) {
+// RetiredReply는 Retire가 종단으로 보낸 행이다. Status는 종단으로 보내기 직전의 상태이고
+// Payload는 지우기 직전의 저장본이다. 전송을 시작하지 못한 행에서 대체본을 파생하는 호출자가
+// 이 둘을 함께 봐야 이미 전달됐을 수 있는 행까지 다시 보내지 않는다.
+type RetiredReply struct {
+	irisdurable.ReplyIdentity
+
+	Status          irisdurable.ReplyStatus
+	RoomID          string
+	ClientRequestID string
+	Payload         []byte
+	Attempts        int
+}
+
+// Retire는 더 보낼 수 없는 행을 dead로 보내고 payload를 지운 뒤 지운 행을 돌려준다.
+// 대체본 stage처럼 정리와 함께 원자적이어야 하는 후속 작업이 있으면 호출자가 트랜잭션 안의
+// Querier를 넘겨 같은 트랜잭션에서 이어가면 된다.
+func (s *Store) Retire(ctx context.Context, limit int) ([]RetiredReply, error) {
 	if limit <= 0 {
-		return 0, errors.New("pgstore: retire limit must be positive")
+		return nil, errors.New("pgstore: retire limit must be positive")
 	}
 
-	tag, err := s.db.Exec(ctx, queryRetireExhaustedReplies, s.opts.Scope, s.opts.MaxAttempts, s.opts.AutomaticReplayHorizon.Seconds(), limit)
+	rows, err := s.db.Query(ctx, queryRetireExhaustedReplies, s.opts.Scope, s.opts.MaxAttempts, s.opts.AutomaticReplayHorizon.Seconds(), limit)
 	if err != nil {
-		return 0, fmt.Errorf("pgstore: retire exhausted replies: %w", err)
+		return nil, fmt.Errorf("pgstore: retire exhausted replies: %w", err)
+	}
+	defer rows.Close()
+
+	retired := make([]RetiredReply, 0, limit)
+
+	for rows.Next() {
+		var (
+			row     RetiredReply
+			status  string
+			payload *string
+		)
+
+		if err := rows.Scan(
+			&row.MessageID, &row.Phase, &row.Ordinal, &status,
+			&row.RoomID, &row.ClientRequestID, &payload, &row.Attempts,
+		); err != nil {
+			return nil, fmt.Errorf("pgstore: scan retired reply: %w", err)
+		}
+
+		row.Status = irisdurable.ReplyStatus(status)
+
+		if payload != nil {
+			row.Payload = []byte(*payload)
+		}
+
+		retired = append(retired, row)
 	}
 
-	return tag.RowsAffected(), nil
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("pgstore: read retired replies: %w", err)
+	}
+
+	return retired, nil
 }
 
 // CountRepliesByStatus는 scope의 outbox 행을 상태별로 센다. 어느 상태에도 행이 없으면 그 키는

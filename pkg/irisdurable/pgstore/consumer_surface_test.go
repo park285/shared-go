@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -554,4 +555,132 @@ func stageAsync(store *pgstore.Store, record irisdurable.ReplyRecord) <-chan sta
 	}()
 
 	return done
+}
+
+// TestRetireReturnsTheRowsItClosed는 Retire가 지우기 직전의 상태와 payload를 함께 돌려주는지
+// 확인한다. 전송을 시작하지 못한 행에서 text 대체본을 파생하는 호출자는 이 둘이 없으면 이미
+// 전달됐을 수 있는 행까지 다시 보내거나, payload가 지워진 뒤라 아무것도 파생하지 못한다.
+func TestRetireReturnsTheRowsItClosed(t *testing.T) {
+	pool := newMigratedPool(t)
+	store := newScopedStore(t, pool)
+	fixture := &replyFixture{Store: store}
+	ctx := t.Context()
+
+	record := fixture.NewRecord(t, []byte(`{"type":"image","fallbackText":"본문"}`))
+	if _, err := store.Stage(ctx, record); err != nil {
+		t.Fatalf("stage: %v", err)
+	}
+
+	attempt, err := store.BeginAttempt(ctx, record.ReplyIdentity)
+	if err != nil {
+		t.Fatalf("begin attempt: %v", err)
+	}
+
+	if settleErr := store.Settle(ctx, attempt, irisdurable.ReplyOutcome{
+		Status: irisdurable.ReplyStatusRetryablePreDispatch,
+	}); settleErr != nil {
+		t.Fatalf("settle: %v", settleErr)
+	}
+
+	exhausted := newScopedStoreWithOptions(t, pool, pgstore.Options{MaxAttempts: 1, Scope: store.Options().Scope})
+
+	retired, err := exhausted.Retire(ctx, 10)
+	if err != nil {
+		t.Fatalf("retire: %v", err)
+	}
+
+	if len(retired) != 1 {
+		t.Fatalf("retired %d rows; want the exhausted row", len(retired))
+	}
+
+	closed := retired[0]
+	if closed.ReplyIdentity != record.ReplyIdentity {
+		t.Fatalf("retired identity = %+v; want %+v", closed.ReplyIdentity, record.ReplyIdentity)
+	}
+
+	if closed.Status != irisdurable.ReplyStatusRetryablePreDispatch {
+		t.Fatalf("retired status = %q; want the status before retirement", closed.Status)
+	}
+
+	if closed.RoomID != record.RoomID || closed.ClientRequestID != record.ClientRequestID {
+		t.Fatalf("retired row = (%q, %q); want the stored room and client request id", closed.RoomID, closed.ClientRequestID)
+	}
+
+	requireSameJSON(t, closed.Payload, record.Payload, "retired payload")
+
+	state, err := store.Inspect(ctx, record.ReplyIdentity)
+	if err != nil {
+		t.Fatalf("inspect: %v", err)
+	}
+
+	if state.Status != irisdurable.ReplyStatusDead || state.PayloadPresent {
+		t.Fatalf("stored row = (%q, payload present %t); want a scrubbed dead row", state.Status, state.PayloadPresent)
+	}
+}
+
+// TestClaimPlanUsesThePartialIndexes는 claim과 runtime snapshot이 참조 스키마의 부분 인덱스를
+// 실제로 타는지 확인한다. 인덱스를 놓치면 inbox가 커질수록 claim이 순차 스캔으로 내려앉는다.
+func TestClaimPlanUsesThePartialIndexes(t *testing.T) {
+	pool := newMigratedPool(t)
+	store := newScopedStore(t, pool)
+	ctx := t.Context()
+
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatalf("acquire plan connection: %v", err)
+	}
+	defer conn.Release()
+
+	// 빈 테이블에서는 순차 스캔이 언제나 더 싸므로, 인덱스를 쓸 수 있는지 자체를 본다.
+	if _, err := conn.Exec(ctx, `SET enable_seqscan=off`); err != nil {
+		t.Fatalf("disable sequential scans: %v", err)
+	}
+
+	scope := store.Options().Scope
+
+	claimPlan := explainQuery(ctx, t, conn, "claim", pgstore.ClaimInboxQueryForTest, scope, "plan-token", float64(60))
+
+	for _, index := range []string{"idx_iris_webhook_inbox_claim", "idx_iris_webhook_inbox_head"} {
+		if !strings.Contains(claimPlan, index) {
+			t.Fatalf("claim plan does not use %s:\n%s", index, claimPlan)
+		}
+	}
+
+	runtimePlan := explainQuery(ctx, t, conn, "runtime snapshot", pgstore.InboxRuntimeSnapshotQueryForTest, scope)
+	if !strings.Contains(runtimePlan, "idx_iris_webhook_inbox_prune_manual_review") {
+		t.Fatalf("runtime snapshot plan does not use the manual-review index:\n%s", runtimePlan)
+	}
+
+	// 활성 행 부분 인덱스는 claim과 head 둘 다이고, 어느 쪽을 고르는지는 planner의 몫이다.
+	if !strings.Contains(runtimePlan, "idx_iris_webhook_inbox_claim") && !strings.Contains(runtimePlan, "idx_iris_webhook_inbox_head") {
+		t.Fatalf("runtime snapshot plan does not use an active-row partial index:\n%s", runtimePlan)
+	}
+}
+
+func explainQuery(ctx context.Context, t *testing.T, conn *pgxpool.Conn, label, query string, args ...any) string {
+	t.Helper()
+
+	rows, err := conn.Query(ctx, "EXPLAIN (COSTS OFF) "+query, args...)
+	if err != nil {
+		t.Fatalf("EXPLAIN %s: %v", label, err)
+	}
+	defer rows.Close()
+
+	var lines []string
+
+	for rows.Next() {
+		var line string
+
+		if err := rows.Scan(&line); err != nil {
+			t.Fatalf("scan %s plan row: %v", label, err)
+		}
+
+		lines = append(lines, line)
+	}
+
+	if err := rows.Err(); err != nil {
+		t.Fatalf("read %s plan: %v", label, err)
+	}
+
+	return strings.Join(lines, "\n")
 }
