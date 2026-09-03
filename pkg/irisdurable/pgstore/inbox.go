@@ -27,6 +27,10 @@ type InboxClaim struct {
 }
 
 // Admit은 HTTP 200 전에 메시지를 inbox에 commit한다.
+//
+// 같은 ordering key의 삽입은 advisory transaction lock으로 직렬화한다. Querier가 pool이면
+// 이 문의 암묵 트랜잭션이 끝날 때 lock이 풀리고, 호출자가 자기 트랜잭션을 넘겼으면 그
+// 트랜잭션이 끝날 때까지 같은 key의 다른 Admit이 막힌다.
 func (s *Store) Admit(ctx context.Context, input irisdurable.AdmissionInput) (workercontract.AdmissionResult, error) {
 	if input.MessageID == "" || input.OrderingKey == "" || len(input.Payload) == 0 {
 		return workercontract.AdmissionRejected, errors.New("pgstore: admission input requires messageID, orderingKey and payload")

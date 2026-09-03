@@ -93,6 +93,19 @@ func (s *Store) BeginAttempt(ctx context.Context, identity irisdurable.ReplyIden
 	return irisdurable.ReplyAttempt{}, fmt.Errorf("pgstore: begin reply attempt %s/%s/%d: %w", identity.MessageID, identity.Phase, identity.Ordinal, irisdurable.ErrReplyNotClaimable)
 }
 
+// RenewReply는 시도 중인 행의 lease를 Options.Lease만큼 연장한다. Iris 호출이 lease보다 오래
+// 걸릴 수 있는 호출자가 heartbeat로 소유권을 유지하는 경로이고, RenewInbox와 대칭이다. 이미
+// lease를 잃었거나 다른 시도가 행을 가져갔으면 ErrClaimLost를 반환한다.
+func (s *Store) RenewReply(ctx context.Context, attempt irisdurable.ReplyAttempt) error {
+	if attempt.ClaimToken == "" {
+		return errors.New("pgstore: renew requires a claim token")
+	}
+
+	return s.execFenced(ctx, "renew reply lease", queryRenewReplyLease,
+		s.opts.Scope, attempt.MessageID, attempt.Phase, attempt.Ordinal, attempt.ClaimToken, s.opts.Lease.Seconds(),
+	)
+}
+
 // Settle이 받아들이는 결과 상태다. 시도 결과가 아닌 pending·submitting과, 이유가 필요해
 // ManualReviewReply가 따로 기록하는 manual_review는 제외한다.
 var settleableStatuses = map[irisdurable.ReplyStatus]bool{
