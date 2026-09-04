@@ -3,6 +3,24 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## 미출시
+
+## v2.4.1 - 2026-09-04
+
+### 변경
+
+- Go module toolchain을 `1.27.1`로 올리고 OpenTelemetry `1.46.0`, OpenAI Go
+  `3.56.0`, gRPC `1.83.2`와 연관 보안·전이 의존성을 갱신합니다.
+- in-tree 소비자가 없는 `pkg/db/sqldb`를 제거합니다. 스택 소비자는 이미
+  `pkg/db/pgxdb` 또는 각 저장소의 database owner를 사용하며, 세 application을 같은 release
+  wave에서 검증·고정합니다.
+- `pkg/irisdurable/pgstore`의 consumer surface 테스트를 Go 1.27
+  `encoding/json/v2` 계약에 맞춥니다.
+
+### CI
+
+- Hololive workflow canonical snapshot을 현재 release cohort와 일치시킵니다.
+
 ## v2.4.0 - 2026-09-03
 
 ### 추가
