@@ -52,5 +52,5 @@
 // 레이스 등의 재시도 정책은 호출자가 소유한다. 이 패키지가 소유하는 값은
 // ping 타임아웃(Options.Ping.PingTimeout, 미설정 시 5초)뿐이다.
 //
-// shared-go에서 pgx에 의존하는 유일한 패키지다. pgx 무의존 database/sql 풀 튜닝은 pkg/db/sqldb.
+// shared-go에서 pgx에 의존하는 유일한 패키지다.
 package pgxdb
