@@ -2,6 +2,8 @@ module github.com/park285/shared-go/v2
 
 go 1.27.1
 
+retract v2.4.1 // exported package removal was incorrectly published as a patch; use v2.5.0
+
 require (
 	github.com/gin-gonic/gin v1.12.0
 	github.com/jackc/pgx/v5 v5.10.0

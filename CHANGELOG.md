@@ -5,6 +5,16 @@
 
 ## 미출시
 
+## v2.5.0 - 2026-09-04
+
+### 변경
+
+- 스택 내부 소비자가 없는 `pkg/db/sqldb` 제거를 호환성 정책에 맞는 minor release로 다시
+  발행합니다. 같은 제거를 patch release로 잘못 분류한 `v2.4.1`은 Go module retract로
+  표시하며, 기존 tag와 GitHub Release는 불변 이력으로 보존합니다.
+- `v2.4.1`에 포함된 Go 1.27.1 toolchain, OpenTelemetry·OpenAI·gRPC 갱신과
+  `pkg/irisdurable/pgstore` consumer surface 정정을 그대로 포함합니다.
+
 ## v2.4.1 - 2026-09-04
 
 ### 변경
