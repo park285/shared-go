@@ -54,7 +54,8 @@ type ManagedConfig struct {
 	// FinalizeConcurrency는 동시에 실행할 수 있는 callback 수다.
 	FinalizeConcurrency int
 	// FinalizeQueueSize는 accepted job의 pending reservation, queued callback,
-	// in-flight callback을 합한 총 reservation capacity다. 0 이하면 Workers+QueueSize를 사용한다.
+	// in-flight callback을 합한 총 reservation capacity다. FinalizeConcurrency 이상
+	// 1_048_576 이하의 값을 명시해야 하며, 0 이하 값은 자동 보정하지 않는다.
 	FinalizeQueueSize int
 	Logger            *slog.Logger
 }
