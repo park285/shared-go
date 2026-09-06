@@ -10,9 +10,11 @@ WHERE outbox.scope = $1
   AND outbox.phase = $3
   AND outbox.ordinal = $4
   AND outbox.status NOT IN ('accepted', 'dead', 'permanent_conflict', 'manual_review')
+  AND outbox.attempts < $7
   AND outbox.available_at <= now()
   AND (outbox.claim_token IS NULL OR outbox.lease_until IS NULL OR outbox.lease_until <= now())
   AND outbox.expires_at > now()
+  AND COALESCE(outbox.first_attempt_at, outbox.created_at) > now() - make_interval(secs => $8)
   AND NOT EXISTS (
         SELECT 1
         FROM iris_reply_outbox AS predecessor

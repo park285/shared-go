@@ -5,6 +5,14 @@
 
 ## 미출시
 
+## v2.5.1 - 2026-09-06
+
+- **수정**: `pgstore.Store.BeginAttempt`가 claim과 같은 SQL에서 `MaxAttempts`와
+  `AutomaticReplayHorizon`을 검사합니다. `Redrive` 뒤 시간이 경과하거나 직접 claim한
+  경우에도 예산을 넘겨 발송하지 않으며, 거절한 행의 원래 상태와 payload를 보존합니다.
+- **문서**: `FinalizeQueueSize`가 `FinalizeConcurrency` 이상인 명시적 reservation
+  capacity임을 바로잡습니다. 0 이하 값을 자동 보정하지 않는 기존 동작은 유지합니다.
+
 ## v2.5.0 - 2026-09-04
 
 ### 변경

@@ -120,7 +120,8 @@ func (s *Store) stageRow(ctx context.Context, db Querier, record irisdurable.Rep
 	return staged, nil
 }
 
-// BeginAttempt는 재발송 가능한 행의 소유권을 잡는다. 종단이거나 lease가 살아 있으면
+// BeginAttempt는 재발송 가능한 행의 소유권을 잡고 시도 수를 올린다. 종단, 활성 lease,
+// MaxAttempts 또는 AutomaticReplayHorizon 경계로 발송이 금지되면
 // irisdurable.ErrReplyNotClaimable을, 행이 없으면 ErrNotFound를 반환한다.
 func (s *Store) BeginAttempt(ctx context.Context, identity irisdurable.ReplyIdentity) (irisdurable.ReplyAttempt, error) {
 	token, err := newClaimToken()
@@ -132,6 +133,7 @@ func (s *Store) BeginAttempt(ctx context.Context, identity irisdurable.ReplyIden
 
 	err = s.db.QueryRow(ctx, queryBeginReplyAttempt,
 		s.opts.Scope, identity.MessageID, identity.Phase, identity.Ordinal, token, s.opts.Lease.Seconds(),
+		s.opts.MaxAttempts, s.opts.AutomaticReplayHorizon.Seconds(),
 	).Scan(&attempt.Attempt, &attempt.ClientRequestID)
 
 	switch {
