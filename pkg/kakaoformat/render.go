@@ -6,7 +6,7 @@ import "strings"
 
 // Render는 Markdown 강조·제목·목록·링크·표를 유니코드 평문으로 바꿉니다.
 func Render(input string) string {
-	if strings.TrimSpace(input) == "" {
+	if strings.TrimSpace(input) == "" || strings.ContainsRune(input, 0) {
 		return input
 	}
 
@@ -18,18 +18,17 @@ func render(input string) string {
 	inline := newStore("INLINE")
 	urls := newStore("URL")
 
-	text := protectWrappedCode(input, code)
+	text := protectCodeRanges(input, code)
 
-	text = protectCodeBlocks(text, code)
+	text = TransformEscapes(text, inline.Put)
 	text = renderLinks(text, urls)
-	text = protectInlineCode(text, inline)
 	text = renderLines(text)
 	text = renderTables(text)
 	text = renderEmphasis(text)
 	text = renderStrike(text)
-	text = inline.Restore(text)
 	text = cleanupSpacing(text)
 	text = urls.Restore(text)
+	text = inline.Restore(text)
 
 	return code.Restore(text)
 }

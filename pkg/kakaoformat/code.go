@@ -7,50 +7,70 @@ import (
 )
 
 var (
-	reWrappedCode = regexp.MustCompile("(?ms)^([ \t]*)`{4,}\n(.*?)\n`{4,}[ \t]*")
-	reCodeBlock   = regexp.MustCompile("(?ms)^([ \t]*)```([^\n`]*)\n(.*?)\n```[ \t]*")
-	reInlineCode  = regexp.MustCompile("`([^`\n]+)`")
+	reCodeBlock  = regexp.MustCompile("(?ms)^([ \t]*)```([^\n`]*)\n(.*?)\n```[ \t]*")
+	reInlineCode = regexp.MustCompile("`([^`\n]+)`")
 )
 
-func protectWrappedCode(input string, dst *store) string {
-	return reWrappedCode.ReplaceAllStringFunc(input, func(match string) string {
-		parts := reWrappedCode.FindStringSubmatch(match)
-		indent := parts[1]
-		body := strings.Trim(parts[2], "\n")
-		lang := "Code"
-		display := body
+func protectCodeRanges(input string, dst *store) string {
+	var output strings.Builder
 
+	last := 0
+	destinations := literalDestinations(input)
+	destination := 0
+
+	for _, code := range CodeRanges(input) {
+		for destination < len(destinations) && destinations[destination][1] <= code.Start {
+			destination++
+		}
+
+		if !code.Block && destination < len(destinations) && destinations[destination][0] < code.Start && code.End <= destinations[destination][1] {
+			continue
+		}
+
+		output.WriteString(input[last:code.Start])
+
+		value := formatCodeRange(input, code)
+
+		output.WriteString(dst.Put(strings.TrimSuffix(value, "\n")))
+
+		if strings.HasSuffix(input[code.Start:code.End], "\n") {
+			output.WriteByte('\n')
+		}
+
+		last = code.End
+	}
+
+	output.WriteString(input[last:])
+
+	return output.String()
+}
+
+func formatCodeRange(input string, code CodeRange) string {
+	if !code.Block {
+		return "⦗ " + input[code.BodyStart:code.BodyEnd] + " ⦘"
+	}
+
+	if !code.Fenced || code.Container {
+		return input[code.Start:code.End]
+	}
+
+	lang := code.Language
+	if lang == "" {
+		lang = "Code"
+	}
+
+	body := strings.TrimRight(input[code.BodyStart:code.BodyEnd], "\r\n")
+	if code.Width >= 4 {
 		if inner := reCodeBlock.FindStringSubmatch(body); len(inner) > 0 {
 			if name := strings.TrimSpace(inner[2]); name != "" {
 				lang = name
 			}
 
-			display = "```\n" + strings.TrimRight(inner[3], "\n") + "\n```"
+			body = "```\n" + strings.TrimRight(inner[3], "\n") + "\n```"
 		}
+	}
 
-		return dst.Put(codeBox(indent, lang, display))
-	})
-}
-
-func protectCodeBlocks(input string, dst *store) string {
-	return reCodeBlock.ReplaceAllStringFunc(input, func(match string) string {
-		parts := reCodeBlock.FindStringSubmatch(match)
-		lang := strings.TrimSpace(parts[2])
-
-		if lang == "" {
-			lang = "Code"
-		}
-
-		return dst.Put(codeBox(parts[1], lang, strings.TrimRight(parts[3], "\n")))
-	})
-}
-
-func protectInlineCode(input string, dst *store) string {
-	return reInlineCode.ReplaceAllStringFunc(input, func(match string) string {
-		parts := reInlineCode.FindStringSubmatch(match)
-
-		return dst.Put("⦗ " + parts[1] + " ⦘")
-	})
+	return codeBox(code.Indent, lang, body)
 }
 
 func codeBox(indent, lang, body string) string {
