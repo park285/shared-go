@@ -38,3 +38,32 @@ func (s *store) Restore(text string) string {
 func (s *store) token(i int) string {
 	return "\x00" + s.kind + strconv.Itoa(i) + "\x00"
 }
+
+// 강조·취소선은 보호 표식 내부의 문자를 변환하지 않는다.
+func mapOutsidePlaceholders(text string, transform func(string) string) string {
+	var output strings.Builder
+
+	for {
+		start := strings.IndexByte(text, '\x00')
+		if start < 0 {
+			output.WriteString(transform(text))
+
+			break
+		}
+
+		end := strings.IndexByte(text[start+1:], '\x00')
+		if end < 0 {
+			output.WriteString(transform(text))
+
+			break
+		}
+
+		end += start + 2
+		output.WriteString(transform(text[:start]))
+		output.WriteString(text[start:end])
+
+		text = text[end:]
+	}
+
+	return output.String()
+}

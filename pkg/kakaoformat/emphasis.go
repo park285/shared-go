@@ -77,6 +77,12 @@ func styleBoldItalic(text string) string {
 }
 
 func mapASCII(text string, upper, lower, digit rune) string {
+	return mapOutsidePlaceholders(text, func(part string) string {
+		return mapASCIIText(part, upper, lower, digit)
+	})
+}
+
+func mapASCIIText(text string, upper, lower, digit rune) string {
 	var b strings.Builder
 
 	b.Grow(len(text) * 4)
@@ -157,22 +163,22 @@ func isOpener(input string, pos, width int) bool {
 	prev := prevRune(input, pos)
 	next := nextRune(input, pos+width)
 
-	if next == 0 || unicode.IsSpace(next) {
+	if pos+width >= len(input) || unicode.IsSpace(next) {
 		return false
 	}
 
-	return prev == 0 || unicode.IsSpace(prev) || unicode.IsPunct(prev) || unicode.IsSymbol(prev)
+	return pos == 0 || unicode.IsSpace(prev) || unicode.IsPunct(prev) || unicode.IsSymbol(prev)
 }
 
 func isCloser(input string, pos, width int) bool {
 	prev := prevRune(input, pos)
 	next := nextRune(input, pos+width)
 
-	if prev == 0 || unicode.IsSpace(prev) {
+	if pos == 0 || unicode.IsSpace(prev) {
 		return false
 	}
 
-	return next == 0 || unicode.IsSpace(next) || unicode.IsPunct(next) || unicode.IsSymbol(next)
+	return pos+width >= len(input) || unicode.IsSpace(next) || unicode.IsPunct(next) || unicode.IsSymbol(next)
 }
 
 func prevRune(text string, byteIndex int) rune {
@@ -207,16 +213,19 @@ func nextRune(text string, byteIndex int) rune {
 func renderStrike(input string) string {
 	return reStrike.ReplaceAllStringFunc(input, func(match string) string {
 		parts := reStrike.FindStringSubmatch(match)
-
-		var b strings.Builder
-
-		b.Grow(len(parts[1]) * 3)
-
-		for _, r := range parts[1] {
-			b.WriteRune(r)
-			b.WriteRune('\u0336')
-		}
-
-		return b.String()
+		return mapOutsidePlaceholders(parts[1], strikeText)
 	})
+}
+
+func strikeText(text string) string {
+	var b strings.Builder
+
+	b.Grow(len(text) * 3)
+
+	for _, r := range text {
+		b.WriteRune(r)
+		b.WriteRune('\u0336')
+	}
+
+	return b.String()
 }

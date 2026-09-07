@@ -16,18 +16,20 @@ func Render(input string) string {
 func render(input string) string {
 	code := newStore("CODE")
 	inline := newStore("INLINE")
+	urls := newStore("URL")
 
 	text := protectWrappedCode(input, code)
 
 	text = protectCodeBlocks(text, code)
+	text = renderLinks(text, urls)
 	text = protectInlineCode(text, inline)
 	text = renderLines(text)
 	text = renderTables(text)
-	text = renderLinks(text)
 	text = renderEmphasis(text)
 	text = renderStrike(text)
 	text = inline.Restore(text)
 	text = cleanupSpacing(text)
+	text = urls.Restore(text)
 
 	return code.Restore(text)
 }
