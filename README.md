@@ -12,7 +12,7 @@ Iris Stack의 Go 프로젝트들(`hololive-bot`, `chat-bot-go-kakao`, `twentyq-b
 사용합니다. 중간 delta 대신 정상 종료된 `response.completed`의 전체 `output_text`를
 반환하므로 호출자는 기존 출력 검증과 JSON 디코딩을 그대로 적용할 수 있습니다.
 미완료·실패·취소·종료 후 오류에서는 부분 출력을 반환하지 않습니다.
-이 변경은 미출시이며, 소비자는 발행 후 해당 버전으로 의존성을 갱신해야 합니다.
+이 변경은 v2.5.3에 포함되며, 소비자는 해당 버전으로 의존성을 갱신해야 합니다.
 
 ```bash
 go get github.com/park285/shared-go/v2@latest
