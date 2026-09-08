@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/park285/shared-go/v2/pkg/workerpool"
@@ -41,47 +42,49 @@ func newManagedPoolForTest(t *testing.T, config workerpool.ManagedConfig) *worke
 }
 
 func TestManagedPoolCreatesJobBudgetAtDequeue(t *testing.T) {
-	pool := newManagedPoolForTest(t, workerpool.ManagedConfig{Workers: 1, QueueSize: 2})
-	closeManagedPoolOnCleanup(t, pool)
+	synctest.Test(t, func(t *testing.T) {
+		pool := newManagedPoolForTest(t, workerpool.ManagedConfig{Workers: 1, QueueSize: 2})
+		closeManagedPoolOnCleanup(t, pool)
 
-	release := startBlockerJob(t, pool)
+		release := startBlockerJob(t, pool)
 
-	receiveCtx, cancelReceive := context.WithTimeout(t.Context(), 20*time.Millisecond)
-	defer cancelReceive()
+		receiveCtx, cancelReceive := context.WithTimeout(t.Context(), 20*time.Millisecond)
+		defer cancelReceive()
 
-	runResult := make(chan error, 1)
-	finalized := make(chan workerpool.JobOutcome, 1)
+		runResult := make(chan error, 1)
+		finalized := make(chan workerpool.JobOutcome, 1)
 
-	var finalizeCalls atomic.Int32
+		var finalizeCalls atomic.Int32
 
-	if !trySubmit(pool, workerpool.JobSpec{
-		Context: receiveCtx,
-		Kind:    "ask",
-		Timeout: 200 * time.Millisecond,
-		Run: func(jobCtx context.Context) {
-			runResult <- checkDequeuedJobBudget(jobCtx)
-		},
-		Finalize: func(_ context.Context, outcome workerpool.JobOutcome) {
-			finalizeCalls.Add(1)
+		if !trySubmit(pool, workerpool.JobSpec{
+			Context: receiveCtx,
+			Kind:    "ask",
+			Timeout: 200 * time.Millisecond,
+			Run: func(jobCtx context.Context) {
+				runResult <- checkDequeuedJobBudget(jobCtx)
+			},
+			Finalize: func(_ context.Context, outcome workerpool.JobOutcome) {
+				finalizeCalls.Add(1)
 
-			finalized <- outcome
-		},
-	}) {
-		t.Fatal("TrySubmit(ask) = false")
-	}
+				finalized <- outcome
+			},
+		}) {
+			t.Fatal("TrySubmit(ask) = false")
+		}
 
-	awaitClosed(t, receiveCtx.Done(), "receive context expiry")
-	close(release)
+		awaitClosed(t, receiveCtx.Done(), "receive context expiry")
+		close(release)
 
-	if err := awaitValue(t, runResult, "ask run"); err != nil {
-		t.Fatal(err)
-	}
+		if err := awaitValue(t, runResult, "ask run"); err != nil {
+			t.Fatal(err)
+		}
 
-	if outcome := awaitValue(t, finalized, "ask finalizer"); outcome != workerpool.JobOutcomeSuccess {
-		t.Fatalf("outcome = %v, want success", outcome)
-	}
+		if outcome := awaitValue(t, finalized, "ask finalizer"); outcome != workerpool.JobOutcomeSuccess {
+			t.Fatalf("outcome = %v, want success", outcome)
+		}
 
-	assertCallCount(t, &finalizeCalls, "Finalize calls", 1)
+		assertCallCount(t, &finalizeCalls, "Finalize calls", 1)
+	})
 }
 
 func TestManagedPoolFinalizesQueueRejectionExactlyOnce(t *testing.T) {
@@ -173,126 +176,138 @@ func TestManagedPoolRunNilRejectionClaimsFinalizer(t *testing.T) {
 }
 
 func TestManagedPoolReaperFinalizesStaleJobWhileWorkersAreBusy(t *testing.T) {
-	pool := newManagedPoolForTest(t, workerpool.ManagedConfig{Workers: 1, QueueSize: 2})
-	started := make(chan struct{})
-	release := make(chan struct{})
+	synctest.Test(t, func(t *testing.T) {
+		pool := newManagedPoolForTest(t, workerpool.ManagedConfig{Workers: 1, QueueSize: 2})
+		started := make(chan struct{})
+		release := make(chan struct{})
 
-	var releaseOnce sync.Once
+		var releaseOnce sync.Once
 
-	releaseBlocker := func() { releaseOnce.Do(func() { close(release) }) }
+		releaseBlocker := func() { releaseOnce.Do(func() { close(release) }) }
 
-	t.Cleanup(func() {
+		t.Cleanup(func() {
+			releaseBlocker()
+
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
+
+			defer cancel()
+
+			if err := pool.CloseContext(ctx); err != nil {
+				t.Errorf("CloseContext() error = %v", err)
+			}
+		})
+
+		if !trySubmit(pool, workerpool.JobSpec{
+			Kind: "blocker",
+			Run: func(context.Context) {
+				close(started)
+				<-release
+			},
+		}) {
+			t.Fatal("TrySubmit(blocker) = false")
+		}
+
+		awaitClosed(t, started, "blocker start")
+
+		finalized := make(chan workerpool.JobOutcome, 1)
+
+		var (
+			runCalls      atomic.Int32
+			finalizeCalls atomic.Int32
+		)
+
+		if !trySubmit(pool, workerpool.JobSpec{
+			Kind:        "stale",
+			MaxQueueAge: 30 * time.Millisecond,
+			Run:         func(context.Context) { runCalls.Add(1) },
+			Finalize: func(_ context.Context, outcome workerpool.JobOutcome) {
+				finalizeCalls.Add(1)
+
+				finalized <- outcome
+			},
+		}) {
+			t.Fatal("TrySubmit(stale) = false")
+		}
+
+		synctest.Sleep(30*time.Millisecond - time.Nanosecond)
+
+		assertCallCount(t, &finalizeCalls, "Finalize calls before queue expiry", 0)
+
+		synctest.Sleep(time.Nanosecond)
+
+		assertCallCount(t, &finalizeCalls, "Finalize calls at queue expiry", 1)
+
+		if outcome := awaitValue(t, finalized, "stale finalizer"); outcome != workerpool.JobOutcomeStale {
+			t.Fatalf("outcome = %v, want stale", outcome)
+		}
+
+		if got := runCalls.Load(); got != 0 {
+			t.Fatalf("Run calls = %d, want 0", got)
+		}
+
+		if got := finalizeCalls.Load(); got != 1 {
+			t.Fatalf("Finalize calls = %d, want 1", got)
+		}
+
 		releaseBlocker()
+	})
+}
 
-		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
+func TestManagedPoolSnapshotReportsQueueInFlightAgeAndOutcomes(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		pool := newManagedPoolForTest(t, workerpool.ManagedConfig{Workers: 1, QueueSize: 1})
+		started := make(chan struct{})
+		release := make(chan struct{})
+
+		if !trySubmit(pool, workerpool.JobSpec{
+			Kind: "running",
+			Run: func(context.Context) {
+				close(started)
+				<-release
+			},
+		}) {
+			t.Fatal("TrySubmit(running) = false")
+		}
+
+		awaitClosed(t, started, "running job start")
+
+		if !trySubmit(pool, workerpool.JobSpec{Kind: "queued", Run: func(context.Context) {}}) {
+			t.Fatal("TrySubmit(queued) = false")
+		}
+
+		if trySubmit(pool, workerpool.JobSpec{Kind: "rejected", Run: func(context.Context) {}}) {
+			t.Fatal("TrySubmit(rejected) = true")
+		}
+
+		synctest.Sleep(time.Millisecond)
+
+		snapshot := pool.Snapshot()
+		if snapshot.QueueDepth != 1 || snapshot.InFlight != 1 {
+			t.Fatalf("snapshot queue/in-flight = %d/%d, want 1/1", snapshot.QueueDepth, snapshot.InFlight)
+		}
+
+		if snapshot.OldestQueueAge != time.Millisecond {
+			t.Fatalf("OldestQueueAge = %v, want 1ms", snapshot.OldestQueueAge)
+		}
+
+		if snapshot.ConfiguredWorkers != 1 || snapshot.RunningWorkers != 1 || snapshot.OldestInFlightAge != time.Millisecond {
+			t.Fatalf("worker snapshot = %+v", snapshot)
+		}
+
+		if snapshot.Outcomes[workerpool.JobOutcomeRejected] != 1 {
+			t.Fatalf("rejected outcomes = %d, want 1", snapshot.Outcomes[workerpool.JobOutcomeRejected])
+		}
+
+		close(release)
+
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 
 		defer cancel()
 
 		if err := pool.CloseContext(ctx); err != nil {
-			t.Errorf("CloseContext() error = %v", err)
+			t.Fatalf("CloseContext() error = %v", err)
 		}
 	})
-
-	if !trySubmit(pool, workerpool.JobSpec{
-		Kind: "blocker",
-		Run: func(context.Context) {
-			close(started)
-			<-release
-		},
-	}) {
-		t.Fatal("TrySubmit(blocker) = false")
-	}
-
-	awaitClosed(t, started, "blocker start")
-
-	finalized := make(chan workerpool.JobOutcome, 1)
-
-	var (
-		runCalls      atomic.Int32
-		finalizeCalls atomic.Int32
-	)
-
-	if !trySubmit(pool, workerpool.JobSpec{
-		Kind:        "stale",
-		MaxQueueAge: 30 * time.Millisecond,
-		Run:         func(context.Context) { runCalls.Add(1) },
-		Finalize: func(_ context.Context, outcome workerpool.JobOutcome) {
-			finalizeCalls.Add(1)
-
-			finalized <- outcome
-		},
-	}) {
-		t.Fatal("TrySubmit(stale) = false")
-	}
-
-	if outcome := awaitValue(t, finalized, "stale finalizer"); outcome != workerpool.JobOutcomeStale {
-		t.Fatalf("outcome = %v, want stale", outcome)
-	}
-
-	if got := runCalls.Load(); got != 0 {
-		t.Fatalf("Run calls = %d, want 0", got)
-	}
-
-	if got := finalizeCalls.Load(); got != 1 {
-		t.Fatalf("Finalize calls = %d, want 1", got)
-	}
-
-	releaseBlocker()
-}
-
-func TestManagedPoolSnapshotReportsQueueInFlightAgeAndOutcomes(t *testing.T) {
-	pool := newManagedPoolForTest(t, workerpool.ManagedConfig{Workers: 1, QueueSize: 1})
-	started := make(chan struct{})
-	release := make(chan struct{})
-
-	if !trySubmit(pool, workerpool.JobSpec{
-		Kind: "running",
-		Run: func(context.Context) {
-			close(started)
-			<-release
-		},
-	}) {
-		t.Fatal("TrySubmit(running) = false")
-	}
-
-	awaitClosed(t, started, "running job start")
-
-	if !trySubmit(pool, workerpool.JobSpec{Kind: "queued", Run: func(context.Context) {}}) {
-		t.Fatal("TrySubmit(queued) = false")
-	}
-
-	if trySubmit(pool, workerpool.JobSpec{Kind: "rejected", Run: func(context.Context) {}}) {
-		t.Fatal("TrySubmit(rejected) = true")
-	}
-
-	time.Sleep(time.Millisecond)
-
-	snapshot := pool.Snapshot()
-	if snapshot.QueueDepth != 1 || snapshot.InFlight != 1 {
-		t.Fatalf("snapshot queue/in-flight = %d/%d, want 1/1", snapshot.QueueDepth, snapshot.InFlight)
-	}
-
-	if snapshot.OldestQueueAge <= 0 {
-		t.Fatalf("OldestQueueAge = %v, want > 0", snapshot.OldestQueueAge)
-	}
-
-	if snapshot.ConfiguredWorkers != 1 || snapshot.RunningWorkers != 1 || snapshot.OldestInFlightAge <= 0 {
-		t.Fatalf("worker snapshot = %+v", snapshot)
-	}
-
-	if snapshot.Outcomes[workerpool.JobOutcomeRejected] != 1 {
-		t.Fatalf("rejected outcomes = %d, want 1", snapshot.Outcomes[workerpool.JobOutcomeRejected])
-	}
-
-	close(release)
-
-	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
-
-	defer cancel()
-
-	if err := pool.CloseContext(ctx); err != nil {
-		t.Fatalf("CloseContext() error = %v", err)
-	}
 }
 
 func TestNewManagedPoolRejectsInvalidConfiguration(t *testing.T) {
@@ -398,40 +413,42 @@ func TestManagedPoolShutdownDropsQueuedAndCancelsInFlight(t *testing.T) {
 }
 
 func TestManagedPoolClassifiesTimeoutCause(t *testing.T) {
-	pool := newManagedPoolForTest(t, workerpool.ManagedConfig{Workers: 1, QueueSize: 1})
-	causeCh := make(chan error, 1)
-	outcomeCh := make(chan workerpool.JobOutcome, 1)
+	synctest.Test(t, func(t *testing.T) {
+		pool := newManagedPoolForTest(t, workerpool.ManagedConfig{Workers: 1, QueueSize: 1})
+		causeCh := make(chan error, 1)
+		outcomeCh := make(chan workerpool.JobOutcome, 1)
 
-	if !trySubmit(pool, workerpool.JobSpec{
-		Kind:    "timeout",
-		Timeout: 20 * time.Millisecond,
-		Run: func(ctx context.Context) {
-			<-ctx.Done()
+		if !trySubmit(pool, workerpool.JobSpec{
+			Kind:    "timeout",
+			Timeout: 20 * time.Millisecond,
+			Run: func(ctx context.Context) {
+				<-ctx.Done()
 
-			causeCh <- context.Cause(ctx)
-		},
-		Finalize: func(_ context.Context, outcome workerpool.JobOutcome) {
-			outcomeCh <- outcome
-		},
-	}) {
-		t.Fatal("TrySubmit(timeout) = false")
-	}
+				causeCh <- context.Cause(ctx)
+			},
+			Finalize: func(_ context.Context, outcome workerpool.JobOutcome) {
+				outcomeCh <- outcome
+			},
+		}) {
+			t.Fatal("TrySubmit(timeout) = false")
+		}
 
-	if cause := awaitValue(t, causeCh, "timeout cause"); !errors.Is(cause, workerpool.ErrJobTimeout) {
-		t.Fatalf("cause = %v, want ErrJobTimeout", cause)
-	}
+		if cause := awaitValue(t, causeCh, "timeout cause"); !errors.Is(cause, workerpool.ErrJobTimeout) {
+			t.Fatalf("cause = %v, want ErrJobTimeout", cause)
+		}
 
-	if outcome := awaitValue(t, outcomeCh, "timeout outcome"); outcome != workerpool.JobOutcomeTimeout {
-		t.Fatalf("outcome = %v, want timeout", outcome)
-	}
+		if outcome := awaitValue(t, outcomeCh, "timeout outcome"); outcome != workerpool.JobOutcomeTimeout {
+			t.Fatalf("outcome = %v, want timeout", outcome)
+		}
 
-	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 
-	defer cancel()
+		defer cancel()
 
-	if err := pool.CloseContext(ctx); err != nil {
-		t.Fatalf("CloseContext() error = %v", err)
-	}
+		if err := pool.CloseContext(ctx); err != nil {
+			t.Fatalf("CloseContext() error = %v", err)
+		}
+	})
 }
 
 func TestManagedPoolStartsConfiguredWorkersForPreloadedQueue(t *testing.T) {
@@ -483,52 +500,54 @@ func TestManagedPoolStartsConfiguredWorkersForPreloadedQueue(t *testing.T) {
 }
 
 func TestManagedPoolWakesConfiguredWorkersAlreadyWaiting(t *testing.T) {
-	previousProcs := runtime.GOMAXPROCS(1)
-	defer runtime.GOMAXPROCS(previousProcs)
+	synctest.Test(t, func(t *testing.T) {
+		previousProcs := runtime.GOMAXPROCS(1)
+		defer runtime.GOMAXPROCS(previousProcs)
 
-	pool := newManagedPoolForTest(t, workerpool.ManagedConfig{Workers: 4, QueueSize: 4})
-	started := make(chan struct{}, 4)
-	release := make(chan struct{})
+		pool := newManagedPoolForTest(t, workerpool.ManagedConfig{Workers: 4, QueueSize: 4})
+		started := make(chan struct{}, 4)
+		release := make(chan struct{})
 
-	var releaseOnce sync.Once
+		var releaseOnce sync.Once
 
-	releaseWorkers := func() { releaseOnce.Do(func() { close(release) }) }
+		releaseWorkers := func() { releaseOnce.Do(func() { close(release) }) }
 
-	t.Cleanup(func() {
+		t.Cleanup(func() {
+			releaseWorkers()
+
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
+
+			defer cancel()
+
+			if err := pool.CloseContext(ctx); err != nil {
+				t.Errorf("CloseContext() error = %v", err)
+			}
+		})
+
+		// 모든 worker가 빈 queue에서 대기하도록 한 뒤 한 scheduler turn에 작업을 넣는다.
+		synctest.Wait()
+
+		for index := range 4 {
+			if !trySubmit(pool, workerpool.JobSpec{
+				Kind: fmt.Sprintf("waiting-%d", index),
+				Run: func(context.Context) {
+					started <- struct{}{}
+
+					<-release
+				},
+			}) {
+				t.Fatalf("TrySubmit(%d) = false", index)
+			}
+		}
+
+		for index := range 4 {
+			select {
+			case <-started:
+			case <-time.After(200 * time.Millisecond):
+				t.Fatalf("started workers = %d, want 4", index)
+			}
+		}
+
 		releaseWorkers()
-
-		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
-
-		defer cancel()
-
-		if err := pool.CloseContext(ctx); err != nil {
-			t.Errorf("CloseContext() error = %v", err)
-		}
 	})
-
-	// 모든 worker가 빈 queue에서 대기하도록 한 뒤 한 scheduler turn에 작업을 넣는다.
-	time.Sleep(20 * time.Millisecond)
-
-	for index := range 4 {
-		if !trySubmit(pool, workerpool.JobSpec{
-			Kind: fmt.Sprintf("waiting-%d", index),
-			Run: func(context.Context) {
-				started <- struct{}{}
-
-				<-release
-			},
-		}) {
-			t.Fatalf("TrySubmit(%d) = false", index)
-		}
-	}
-
-	for index := range 4 {
-		select {
-		case <-started:
-		case <-time.After(200 * time.Millisecond):
-			t.Fatalf("started workers = %d, want 4", index)
-		}
-	}
-
-	releaseWorkers()
 }

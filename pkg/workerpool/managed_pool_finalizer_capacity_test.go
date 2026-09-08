@@ -7,62 +7,65 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/park285/shared-go/v2/pkg/workerpool"
 )
 
 func TestManagedPoolStuckFinalizerPermanentlyBlocksAdmission(t *testing.T) {
-	release, unblock := newReleaseGate(t)
+	synctest.Test(t, func(t *testing.T) {
+		release, unblock := newReleaseGate(t)
 
-	pool := newManagedPoolForTest(t, workerpool.ManagedConfig{
-		Workers:             1,
-		QueueSize:           1,
-		FinalizeConcurrency: 1,
-		FinalizeQueueSize:   1,
-		FinalizeTimeout:     20 * time.Millisecond,
-	})
-
-	submitStuckFinalizerJob(t, pool, release)
-
-	for attempt := range 3 {
-		expectFinalizerCapacityRejection(t, pool, fmt.Sprintf("attempt %d", attempt), workerpool.JobSpec{
-			Run:      func(context.Context) {},
-			Finalize: func(context.Context, workerpool.JobOutcome) {},
+		pool := newManagedPoolForTest(t, workerpool.ManagedConfig{
+			Workers:             1,
+			QueueSize:           1,
+			FinalizeConcurrency: 1,
+			FinalizeQueueSize:   1,
+			FinalizeTimeout:     20 * time.Millisecond,
 		})
 
-		time.Sleep(25 * time.Millisecond)
-	}
+		submitStuckFinalizerJob(t, pool, release)
 
-	blocked := pool.Snapshot()
-	if blocked.Finalizer.OverdueInFlight != 1 || blocked.Finalizer.Reservations != 1 {
-		t.Fatalf("finalizer snapshot = %+v, want the overdue slot still holding its reservation", blocked.Finalizer)
-	}
+		for attempt := range 3 {
+			expectFinalizerCapacityRejection(t, pool, fmt.Sprintf("attempt %d", attempt), workerpool.JobSpec{
+				Run:      func(context.Context) {},
+				Finalize: func(context.Context, workerpool.JobOutcome) {},
+			})
 
-	runCompleted := make(chan struct{})
+			synctest.Sleep(25 * time.Millisecond)
+		}
 
-	if !trySubmit(pool, workerpool.JobSpec{Run: func(context.Context) { close(runCompleted) }}) {
-		t.Fatal("TrySubmit(no finalizer) = false, want admission unaffected without a finalizer")
-	}
+		blocked := pool.Snapshot()
+		if blocked.Finalizer.OverdueInFlight != 1 || blocked.Finalizer.Reservations != 1 {
+			t.Fatalf("finalizer snapshot = %+v, want the overdue slot still holding its reservation", blocked.Finalizer)
+		}
 
-	awaitClosed(t, runCompleted, "run-only job")
+		runCompleted := make(chan struct{})
 
-	unblock()
+		if !trySubmit(pool, workerpool.JobSpec{Run: func(context.Context) { close(runCompleted) }}) {
+			t.Fatal("TrySubmit(no finalizer) = false, want admission unaffected without a finalizer")
+		}
 
-	awaitManagedSnapshot(t, pool, "finalizer capacity returned", func(snapshot workerpool.ManagedSnapshot) bool {
-		return snapshot.Finalizer.OverdueInFlight == 0 &&
-			snapshot.Finalizer.InFlight == 0 &&
-			snapshot.Finalizer.Reservations == 0
+		awaitClosed(t, runCompleted, "run-only job")
+
+		unblock()
+
+		awaitManagedSnapshot(t, pool, "finalizer capacity returned", func(snapshot workerpool.ManagedSnapshot) bool {
+			return snapshot.Finalizer.OverdueInFlight == 0 &&
+				snapshot.Finalizer.InFlight == 0 &&
+				snapshot.Finalizer.Reservations == 0
+		})
+
+		if result := pool.TrySubmitResult(workerpool.JobSpec{
+			Run:      func(context.Context) {},
+			Finalize: func(context.Context, workerpool.JobOutcome) {},
+		}); !result.Accepted || !result.FinalizerClaimed {
+			t.Fatalf("TrySubmitResult(after release) = %+v, want accepted finalizer claim", result)
+		}
+
+		closeManagedPool(t, pool)
 	})
-
-	if result := pool.TrySubmitResult(workerpool.JobSpec{
-		Run:      func(context.Context) {},
-		Finalize: func(context.Context, workerpool.JobOutcome) {},
-	}); !result.Accepted || !result.FinalizerClaimed {
-		t.Fatalf("TrySubmitResult(after release) = %+v, want accepted finalizer claim", result)
-	}
-
-	closeManagedPool(t, pool)
 }
 
 func submitStuckFinalizerJob(t *testing.T, pool *workerpool.ManagedPool, release <-chan struct{}) {
@@ -75,12 +78,20 @@ func submitStuckFinalizerJob(t *testing.T, pool *workerpool.ManagedPool, release
 		t.Fatal("TrySubmit(stuck finalizer) = false")
 	}
 
-	awaitManagedSnapshot(t, pool, "stuck finalizer overdue", func(snapshot workerpool.ManagedSnapshot) bool {
-		return snapshot.Finalizer.TimedOut == 1 &&
-			snapshot.Finalizer.OverdueInFlight == 1 &&
-			snapshot.Finalizer.InFlight == 1 &&
-			snapshot.Finalizer.Reservations == 1
-	})
+	synctest.Wait()
+	synctest.Sleep(20*time.Millisecond - time.Nanosecond)
+
+	before := pool.Snapshot().Finalizer
+	if before.TimedOut != 0 || before.InFlight != 1 || before.Reservations != 1 {
+		t.Fatalf("finalizer before deadline = %+v, want running with reservation", before)
+	}
+
+	synctest.Sleep(time.Nanosecond)
+
+	after := pool.Snapshot().Finalizer
+	if after.TimedOut != 1 || after.OverdueInFlight != 1 || after.InFlight != 1 || after.Reservations != 1 {
+		t.Fatalf("finalizer at deadline = %+v, want overdue with reservation", after)
+	}
 }
 
 func TestManagedPoolReportsClosedFinalizerRejectionSeparately(t *testing.T) {

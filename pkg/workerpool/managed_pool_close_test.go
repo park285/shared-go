@@ -7,6 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/park285/shared-go/v2/pkg/workerpool"
@@ -281,60 +282,62 @@ func TestManagedPoolAcceptedQueuedFinalizerStartsAfterSlotReturns(t *testing.T) 
 }
 
 func TestManagedPoolFinalizerReportsLateCompletionOnce(t *testing.T) {
-	releaseFinalize := make(chan struct{})
-	pool := newManagedPoolForTest(t, workerpool.ManagedConfig{
-		Workers:           1,
-		QueueSize:         1,
-		FinalizeQueueSize: 1,
-		FinalizeTimeout:   20 * time.Millisecond,
+	synctest.Test(t, func(t *testing.T) {
+		releaseFinalize := make(chan struct{})
+		pool := newManagedPoolForTest(t, workerpool.ManagedConfig{
+			Workers:           1,
+			QueueSize:         1,
+			FinalizeQueueSize: 1,
+			FinalizeTimeout:   20 * time.Millisecond,
+		})
+
+		if !trySubmit(pool, workerpool.JobSpec{
+			Run: func(context.Context) {},
+			Finalize: func(ctx context.Context, _ workerpool.JobOutcome) {
+				<-ctx.Done()
+				<-releaseFinalize
+			},
+		}) {
+			t.Fatal("TrySubmit(late finalizer) = false")
+		}
+
+		awaitManagedSnapshot(t, pool, "finalizer timeout", func(snapshot workerpool.ManagedSnapshot) bool {
+			return snapshot.Finalizer.TimedOut == 1 &&
+				snapshot.Finalizer.InFlight == 1 &&
+				snapshot.Finalizer.Reservations == 1
+		})
+
+		capacityResult := pool.TrySubmitResult(workerpool.JobSpec{
+			Run:      func(context.Context) {},
+			Finalize: func(context.Context, workerpool.JobOutcome) {},
+		})
+		if capacityResult.Accepted || capacityResult.FinalizerClaimed || capacityResult.Reason != workerpool.ManagedSubmitRejectedFinalizerCapacity {
+			t.Fatalf("TrySubmitResult(while late) = %+v, want unclaimed capacity rejection", capacityResult)
+		}
+
+		close(releaseFinalize)
+		awaitManagedSnapshot(t, pool, "late finalizer completion", func(snapshot workerpool.ManagedSnapshot) bool {
+			return snapshot.Finalizer.CompletedLate == 1 &&
+				snapshot.Finalizer.Completed == 0 &&
+				snapshot.Finalizer.InFlight == 0 &&
+				snapshot.Finalizer.Reservations == 0
+		})
+
+		if result := pool.TrySubmitResult(workerpool.JobSpec{
+			Run:      func(context.Context) {},
+			Finalize: func(context.Context, workerpool.JobOutcome) {},
+		}); !result.Accepted || !result.FinalizerClaimed || result.Reason != workerpool.ManagedSubmitAccepted {
+			t.Fatalf("TrySubmitResult(after late) = %+v, want accepted finalizer claim", result)
+		}
+
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+
+		defer cancel()
+
+		if err := pool.CloseContext(ctx); err != nil {
+			t.Fatalf("CloseContext() error = %v", err)
+		}
 	})
-
-	if !trySubmit(pool, workerpool.JobSpec{
-		Run: func(context.Context) {},
-		Finalize: func(ctx context.Context, _ workerpool.JobOutcome) {
-			<-ctx.Done()
-			<-releaseFinalize
-		},
-	}) {
-		t.Fatal("TrySubmit(late finalizer) = false")
-	}
-
-	awaitManagedSnapshot(t, pool, "finalizer timeout", func(snapshot workerpool.ManagedSnapshot) bool {
-		return snapshot.Finalizer.TimedOut == 1 &&
-			snapshot.Finalizer.InFlight == 1 &&
-			snapshot.Finalizer.Reservations == 1
-	})
-
-	capacityResult := pool.TrySubmitResult(workerpool.JobSpec{
-		Run:      func(context.Context) {},
-		Finalize: func(context.Context, workerpool.JobOutcome) {},
-	})
-	if capacityResult.Accepted || capacityResult.FinalizerClaimed || capacityResult.Reason != workerpool.ManagedSubmitRejectedFinalizerCapacity {
-		t.Fatalf("TrySubmitResult(while late) = %+v, want unclaimed capacity rejection", capacityResult)
-	}
-
-	close(releaseFinalize)
-	awaitManagedSnapshot(t, pool, "late finalizer completion", func(snapshot workerpool.ManagedSnapshot) bool {
-		return snapshot.Finalizer.CompletedLate == 1 &&
-			snapshot.Finalizer.Completed == 0 &&
-			snapshot.Finalizer.InFlight == 0 &&
-			snapshot.Finalizer.Reservations == 0
-	})
-
-	if result := pool.TrySubmitResult(workerpool.JobSpec{
-		Run:      func(context.Context) {},
-		Finalize: func(context.Context, workerpool.JobOutcome) {},
-	}); !result.Accepted || !result.FinalizerClaimed || result.Reason != workerpool.ManagedSubmitAccepted {
-		t.Fatalf("TrySubmitResult(after late) = %+v, want accepted finalizer claim", result)
-	}
-
-	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
-
-	defer cancel()
-
-	if err := pool.CloseContext(ctx); err != nil {
-		t.Fatalf("CloseContext() error = %v", err)
-	}
 }
 
 func TestManagedPoolFinalizerContainsPanic(t *testing.T) {
