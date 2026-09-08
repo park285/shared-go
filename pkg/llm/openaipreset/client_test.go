@@ -186,7 +186,7 @@ func TestGenerateLayeredResponsesJSONReturnsCompleteResponsesSurface(t *testing.
 			t.Fatalf("decode request: %v", err)
 		}
 
-		writeJSON(t, w, `{"id":"resp-1","object":"response","created_at":1,"status":"completed","model":"gpt-test","output":[{"id":"msg-1","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"before ","annotations":[]},{"type":"output_text","text":"{\"answer\":\"yes\"} after","annotations":[]}]}]}`)
+		writeResponsesCompleted(t, w, `{"id":"resp-1","object":"response","created_at":1,"status":"completed","model":"gpt-test","output":[{"id":"msg-1","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"before ","annotations":[]},{"type":"output_text","text":"{\"answer\":\"yes\"} after","annotations":[]}]}]}`)
 	}))
 
 	defer server.Close()
@@ -210,6 +210,10 @@ func TestGenerateLayeredResponsesJSONReturnsCompleteResponsesSurface(t *testing.
 	}
 
 	assertSchemaName(t, payload, "twentyq_verify_guess_strict_identity_judge_01")
+
+	if payload["stream"] != true {
+		t.Fatalf("stream = %v, want true", payload["stream"])
+	}
 }
 
 func TestGenerateLayeredResponsesJSONPreservesEmptyOutputSentinel(t *testing.T) {
@@ -217,7 +221,7 @@ func TestGenerateLayeredResponsesJSONPreservesEmptyOutputSentinel(t *testing.T) 
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls.Add(1)
-		writeJSON(t, w, `{"id":"resp-empty","object":"response","created_at":1,"status":"completed","model":"gpt-test","output":[]}`)
+		writeResponsesCompleted(t, w, `{"id":"resp-empty","object":"response","created_at":1,"status":"completed","model":"gpt-test","output":[]}`)
 	}))
 
 	defer server.Close()

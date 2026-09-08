@@ -175,9 +175,8 @@ func (c *Client) GenerateJSONAs[T any](
 	return decodeJSONAs[T](task, resp.Text)
 }
 
-// GenerateLayeredResponsesJSON returns every Responses output_text fragment
-// before object extraction or destination decoding. It is intentionally strict:
-// callers using this boundary can validate the complete provider surface first.
+// GenerateLayeredResponsesJSON은 정상 종료된 Responses 스트림의 전체 output_text를 반환합니다.
+// 객체 추출이나 디코딩 전의 출력을 유지하여 호출자가 전체 응답을 검증할 수 있습니다.
 func (c *Client) GenerateLayeredResponsesJSON(ctx context.Context, task string, prompts PromptLayers, schema map[string]any) (string, error) {
 	if c == nil {
 		return "", errClientNil
@@ -201,7 +200,7 @@ func (c *Client) GenerateLayeredResponsesJSON(ctx context.Context, task string, 
 	attrs := promptSummaryAttrs(model, joinedPromptLen(prompts.Invariant, prompts.Developer, prompts.User))
 
 	out, err := runRequest(ctx, c.logger, attrs, func() (string, error) {
-		resp, respErr := c.openai.Responses.New(ctx, params)
+		resp, respErr := c.completedResponsesStream(ctx, params)
 		if respErr != nil {
 			return "", fmt.Errorf("openai responses API: %w", openaidiag.SafeError(respErr))
 		}

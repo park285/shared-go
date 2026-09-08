@@ -5,6 +5,11 @@
 
 ## 미출시
 
+- `llm/openaipreset.GenerateLayeredResponsesJSON`은 OpenAI SDK의 Responses 스트리밍을
+  사용합니다. 정상 종료된 `response.completed`의 전체 출력을 반환하고, 중간 응답·종료
+  누락·실패·취소·늦은 오류는 부분 결과 없이 거부합니다. 기존 schema·cache·usage와
+  출력 검증 경계를 유지하며 별도 SSE 파서나 비스트리밍 전환을 추가하지 않습니다.
+
 ## v2.5.1 - 2026-09-06
 
 - **수정**: `pgstore.Store.BeginAttempt`가 claim과 같은 SQL에서 `MaxAttempts`와
