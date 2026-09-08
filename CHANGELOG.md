@@ -5,7 +5,7 @@
 
 ## 미출시
 
-## v2.5.3 - 2026-09-08
+## v2.6.1 - 2026-09-08
 
 - `llm/openaipreset.GenerateLayeredResponsesJSON`은 OpenAI SDK의 Responses 스트리밍을
   사용합니다. 정상 종료된 `response.completed`의 전체 출력을 반환하고, 중간 응답·종료
