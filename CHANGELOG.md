@@ -5,6 +5,12 @@
 
 ## 미출시
 
+- `kakaoformat`은 Goldmark v1.8.5의 구문 트리로 Markdown을 변환합니다. 한글 조사와
+  붙은 강조, 중첩 강조·목록, 참조 링크·이미지, 인용문·표·체크 목록의 경계를 보존합니다.
+- 코드와 URL의 기호 및 빈 줄을 보존하고, NUL·잘못된 UTF-8 입력은 그대로 반환합니다.
+  표가 행·열·메시지 전체 출력 한도를 넘거나 헤더보다 많은 셀을 포함하면 표 원문 전체를
+  보존해 데이터가 누락되지 않도록 합니다.
+
 ## v2.6.1 - 2026-09-08
 
 - `llm/openaipreset.GenerateLayeredResponsesJSON`은 OpenAI SDK의 Responses 스트리밍을

@@ -6,10 +6,7 @@ import (
 	"unicode/utf8"
 )
 
-var (
-	reCodeBlock  = regexp.MustCompile("(?ms)^([ \t]*)```([^\n`]*)\n(.*?)\n```[ \t]*")
-	reInlineCode = regexp.MustCompile("`([^`\n]+)`")
-)
+var reCodeBlock = regexp.MustCompile("(?s)\\A([ \t]*)```([^\n`]*)\n(.*?)\n```[ \t]*\\z")
 
 func protectCodeRanges(input string, dst *store) string {
 	var output strings.Builder
@@ -59,8 +56,9 @@ func formatCodeRange(input string, code CodeRange) string {
 		lang = "Code"
 	}
 
-	body := strings.TrimRight(input[code.BodyStart:code.BodyEnd], "\r\n")
+	body := strings.TrimSuffix(strings.TrimSuffix(input[code.BodyStart:code.BodyEnd], "\n"), "\r")
 	if code.Width >= 4 {
+		// 본문 전체가 fence 하나일 때만 겹친 포장을 벗겨 앞뒤 코드가 누락되지 않게 한다.
 		if inner := reCodeBlock.FindStringSubmatch(body); len(inner) > 0 {
 			if name := strings.TrimSpace(inner[2]); name != "" {
 				lang = name

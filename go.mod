@@ -11,6 +11,7 @@ require (
 	github.com/quic-go/quic-go v0.61.0
 	github.com/stretchr/testify v1.12.1
 	github.com/ymw0407/jamo v1.0.0
+	github.com/yuin/goldmark v1.8.5
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.71.0
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.46.0

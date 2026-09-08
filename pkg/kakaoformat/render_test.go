@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"unicode/utf8"
 )
 
 func TestRenderConvertsPlainMarkdown(t *testing.T) {
@@ -150,18 +149,6 @@ func TestRenderDoesNotKeepMarkdownTokens(t *testing.T) {
 	}
 }
 
-func TestPrevRuneIsConstantTime(t *testing.T) {
-	t.Parallel()
-
-	text := strings.Repeat("가나다라마", 100000) + "*"
-	byteIndex := len(text) - len("*")
-	last, _ := utf8.DecodeLastRuneInString(text[:byteIndex])
-
-	if got := prevRune(text, byteIndex); got != last {
-		t.Fatalf("prevRune = %q, want %q", got, last)
-	}
-}
-
 func TestEmphasisRenderingBoundedTime(t *testing.T) {
 	t.Parallel()
 
@@ -169,7 +156,7 @@ func TestEmphasisRenderingBoundedTime(t *testing.T) {
 	done := make(chan struct{})
 
 	go func() {
-		_ = renderEmphasis(input)
+		_ = Render(input)
 
 		close(done)
 	}()
@@ -194,7 +181,7 @@ func TestTableOutputAmplificationCapped(t *testing.T) {
 		sb.WriteString("|" + strings.Repeat(" v |", 100) + "\n")
 	}
 
-	output := renderTables(sb.String())
+	output := Render(sb.String())
 	lineCount := strings.Count(output, "\n") + 1
 
 	if lineCount > maxTableOutputLines+10 {
@@ -202,10 +189,10 @@ func TestTableOutputAmplificationCapped(t *testing.T) {
 	}
 }
 
-func TestLineRenderersLeavePlainText(t *testing.T) {
+func TestRenderLeavesPlainText(t *testing.T) {
 	t.Parallel()
 
-	if got := renderLine("plain text"); got != "plain text" {
-		t.Fatalf("renderLine() = %q", got)
+	if got := Render("plain text"); got != "plain text" {
+		t.Fatalf("Render() = %q", got)
 	}
 }

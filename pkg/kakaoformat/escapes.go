@@ -30,7 +30,7 @@ func EscapeMarkdown(input string) string {
 }
 
 func needsMarkdownEscape(input string, index int, char rune, lineBlank, digits bool) bool {
-	if strings.ContainsRune("\\`*_[]|~#", char) {
+	if strings.ContainsRune("\\`*_[]|~#&", char) {
 		return true
 	}
 
@@ -42,7 +42,8 @@ func needsMarkdownEscape(input string, index int, char rune, lineBlank, digits b
 		return input[index+1] != ' '
 	}
 
-	return char == '.' && !lineBlank && digits && index+1 < len(input) && input[index+1] == ' '
+	return (char == '.' || char == ')') && !lineBlank && digits &&
+		(index+1 == len(input) || input[index+1] == ' ' || input[index+1] == '\t')
 }
 
 // TransformEscapes는 Markdown 이스케이프 한 개마다 해제한 문자를 transform에 전달한다.
