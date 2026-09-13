@@ -74,7 +74,7 @@ cat >"${fake_bin}/uv" <<'UV'
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ "${1:-}" == "--version" ]]; then
-  printf '%s\n' "${FAKE_UV_VERSION:-uv 0.12.7 (fixture)}"
+  printf '%s\n' "${FAKE_UV_VERSION:-uv 0.12.13 (fixture)}"
   exit 0
 fi
 if [[ "${1:-}" == "python" && "${2:-}" == "find" ]]; then
@@ -111,7 +111,7 @@ expect_failure \
     UV_PYTHON_INSTALL_DIR="${empty_managed_dir}" \
     "${fixture_ci}/python-runner.sh" --check
 
-expect_failure "missing uv" "uv 0.12.7 is required"   env PATH="${no_uv_bin}" "${fixture_ci}/python-runner.sh" --check
+expect_failure "missing uv" "uv 0.12.13 is required"   env PATH="${no_uv_bin}" "${fixture_ci}/python-runner.sh" --check
 expect_failure "uv mismatch" "uv version mismatch"   env PATH="${fake_bin}" FAKE_UV_VERSION="uv 0.12.6 (fixture)"   FAKE_PYTHON_PATH="${resolved}" "${fixture_ci}/python-runner.sh" --check
 expect_failure "missing interpreter" "uv did not resolve"   env PATH="${fake_bin}" FAKE_PYTHON_PATH="${tmp_dir}/missing-python"   "${fixture_ci}/python-runner.sh" --check
 expect_failure "resolved version mismatch" "resolved Python version mismatch"   env PATH="${fake_bin}" FAKE_PYTHON_PATH="/usr/bin/python3"   "${fixture_ci}/python-runner.sh" --check

@@ -18,9 +18,9 @@ action = Path(".github/actions/python-runtime/action.yml").read_text(encoding="u
 # Python 부트스트랩은 저장소 composite action 이 소유한다. 사본 parity 와 핀 값은 iris-stack 이 본다.
 action_required = [
     "using: composite",
-    "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1",
+    "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97",
     "python-version-file: ${{ inputs.working-directory }}/.python-version",
-    "python -m pip install --disable-pip-version-check --no-cache-dir --no-deps uv==0.12.7",
+    "python -m pip install --disable-pip-version-check --no-cache-dir --no-deps uv==0.12.13",
     "scripts/ci/python-runner.sh --print-interpreter",
     "CI_PYTHON_BIN",
 ]
@@ -70,8 +70,8 @@ if not sha_pinned(external_uses):
 if not sha_pinned(re.findall(r"uses:\s*([^\s#]+)", action)):
     raise SystemExit("release provenance: python-runtime action must pin every action to a full commit SHA")
 expected = {
-    "anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610",
-    "actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6",
+    "anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26",
+    "actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6",
 }
 if not expected.issubset(set(external_uses)):
     raise SystemExit("release provenance: pinned SBOM or attestation action changed")
