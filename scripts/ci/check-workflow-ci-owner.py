@@ -15,7 +15,7 @@ PRIMARY_PATH = Path(".github/workflows/ci.yml")
 # 핀 값은 iris-stack 의 check-ci-consistency.sh 와 check-stack-toolchain-pins.py 가 본다.
 PYTHON_RUNTIME_ACTION_PATH = Path(".github/actions/python-runtime/action.yml")
 PYTHON_RUNTIME_ACTION_USES = "uses: ./.github/actions/python-runtime"
-PYTHON_RUNTIME_ACTION_SHA256 = "9d804984c76933bbd05b5c544a38beb4c2b5820f79c176449acd74902b93fcc6"
+PYTHON_RUNTIME_ACTION_SHA256 = "a4fbd5a51367110ba6f32f1f27fde9d0d88ee00f448af51bf0cd944a928ba52a"
 SECURITY_CANDIDATES = (
     Path(".github/workflows/security.yml"),
     Path(".github/workflows/security.yaml"),
@@ -69,7 +69,7 @@ REMOTE_LIBRARY_FIXTURE_WORKFLOW_SHA256 = "132a3046c47792056c3253f2d0c1f42c084afb
 APP_CANONICAL_WORKFLOW_SHA256 = {
     "github.com/kapu/chat-bot-go-kakao": "e1b92d0bb3fec340ebe849b0302368f7f28b15c2d76898e0b0114b54f46b019f",
     "github.com/park285/twentyq-bot": "953856eba5f5029f8b081b5d6240ab56a29e7bfa686a2cf821b95957587a60f8",
-    "github.com/kapu/hololive-bot-workspace": "bcb74f5be2a26747aa9a58b049e97d253597c6ae3e7740ea76ba8527e50160c3",
+    "github.com/kapu/hololive-bot-workspace": "7a6c22d7cef2a6552e78cf43a23ddd91c546eb7c0013ca0c41588f509fd96a25",
 }
 LOCAL_DURABLE_FAST_APP_MODULES = frozenset(
     {
