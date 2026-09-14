@@ -69,7 +69,7 @@ REMOTE_LIBRARY_FIXTURE_WORKFLOW_SHA256 = "132a3046c47792056c3253f2d0c1f42c084afb
 APP_CANONICAL_WORKFLOW_SHA256 = {
     "github.com/kapu/chat-bot-go-kakao": "e1b92d0bb3fec340ebe849b0302368f7f28b15c2d76898e0b0114b54f46b019f",
     "github.com/park285/twentyq-bot": "953856eba5f5029f8b081b5d6240ab56a29e7bfa686a2cf821b95957587a60f8",
-    "github.com/kapu/hololive-bot-workspace": "062a264dde18c11fc7ca0211cf5d8769773737797c29d403abb45d7fea9ecf75",
+    "github.com/kapu/hololive-bot-workspace": "ad7b5e5dd118845487fab17321ad48162e3d21dd68d06a8eec1f130493dd001d",
 }
 LOCAL_DURABLE_FAST_APP_MODULES = frozenset(
     {
