@@ -7,7 +7,7 @@ WITH ready AS (
       AND current_row.available_at <= now()
       AND (
           current_row.status = 'pending'
-          OR (current_row.status = 'processing' AND current_row.lease_until <= now())
+          OR (NOT $2::boolean AND current_row.status = 'processing' AND current_row.lease_until <= now())
       )
       AND NOT EXISTS (
           SELECT 1

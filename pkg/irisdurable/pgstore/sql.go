@@ -25,6 +25,8 @@ var (
 	queryPruneInbox           = mustQuery("queries/prune_inbox.sql")
 	queryInboxRuntimeSnapshot = mustQuery("queries/inbox_runtime_snapshot.sql")
 	queryInboxReadySnapshot   = mustQuery("queries/inbox_ready_snapshot.sql")
+	queryRecoverInboxBefore   = mustQuery("queries/recover_inbox_before.sql")
+	queryCompleteInboxBefore  = mustQuery("queries/complete_inbox_before.sql")
 
 	queryInsertNonce = mustQuery("queries/insert_nonce.sql")
 	queryPruneNonce  = mustQuery("queries/prune_nonce.sql")

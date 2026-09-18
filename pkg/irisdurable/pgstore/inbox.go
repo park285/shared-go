@@ -24,6 +24,7 @@ type InboxClaim struct {
 	Payload     []byte
 	ClaimToken  string
 	Attempts    int
+	CreatedAt   time.Time
 }
 
 // Admit은 HTTP 200 전에 메시지를 inbox에 commit한다.
@@ -82,9 +83,9 @@ func (s *Store) Claim(ctx context.Context) (claim InboxClaim, ok bool, err error
 
 	var payload string
 
-	row := s.db.QueryRow(ctx, queryClaimInbox, s.opts.Scope, token, s.opts.Lease.Seconds())
+	row := s.db.QueryRow(ctx, queryClaimInbox, s.opts.Scope, token, s.opts.Lease.Seconds(), 1, s.opts.InboxExplicitRecovery)
 
-	err = row.Scan(&claim.ID, &claim.MessageID, &claim.OrderingKey, &payload, &claim.ClaimToken, &claim.Attempts)
+	err = row.Scan(&claim.ID, &claim.MessageID, &claim.OrderingKey, &payload, &claim.ClaimToken, &claim.Attempts, &claim.CreatedAt)
 
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
@@ -122,7 +123,7 @@ func (s *Store) Release(ctx context.Context, claim InboxClaim, retryAfter time.D
 		retryAfter = 0
 	}
 
-	return s.execFenced(ctx, "release inbox", queryReleaseInbox, s.opts.Scope, claim.ID, claim.ClaimToken, retryAfter.Seconds())
+	return s.execFenced(ctx, "release inbox", queryReleaseInbox, s.opts.Scope, claim.ID, claim.ClaimToken, retryAfter.Seconds(), nil)
 }
 
 // Defer는 처리를 시작하지 못한 행의 소유권만 반납하고 Claim이 올린 attempts를 되돌린다.
@@ -133,18 +134,19 @@ func (s *Store) Defer(ctx context.Context, claim InboxClaim, retryAfter time.Dur
 	}
 
 	return s.execFenced(ctx, "defer inbox", queryDeferInbox,
-		s.opts.Scope, claim.ID, claim.ClaimToken, claim.MessageID, retryAfter.Seconds(),
+		s.opts.Scope, claim.ID, claim.ClaimToken, claim.MessageID, retryAfter.Seconds(), nil,
 	)
 }
 
 // ManualReviewInbox는 자동으로 판정할 수 없는 행을 사람이 볼 안전 경계 상태로 보낸다.
-// 운영자가 원인을 볼 수 있도록 payload는 남긴다.
+// 기본적으로 payload를 남기며 DiscardInboxManualReviewPayload인 소비자는 본문만 지운다.
 func (s *Store) ManualReviewInbox(ctx context.Context, claim InboxClaim, reason string) error {
 	if reason == "" {
 		return errors.New("pgstore: manual review requires a reason")
 	}
 
-	return s.execFenced(ctx, "manual review inbox", queryManualReviewInbox, s.opts.Scope, claim.ID, claim.ClaimToken, reason)
+	return s.execFenced(ctx, "manual review inbox", queryManualReviewInbox,
+		s.opts.Scope, claim.ID, claim.ClaimToken, reason, s.opts.DiscardInboxManualReviewPayload)
 }
 
 // ReclaimInbox는 lease가 끊긴 행을 다시 처리 가능하게 되돌리고 그 수를 반환한다.
@@ -167,6 +169,7 @@ func (s *Store) PruneInbox(ctx context.Context, limit int) (int64, error) {
 
 	tag, err := s.db.Exec(ctx, queryPruneInbox,
 		s.opts.Scope, s.opts.InboxTerminalRetention.Seconds(), s.opts.InboxManualReviewRetention.Seconds(), limit,
+		nil,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("pgstore: prune inbox: %w", err)
@@ -212,7 +215,7 @@ func (s *Store) RuntimeSnapshot(ctx context.Context) (InboxRuntimeSnapshot, erro
 
 // InboxReadySnapshot은 Claim이 지금 집을 수 있는 행을 센다. 술어는 claim_inbox.sql과 같다.
 func (s *Store) InboxReadySnapshot(ctx context.Context) (ReadySnapshot, error) {
-	return s.readySnapshot(ctx, "inbox ready snapshot", queryInboxReadySnapshot, s.opts.Scope)
+	return s.readySnapshot(ctx, "inbox ready snapshot", queryInboxReadySnapshot, s.opts.Scope, s.opts.InboxExplicitRecovery)
 }
 
 func (s *Store) readySnapshot(ctx context.Context, action, sql string, args ...any) (ReadySnapshot, error) {

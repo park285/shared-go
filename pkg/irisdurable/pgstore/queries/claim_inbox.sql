@@ -6,7 +6,7 @@ WITH candidate AS (
       AND current_row.available_at <= now()
       AND (
           current_row.status = 'pending'
-          OR (current_row.status = 'processing' AND current_row.lease_until <= now())
+          OR (NOT $5::boolean AND current_row.status = 'processing' AND current_row.lease_until <= now())
       )
       AND NOT EXISTS (
           SELECT 1
@@ -18,7 +18,7 @@ WITH candidate AS (
       )
     ORDER BY current_row.available_at, current_row.created_at, current_row.id
     FOR UPDATE OF current_row SKIP LOCKED
-    LIMIT 1
+    LIMIT $4
 )
 UPDATE iris_webhook_inbox AS inbox
 SET status = 'processing',
@@ -28,4 +28,4 @@ SET status = 'processing',
     updated_at = now()
 FROM candidate
 WHERE inbox.id = candidate.id
-RETURNING inbox.id, inbox.message_id, inbox.ordering_key, inbox.payload::text, inbox.claim_token, inbox.attempts
+RETURNING inbox.id, inbox.message_id, inbox.ordering_key, inbox.payload::text, inbox.claim_token, inbox.attempts, inbox.created_at

@@ -65,6 +65,12 @@ CREATE INDEX IF NOT EXISTS idx_iris_webhook_inbox_prune_manual_review
     ON iris_webhook_inbox (scope, terminal_at, id)
     WHERE status = 'manual_review';
 
+-- 유한 lease 복구와 미청구 만료 정리는 같은 시각의 대량 행에서도 LIMIT 앞 정렬이 없어야 한다.
+CREATE INDEX IF NOT EXISTS idx_iris_webhook_inbox_lease
+    ON iris_webhook_inbox (scope, lease_until, id) WHERE status = 'processing';
+CREATE INDEX IF NOT EXISTS idx_iris_webhook_inbox_pending_age
+    ON iris_webhook_inbox (scope, created_at, id) WHERE status = 'pending';
+
 CREATE TABLE IF NOT EXISTS iris_nonce (
     scope text NOT NULL,
     nonce_key text NOT NULL,

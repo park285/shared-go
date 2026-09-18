@@ -6,9 +6,10 @@ WHERE id IN (
     FROM iris_webhook_inbox
     WHERE scope = $1
       AND (
-          (status = 'completed' AND terminal_at <= now() - make_interval(secs => $2))
-          OR ($3 > 0 AND status = 'manual_review' AND terminal_at <= now() - make_interval(secs => $3))
+          (status = 'completed' AND terminal_at <= LEAST($5::timestamptz, now() - make_interval(secs => $2)))
+          OR ($3 > 0 AND status = 'manual_review' AND terminal_at <= LEAST($5::timestamptz, now() - make_interval(secs => $3)))
       )
     ORDER BY terminal_at, id
     LIMIT $4
+    FOR UPDATE SKIP LOCKED
 )

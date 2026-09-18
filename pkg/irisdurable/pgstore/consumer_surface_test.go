@@ -638,7 +638,7 @@ func TestClaimPlanUsesThePartialIndexes(t *testing.T) {
 
 	scope := store.Options().Scope
 
-	claimPlan := explainQuery(ctx, t, conn, "claim", pgstore.ClaimInboxQueryForTest, scope, "plan-token", float64(60))
+	claimPlan := explainQuery(ctx, t, conn, "claim", pgstore.ClaimInboxQueryForTest, scope, "plan-token", float64(60), 1, false)
 
 	for _, index := range []string{"idx_iris_webhook_inbox_claim", "idx_iris_webhook_inbox_head"} {
 		if !strings.Contains(claimPlan, index) {

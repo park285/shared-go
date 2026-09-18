@@ -70,6 +70,12 @@ type Options struct {
 	// InboxManualReviewRetention은 inbox manual_review 행의 보존이다. 사람이 볼 payload를 남기는
 	// 갈래라 종단 보존과 따로 잡는다. 0이면 PruneInbox가 이 갈래를 지우지 않는다.
 	InboxManualReviewRetention time.Duration
+	// InboxExplicitRecovery는 만료 claim의 재처리 전에 RecoverInboxBefore의 유한 복구를 요구한다.
+	// consumer가 복구 시 attempt 상한과 dead-letter 관측을 소유할 때 사용한다.
+	InboxExplicitRecovery bool
+	// DiscardInboxManualReviewPayload는 manual_review에도 본문을 남기지 않는 소비자의 보존 계약이다.
+	// 원인과 identity는 유지하며 이미 지운 본문을 재구성하지 않는다.
+	DiscardInboxManualReviewPayload bool
 }
 
 func (o Options) withDefaults() Options {
