@@ -32,9 +32,40 @@ TOP_DECL_RE = re.compile(r"^(func|type|const|var)\b")
 FUNC_RE = re.compile(r"^func\s+")
 FUNC_NAME_RE = re.compile(r"^func\s+(?:\([^)]*\)\s+)?([A-Za-z_][A-Za-z0-9_]*)")
 METHOD_RE = re.compile(r"^func\s+\(([^)]*)\)\s+([A-Za-z_][A-Za-z0-9_]*)")
-STRUCT_RE = re.compile(r"^type\s+([A-Za-z_][A-Za-z0-9_]*)\s+struct\s*{")
+TYPE_DECL_RE = re.compile(r"^type\s+([A-Za-z_][A-Za-z0-9_]*)\b")
+HEADER_TOKEN_RE = re.compile(
+    r'//[^\n]*|/\*.*?\*/|`[^`]*`|"(?:\\.|[^"\\])*"|[A-Za-z_]\w*|\S',
+    re.DOTALL,
+)
+EMBED_RE = re.compile(r"\*?[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)?")
 PACKAGE_RE = re.compile(r"^package\s+(\w+)")
 PARTITION_FILE_RE = re.compile(r"_part[0-9]+(?:_test)?\.go$")
+
+
+def struct_header(lines: list[str], index: int) -> tuple[str, int] | None:
+    declaration = TYPE_DECL_RE.match(lines[index])
+    if declaration is None:
+        return None
+    text = "\n".join(lines[index:])
+    tokens = (token for token in HEADER_TOKEN_RE.finditer(text, declaration.end())
+              if not token.group().startswith(("//", "/*")))
+    token = next(tokens, None)
+    if token is not None and token.group() == "[":
+        # 배열·map constraint의 중첩 괄호와 여러 줄 선언은 필드가 아니다.
+        depth = 1
+        for token in tokens:
+            depth += (token.group() == "[") - (token.group() == "]")
+            if depth == 0:
+                break
+        if depth:
+            return None
+        token = next(tokens, None)
+    if token is None or token.group() != "struct":
+        return None
+    brace = next(tokens, None)
+    if brace is None or brace.group() != "{":
+        return None
+    return declaration.group(1), index + text.count("\n", 0, brace.end())
 
 
 @dataclass(frozen=True)
@@ -210,22 +241,23 @@ def scan(root: Path, policy: dict[str, Any]) -> tuple[int, list[Finding]]:
                 match = FUNC_NAME_RE.match(first)
                 name = match.group(1) if match else "unknown"
                 add("function_lines", path, end - start, name)
-        for index, line in enumerate(lines):
-            match = STRUCT_RE.match(line)
-            if not match:
+        for index in range(len(lines)):
+            header = struct_header(lines, index)
+            if header is None:
                 continue
-            name = match.group(1)
+            name, body_line = header
             fields = 0
             direct = 0
             embeds: list[str] = []
-            cursor = index + 1
+            cursor = body_line + 1
             while cursor < len(lines) and not lines[cursor].strip().startswith("}"):
                 current = lines[cursor].strip()
                 if current and not current.startswith("//"):
                     fields += 1
                     code = current.split("`")[0].split("//")[0].strip()
-                    if code and " " not in code and "\t" not in code:
-                        embeds.append(code.lstrip("*"))
+                    embedded_type = code.split("[", 1)[0]
+                    if EMBED_RE.fullmatch(embedded_type):
+                        embeds.append(embedded_type.lstrip("*"))
                     else:
                         direct += 1
                 cursor += 1

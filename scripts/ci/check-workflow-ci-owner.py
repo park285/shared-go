@@ -15,7 +15,9 @@ PRIMARY_PATH = Path(".github/workflows/ci.yml")
 # 핀 값은 iris-stack 의 check-ci-consistency.sh 와 check-stack-toolchain-pins.py 가 본다.
 PYTHON_RUNTIME_ACTION_PATH = Path(".github/actions/python-runtime/action.yml")
 PYTHON_RUNTIME_ACTION_USES = "uses: ./.github/actions/python-runtime"
-PYTHON_RUNTIME_ACTION_SHA256 = "a4fbd5a51367110ba6f32f1f27fde9d0d88ee00f448af51bf0cd944a928ba52a"
+PYTHON_RUNTIME_ACTION_SHA256 = "caaa508aa7aeace95c869ae713c95c7e8350b8bb422e317228067ecb97cb8576"
+PYTHON_RUNTIME_INSTALLER_PATH = PYTHON_RUNTIME_ACTION_PATH.with_name("install-uv.sh")
+PYTHON_RUNTIME_INSTALLER_SHA256 = "35c97dd665837505ed798429ac96a9ea41b091b703145ff9ba964a8c43c90445"
 SECURITY_CANDIDATES = (
     Path(".github/workflows/security.yml"),
     Path(".github/workflows/security.yaml"),
@@ -69,7 +71,7 @@ REMOTE_LIBRARY_FIXTURE_WORKFLOW_SHA256 = "132a3046c47792056c3253f2d0c1f42c084afb
 APP_CANONICAL_WORKFLOW_SHA256 = {
     "github.com/kapu/chat-bot-go-kakao": "e1b92d0bb3fec340ebe849b0302368f7f28b15c2d76898e0b0114b54f46b019f",
     "github.com/park285/twentyq-bot": "953856eba5f5029f8b081b5d6240ab56a29e7bfa686a2cf821b95957587a60f8",
-    "github.com/kapu/hololive-bot-workspace": "ad7b5e5dd118845487fab17321ad48162e3d21dd68d06a8eec1f130493dd001d",
+    "github.com/kapu/hololive-bot-workspace": "53d5621066d315323d5cd7808cc6808adaf13856fc7055009894d42e33af8482",
 }
 LOCAL_DURABLE_FAST_APP_MODULES = frozenset(
     {
@@ -390,6 +392,10 @@ def validate(root: Path) -> tuple[str, str, list[str]]:
     module = module_path(root)
 
     failures: list[str] = []
+    expected_profile = ("app" if module in APP_CANONICAL_WORKFLOW_SHA256 else
+                        "lib" if module in REMOTE_LIBRARY_CANONICAL_WORKFLOW_SHA256 else None)
+    if expected_profile is not None and profile != expected_profile:
+        failures.append(f"{PROFILE_PATH}: canonical module profile must be {expected_profile}, got {profile}")
     if PYTHON_RUNTIME_ACTION_USES in primary:
         try:
             action_sha256 = hashlib.sha256(
@@ -403,6 +409,13 @@ def validate(root: Path) -> tuple[str, str, list[str]]:
                     f"{PYTHON_RUNTIME_ACTION_PATH}: python-runtime composite action must match "
                     "the stack canonical snapshot"
                 )
+    if PYTHON_RUNTIME_ACTION_USES in primary:
+        try:
+            installer = root / PYTHON_RUNTIME_INSTALLER_PATH
+            if installer.is_symlink() or hashlib.sha256(installer.read_bytes()).hexdigest() != PYTHON_RUNTIME_INSTALLER_SHA256:
+                failures.append(f"{PYTHON_RUNTIME_INSTALLER_PATH}: untrusted uv bootstrap script")
+        except OSError as exc:
+            failures.append(f"{PYTHON_RUNTIME_INSTALLER_PATH}: cannot read uv bootstrap: {exc}")
     try:
         primary_events = workflow_events(primary)
     except ContractError as exc:

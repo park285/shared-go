@@ -103,6 +103,12 @@ def main() -> int:
         local_app = base / "local-app"
         fixture(local_app, "app", "local")
         expect_success("valid local app", run(local_app))
+
+        downgraded = base / "downgraded-app"
+        fixture(downgraded, "app", "local")
+        write(downgraded / "go.mod", "module github.com/kapu/chat-bot-go-kakao\n")
+        write(downgraded / "scripts/ci/workflow-gate-profile", "lib\n")
+        expect_failure("app profile cannot disable canonical workflow verification", run(downgraded), "canonical module profile")
         write(
             local_app / ".github/workflows/ci.yml",
             workflow(["workflow_dispatch", "pull_request"], ("go test -run '^$'",)),

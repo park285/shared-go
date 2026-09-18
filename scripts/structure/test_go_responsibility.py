@@ -75,6 +75,34 @@ class AnalyzerTest(unittest.TestCase):
         (self.root / "hard.go").write_text("package p\n" + "\n" * 8, encoding="utf-8")
         self.assertEqual(self.run_analyzer("hard").returncode, 1)
 
+    def test_generic_struct_field_budgets_match_plain_structs(self) -> None:
+        for parameters in ("", "[T any]", "[T ~map[string][]int]",
+                           "[\nT interface {\n ~[]int\n},\n]"):
+            for count, level in ((3, "advisory"), (5, "hard_ceiling")):
+                with self.subTest(parameters=parameters, count=count):
+                    (self.root / "fields.go").write_text(
+                        "package p\ntype Values" + parameters + " struct {\n"
+                        + "".join(f"Field{index} int\n" for index in range(count))
+                        + "}\n", encoding="utf-8")
+                    report = json.loads(self.run_analyzer("hard").stdout)
+                    fields = [item for item in report["findings"]
+                              if item["rule"] == "struct_fields"]
+                    self.assertEqual([(item["symbol"], item["actual"], item["level"])
+                                      for item in fields], [("Values", count, level)])
+
+    def test_generic_embeds_keep_aggregate_field_budget(self) -> None:
+        (self.root / "base.go").write_text(
+            "package p\ntype Base[T any] struct {\nOne T\nTwo T\nThree T\n}\n",
+            encoding="utf-8")
+        (self.root / "outer.go").write_text(
+            "package p\ntype Outer[T any] struct {\n*Base[T]\nFour T\nFive T\n}\n",
+            encoding="utf-8")
+        report = json.loads(self.run_analyzer("hard").stdout)
+        fields = [item for item in report["findings"]
+                  if item["rule"] == "aggregate_fields"]
+        self.assertEqual([(item["symbol"], item["actual"], item["level"])
+                          for item in fields], [("Outer", 5, "hard_ceiling")])
+
     def test_receiver_aggregate_and_changed_filter(self) -> None:
         for index in range(3):
             (self.root / f"m{index}.go").write_text(
