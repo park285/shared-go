@@ -20,7 +20,7 @@ action_required = [
     "using: composite",
     "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97",
     "python-version-file: ${{ inputs.working-directory }}/.python-version",
-    "python -m pip install --disable-pip-version-check --no-cache-dir --no-deps uv==0.12.13",
+    'run: bash "${{ github.action_path }}/install-uv.sh"',
     "scripts/ci/python-runner.sh --print-interpreter",
     "CI_PYTHON_BIN",
 ]
@@ -77,5 +77,7 @@ if not expected.issubset(set(external_uses)):
     raise SystemExit("release provenance: pinned SBOM or attestation action changed")
 PY
 
+# 설치기 byte와 archive hash는 정본 CI owner 검사가 검증한다.
+bash scripts/ci/python-runner.sh -- scripts/ci/check-workflow-ci-owner.py
 bash scripts/ci/check-release-provenance_test.sh
 echo "release provenance contract passed"
