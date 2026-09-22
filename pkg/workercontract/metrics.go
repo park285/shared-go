@@ -210,7 +210,12 @@ func addDiscardSamples(families map[string]*MetricFamily, labels map[string]stri
 }
 
 func addSample(families map[string]*MetricFamily, family string, labels map[string]string, value float64) {
-	families[family].Samples = append(families[family].Samples, MetricSample{Labels: cloneLabels(labels), Value: value})
+	metricFamily, ok := families[family]
+	if !ok || metricFamily == nil {
+		panic("workercontract: unregistered metric family " + family)
+	}
+
+	metricFamily.Samples = append(metricFamily.Samples, MetricSample{Labels: cloneLabels(labels), Value: value})
 }
 
 func cloneLabels(labels map[string]string) map[string]string {

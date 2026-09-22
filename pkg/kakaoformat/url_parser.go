@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"unicode/utf8"
 
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/text"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 var kindLiteralURL = ast.NewNodeKind("LiteralURL")
@@ -17,12 +18,19 @@ type literalURL struct {
 	segment text.Segment
 }
 
-func (n *literalURL) Kind() ast.NodeKind            { return kindLiteralURL }
-func (n *literalURL) Dump(source []byte, level int) { ast.DumpHelper(n, source, level, nil, nil) }
+func (n *literalURL) Kind() ast.NodeKind { return kindLiteralURL }
+
+// Dump는 Goldmark 진단에 원문 URL 노드의 종류를 제공한다.
+func (n *literalURL) Dump(_ []byte) *ast.NodeDump {
+	return ast.NewNodeDump(n, nil)
+}
 
 type literalURLParser struct{}
 
 func (p *literalURLParser) Trigger() []byte { return []byte{':'} }
+
+// CloseBlock은 블록 간 상태를 보관하지 않는 URL 파서의 종료 훅이다.
+func (p *literalURLParser) CloseBlock(_ ast.Node, _ parser.Context) {}
 
 // URL 내부 별표·밑줄은 기존 일반톡 계약에 따라 강조 대신 주소의 일부로 보존한다.
 func (p *literalURLParser) Parse(parent ast.Node, reader text.Reader, context parser.Context) ast.Node {
@@ -38,7 +46,7 @@ func (p *literalURLParser) Parse(parent ast.Node, reader text.Reader, context pa
 	}
 
 	previous, ok := parent.LastChild().(*ast.Text)
-	if prefix == 0 || !ok || previous.Segment.Stop != start || previous.Segment.Start > start-prefix {
+	if prefix == 0 || !ok || previous.Value.Index().Stop != start || previous.Value.Index().Start > start-prefix {
 		return nil
 	}
 
@@ -53,14 +61,18 @@ func (p *literalURLParser) Parse(parent ast.Node, reader text.Reader, context pa
 
 	end := literalURLEnd(line, match[1], context.LastDelimiter())
 
-	previous.Segment = previous.Segment.WithStop(start)
-	if previous.Segment.Start == start {
-		parent.RemoveChild(parent, previous)
+	previous.Value = text.NewSingleLineValueFromIndex(text.NewIndex(previous.Value.Index().Start, start), reader.Decoder())
+	if previous.Value.Index().Start == start {
+		parent.RemoveChild(previous)
 	}
 
 	reader.Advance(end - prefix)
 
-	return &literalURL{segment: text.NewSegment(start, start+end)}
+	node := &literalURL{segment: text.NewSegment(start, start+end)}
+	node.Init(node)
+	node.SetPos(start)
+
+	return node
 }
 
 func literalURLEnd(line []byte, end int, last *parser.Delimiter) int {
@@ -79,10 +91,9 @@ func literalURLEnd(line []byte, end int, last *parser.Delimiter) int {
 				continue
 			}
 
-			before, _ := utf8.DecodeLastRune(line[:index])
-			closer := parser.ScanDelimiter(line[index:], before, 1, opener.Processor)
+			closer := literalURLDelimiter(line, index, opener)
 
-			if closer != nil && closer.CanClose && opener.Processor.CanOpenCloser(opener, closer) && opener.CalcComsumption(closer) > 0 {
+			if closer.CanClose && opener.Processor.CanOpenCloser(opener, closer) && opener.CalcConsumption(closer) > 0 {
 				end = index
 				break
 			}
@@ -90,4 +101,28 @@ func literalURLEnd(line []byte, end int, last *parser.Delimiter) int {
 	}
 
 	return end
+}
+
+func literalURLDelimiter(line []byte, index int, opener *parser.Delimiter) *parser.Delimiter {
+	before, _ := utf8.DecodeLastRune(line[:index])
+	length := 1
+
+	for index+length < len(line) && line[index+length] == opener.Char {
+		length++
+	}
+
+	after := rune(' ')
+
+	if index+length < len(line) {
+		after, _ = utf8.DecodeRune(line[index+length:])
+	}
+
+	canOpen := parser.IsLeftFlankingDelimiterRun(before, after)
+	canClose := parser.IsRightFlankingDelimiterRun(before, after)
+
+	if opener.Char == '_' {
+		canOpen, canClose = canOpen && (!canClose || util.IsPunctRune(before)), canClose && (!canOpen || util.IsPunctRune(after))
+	}
+
+	return parser.NewDelimiter(canOpen, canClose, length, opener.Char, opener.Processor)
 }

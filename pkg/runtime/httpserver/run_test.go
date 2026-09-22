@@ -112,7 +112,7 @@ func TestRunReturnsListenError(t *testing.T) {
 	server.stopOnce.Do(func() { close(server.stop) })
 
 	err := Run(t.Context(), server, time.Second)
-	if !errors.Is(err, wantErr) {
+	if err == nil || !errors.Is(err, wantErr) {
 		t.Fatalf("Run() error = %v, want wrapped %v", err, wantErr)
 	}
 
@@ -132,7 +132,7 @@ func TestRunReturnsShutdownError(t *testing.T) {
 	cancel()
 
 	err := Run(ctx, server, time.Second)
-	if !errors.Is(err, wantErr) {
+	if err == nil || !errors.Is(err, wantErr) {
 		t.Fatalf("Run() error = %v, want wrapped %v", err, wantErr)
 	}
 

@@ -1,6 +1,9 @@
 package kakaoformat
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 func inlineCodeRanges(input string, offset int) []CodeRange {
 	type run struct{ start, end int }
@@ -25,15 +28,15 @@ func inlineCodeRanges(input string, offset int) []CodeRange {
 	closing := make(map[int]int, len(runs))
 	next := make(map[int]int)
 
-	for i := len(runs) - 1; i >= 0; i-- {
+	for i, current := range slices.Backward(runs) {
 		if i+1 < len(runs) {
-			gap := input[runs[i].end:runs[i+1].start]
+			gap := input[current.end:runs[i+1].start]
 			if strings.Contains(gap, "\n\n") || strings.ContainsRune(gap, 0) {
 				clear(next)
 			}
 		}
 
-		width := runs[i].end - runs[i].start
+		width := current.end - current.start
 		if end, ok := next[width]; ok {
 			closing[i] = end
 		}

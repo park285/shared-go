@@ -6,12 +6,6 @@ import (
 	"testing"
 )
 
-func errorsAs(t *testing.T, err error, target any) bool {
-	t.Helper()
-
-	return errors.As(err, target)
-}
-
 func TestBlockedErrorError(t *testing.T) {
 	t.Parallel()
 
@@ -32,9 +26,8 @@ func TestCheckPopulatesBlockedErrorContext(t *testing.T) {
 		Enforcement: EnforcementInteractive,
 	})
 
-	var blocked *BlockedError
-
-	if !errorsAs(t, err, &blocked) {
+	blocked, ok := errors.AsType[*BlockedError](err)
+	if !ok || blocked == nil {
 		t.Fatalf("Check() error = %v, want *BlockedError", err)
 	}
 

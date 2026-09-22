@@ -186,7 +186,12 @@ func TestCheckURLAcceptsHTTP3LoopbackWithServerNameOverride(t *testing.T) {
 	t.Setenv(ClientKeyFileEnv, keyFile)
 	t.Setenv(ServerNameEnv, "healthprobe-h3.local")
 
-	url := "https://" + listener.LocalAddr().String() + "/ready"
+	address := listener.LocalAddr()
+	if address == nil {
+		t.Fatal("listener has no local address")
+	}
+
+	url := "https://" + address.String() + "/ready"
 	if err := CheckURLInternal(url); err != nil {
 		t.Fatalf("CheckURLInternal(%q): %v", url, err)
 	}
@@ -266,7 +271,12 @@ func startHTTP3TestServer(t *testing.T, tlsConfig *tls.Config, handler http.Hand
 		}
 	})
 
-	return "https://" + listener.LocalAddr().String()
+	address := listener.LocalAddr()
+	if address == nil {
+		t.Fatal("listener has no local address")
+	}
+
+	return "https://" + address.String()
 }
 
 func writeSelfSignedCert(t *testing.T, serverName string) (string, string) {

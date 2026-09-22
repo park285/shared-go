@@ -159,7 +159,11 @@ func (f *managedFinalizer) dispatchLocked() []*managedFinalizerTask {
 	tasks := make([]*managedFinalizerTask, 0, count)
 
 	for range count {
-		task, _ := f.queue.Pop()
+		task, ok := f.queue.Pop()
+		if !ok {
+			panic("workerpool: finalizer queue entry missing while locked")
+		}
+
 		f.snapshot.InFlight++
 
 		tasks = append(tasks, task)

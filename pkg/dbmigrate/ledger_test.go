@@ -222,6 +222,10 @@ func (db *fakeLedgerDB) Exec(_ context.Context, query string, args ...any) error
 	db.args = append(db.args, slices.Clone(args))
 
 	if strings.HasPrefix(query, "INSERT INTO ") {
+		if len(args) != 1 {
+			return fmt.Errorf("ledger insert arg count = %d, want 1", len(args))
+		}
+
 		name, ok := args[0].(string)
 		if !ok {
 			return fmt.Errorf("ledger insert arg 0 type = %T, want string", args[0])
@@ -246,6 +250,10 @@ func (db *fakeLedgerDB) Exec(_ context.Context, query string, args ...any) error
 }
 
 func (db *fakeLedgerDB) QueryRow(_ context.Context, _ string, args ...any) Row {
+	if len(args) != 1 {
+		return fakeLedgerRow{err: fmt.Errorf("ledger query arg count = %d, want 1", len(args))}
+	}
+
 	name, ok := args[0].(string)
 	if !ok {
 		return fakeLedgerRow{err: fmt.Errorf("ledger query arg 0 type = %T, want string", args[0])}
@@ -266,8 +274,12 @@ func (r fakeLedgerRow) Scan(dest ...any) error {
 		return r.err
 	}
 
+	if len(dest) != 1 {
+		return fmt.Errorf("ledger scan dest count = %d, want 1", len(dest))
+	}
+
 	target, ok := dest[0].(*bool)
-	if !ok {
+	if !ok || target == nil {
 		return fmt.Errorf("ledger scan dest 0 type = %T, want *bool", dest[0])
 	}
 

@@ -600,7 +600,11 @@ func (p *ManagedPool) nextExpiry() (time.Time, bool) {
 	var earliest time.Time
 
 	for index := range p.queue.Len() {
-		job, _ := p.queue.At(index)
+		job, ok := p.queue.At(index)
+		if !ok {
+			panic("workerpool: managed queue index missing while locked")
+		}
+
 		if job.expiresAt.IsZero() || (!earliest.IsZero() && !job.expiresAt.Before(earliest)) {
 			continue
 		}
@@ -618,7 +622,11 @@ func (p *ManagedPool) expireStale(now time.Time) {
 	queued := p.queue.Len()
 
 	for range queued {
-		job, _ := p.queue.Pop()
+		job, ok := p.queue.Pop()
+		if !ok {
+			panic("workerpool: managed queue entry missing while reaping")
+		}
+
 		if !job.expiresAt.IsZero() && !now.Before(job.expiresAt) {
 			stale = append(stale, job)
 

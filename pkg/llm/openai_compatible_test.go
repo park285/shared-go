@@ -356,6 +356,38 @@ func TestOpenAICompatibleJSONGeneratorDoesNotFallbackOnEmptyOutput(t *testing.T)
 	}
 }
 
+func TestOpenAICompatibleJSONGeneratorRejectsNullChatCompletion(t *testing.T) {
+	var calls atomic.Int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		writeJSON(t, w, `null`)
+	}))
+
+	defer server.Close()
+
+	generator, err := NewOpenAICompatibleJSONGenerator(OpenAICompatibleConfig{
+		BaseURL: server.URL,
+		APIKey:  testTestKey,
+	})
+	if err != nil {
+		t.Fatalf("NewOpenAICompatibleJSONGenerator error = %v", err)
+	}
+
+	req := validJSONRequest()
+
+	req.ChatCompletions = true
+
+	_, err = generator.GenerateJSON(t.Context(), req)
+	if !errors.Is(err, ErrOpenAIEmptyOutput) {
+		t.Fatalf("GenerateJSON error = %v, want ErrOpenAIEmptyOutput", err)
+	}
+
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("request count = %d, want 1", got)
+	}
+}
+
 func TestOpenAICompatibleJSONGeneratorDoesNotFallbackOnServerError(t *testing.T) {
 	var paths []string
 

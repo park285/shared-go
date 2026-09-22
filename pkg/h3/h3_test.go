@@ -184,7 +184,12 @@ func TestServerClientLoopbackWithServerNameOverride(t *testing.T) {
 	}
 	defer closeFn()
 
-	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://"+listener.LocalAddr().String()+"/health", http.NoBody)
+	address := listener.LocalAddr()
+	if address == nil {
+		t.Fatal("listener has no local address")
+	}
+
+	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://"+address.String()+"/health", http.NoBody)
 	if err != nil {
 		t.Fatalf("NewRequestWithContext() error = %v", err)
 	}

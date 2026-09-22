@@ -1,18 +1,15 @@
 package kakaoformat
 
 import (
-	"html"
-	"regexp"
+	"iter"
 	"strconv"
 	"strings"
 
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/extension"
-	extast "github.com/yuin/goldmark/extension/ast"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/text"
-	"github.com/yuin/goldmark/util"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/extension"
+	extast "github.com/yuin/goldmark/v2/extension/ast"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 const (
@@ -21,9 +18,9 @@ const (
 	emphasisStrike = 4
 )
 
-var (
-	plainParser = goldmark.New(goldmark.WithExtensions(extension.Table, extension.Strikethrough, extension.TaskList), goldmark.WithParserOptions(parser.WithInlineParsers(util.Prioritized(&literalURLParser{}, 150)))).Parser()
-	plainEntity = regexp.MustCompile(`&(?:#[xX][0-9a-fA-F]{1,6}|#[0-9]{1,7}|[A-Za-z][A-Za-z0-9]{1,31});`)
+var plainParser = parser.New(
+	parser.WithExtensions(extension.TableParser, extension.StrikethroughParser, extension.TaskListItemParser),
+	parser.WithInlineParsers(util.Prioritized[parser.InlineParser](&literalURLParser{}, 150)),
 )
 
 type (
@@ -38,7 +35,7 @@ type (
 func render(input string) string {
 	code := newStore("CODE")
 	source := []byte(protectCodeRanges(input, code))
-	root := plainParser.Parse(text.NewReader(source))
+	root := plainParser.Parse(source)
 	document := plainDocument{source: source, shapes: make(map[ast.Node]spanShape)}
 	document.measure(root)
 
@@ -58,11 +55,7 @@ func (d *plainDocument) measure(node ast.Node) spanShape {
 
 	switch n := node.(type) {
 	case *ast.Text:
-		value := plainText(string(n.Segment.Value(d.source)), n.IsRaw())
-
-		shape = spanShape{convertible(value, false), convertible(value, true)}
-	case *ast.String:
-		value := plainText(string(n.Value), n.IsRaw())
+		value := n.Value.Value(d.source)
 
 		shape = spanShape{convertible(value, false), convertible(value, true)}
 	case *ast.Link, *ast.Image, *ast.AutoLink, *ast.CodeSpan, *ast.RawHTML, *literalURL:
@@ -86,8 +79,8 @@ func (d *plainDocument) blocks(parent ast.Node, level int) string {
 			continue
 		}
 
-		if output.Len() > 0 {
-			if node.HasBlankPreviousLines() || node.Kind() == ast.KindHeading || previous.Kind() == ast.KindHeading {
+		if previous != nil {
+			if blockNode(node).HasBlankPreviousLines() || node.Kind() == ast.KindHeading || previous.Kind() == ast.KindHeading {
 				output.WriteString("\n\n")
 			} else {
 				output.WriteByte('\n')
@@ -104,7 +97,7 @@ func (d *plainDocument) blocks(parent ast.Node, level int) string {
 
 func (d *plainDocument) block(node ast.Node, level int) string {
 	switch n := node.(type) {
-	case *ast.Paragraph, *ast.TextBlock:
+	case *ast.Paragraph:
 		return d.inline(node, 0)
 	case *ast.Heading:
 		return "【" + d.inline(node, 0) + "】"
@@ -116,24 +109,21 @@ func (d *plainDocument) block(node ast.Node, level int) string {
 		return d.list(n, level)
 	case *extast.Table:
 		return d.table(n)
-	case *ast.FencedCodeBlock:
-		body := strings.TrimSuffix(string(n.Lines().Value(d.source)), "\n")
-		language := string(n.Language(d.source))
+	case *ast.CodeBlock:
+		if n.CodeBlockKind == ast.CodeBlockKindIndented {
+			return n.Value.Str(d.source)
+		}
+
+		body := strings.TrimSuffix(n.Value.Str(d.source), "\n")
+		language, _ := n.Language(d.source)
 
 		if language == "" {
 			language = "Code"
 		}
 
 		return strings.TrimSpace(codeBox("", language, body))
-	case *ast.CodeBlock:
-		return string(n.Lines().Value(d.source))
 	case *ast.HTMLBlock:
-		value := string(n.Lines().Value(d.source))
-		if n.HasClosure() {
-			value += string(n.ClosureLine.Value(d.source))
-		}
-
-		return strings.TrimSuffix(value, "\n")
+		return strings.TrimSuffix(n.Value.Str(d.source), "\n")
 	default:
 		return d.blocks(node, level)
 	}
@@ -175,8 +165,12 @@ func (d *plainDocument) list(node *ast.List, level int) string {
 		}
 
 		first := item.FirstChild()
-		if first != nil && first.FirstChild() != nil && first.FirstChild().Kind() == extast.KindTaskCheckBox {
-			marker = ""
+		if status, ok := extension.TaskStatusOf(item); ok {
+			marker = "✖ "
+
+			if status == extension.TaskStatusCompleted {
+				marker = "✔ "
+			}
 		}
 
 		output.WriteString(listIndent(level) + marker)
@@ -185,7 +179,7 @@ func (d *plainDocument) list(node *ast.List, level int) string {
 			if child != first {
 				output.WriteByte('\n')
 
-				if child.HasBlankPreviousLines() {
+				if blockNode(child).HasBlankPreviousLines() {
 					output.WriteByte('\n')
 				}
 			}
@@ -219,59 +213,51 @@ func (d *plainDocument) inlines(output *strings.Builder, parent ast.Node, style 
 func (d *plainDocument) inlineNode(output *strings.Builder, node ast.Node, style int) {
 	switch n := node.(type) {
 	case *ast.Text:
-		output.WriteString(styledText(plainText(string(n.Segment.Value(d.source)), n.IsRaw()), style))
+		output.WriteString(styledText(n.Value.Value(d.source), style))
 
 		if n.SoftLineBreak() || n.HardLineBreak() {
 			output.WriteByte('\n')
 		}
-	case *ast.String:
-		output.WriteString(styledText(plainText(string(n.Value), n.IsRaw()), style))
 	case *ast.Emphasis:
-		d.emphasis(output, n, style)
+		d.emphasis(output, n, emphasisItalic, style)
+	case *ast.Strong:
+		d.emphasis(output, n, emphasisBold, style)
 	case *extast.Strikethrough:
 		d.inlines(output, node, style|emphasisStrike)
 	case *ast.Link:
-		d.link(output, node, string(n.Destination), style)
+		d.link(output, node, n.Destination.Value(d.source), style)
 	case *ast.Image:
-		d.link(output, node, string(n.Destination), style)
+		d.link(output, node, n.Destination.Value(d.source), style)
 	case *literalURL:
-		output.WriteString(TransformEscapes(string(n.segment.Value(d.source)), func(value string) string { return value }))
+		output.WriteString(TransformEscapes(n.segment.Str(d.source), func(value string) string { return value }))
 	case *ast.AutoLink:
-		output.Write(n.Label(d.source))
+		output.WriteString(n.Label.Value(d.source))
 	case *ast.CodeSpan:
-		var body strings.Builder
-
-		for child := n.FirstChild(); child != nil; child = child.NextSibling() {
-			if value, ok := child.(*ast.Text); ok {
-				body.Write(value.Segment.Value(d.source))
-			}
-		}
-
-		output.WriteString("⦗ " + body.String() + " ⦘")
+		output.WriteString("⦗ " + n.Value.Value(d.source) + " ⦘")
 	case *ast.RawHTML:
-		output.Write(n.Segments.Value(d.source))
-	case *extast.TaskCheckBox:
-		if n.IsChecked {
-			output.WriteString("✔ ")
-		} else {
-			output.WriteString("✖ ")
-		}
+		output.WriteString(n.Value.Value(d.source))
 	default:
 		d.inlines(output, node, style)
 	}
 }
 
-func (d *plainDocument) emphasis(output *strings.Builder, node *ast.Emphasis, inherited int) {
-	style := node.Level
-	current := ast.Node(node)
+func (d *plainDocument) emphasis(output *strings.Builder, node ast.Node, style, inherited int) {
+	current := node
 
 	for current.ChildCount() == 1 {
-		nested, ok := current.FirstChild().(*ast.Emphasis)
-		if !ok {
-			break
+		nested := current.FirstChild()
+		switch nested.(type) {
+		case *ast.Emphasis:
+			style |= emphasisItalic
+		case *ast.Strong:
+			style |= emphasisBold
+		default:
+			nested = nil
 		}
 
-		style |= nested.Level
+		if nested == nil {
+			break
+		}
 
 		current = nested
 	}
@@ -304,8 +290,6 @@ func (d *plainDocument) emphasis(output *strings.Builder, node *ast.Emphasis, in
 func (d *plainDocument) link(output *strings.Builder, node ast.Node, destination string, style int) {
 	label := d.inline(node, style)
 
-	destination = plainText(destination, false)
-
 	if label == "" || strings.EqualFold(d.inline(node, 0), destination) {
 		output.WriteString(destination)
 	} else if destination == "" {
@@ -332,42 +316,47 @@ func styledText(input string, style int) string {
 	return input
 }
 
-func plainText(input string, raw bool) string {
-	if raw {
-		return input
+func blockNode(node ast.Node) ast.BlockNode {
+	block, ok := node.(ast.BlockNode)
+	if !ok {
+		panic("kakaoformat: non-block node in block traversal")
 	}
 
-	var output strings.Builder
+	return block
+}
 
-	start := 0
+func tableRows(node *extast.Table) iter.Seq[ast.Node] {
+	return func(yield func(ast.Node) bool) {
+		header := node.FirstChild()
+		if !yield(header) {
+			return
+		}
 
-	for index := 0; index < len(input); index++ {
-		if input[index] == '\\' && index+1 < len(input) && markdownPunctuation(input[index+1]) {
-			output.WriteString(plainEntity.ReplaceAllStringFunc(input[start:index], html.UnescapeString))
-			output.WriteByte(input[index+1])
-
-			index++
-
-			start = index + 1
+		if body := header.NextSibling(); body != nil {
+			for row := range body.Children() {
+				if !yield(row) {
+					return
+				}
+			}
 		}
 	}
-
-	output.WriteString(plainEntity.ReplaceAllStringFunc(input[start:], html.UnescapeString))
-
-	return output.String()
 }
 
 func (d *plainDocument) table(node *extast.Table) string {
 	source := d.tableSource(node)
 	headers := node.FirstChild()
-	columns, rows := headers.ChildCount(), node.ChildCount()-1
+	columns, rows := headers.ChildCount(), 0
+
+	if body := headers.NextSibling(); body != nil {
+		rows = body.ChildCount()
+	}
 
 	if columns > maxTableColumns || rows > maxTableRows || columns*(rows+2) > maxTableOutputLines-d.tableLines {
 		// 표시 확장 예산을 넘겨도 행·열을 버리지 않고 표 원문 전체를 남긴다.
 		return source
 	}
 
-	for row := node.FirstChild(); row != nil; row = row.NextSibling() {
+	for row := range tableRows(node) {
 		start, end := row.Pos(), row.Pos()
 		for end < len(d.source) && d.source[end] != '\n' {
 			end++
@@ -383,7 +372,7 @@ func (d *plainDocument) table(node *extast.Table) string {
 
 	values := make([][]string, 0, rows+1)
 
-	for row := node.FirstChild(); row != nil; row = row.NextSibling() {
+	for row := range tableRows(node) {
 		cells := make([]string, 0, columns)
 
 		for cell := row.FirstChild(); cell != nil; cell = cell.NextSibling() {
@@ -420,13 +409,13 @@ func (d *plainDocument) tableSource(node *extast.Table) string {
 	start := node.Pos()
 	end := start
 
-	for row := node.FirstChild(); row != nil; row = row.NextSibling() {
+	for row := range tableRows(node) {
 		end = max(end, row.Pos())
 
 		for cell := row.FirstChild(); cell != nil; cell = cell.NextSibling() {
-			lines := cell.Lines()
-			if lines.Len() > 0 {
-				end = max(end, lines.At(lines.Len()-1).Stop)
+			lines := blockNode(cell).Source()
+			if len(lines) > 0 {
+				end = max(end, lines[len(lines)-1].Stop)
 			}
 		}
 	}

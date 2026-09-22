@@ -108,6 +108,10 @@ func TestEnableFileLoggingWithOptionsKeepsFileLoggingWhenStdoutStalls(t *testing
 		t.Fatalf("enableFileLoggingWithStdout() error = %v", err)
 	}
 
+	if closer == nil {
+		t.Fatal("file logging did not return a closer")
+	}
+
 	done := make(chan struct{})
 
 	go func() {

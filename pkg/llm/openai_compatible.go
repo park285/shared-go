@@ -251,6 +251,10 @@ func (g *OpenAICompatibleJSONGenerator) generateChatCompletionsJSON(ctx context.
 		return JSONResponse{}, fmt.Errorf("openai chat completions API: %w", err)
 	}
 
+	if completion == nil {
+		return JSONResponse{}, fmt.Errorf("%w: null chat completion", ErrOpenAIEmptyOutput)
+	}
+
 	if len(completion.Choices) == 0 {
 		return JSONResponse{}, fmt.Errorf("%w: choices=0", ErrOpenAIEmptyOutput)
 	}

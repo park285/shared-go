@@ -158,6 +158,10 @@ func TestEnableFileLogging_AsyncSummaryKeepsJSONFormat(t *testing.T) {
 		t.Fatalf("enableFileLoggingWithStdout() error = %v", err)
 	}
 
+	if closer == nil {
+		t.Fatal("file logging did not return a closer")
+	}
+
 	<-stdout.started
 
 	for seq := range asyncStdoutQueueDepth * 2 {

@@ -115,7 +115,9 @@ func stableCountingReorderUnicode17(
 	start, end int,
 	scratch []rune,
 ) []rune {
-	length := end - start
+	segment := decomposed[start:end]
+	length := len(segment)
+
 	if cap(scratch) < length {
 		scratch = make([]rune, length)
 	} else {
@@ -138,14 +140,14 @@ func stableCountingReorderUnicode17(
 		position += counts[class]
 	}
 
-	for index, current := range decomposed[start:end] {
+	for index, current := range segment {
 		class := classes[start+index]
 
 		scratch[next[class]] = current
 		next[class]++
 	}
 
-	copy(decomposed[start:end], scratch)
+	copy(segment, scratch)
 
 	return scratch
 }

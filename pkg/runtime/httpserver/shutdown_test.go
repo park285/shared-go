@@ -37,7 +37,7 @@ func TestShutdown_Error(t *testing.T) {
 	server := newFakeServer(nil, wantErr)
 
 	err := Shutdown(t.Context(), server, "shutdown failed")
-	if !errors.Is(err, wantErr) {
+	if err == nil || !errors.Is(err, wantErr) {
 		t.Fatalf("Shutdown() error = %v, want wrapped %v", err, wantErr)
 	}
 

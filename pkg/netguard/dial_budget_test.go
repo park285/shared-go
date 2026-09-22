@@ -140,6 +140,10 @@ func TestGuardedDialContextKeepsConnUsableAfterAttemptCancel(t *testing.T) {
 		t.Fatalf("guarded dial error = %v, want connection to the middle candidate", err)
 	}
 
+	if conn == nil {
+		t.Fatal("guarded dial returned no connection")
+	}
+
 	defer testsupport.CloseNow(t, "conn.Close", conn.Close)
 
 	server := <-accepted

@@ -263,7 +263,7 @@ func TestWithAdvisoryLockExternalContextCancellationDuringPoll(t *testing.T) {
 		return nil
 	})
 
-	if !errors.Is(err, context.Canceled) {
+	if err == nil || !errors.Is(err, context.Canceled) {
 		t.Fatalf("WithAdvisoryLock() error = %v, want context.Canceled", err)
 	}
 

@@ -698,7 +698,12 @@ func recordTestSpan(t *testing.T) sdktrace.ReadOnlySpan {
 		}
 	})
 
-	_, span := provider.Tracer("telemetry-test").Start(t.Context(), "export-test")
+	tracer := provider.Tracer("telemetry-test")
+	if tracer == nil {
+		t.Fatal("provider did not return a tracer")
+	}
+
+	_, span := tracer.Start(t.Context(), "export-test")
 	span.End()
 
 	ended := recorder.Ended()

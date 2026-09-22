@@ -108,6 +108,9 @@ func trustTestServer(t *testing.T, transport *http.Transport, server *httptest.S
 	}
 
 	cfg := transport.TLSClientConfig.Clone()
+	if cfg == nil {
+		t.Fatal("Clone returned nil for a non-nil TLS config")
+	}
 
 	cfg.RootCAs = roots
 	transport.TLSClientConfig = cfg

@@ -292,6 +292,10 @@ func TestFixedWindowRateLimiterEvictsLeastRecentlySeenInConstantOrder(t *testing
 		Now:           func() time.Time { return now },
 	})
 
+	if limiter == nil {
+		t.Fatal("positive rate limit did not create a limiter")
+	}
+
 	if !limiter.Allow("first") || !limiter.Allow("second") {
 		t.Fatal("initial identities were not admitted")
 	}
@@ -353,6 +357,10 @@ func TestFixedWindowRateLimiterZeroOptionsApplySafeDefaults(t *testing.T) {
 	limiter := NewFixedWindowRateLimiter(1, time.Hour, FixedWindowOptions{
 		Now: func() time.Time { return now },
 	})
+
+	if limiter == nil {
+		t.Fatal("positive rate limit did not create a limiter")
+	}
 
 	for i := range defaultFixedWindowMaxIdentities + 1 {
 		if !limiter.Allow(fmt.Sprintf("identity-%05d", i)) {
