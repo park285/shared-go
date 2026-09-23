@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd -P)"
-UV_VERSION="0.12.13"
+UV_VERSION="0.12.17"
 PYTHON_VERSION="3.14.7"
 PIN_FILE="${ROOT_DIR}/.python-version"
 

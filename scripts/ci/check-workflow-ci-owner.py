@@ -17,7 +17,7 @@ PYTHON_RUNTIME_ACTION_PATH = Path(".github/actions/python-runtime/action.yml")
 PYTHON_RUNTIME_ACTION_USES = "uses: ./.github/actions/python-runtime"
 PYTHON_RUNTIME_ACTION_SHA256 = "caaa508aa7aeace95c869ae713c95c7e8350b8bb422e317228067ecb97cb8576"
 PYTHON_RUNTIME_INSTALLER_PATH = PYTHON_RUNTIME_ACTION_PATH.with_name("install-uv.sh")
-PYTHON_RUNTIME_INSTALLER_SHA256 = "35c97dd665837505ed798429ac96a9ea41b091b703145ff9ba964a8c43c90445"
+PYTHON_RUNTIME_INSTALLER_SHA256 = "c6f9829d94152158a64fece4fbcb0a47e5d37629e8c2a472479a61348a749643"
 SECURITY_CANDIDATES = (
     Path(".github/workflows/security.yml"),
     Path(".github/workflows/security.yaml"),
@@ -71,7 +71,7 @@ REMOTE_LIBRARY_FIXTURE_WORKFLOW_SHA256 = "132a3046c47792056c3253f2d0c1f42c084afb
 APP_CANONICAL_WORKFLOW_SHA256 = {
     "github.com/kapu/chat-bot-go-kakao": "e1b92d0bb3fec340ebe849b0302368f7f28b15c2d76898e0b0114b54f46b019f",
     "github.com/park285/twentyq-bot": "953856eba5f5029f8b081b5d6240ab56a29e7bfa686a2cf821b95957587a60f8",
-    "github.com/kapu/hololive-bot-workspace": "53d5621066d315323d5cd7808cc6808adaf13856fc7055009894d42e33af8482",
+    "github.com/kapu/hololive-bot-workspace": "aa99da9ecb798ca01e080eac142ada14cc40dab8ee2fd1f2eba0219cdb3f3a1c",
 }
 LOCAL_DURABLE_FAST_APP_MODULES = frozenset(
     {
