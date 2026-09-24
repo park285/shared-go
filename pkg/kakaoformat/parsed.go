@@ -33,13 +33,14 @@ type (
 )
 
 func render(input string) string {
+	literal := newStore("NEUTRALIZED")
 	code := newStore("CODE")
-	source := []byte(protectCodeRanges(input, code))
+	source := []byte(protectCodeRanges(protectNeutralizedMarkers(input, literal), code))
 	root := plainParser.Parse(source)
 	document := plainDocument{source: source, shapes: make(map[ast.Node]spanShape)}
 	document.measure(root)
 
-	return code.Restore(cleanupSpacing(document.blocks(root, 0)))
+	return literal.Restore(code.Restore(cleanupSpacing(document.blocks(root, 0))))
 }
 
 func (d *plainDocument) measure(node ast.Node) spanShape {

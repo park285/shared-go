@@ -3,6 +3,13 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## v2.7.0 - 2026-09-24
+
+- 스택 소비자가 사용하지 않는 Responses→Chat 자동 fallback API를 제거합니다.
+  호출자가 선택한 전송 방식과 오류 의미는 유지합니다.
+- 표시 문자열의 마커 뒤 ZWSP를 Markdown 재해석 전에 보호하고 코드·URL·접기 문자를 보존합니다.
+- release gate에서 소유 일회용 PostgreSQL의 필수 durable-store 회귀가 실제 실행되고 skip이 없음을 확인합니다.
+
 ## 미출시
 
 - `kakaoformat`은 Goldmark v1.8.5의 구문 트리로 Markdown을 변환합니다. 한글 조사와
