@@ -254,23 +254,21 @@ func TestGenerateLayeredResponsesJSONPreservesEmptyOutputSentinel(t *testing.T) 
 }
 
 func TestGenerateLayeredResponsesJSONRejectsChatTransportBeforeRequest(t *testing.T) {
-	for _, opt := range []openaipreset.Option{openaipreset.WithChatCompletions(), openaipreset.WithAllowChatCompletionsFallback(true)} {
-		var calls atomic.Int32
+	var calls atomic.Int32
 
-		server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls.Add(1) }))
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls.Add(1) }))
 
-		client, err := openaipreset.New(server.URL, "test-key", "gpt-test", opt)
-		if err != nil {
-			t.Fatalf("New: %v", err)
-		}
+	client, err := openaipreset.New(server.URL, "test-key", "gpt-test", openaipreset.WithChatCompletions())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
 
-		_, err = client.GenerateLayeredResponsesJSON(t.Context(), "task", openaipreset.PromptLayers{User: testUser}, map[string]any{testFieldType: testObject})
+	_, err = client.GenerateLayeredResponsesJSON(t.Context(), "task", openaipreset.PromptLayers{User: testUser}, map[string]any{testFieldType: testObject})
 
-		server.Close()
+	server.Close()
 
-		if !errors.Is(err, openaipreset.ErrResponsesJSONRequired) || calls.Load() != 0 {
-			t.Fatalf("err=%v calls=%d", err, calls.Load())
-		}
+	if !errors.Is(err, openaipreset.ErrResponsesJSONRequired) || calls.Load() != 0 {
+		t.Fatalf("err=%v calls=%d", err, calls.Load())
 	}
 }
 

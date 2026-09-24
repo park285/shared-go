@@ -28,10 +28,9 @@ var (
 const DefaultOpenAIMaxRetries = 2
 
 type OpenAICompatibleConfig struct {
-	BaseURL                      string
-	APIKey                       string
-	HTTPClient                   *http.Client
-	AllowChatCompletionsFallback bool
+	BaseURL    string
+	APIKey     string
+	HTTPClient *http.Client
 	// nil이면 DefaultOpenAIMaxRetries, 0이면 재시도 없음.
 	MaxRetries *int
 }
@@ -50,8 +49,7 @@ func ResolveOpenAIMaxRetries(configured *int) int {
 }
 
 type OpenAICompatibleJSONGenerator struct {
-	client                       openai.Client
-	allowChatCompletionsFallback bool
+	client openai.Client
 }
 
 func NewOpenAICompatibleJSONGenerator(cfg OpenAICompatibleConfig) (*OpenAICompatibleJSONGenerator, error) {
@@ -72,10 +70,7 @@ func NewOpenAICompatibleJSONGenerator(cfg OpenAICompatibleConfig) (*OpenAICompat
 		opts = append(opts, option.WithHTTPClient(cfg.HTTPClient))
 	}
 
-	return &OpenAICompatibleJSONGenerator{
-		client:                       openai.NewClient(opts...),
-		allowChatCompletionsFallback: cfg.AllowChatCompletionsFallback,
-	}, nil
+	return &OpenAICompatibleJSONGenerator{client: openai.NewClient(opts...)}, nil
 }
 
 func (g *OpenAICompatibleJSONGenerator) GenerateJSON(ctx context.Context, req JSONRequest) (JSONResponse, error) {
@@ -105,30 +100,11 @@ func (g *OpenAICompatibleJSONGenerator) GenerateJSON(ctx context.Context, req JS
 	}
 
 	resp, err := g.generateResponsesJSON(ctx, req)
-	if err == nil {
-		return resp, nil
+	if safeErr := safeOpenAICompatibleError(err); safeErr != nil {
+		return JSONResponse{}, fmt.Errorf("safe open AI compatible error: %w", safeErr)
 	}
 
-	if !g.allowChatCompletionsFallback || !shouldFallbackToChatCompletions(err) {
-		if safeErr := safeOpenAICompatibleError(err); safeErr != nil {
-			return JSONResponse{}, fmt.Errorf("safe open AI compatible error: %w", safeErr)
-		}
-
-		return JSONResponse{}, nil
-	}
-
-	if ctxErr := ctx.Err(); ctxErr != nil {
-		return JSONResponse{}, ctxErr
-	}
-
-	fallbackResp, fallbackErr := g.generateChatCompletionsJSON(ctx, req)
-	if fallbackErr != nil {
-		return JSONResponse{}, fmt.Errorf("openai responses failed (%w) and chat completions fallback failed: %w", safeOpenAICompatibleError(err), safeOpenAICompatibleError(fallbackErr))
-	}
-
-	fallbackResp.FallbackUsed = true
-
-	return fallbackResp, nil
+	return resp, nil
 }
 
 const defaultResponsesSchemaName = "schema"

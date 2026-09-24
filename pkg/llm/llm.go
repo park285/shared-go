@@ -43,10 +43,9 @@ type JSONRequest struct {
 }
 
 type JSONResponse struct {
-	Text         string
-	Model        string
-	Usage        Usage
-	FallbackUsed bool
+	Text  string
+	Model string
+	Usage Usage
 }
 
 type Usage struct {

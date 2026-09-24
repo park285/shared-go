@@ -246,51 +246,37 @@ func TestOpenAICompatibleJSONGeneratorChatCompletionsStructuredOutput(t *testing
 	assertJSONContains(t, payload["reasoning_effort"], "low")
 }
 
-func TestOpenAICompatibleJSONGeneratorFallsBackToChatCompletions(t *testing.T) {
+func TestOpenAICompatibleJSONGeneratorUnsupportedEndpointUsesResponsesOnly(t *testing.T) {
 	var paths []string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		paths = append(paths, r.URL.Path)
-		switch r.URL.Path {
-		case testResponses:
-			http.Error(w, `{"error":{"message":"unsupported endpoint","type":"invalid_request_error","code":"unsupported_endpoint"}}`, http.StatusNotFound)
-		case "/chat/completions":
-			writeJSON(t, w, `{"id":"chatcmpl-1","object":"chat.completion","created":1,"model":"gpt-chat","choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"{\"fallback\":true}"}}],"usage":{"prompt_tokens":4,"completion_tokens":3,"total_tokens":7}}`)
-		default:
-			t.Errorf("unexpected path %s", r.URL.Path)
-			http.NotFound(w, r)
-		}
+
+		http.Error(w, `{"error":{"message":"private provider detail","type":"invalid_request_error","code":"unsupported_endpoint"}}`, http.StatusNotFound)
 	}))
+
 	defer server.Close()
 
+	zeroRetries := 0
+
 	generator, err := NewOpenAICompatibleJSONGenerator(OpenAICompatibleConfig{
-		BaseURL:                      server.URL,
-		APIKey:                       testTestKey,
-		AllowChatCompletionsFallback: true,
+		BaseURL: server.URL, APIKey: testTestKey, MaxRetries: &zeroRetries,
 	})
 	if err != nil {
-		t.Fatalf("NewOpenAICompatibleJSONGenerator error = %v", err)
+		t.Fatalf("NewOpenAICompatibleJSONGenerator: %v", err)
 	}
 
-	got, err := generator.GenerateJSON(t.Context(), validJSONRequest())
-	if err != nil {
-		t.Fatalf("GenerateJSON error = %v", err)
+	_, err = generator.GenerateJSON(t.Context(), validJSONRequest())
+	if err == nil || strings.Contains(err.Error(), "private provider detail") {
+		t.Fatalf("GenerateJSON error = %v, want sanitized provider error", err)
 	}
 
-	if got.Text != `{"fallback":true}` {
-		t.Fatalf("Text = %q, want fallback JSON", got.Text)
-	}
-
-	if !got.FallbackUsed {
-		t.Fatal("FallbackUsed = false, want true")
-	}
-
-	if strings.Join(paths, ",") != "/responses,/chat/completions" {
-		t.Fatalf("paths = %v, want responses then chat completions", paths)
+	if strings.Join(paths, ",") != testResponses {
+		t.Fatalf("paths = %v, want one Responses request", paths)
 	}
 }
 
-func TestOpenAICompatibleJSONGeneratorDoesNotFallbackOnRefusal(t *testing.T) {
+func TestOpenAICompatibleJSONGeneratorRefusalUsesResponsesOnly(t *testing.T) {
 	var paths []string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -301,9 +287,8 @@ func TestOpenAICompatibleJSONGeneratorDoesNotFallbackOnRefusal(t *testing.T) {
 	defer server.Close()
 
 	generator, err := NewOpenAICompatibleJSONGenerator(OpenAICompatibleConfig{
-		BaseURL:                      server.URL,
-		APIKey:                       testTestKey,
-		AllowChatCompletionsFallback: true,
+		BaseURL: server.URL,
+		APIKey:  testTestKey,
 	})
 	if err != nil {
 		t.Fatalf("NewOpenAICompatibleJSONGenerator error = %v", err)
@@ -327,7 +312,7 @@ func TestOpenAICompatibleJSONGeneratorDoesNotFallbackOnRefusal(t *testing.T) {
 	}
 }
 
-func TestOpenAICompatibleJSONGeneratorDoesNotFallbackOnEmptyOutput(t *testing.T) {
+func TestOpenAICompatibleJSONGeneratorEmptyOutputUsesResponsesOnly(t *testing.T) {
 	var paths []string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -338,9 +323,8 @@ func TestOpenAICompatibleJSONGeneratorDoesNotFallbackOnEmptyOutput(t *testing.T)
 	defer server.Close()
 
 	generator, err := NewOpenAICompatibleJSONGenerator(OpenAICompatibleConfig{
-		BaseURL:                      server.URL,
-		APIKey:                       testTestKey,
-		AllowChatCompletionsFallback: true,
+		BaseURL: server.URL,
+		APIKey:  testTestKey,
 	})
 	if err != nil {
 		t.Fatalf("NewOpenAICompatibleJSONGenerator error = %v", err)
@@ -388,7 +372,7 @@ func TestOpenAICompatibleJSONGeneratorRejectsNullChatCompletion(t *testing.T) {
 	}
 }
 
-func TestOpenAICompatibleJSONGeneratorDoesNotFallbackOnServerError(t *testing.T) {
+func TestOpenAICompatibleJSONGeneratorServerErrorUsesResponsesOnly(t *testing.T) {
 	var paths []string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -401,10 +385,9 @@ func TestOpenAICompatibleJSONGeneratorDoesNotFallbackOnServerError(t *testing.T)
 	zeroRetries := 0
 
 	generator, err := NewOpenAICompatibleJSONGenerator(OpenAICompatibleConfig{
-		BaseURL:                      server.URL,
-		APIKey:                       testTestKey,
-		AllowChatCompletionsFallback: true,
-		MaxRetries:                   &zeroRetries,
+		BaseURL:    server.URL,
+		APIKey:     testTestKey,
+		MaxRetries: &zeroRetries,
 	})
 	if err != nil {
 		t.Fatalf("NewOpenAICompatibleJSONGenerator error = %v", err)

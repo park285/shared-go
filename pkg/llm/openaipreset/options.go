@@ -9,17 +9,16 @@ import (
 )
 
 type config struct {
-	schemaName                   string
-	temperature                  *float64
-	reasoningEffort              string
-	webSearch                    bool
-	chatCompletions              bool
-	allowChatCompletionsFallback bool
-	httpClient                   *http.Client
-	usageReporter                sharedllm.UsageReporter
-	logger                       *slog.Logger
-	maxRetries                   *int
-	promptCacheKeyPrefix         string
+	schemaName           string
+	temperature          *float64
+	reasoningEffort      string
+	webSearch            bool
+	chatCompletions      bool
+	httpClient           *http.Client
+	usageReporter        sharedllm.UsageReporter
+	logger               *slog.Logger
+	maxRetries           *int
+	promptCacheKeyPrefix string
 }
 
 type Option func(*config)
@@ -87,12 +86,6 @@ func WithLogger(logger *slog.Logger) Option {
 		if logger != nil {
 			c.logger = logger
 		}
-	}
-}
-
-func WithAllowChatCompletionsFallback(enabled bool) Option {
-	return func(c *config) {
-		c.allowChatCompletionsFallback = enabled
 	}
 }
 

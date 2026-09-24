@@ -45,67 +45,7 @@ func TestGenerateJSONAsChatCompletions(t *testing.T) {
 	assertFlattenedChatMessages(t, payload["messages"])
 }
 
-func TestGenerateJSONAsFallbackOptIn(t *testing.T) {
-	var (
-		paths            []string
-		responsesPayload map[string]any
-		chatPayload      map[string]any
-	)
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		paths = append(paths, r.URL.Path)
-		switch r.URL.Path {
-		case testResponses:
-			if err := jsonv2.UnmarshalRead(r.Body, &responsesPayload); err != nil {
-				t.Fatalf("decode responses request: %v", err)
-			}
-
-			http.Error(w, `{"error":{"message":"unsupported endpoint","type":"invalid_request_error","code":"unsupported_endpoint"}}`, http.StatusNotFound)
-		case "/chat/completions":
-			if err := jsonv2.UnmarshalRead(r.Body, &chatPayload); err != nil {
-				t.Fatalf("decode chat request: %v", err)
-			}
-
-			writeJSON(t, w, chatBody)
-		default:
-			t.Errorf("unexpected path %s", r.URL.Path)
-			http.NotFound(w, r)
-		}
-	}))
-
-	defer server.Close()
-
-	client, err := openaipreset.New(server.URL, "test-key", "gpt-test",
-		openaipreset.WithAllowChatCompletionsFallback(true),
-	)
-	if err != nil {
-		t.Fatalf("New error = %v", err)
-	}
-
-	_, err = client.GenerateJSONAs[answerPayload](t.Context(), "task", testPromptLayers(), map[string]any{testFieldType: testObject})
-	if err != nil {
-		t.Fatalf("GenerateJSONAs error = %v", err)
-	}
-
-	if strings.Join(paths, ",") != "/responses,/chat/completions" {
-		t.Fatalf("paths = %v, want responses then chat completions", paths)
-	}
-
-	responsesMessages := requestMessages(t, responsesPayload["input"])
-	if len(responsesMessages) != 3 {
-		t.Fatalf("responses message count = %d, want 3", len(responsesMessages))
-	}
-
-	for i, role := range []string{testDeveloper, testDeveloper, testUser} {
-		if got := responsesMessages[i]["role"]; got != role {
-			t.Fatalf("responses input[%d].role = %#v, want %q", i, got, role)
-		}
-	}
-
-	assertFlattenedChatMessages(t, chatPayload["messages"])
-}
-
-func TestGenerateJSONAsFallbackDisabledByDefault(t *testing.T) {
+func TestGenerateJSONAsResponsesErrorDoesNotUseChat(t *testing.T) {
 	var paths []string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -241,46 +181,7 @@ func TestGenerateJSONChatCompletions(t *testing.T) {
 	assertJSONContains(t, payload["messages"], "user prompt")
 }
 
-func TestGenerateJSONFallbackOptIn(t *testing.T) {
-	var paths []string
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		paths = append(paths, r.URL.Path)
-		switch r.URL.Path {
-		case testResponses:
-			http.Error(w, `{"error":{"message":"unsupported endpoint","type":"invalid_request_error","code":"unsupported_endpoint"}}`, http.StatusNotFound)
-		case "/chat/completions":
-			writeJSON(t, w, chatBody)
-		default:
-			t.Errorf("unexpected path %s", r.URL.Path)
-			http.NotFound(w, r)
-		}
-	}))
-
-	defer server.Close()
-
-	client, err := openaipreset.New(server.URL, "test-key", "gpt-test",
-		openaipreset.WithAllowChatCompletionsFallback(true),
-	)
-	if err != nil {
-		t.Fatalf("New error = %v", err)
-	}
-
-	got, err := client.GenerateJSON(t.Context(), "system prompt", "user prompt", map[string]any{testFieldType: testObject})
-	if err != nil {
-		t.Fatalf("GenerateJSON error = %v", err)
-	}
-
-	if got != `{"answer":"no"}` {
-		t.Fatalf("text = %q, want fallback JSON", got)
-	}
-
-	if strings.Join(paths, ",") != "/responses,/chat/completions" {
-		t.Fatalf("paths = %v, want responses then chat completions", paths)
-	}
-}
-
-func TestGenerateJSONFallbackDisabledByDefault(t *testing.T) {
+func TestGenerateJSONResponsesErrorDoesNotUseChat(t *testing.T) {
 	var paths []string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

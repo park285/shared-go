@@ -34,18 +34,17 @@ var errClientNil = errors.New("openaipreset: client is nil")
 var ErrResponsesJSONRequired = errors.New("openaipreset: responses JSON transport required")
 
 type Client struct {
-	generator                    sharedllm.JSONGenerator
-	openai                       openai.Client
-	model                        string
-	schemaName                   string
-	temperature                  *float64
-	reasoningEffort              string
-	webSearch                    bool
-	chatCompletions              bool
-	allowChatCompletionsFallback bool
-	usageReporter                sharedllm.UsageReporter
-	logger                       *slog.Logger
-	promptCacheKeyPrefix         string
+	generator            sharedllm.JSONGenerator
+	openai               openai.Client
+	model                string
+	schemaName           string
+	temperature          *float64
+	reasoningEffort      string
+	webSearch            bool
+	chatCompletions      bool
+	usageReporter        sharedllm.UsageReporter
+	logger               *slog.Logger
+	promptCacheKeyPrefix string
 }
 
 type PromptLayers struct {
@@ -81,11 +80,10 @@ func New(baseURL, apiKey, model string, opts ...Option) (*Client, error) {
 	requestOpts = append(requestOpts, option.WithHTTPClient(httpClient))
 
 	generator, err := sharedllm.NewOpenAICompatibleJSONGenerator(sharedllm.OpenAICompatibleConfig{
-		BaseURL:                      baseURL,
-		APIKey:                       apiKey,
-		HTTPClient:                   httpClient,
-		AllowChatCompletionsFallback: cfg.allowChatCompletionsFallback,
-		MaxRetries:                   cfg.maxRetries,
+		BaseURL:    baseURL,
+		APIKey:     apiKey,
+		HTTPClient: httpClient,
+		MaxRetries: cfg.maxRetries,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("open AI compatible JSON generator: %w", err)
@@ -97,18 +95,17 @@ func New(baseURL, apiKey, model string, opts ...Option) (*Client, error) {
 	}
 
 	return &Client{
-		generator:                    generator,
-		openai:                       openai.NewClient(requestOpts...),
-		model:                        strings.TrimSpace(model),
-		schemaName:                   cfg.schemaName,
-		temperature:                  cfg.temperature,
-		reasoningEffort:              cfg.reasoningEffort,
-		webSearch:                    cfg.webSearch,
-		chatCompletions:              cfg.chatCompletions,
-		allowChatCompletionsFallback: cfg.allowChatCompletionsFallback,
-		usageReporter:                reporter,
-		logger:                       cfg.logger,
-		promptCacheKeyPrefix:         cfg.promptCacheKeyPrefix,
+		generator:            generator,
+		openai:               openai.NewClient(requestOpts...),
+		model:                strings.TrimSpace(model),
+		schemaName:           cfg.schemaName,
+		temperature:          cfg.temperature,
+		reasoningEffort:      cfg.reasoningEffort,
+		webSearch:            cfg.webSearch,
+		chatCompletions:      cfg.chatCompletions,
+		usageReporter:        reporter,
+		logger:               cfg.logger,
+		promptCacheKeyPrefix: cfg.promptCacheKeyPrefix,
 	}, nil
 }
 
@@ -182,7 +179,7 @@ func (c *Client) GenerateLayeredResponsesJSON(ctx context.Context, task string, 
 		return "", errClientNil
 	}
 
-	if c.chatCompletions || c.allowChatCompletionsFallback {
+	if c.chatCompletions {
 		return "", ErrResponsesJSONRequired
 	}
 
