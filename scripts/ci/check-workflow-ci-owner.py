@@ -17,7 +17,7 @@ PYTHON_RUNTIME_ACTION_PATH = Path(".github/actions/python-runtime/action.yml")
 PYTHON_RUNTIME_ACTION_USES = "uses: ./.github/actions/python-runtime"
 PYTHON_RUNTIME_ACTION_SHA256 = "caaa508aa7aeace95c869ae713c95c7e8350b8bb422e317228067ecb97cb8576"
 PYTHON_RUNTIME_INSTALLER_PATH = PYTHON_RUNTIME_ACTION_PATH.with_name("install-uv.sh")
-PYTHON_RUNTIME_INSTALLER_SHA256 = "c6f9829d94152158a64fece4fbcb0a47e5d37629e8c2a472479a61348a749643"
+PYTHON_RUNTIME_INSTALLER_SHA256 = "5e5692fa8822004465611bb35369241e2c1369372baa4a2b50b49f3733355979"
 SECURITY_CANDIDATES = (
     Path(".github/workflows/security.yml"),
     Path(".github/workflows/security.yaml"),

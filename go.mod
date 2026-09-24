@@ -7,8 +7,8 @@ retract v2.4.1 // exported package removal was incorrectly published as a patch;
 require (
 	github.com/gin-gonic/gin v1.12.0
 	github.com/jackc/pgx/v5 v5.11.0
-	github.com/openai/openai-go/v3 v3.64.0
-	github.com/quic-go/quic-go v0.62.0
+	github.com/openai/openai-go/v3 v3.66.0
+	github.com/quic-go/quic-go v0.63.0
 	github.com/stretchr/testify v1.12.1
 	github.com/ymw0407/jamo v1.0.0
 	github.com/yuin/goldmark/v2 v2.1.5
@@ -22,7 +22,7 @@ require (
 	golang.org/x/net v0.59.0
 	golang.org/x/sync v0.23.0
 	golang.org/x/text v0.42.0
-	google.golang.org/grpc v1.83.2
+	google.golang.org/grpc v1.84.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
 
