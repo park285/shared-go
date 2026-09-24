@@ -96,3 +96,5 @@ go build ./...
 ```
 
 **CI 정책:** 본 리포지토리는 원격 깃허브 액션(GitHub Actions)이 실제 검증 주체입니다. `ci.yml`은 PR 및 `main` push마다 workflow secret 경계 검사, SQL ownership 검사, `gofmt`, `go vet`, `golangci-lint`, 경합 조건 검사를 포함한 테스트 슈트(`go test -race -count=1 ./...`)를 수행하며, `security.yml`은 `main` push·주간 스케줄·수동 dispatch 시 `govulncheck` 취약점 분석을 수행합니다.
+
+릴리스 검증(`bash scripts/ci/release-gate.sh`)은 Docker가 준비된 환경에서 별도 일회용 PostgreSQL 컨테이너를 소유합니다. `pkg/irisdurable/...`의 race 테스트를 실제 DB로 실행하고 필수 pgstore 사례의 pass와 전체 skip=0을 확인합니다. 컨테이너를 준비할 수 없으면 릴리스 검증은 실패합니다.
