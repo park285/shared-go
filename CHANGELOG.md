@@ -25,6 +25,8 @@
   보존해 데이터가 누락되지 않도록 합니다.
 - pgxdb 통합 테스트와 pgstore release gate가 일회용 PostgreSQL 컨테이너를 지울 때
   이미지가 선언한 익명 volume도 함께 지웁니다.
+- pgxdb 통합 테스트가 이미지 pull·platform 경고를 container ID로 읽어 조용히 skip하고,
+  시작한 컨테이너를 남기던 결함을 수정합니다. ID는 stdout에서만 읽습니다.
 
 ## v2.6.1 - 2026-09-08
 

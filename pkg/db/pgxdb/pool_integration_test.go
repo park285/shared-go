@@ -64,13 +64,15 @@ func startPostgres() (string, string, error) {
 	runCtx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
+	// 이미지 pull·platform 경고는 stderr로 나온다. stdout의 container ID만 읽어야 시작한 컨테이너를
+	// 정리할 수 있고, 경고가 섞인 ID로 inspect가 실패해 테스트가 조용히 skip되지 않는다.
 	out, err := exec.CommandContext(runCtx, "docker", "run", "-d", "--rm",
 		"-e", "POSTGRES_PASSWORD=sharedgo-local-test-placeholder",
 		"-e", "POSTGRES_DB=sharedgo_test",
 		"-P", "postgres:16-alpine",
-	).CombinedOutput()
+	).Output()
 	if err != nil {
-		return "", "", fmt.Errorf("docker run: %w: %s", err, strings.TrimSpace(string(out)))
+		return "", "", fmt.Errorf("docker run: %w: %s", err, commandStderr(err))
 	}
 
 	id := strings.TrimSpace(string(out))
@@ -143,6 +145,14 @@ func removeContainer(id string) {
 	if err := exec.CommandContext(ctx, "docker", "rm", "-f", "-v", id).Run(); err != nil { //nolint:gosec // 테스트가 만든 컨테이너 ID와 고정 명령만 전달한다.
 		fmt.Fprintf(os.Stderr, "pgxdb: docker rm -f -v %s failed: %v\n", id, err)
 	}
+}
+
+func commandStderr(err error) string {
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+		return strings.TrimSpace(string(exitErr.Stderr))
+	}
+
+	return ""
 }
 
 func requireContainer(t *testing.T) string {
