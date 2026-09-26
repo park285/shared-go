@@ -140,8 +140,8 @@ func removeContainer(id string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	if err := exec.CommandContext(ctx, "docker", "rm", "-f", id).Run(); err != nil { //nolint:gosec // 테스트가 만든 컨테이너 ID와 고정 명령만 전달한다.
-		fmt.Fprintf(os.Stderr, "pgxdb: docker rm -f %s failed: %v\n", id, err)
+	if err := exec.CommandContext(ctx, "docker", "rm", "-f", "-v", id).Run(); err != nil { //nolint:gosec // 테스트가 만든 컨테이너 ID와 고정 명령만 전달한다.
+		fmt.Fprintf(os.Stderr, "pgxdb: docker rm -f -v %s failed: %v\n", id, err)
 	}
 }
 
