@@ -9,7 +9,6 @@ import (
 )
 
 type config struct {
-	schemaName           string
 	temperature          *float64
 	reasoningEffort      string
 	webSearch            bool
@@ -28,14 +27,6 @@ type Option func(*config)
 func WithPromptCacheKeyPrefix(prefix string) Option {
 	return func(c *config) {
 		c.promptCacheKeyPrefix = strings.TrimSpace(prefix)
-	}
-}
-
-func WithSchemaName(name string) Option {
-	return func(c *config) {
-		if strings.TrimSpace(name) != "" {
-			c.schemaName = name
-		}
 	}
 }
 

@@ -38,12 +38,12 @@ func TestLayeredPromptLenSelectsActiveLayers(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name                                                 string
-		systemPrompt, invariantPrompt, developerPrompt, user string
-		want                                                 int
+		name                                   string
+		invariantPrompt, developerPrompt, user string
+		want                                   int
 	}{
-		{name: "no layers falls back to system", systemPrompt: "sys", user: testShortRoleUser, want: len("sys\nusr")},
-		{name: "blank layers ignored", systemPrompt: "sys", invariantPrompt: "  ", developerPrompt: "\n", user: testShortRoleUser, want: len("sys\nusr")},
+		{name: "no layers counts user only", user: testShortRoleUser, want: len("usr")},
+		{name: "blank layers ignored", invariantPrompt: "  ", developerPrompt: "\n", user: testShortRoleUser, want: len("usr")},
 		{name: "invariant only", invariantPrompt: "inv", user: testShortRoleUser, want: len("inv\nusr")},
 		{name: "developer only", developerPrompt: "dev", user: testShortRoleUser, want: len("dev\nusr")},
 		{name: "both layers", invariantPrompt: "inv", developerPrompt: "dev", user: testShortRoleUser, want: len("inv\ndev\nusr")},
@@ -53,7 +53,7 @@ func TestLayeredPromptLenSelectsActiveLayers(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := layeredPromptLen(tt.systemPrompt, tt.invariantPrompt, tt.developerPrompt, tt.user)
+			got := layeredPromptLen(tt.invariantPrompt, tt.developerPrompt, tt.user)
 			if got != tt.want {
 				t.Fatalf("layeredPromptLen() = %d, want %d", got, tt.want)
 			}

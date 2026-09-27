@@ -144,73 +144,6 @@ func TestGenerateJSONAsDecodeErrorOmitsProviderOutput(t *testing.T) {
 	}
 }
 
-func TestGenerateJSONChatCompletions(t *testing.T) {
-	var payload map[string]any
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/chat/completions" {
-			t.Errorf("path = %s, want /chat/completions", r.URL.Path)
-		}
-
-		if err := jsonv2.UnmarshalRead(r.Body, &payload); err != nil {
-			t.Fatalf("decode request: %v", err)
-		}
-
-		writeJSON(t, w, chatBody)
-	}))
-
-	defer server.Close()
-
-	client, err := openaipreset.New(server.URL, "test-key", "gpt-test",
-		openaipreset.WithChatCompletions(),
-	)
-	if err != nil {
-		t.Fatalf("New error = %v", err)
-	}
-
-	got, err := client.GenerateJSON(t.Context(), "system prompt", "user prompt", map[string]any{testFieldType: testObject})
-	if err != nil {
-		t.Fatalf("GenerateJSON error = %v", err)
-	}
-
-	if got != `{"answer":"no"}` {
-		t.Fatalf("text = %q, want chat completions JSON", got)
-	}
-
-	assertJSONContains(t, payload["messages"], "system prompt")
-	assertJSONContains(t, payload["messages"], "user prompt")
-}
-
-func TestGenerateJSONResponsesErrorDoesNotUseChat(t *testing.T) {
-	var paths []string
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		paths = append(paths, r.URL.Path)
-
-		http.Error(w, `{"error":{"message":"unsupported endpoint","type":"invalid_request_error","code":"unsupported_endpoint"}}`, http.StatusNotFound)
-	}))
-
-	defer server.Close()
-
-	client, err := openaipreset.New(server.URL, "test-key", "gpt-test")
-	if err != nil {
-		t.Fatalf("New error = %v", err)
-	}
-
-	_, err = client.GenerateJSON(t.Context(), "system prompt", "user prompt", map[string]any{testFieldType: testObject})
-	if err == nil {
-		t.Fatal("GenerateJSON error = nil, want error when fallback disabled")
-	}
-
-	if errors.Is(err, openaipreset.ErrResponsesJSONRequired) {
-		t.Fatalf("GenerateJSON runtime error = %v, must not be ErrResponsesJSONRequired", err)
-	}
-
-	if strings.Join(paths, ",") != testResponses {
-		t.Fatalf("paths = %v, want no fallback", paths)
-	}
-}
-
 func TestNewRejectsEmptyModel(t *testing.T) {
 	if _, err := openaipreset.New("https://example.invalid", "test-key", "   "); err == nil {
 		t.Fatal("New empty model error = nil, want error")
@@ -239,8 +172,8 @@ func TestWithHTTPClientInjected(t *testing.T) {
 		t.Fatalf("New error = %v", err)
 	}
 
-	if _, err := client.GenerateJSON(t.Context(), "system prompt", "user prompt", map[string]any{testFieldType: testObject}); err != nil {
-		t.Fatalf("GenerateJSON error = %v", err)
+	if _, err := client.GenerateJSONAs[answerPayload](t.Context(), "task", testPromptLayers(), map[string]any{testFieldType: testObject}); err != nil {
+		t.Fatalf("GenerateJSONAs error = %v", err)
 	}
 
 	if !used {

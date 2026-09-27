@@ -3,6 +3,62 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## 미출시
+
+- 로깅 회귀 검증은 credential key별 redaction과 비민감 값 보존을 확인합니다. 로그 시각의 일부가 시험 값 `3.14`와 겹쳐 실제 마스킹 성공을 실패로 판단하던 전체 문자열 검색을 제거합니다.
+
+### 호환성이 깨지는 변경
+
+- `envutil`의 비엄격 `Int`·`Bool`·`Float`·`Duration`과 파싱 경고 helper를 제거합니다.
+  잘못된 값을 경고 뒤 기본값으로 바꾸던 경로가 사라지므로, 호출자는 `IntE`·`Int64E`·
+  `FloatE`·`BoolE`·`BoolExplicit`·`DurationE`의 오류를 받아 기동 실패로 처리해야 합니다.
+  스택 소비자는 이 버전으로 올리기 전에 엄격 함수로 이관해야 합니다.
+- 이전 env 이름을 차례로 읽던 `envutil.StringAny`를 제거합니다. 여러 이름을 받던 호출부는
+  단일 키를 읽어야 합니다.
+- `httputil.APIKeyFromRequest`와 `AdminAuthMiddleware`는 `X-API-Key` 헤더만 관리 API key로
+  받습니다. `Authorization: Bearer` 값은 key로 추출하지 않으므로 이 헤더만 보낸 요청은 401을
+  받고, rate-limit identity에서도 key bucket을 쓰지 않습니다. `JSONClient`와 `healthprobe`는
+  이미 `X-API-Key`를 보냅니다.
+- `envutil.LoadDotenv`는 `DotenvOptions.LocalEnableKey`와 `<PREFIX>_REQUIRE_STATIC_SECRETS`를
+  `BoolE`와 같은 규칙(`1`/`true`/`yes`/`y`/`on`, `0`/`false`/`no`/`n`/`off`, 대소문자 무시, 빈 값은
+  미설정)으로 읽습니다. 그 밖의 값은 어떤 dotenv 파일도 읽기 전에 `strconv.ErrSyntax`를 감싼 설정
+  오류로 반환하므로, 이전처럼 경고 없이 `false`로 처리되어 local dotenv를 건너뛰거나 strict 검사
+  없이 env file을 읽지 않습니다. `ServiceName`과 함께 넘겨 service env file이 처리되는 경우에도
+  `LocalEnableKey`를 먼저 판정합니다. 소비자는 이 버전으로 올리기 전에 운영 env의 두 키 값이
+  새 규칙으로 파싱되는지 확인해야 합니다.
+- 스택 소비자가 없는 `backoff.ComputeExponentialBackoffHalfJitter`와 그 benchmark를 제거합니다.
+  attempt 기반 지연은 `ComputeExponentialBackoff`를 사용합니다.
+- LLM 지시는 invariant/developer 계층 경로 하나로만 전달합니다. `llm.JSONRequest.SystemPrompt`,
+  `openaipreset.Client.GenerateJSON(systemPrompt, userPrompt, schema)`, 그 schema 이름만 정하던
+  `openaipreset.WithSchemaName`을 제거하고, `SystemPrompt`와 계층을 함께 넘긴 요청을 거절하던 혼합
+  검증도 없앱니다. 호출자는 `JSONRequest.InvariantPrompt`·`DeveloperPrompt` 또는
+  `openaipreset.PromptLayers`(`GenerateJSONAs`, `GenerateLayeredResponsesJSON`)를 사용하며, schema
+  이름은 task 이름에서 정해집니다. 지시 계층이 모두 비면 Responses 요청은 `instructions` 없이 user
+  메시지 하나만 보내고, Chat Completions 요청은 schema 지시만 담은 system 메시지를 보냅니다.
+- `pgxdb.Config`는 `POSTGRES_SSLROOTCERT` env를 읽지 않습니다. DSN의 `sslrootcert`는
+  `Config.SSLRootCert`로만 채우고, 필드가 비면 생략해 pgx 기본 처리에 맡깁니다. 이 env 폴백에
+  기대던 소비자는 이 버전으로 올리기 전에 자기 설정에서 값을 읽어 `SSLRootCert`로 넘기는 release를
+  먼저 배포해야 합니다.
+- `httputil.ErrResponseBodyTooLarge`를 다시 내보내던 `jsonutil.ErrBodyTooLarge` alias를 제거합니다.
+  호출자는 `httputil.ErrResponseBodyTooLarge`를 직접 사용합니다.
+
+### 수정
+
+- `retry.WithRetry`가 fn 실패 뒤 ctx 취소·만료로 멈추면 `errors.Join(마지막 fn 에러, ctx.Err())`를
+  반환합니다. 호출자는 `errors.Is`로 운영 에러와 `context.Canceled`·`context.DeadlineExceeded`를
+  함께 판별할 수 있습니다. 첫 시도 전 취소와 취소 없는 실패의 반환 값은 그대로입니다.
+- `promptguard`의 fail-closed fallback 로그가 원인 분류(`cache_unavailable`, `detector_error`,
+  `invalid_detector_decision`, `unexpected_result_type`)를 `cause` 속성으로 남깁니다. detector
+  오류 원문은 계속 기록하지 않습니다.
+- pgxdb 통합 테스트와 pgstore release gate가 일회용 PostgreSQL 컨테이너를 지울 때
+  이미지가 선언한 익명 volume도 함께 지웁니다.
+- pgxdb 통합 테스트가 이미지 pull·platform 경고를 container ID로 읽어 조용히 skip하고,
+  시작한 컨테이너를 남기던 결함을 수정합니다. ID는 stdout에서만 읽습니다.
+- `pgstore.Store.PruneInbox`와 `PruneInboxBefore`가 한 호출에 `limit`보다 많은 inbox 종단 행을
+  지우던 결함을 수정합니다. planner가 후보 부분 질의를 nested loop 안쪽에서 다시 실행하면
+  `SKIP LOCKED`가 이번 문이 지운 행을 건너뛰고 다음 행을 내줬습니다. 후보를 한 번만 계산해
+  고정하며 scope·보존·cutoff·`(terminal_at, id)` 순서·잠긴 행 건너뛰기는 그대로입니다.
+
 ## v2.7.1 - 2026-09-25
 
 - gRPC를 보안 수정 안정판 `v1.83.2`로 고정하여 `v1.84.0`에 적용되는
@@ -15,8 +71,6 @@
   호출자가 선택한 전송 방식과 오류 의미는 유지합니다.
 - 표시 문자열의 마커 뒤 ZWSP를 Markdown 재해석 전에 보호하고 코드·URL·접기 문자를 보존합니다.
 - release gate에서 소유 일회용 PostgreSQL의 필수 durable-store 회귀가 실제 실행되고 skip이 없음을 확인합니다.
-
-## 미출시
 
 - `kakaoformat`은 Goldmark v1.8.5의 구문 트리로 Markdown을 변환합니다. 한글 조사와
   붙은 강조, 중첩 강조·목록, 참조 링크·이미지, 인용문·표·체크 목록의 경계를 보존합니다.

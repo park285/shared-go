@@ -50,9 +50,9 @@ func TestAPIKeyFromRequest(t *testing.T) {
 		want          string
 	}{
 		{name: "x api key", apiKeyHeader: " secret ", want: testSecret},
-		{name: "bearer fallback", authorization: "Bearer token ", want: "token"},
-		{name: "x api key wins", apiKeyHeader: "key", authorization: "Bearer token", want: "key"},
-		{name: "bearer prefix case sensitive", authorization: "bearer token", want: ""},
+		{name: "bearer authorization ignored", authorization: "Bearer token ", want: ""},
+		{name: "x api key with bearer present", apiKeyHeader: "key", authorization: "Bearer token", want: "key"},
+		{name: "lowercase bearer ignored", authorization: "bearer token", want: ""},
 		{name: "missing", want: ""},
 	}
 
@@ -192,11 +192,11 @@ func adminAuthMiddlewareCases() []adminAuthMiddlewareCase {
 			wantCalled: true,
 		},
 		{
-			name:       "valid key via bearer",
+			name:       "valid key via bearer is rejected",
 			cfg:        AdminAuthConfig{APIKey: testSecret},
 			authHeader: "Bearer secret",
-			wantStatus: http.StatusOK,
-			wantCalled: true,
+			wantStatus: http.StatusUnauthorized,
+			wantCode:   "UNAUTHORIZED",
 		},
 		{
 			name:       "invalid key",

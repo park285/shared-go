@@ -23,21 +23,21 @@ go get github.com/park285/shared-go/v2@latest
 | 패키지 경로 | 기능 및 역할 |
 |---|---|
 | `pkg/backoff` | 시도 횟수 및 상태를 기반으로 한 지수 백오프(Exponential Backoff) 계산 유틸리티 (대기 및 재시도 루프 제어는 호출부에서 직접 처리) |
-| `pkg/db/pgxdb` | `jackc/pgx/v5` pgxpool 기반 PostgreSQL 연결 풀 생성 도구 (sslmode 명시 강제, `Config.SSLRootCert` → `POSTGRES_SSLROOTCERT` env 순의 sslrootcert 폴백, 재시도는 호출자 소유) |
+| `pkg/db/pgxdb` | `jackc/pgx/v5` pgxpool 기반 PostgreSQL 연결 풀 생성 도구 (sslmode 명시 강제, sslrootcert는 `Config.SSLRootCert`로만 지정하고 env를 읽지 않음, 재시도는 호출자 소유) |
 | `pkg/dbmigrate` | embed.FS의 `manifest.txt` 순서대로 SQL 마이그레이션 파일을 실행하는 공통 처리 모듈 (`database/sql` 또는 pgx 실행 함수 주입 방식) |
-| `pkg/envutil` | 환경 변수 로드 및 `*_FILE` 형태의 파일 경로로 보안 토큰/시크릿 값을 주입하는 도구 |
+| `pkg/envutil` | 환경 변수 로드 및 `*_FILE` 형태의 파일 경로로 보안 토큰/시크릿 값을 주입하는 도구 (숫자·bool·duration은 잘못된 값을 오류로 돌려주는 `IntE`·`Int64E`·`FloatE`·`BoolE`·`BoolExplicit`·`DurationE`만 제공) |
 | `pkg/ginjson` | Go 1.27 `encoding/json/v2` JSON을 HTML-safe로 인코딩하는 Gin renderer와 response helper |
 | `pkg/h3` | HTTP/3 전송 프로토콜 설정 도구 (자체 CA 번들 등록, TLS 상세 사양 정의) |
 | `pkg/health` | version·uptime·component 상태 스냅샷과 /health·/ready 응답 본문 계약을 보관하는 server 측 health 모듈 |
 | `pkg/healthprobe` | 서비스 헬스체크 및 프로브(Readiness / Liveness Probe) 도구 |
-| `pkg/httputil` | HTTP 클라이언트 커넥션 풀링 및 프로파일 구성 도구 |
+| `pkg/httputil` | HTTP 클라이언트 커넥션 풀링 및 프로파일 구성 도구, 관리 API key 인증(`X-API-Key` 헤더만 수용, `Authorization: Bearer`는 거부) |
 | `pkg/irisdurable` | Iris webhook durability 계약(admission·nonce·reply outbox 어휘, Iris admission 보존·replay 지평 typed 상수, bounded reissue ladder) |
 | `pkg/irisdurable/contracttest` | irisdurable 계약을 봇별 저장소 구현에 적용하는 재사용 테스트 스위트(admission 멱등성, nonce set-once, outcome_unknown 보존, bounded reissue, 보존·지평) |
 | `pkg/irisdurable/pgstore` | irisdurable 계약의 PostgreSQL 구현(ordering key FIFO inbox, nonce set-once TTL, reply outbox claim fence·redrive·retire·prune). 테이블 DDL은 소비 저장소 migration이 소유하고 `testdata/schema.sql`이 참조 스키마다 |
 | `pkg/jsonutil` | 텍스트 혹은 HTTP 응답 문자열로부터 유효한 JSON을 정규화하여 추출하는 헬퍼 유틸리티 |
 | `pkg/kakaoformat` | Markdown 표현을 카카오 일반 채팅용 평문과 링크로 변환하는 formatter |
-| `pkg/llm` | LLM provider 클라이언트 추상화 (`JSONGenerator`, OpenAI 호환 JSON 생성·가드, 진단 redaction) |
-| `pkg/llm/openaipreset` | `pkg/llm`의 OpenAI 호환 JSON 생성 경로를 functional options로 구성하는 재사용 preset |
+| `pkg/llm` | LLM provider 클라이언트 추상화 (`JSONGenerator`, OpenAI 호환 JSON 생성·가드, 진단 redaction). 지시는 `InvariantPrompt`/`DeveloperPrompt` 계층으로만 전달 |
+| `pkg/llm/openaipreset` | `pkg/llm`의 OpenAI 호환 JSON 생성 경로를 functional options로 구성하는 재사용 preset (지시는 `PromptLayers`로만 전달) |
 | `pkg/lockutil` | FNV-1a hash로 key를 고정 256개 shard에 배정하는 bounded keyed mutex |
 | `pkg/logging` | Slog 기반의 구조화된 로깅 모듈 (비동기 처리, 민감한 키 정보 마스킹 및 실시간 로그 로테이션 지원) |
 | `pkg/netguard` | 외부 HTTP 대상 URL 및 dial 주소를 fail-closed로 검증하는 네트워크 가드 (private/loopback/link-local/ULA 대역 차단, `Policy.AllowedHosts` allowlist 지원) |

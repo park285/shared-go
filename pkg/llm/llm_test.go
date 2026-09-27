@@ -43,12 +43,12 @@ func (r *recordingUsageReporter) RecordUsage(_ context.Context, provider, model 
 
 func validJSONRequest() JSONRequest {
 	return JSONRequest{
-		TaskName:     "membernews_summary",
-		SystemPrompt: roleSystem,
-		UserPrompt:   roleUser,
-		SchemaName:   "summary",
-		Schema:       map[string]any{"type": "object"},
-		Model:        testGptTest,
+		TaskName:        "membernews_summary",
+		DeveloperPrompt: roleDeveloper,
+		UserPrompt:      roleUser,
+		SchemaName:      "summary",
+		Schema:          map[string]any{"type": "object"},
+		Model:           testGptTest,
 	}
 }
 

@@ -7,8 +7,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/park285/shared-go/v2/pkg/envutil"
 )
 
 var queryExecModeNames = map[string]string{
@@ -74,12 +72,10 @@ func (c *Config) SafeDSN() (string, error) {
 	return c.buildDSN(password), nil
 }
 
+// buildDSN은 sslrootcert를 Config.SSLRootCert에서만 채운다. POSTGRES_SSLROOTCERT env 폴백은
+// DEC-20260926-stack-shared-go-compat-api-retirement에 따라 삭제했다.
 func (c *Config) buildDSN(password string) string {
 	sslRootCert := strings.TrimSpace(c.SSLRootCert)
-	if sslRootCert == "" {
-		sslRootCert = strings.TrimSpace(envutil.String("POSTGRES_SSLROOTCERT", ""))
-	}
-
 	queryExecMode := normalizeQueryExecMode(c.QueryExecMode)
 
 	parts := make([]string, 0, 8)

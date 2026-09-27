@@ -128,6 +128,11 @@ func ResponsesSchemaName(name string) string {
 }
 
 func (g *OpenAICompatibleJSONGenerator) generateResponsesJSON(ctx context.Context, req JSONRequest) (JSONResponse, error) {
+	messages, err := AdaptInstructionMessages(layeredJSONMessages(req), InstructionProfileForModel(req.Model))
+	if err != nil {
+		return JSONResponse{}, fmt.Errorf("adapt instruction messages: %w", err)
+	}
+
 	params := responses.ResponseNewParams{
 		Model: req.Model,
 		Text: responses.ResponseTextConfigParam{
@@ -139,17 +144,7 @@ func (g *OpenAICompatibleJSONGenerator) generateResponsesJSON(ctx context.Contex
 				},
 			},
 		},
-	}
-	if isLayeredJSONRequest(req) {
-		messages, err := AdaptInstructionMessages(layeredJSONMessages(req), InstructionProfileForModel(req.Model))
-		if err != nil {
-			return JSONResponse{}, fmt.Errorf("adapt instruction messages: %w", err)
-		}
-
-		params.Input.OfInputItemList = responsesInput(messages)
-	} else {
-		params.Instructions = openai.String(req.SystemPrompt)
-		params.Input.OfString = openai.String(req.UserPrompt)
+		Input: responses.ResponseNewParamsInputUnion{OfInputItemList: responsesInput(messages)},
 	}
 
 	if req.WebSearch {
@@ -188,17 +183,12 @@ func (g *OpenAICompatibleJSONGenerator) generateResponsesJSON(ctx context.Contex
 }
 
 func (g *OpenAICompatibleJSONGenerator) generateChatCompletionsJSON(ctx context.Context, req JSONRequest) (JSONResponse, error) {
-	instructions := req.SystemPrompt
-	if isLayeredJSONRequest(req) {
-		messages, err := AdaptInstructionMessages(layeredJSONMessages(req), InstructionProfileSingleSystem)
-		if err != nil {
-			return JSONResponse{}, fmt.Errorf("adapt instruction messages: %w", err)
-		}
-
-		instructions = messages[0].Content
+	messages, err := AdaptInstructionMessages(layeredJSONMessages(req), InstructionProfileSingleSystem)
+	if err != nil {
+		return JSONResponse{}, fmt.Errorf("adapt instruction messages: %w", err)
 	}
 
-	systemPrompt, err := chatCompletionsSystemPrompt(instructions, req.Schema)
+	systemPrompt, err := chatCompletionsSystemPrompt(singleSystemInstruction(messages), req.Schema)
 	if err != nil {
 		return JSONResponse{}, fmt.Errorf("chat completions system prompt: %w", err)
 	}
@@ -247,22 +237,24 @@ func (g *OpenAICompatibleJSONGenerator) generateChatCompletionsJSON(ctx context.
 	}, nil
 }
 
-func isLayeredJSONRequest(req JSONRequest) bool {
-	return hasPromptLayer(req.InvariantPrompt) || hasPromptLayer(req.DeveloperPrompt)
+// layeredJSONMessages는 요청을 invariant·developer·user 순서의 메시지로 만든다. 빈 지시 계층은
+// AdaptInstructionMessages가 건너뛰고, user 메시지는 항상 마지막에 남는다.
+func layeredJSONMessages(req JSONRequest) []Message {
+	return []Message{
+		{Role: roleSystem, Content: req.InvariantPrompt},
+		{Role: roleDeveloper, Content: req.DeveloperPrompt},
+		{Role: roleUser, Content: req.UserPrompt},
+	}
 }
 
-func layeredJSONMessages(req JSONRequest) []Message {
-	messages := make([]Message, 0, 3)
-
-	if hasPromptLayer(req.InvariantPrompt) {
-		messages = append(messages, Message{Role: roleSystem, Content: req.InvariantPrompt})
+// singleSystemInstruction은 단일 system profile로 변환한 메시지에서 지시를 꺼낸다. 이 profile은
+// 지시 계층이 있을 때만 system 메시지 하나를 맨 앞에 두므로, 첫 메시지가 user이면 지시가 없는 것이다.
+func singleSystemInstruction(messages []Message) string {
+	if len(messages) > 0 && messages[0].Role == roleSystem {
+		return messages[0].Content
 	}
 
-	if hasPromptLayer(req.DeveloperPrompt) {
-		messages = append(messages, Message{Role: roleDeveloper, Content: req.DeveloperPrompt})
-	}
-
-	return append(messages, Message{Role: roleUser, Content: req.UserPrompt})
+	return ""
 }
 
 func responsesInput(messages []Message) responses.ResponseInputParam {

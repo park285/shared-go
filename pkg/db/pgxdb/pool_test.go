@@ -134,8 +134,6 @@ func TestOverlayPoolConfig_OverridesWhenSet(t *testing.T) {
 // QueryExecMode는 DSN 파라미터 단일 경로로만 적용된다. Pgx가 default_query_exec_mode 지원을
 // 끊으면 이 테스트가 먼저 실패해야 한다.
 func TestBuildConfigPool_AppliesQueryExecModeThroughDSNOnly(t *testing.T) {
-	clearRootCertEnv(t)
-
 	tests := []struct {
 		name string
 		mode string
@@ -167,8 +165,6 @@ func TestBuildConfigPool_AppliesQueryExecModeThroughDSNOnly(t *testing.T) {
 }
 
 func TestBuildConfigPool_RejectsInvalidQueryExecMode(t *testing.T) {
-	clearRootCertEnv(t)
-
 	cfg := Config{Host: "127.0.0.1", Port: 5432, User: "u", Name: "db", SSLMode: testDisable, QueryExecMode: "nope"}
 	if _, err := buildConfigPool(&cfg, Options{}.withDefaults()); err == nil {
 		t.Fatal("buildConfigPool with invalid query exec mode: expected error, got nil")
@@ -277,8 +273,6 @@ func TestApplyAndOverlayPoolConfig_PropagateInvertedRangeError(t *testing.T) {
 }
 
 func TestOpenPool_RejectsInvalidConfig(t *testing.T) {
-	clearRootCertEnv(t)
-
 	_, err := OpenPool(t.Context(), Config{Host: "h"}, Options{})
 	if err == nil {
 		t.Fatal("OpenPool with empty sslmode: expected error, got nil")

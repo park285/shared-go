@@ -60,7 +60,7 @@ func writeJSON(t *testing.T, w http.ResponseWriter, body string) {
 	testsupport.WriteResponse(t, w, body)
 }
 
-func TestGenerateJSONResponses(t *testing.T) {
+func TestGenerateJSONAsResponsesAppliesClientOptions(t *testing.T) {
 	var payload map[string]any
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -80,7 +80,6 @@ func TestGenerateJSONResponses(t *testing.T) {
 	reporter := &recordingReporter{}
 
 	client, err := openaipreset.New(server.URL, "test-key", "gpt-test",
-		openaipreset.WithSchemaName("event_summary"),
 		openaipreset.WithTemperature(0.2),
 		openaipreset.WithWebSearch(true),
 		openaipreset.WithReasoningEffort("medium"),
@@ -90,13 +89,16 @@ func TestGenerateJSONResponses(t *testing.T) {
 		t.Fatalf("New error = %v", err)
 	}
 
-	got, err := client.GenerateJSON(t.Context(), "system prompt", "user prompt", map[string]any{testFieldType: testObject})
+	got, err := client.GenerateJSONAs[answerPayload](t.Context(), "event_summary", openaipreset.PromptLayers{
+		Developer: "developer prompt",
+		User:      "user prompt",
+	}, map[string]any{testFieldType: testObject})
 	if err != nil {
-		t.Fatalf("GenerateJSON error = %v", err)
+		t.Fatalf("GenerateJSONAs error = %v", err)
 	}
 
-	if got != `{"answer":"yes"}` {
-		t.Fatalf("text = %q, want responses JSON", got)
+	if got.Answer != "yes" {
+		t.Fatalf("out.Answer = %q, want yes", got.Answer)
 	}
 
 	if !reporter.called || reporter.provider != "openai" || reporter.model != "gpt-returned" || reporter.usage.TotalTokens != 17 {
@@ -107,13 +109,12 @@ func TestGenerateJSONResponses(t *testing.T) {
 		t.Fatalf("payload model = %#v, want gpt-test", got)
 	}
 
-	if got := payload["instructions"]; got != "system prompt" {
-		t.Fatalf("payload instructions = %#v, want system prompt", got)
+	if got, exists := payload["instructions"]; exists {
+		t.Fatalf("payload instructions = %#v, want omitted", got)
 	}
 
-	if got := payload["input"]; got != "user prompt" {
-		t.Fatalf("payload input = %#v, want string user prompt", got)
-	}
+	assertJSONContains(t, payload["input"], "developer prompt")
+	assertJSONContains(t, payload["input"], "user prompt")
 
 	if got := payload["temperature"]; got != 0.2 {
 		t.Fatalf("payload temperature = %#v, want 0.2", got)
@@ -475,7 +476,9 @@ func TestGenerateJSONAsPromptSummaryOmitsWhitespaceOnlyLayers(t *testing.T) {
 	}
 }
 
-func TestGenerateJSONAsResponsesWhitespaceOnlyLayersUseLegacyProfile(t *testing.T) {
+// 지시 계층이 모두 공백이면 instructions 없이 user 메시지 하나만 보낸다. 단일 system prompt 경로는
+// 없으므로 빈 지시도 계층 경로 하나로 처리한다.
+func TestGenerateJSONAsResponsesWhitespaceOnlyLayersSendUserOnly(t *testing.T) {
 	var payload map[string]any
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -504,12 +507,13 @@ func TestGenerateJSONAsResponsesWhitespaceOnlyLayersUseLegacyProfile(t *testing.
 		t.Fatalf("GenerateJSONAs error = %v", err)
 	}
 
-	if got := payload["instructions"]; got != "" {
-		t.Fatalf("payload instructions = %#v, want empty string", got)
+	if got, exists := payload["instructions"]; exists {
+		t.Fatalf("payload instructions = %#v, want omitted", got)
 	}
 
-	if got := payload["input"]; got != user {
-		t.Fatalf("payload input = %#v, want string user prompt", got)
+	messages := requestMessages(t, payload["input"])
+	if len(messages) != 1 || messages[0]["role"] != testUser || messageContent(t, messages[0]) != user {
+		t.Fatalf("payload input = %#v, want one user message", payload["input"])
 	}
 
 	if containsJSON(t, payload, "[APPLICATION INVARIANTS]") || containsJSON(t, payload, "[DEVELOPER INSTRUCTIONS]") {

@@ -7,11 +7,6 @@ import (
 	"time"
 )
 
-func clearRootCertEnv(t *testing.T) {
-	t.Helper()
-	t.Setenv("POSTGRES_SSLROOTCERT", "")
-}
-
 func TestConfigValidate(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -38,8 +33,6 @@ func TestConfigValidate(t *testing.T) {
 }
 
 func TestConfigDSN_RequiresSSLMode(t *testing.T) {
-	clearRootCertEnv(t)
-
 	cfg := &Config{Host: testLocalhost, Port: 5432, User: "u", Password: "p", Name: "db"}
 	if _, err := cfg.DSN(); err == nil {
 		t.Fatal("DSN() with empty sslmode: expected error, got nil")
@@ -86,8 +79,6 @@ func TestValidateExplicitSSLMode(t *testing.T) {
 }
 
 func TestConfigDSN_TCP(t *testing.T) {
-	clearRootCertEnv(t)
-
 	cfg := &Config{Host: "db.example", Port: 6432, User: "svc", Password: "test-dsn-placeholder", Name: "app", SSLMode: "verify-full"} //nolint:gosec // 테스트 자리표시자 문자열이며 실제 자격 증명이 아니다.
 
 	dsn, err := cfg.DSN()
@@ -107,8 +98,6 @@ func TestConfigDSN_TCP(t *testing.T) {
 }
 
 func TestConfigDSN_Socket(t *testing.T) {
-	clearRootCertEnv(t)
-
 	cfg := &Config{SocketPath: "/var/run/postgresql", User: "u", Name: "db", SSLMode: testDisable}
 
 	dsn, err := cfg.DSN()
@@ -126,8 +115,6 @@ func TestConfigDSN_Socket(t *testing.T) {
 }
 
 func TestConfigDSN_RootCertAndQueryExecMode(t *testing.T) {
-	clearRootCertEnv(t)
-
 	cfg := &Config{Host: "h", SSLMode: "verify-full", SSLRootCert: "/etc/ssl/ca.pem", QueryExecMode: "SIMPLE_PROTOCOL"}
 
 	dsn, err := cfg.DSN()
@@ -144,7 +131,9 @@ func TestConfigDSN_RootCertAndQueryExecMode(t *testing.T) {
 	}
 }
 
-func TestConfigDSN_RootCertEnvFallback(t *testing.T) {
+// Config.SSLRootCert만 sslrootcert를 채운다. POSTGRES_SSLROOTCERT env 폴백은
+// DEC-20260926-stack-shared-go-compat-api-retirement에 따라 삭제했으므로 env가 있어도 DSN에 들어가지 않는다.
+func TestConfigDSN_IgnoresPostgresSSLRootCertEnv(t *testing.T) {
 	t.Setenv("POSTGRES_SSLROOTCERT", "/env/ca.pem")
 
 	cfg := &Config{Host: "h", SSLMode: "verify-full"}
@@ -154,14 +143,23 @@ func TestConfigDSN_RootCertEnvFallback(t *testing.T) {
 		t.Fatalf("DSN() error = %v", err)
 	}
 
-	if !strings.Contains(dsn, "sslrootcert='/env/ca.pem'") {
-		t.Errorf("DSN() = %q, missing env-sourced sslrootcert", dsn)
+	if strings.Contains(dsn, "sslrootcert") {
+		t.Errorf("DSN() = %q, want sslrootcert omitted when Config.SSLRootCert is empty", dsn)
+	}
+
+	cfg.SSLRootCert = " /etc/ssl/field-ca.pem "
+
+	dsn, err = cfg.DSN()
+	if err != nil {
+		t.Fatalf("DSN() error = %v", err)
+	}
+
+	if !strings.Contains(dsn, "sslrootcert='/etc/ssl/field-ca.pem'") || strings.Contains(dsn, "/env/ca.pem") {
+		t.Errorf("DSN() = %q, want only the trimmed Config.SSLRootCert", dsn)
 	}
 }
 
 func TestSafeDSN_MasksPassword(t *testing.T) {
-	clearRootCertEnv(t)
-
 	cfg := &Config{Host: "h", SSLMode: testDisable, User: "u", Password: "test-redaction-placeholder", Name: "db"}
 
 	safe, err := cfg.SafeDSN()
@@ -188,8 +186,6 @@ func TestSafeDSN_MasksPassword(t *testing.T) {
 }
 
 func TestLibpqQuote_Escaping(t *testing.T) {
-	clearRootCertEnv(t)
-
 	cfg := &Config{Host: "h", SSLMode: testDisable, Password: `pa'ss\word`}
 
 	dsn, err := cfg.DSN()

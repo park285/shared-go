@@ -24,7 +24,6 @@ import (
 
 const (
 	providerLabel         = "openai"
-	defaultSchemaName     = "response"
 	defaultRequestTimeout = 120 * time.Second
 )
 
@@ -37,7 +36,6 @@ type Client struct {
 	generator            sharedllm.JSONGenerator
 	openai               openai.Client
 	model                string
-	schemaName           string
 	temperature          *float64
 	reasoningEffort      string
 	webSearch            bool
@@ -58,7 +56,7 @@ func New(baseURL, apiKey, model string, opts ...Option) (*Client, error) {
 		return nil, errors.New("openaipreset: model is empty")
 	}
 
-	cfg := &config{schemaName: defaultSchemaName}
+	cfg := &config{}
 
 	for _, opt := range opts {
 		opt(cfg)
@@ -98,7 +96,6 @@ func New(baseURL, apiKey, model string, opts ...Option) (*Client, error) {
 		generator:            generator,
 		openai:               openai.NewClient(requestOpts...),
 		model:                strings.TrimSpace(model),
-		schemaName:           cfg.schemaName,
 		temperature:          cfg.temperature,
 		reasoningEffort:      cfg.reasoningEffort,
 		webSearch:            cfg.webSearch,
@@ -139,19 +136,9 @@ func (c *Client) Model() string {
 	return c.model
 }
 
-func (c *Client) GenerateJSON(ctx context.Context, systemPrompt, userPrompt string, schema map[string]any) (string, error) {
-	if c == nil {
-		return "", errClientNil
-	}
-
-	resp, err := c.generate(ctx, c.schemaName, systemPrompt, "", "", userPrompt, schema)
-	if err != nil {
-		return "", fmt.Errorf("generate: %w", err)
-	}
-
-	return resp.Text, nil
-}
-
+// GenerateJSONAs는 지시를 PromptLayers 계층으로만 받고, task를 schema 이름과 prompt cache key
+// 접미사로 쓴다. 단일 system prompt를 받던 GenerateJSON은
+// DEC-20260926-stack-llm-instruction-layering-sole-path에 따라 삭제했다.
 func (c *Client) GenerateJSONAs[T any](
 	ctx context.Context,
 	task string,
@@ -164,7 +151,7 @@ func (c *Client) GenerateJSONAs[T any](
 		return zero, errClientNil
 	}
 
-	resp, err := c.generate(ctx, task, "", prompts.Invariant, prompts.Developer, prompts.User, schema)
+	resp, err := c.generate(ctx, task, prompts.Invariant, prompts.Developer, prompts.User, schema)
 	if err != nil {
 		return zero, fmt.Errorf("generate: %w", err)
 	}
@@ -255,15 +242,14 @@ func completeResponsesOutputText(resp *responses.Response) string {
 
 func (c *Client) generate(
 	ctx context.Context,
-	taskName, systemPrompt, invariantPrompt, developerPrompt, userPrompt string,
+	taskName, invariantPrompt, developerPrompt, userPrompt string,
 	schema map[string]any,
 ) (sharedllm.JSONResponse, error) {
-	attrs := promptSummaryAttrs(c.model, layeredPromptLen(systemPrompt, invariantPrompt, developerPrompt, userPrompt))
+	attrs := promptSummaryAttrs(c.model, layeredPromptLen(invariantPrompt, developerPrompt, userPrompt))
 
 	out, err := runRequest(ctx, c.logger, attrs, func() (sharedllm.JSONResponse, error) {
 		return sharedllm.RunJSON(ctx, c.generator, sharedllm.JSONRequest{
 			TaskName:        taskName,
-			SystemPrompt:    systemPrompt,
 			UserPrompt:      userPrompt,
 			InvariantPrompt: invariantPrompt,
 			DeveloperPrompt: developerPrompt,
@@ -333,7 +319,7 @@ func promptSummaryAttrs(model string, promptLen int) []slog.Attr {
 	}
 }
 
-func layeredPromptLen(systemPrompt, invariantPrompt, developerPrompt, userPrompt string) int {
+func layeredPromptLen(invariantPrompt, developerPrompt, userPrompt string) int {
 	hasInvariantPrompt := strings.TrimSpace(invariantPrompt) != ""
 	hasDeveloperPrompt := strings.TrimSpace(developerPrompt) != ""
 
@@ -345,7 +331,7 @@ func layeredPromptLen(systemPrompt, invariantPrompt, developerPrompt, userPrompt
 	case hasDeveloperPrompt:
 		return joinedPromptLen(developerPrompt, userPrompt)
 	default:
-		return joinedPromptLen(systemPrompt, userPrompt)
+		return joinedPromptLen(userPrompt)
 	}
 }
 

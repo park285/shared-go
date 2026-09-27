@@ -69,20 +69,22 @@ func TestStringRaw(t *testing.T) {
 	}
 }
 
-func TestInt(t *testing.T) {
+// 비엄격 Int/Bool/Float/Duration은 제거되었고 잘못된 값은 기본값 대신 에러로 드러난다.
+func TestIntEValues(t *testing.T) {
 	tests := []struct {
 		name     string
 		key      string
 		value    string
 		def      int
 		expected int
+		wantErr  bool
 	}{
-		{"valid int", testTestInt, "42", 0, 42},
-		{testTrimApplied, testTestInt, "  42  ", 0, 42},
-		{"negative int", testTestInt, "-10", 0, -10},
-		{"invalid returns default", testTestInt, "invalid", 99, 99},
-		{testEmptyReturnsDefault, testTestInt, "", 99, 99},
-		{"unset returns default", testUnsetKey, "", 99, 99},
+		{"valid int", testTestInt, "42", 0, 42, false},
+		{testTrimApplied, testTestInt, "  42  ", 0, 42, false},
+		{"negative int", testTestInt, "-10", 0, -10, false},
+		{"invalid returns error", testTestInt, "invalid", 99, 0, true},
+		{testEmptyReturnsDefault, testTestInt, "", 99, 99, false},
+		{"unset returns default", testUnsetKey, "", 99, 99, false},
 	}
 
 	for _, tt := range tests {
@@ -93,165 +95,99 @@ func TestInt(t *testing.T) {
 				t.Setenv(tt.key, tt.value)
 			}
 
-			result := Int(tt.key, tt.def)
-			if result != tt.expected {
-				t.Errorf("Int(%q, %d) = %d, want %d", tt.key, tt.def, result, tt.expected)
+			result, err := IntE(tt.key, tt.def)
+			if (err != nil) != tt.wantErr || result != tt.expected {
+				t.Errorf("IntE(%q, %d) = (%d, %v), want (%d, error=%t)", tt.key, tt.def, result, err, tt.expected, tt.wantErr)
 			}
 		})
 	}
 }
 
-func TestBool(t *testing.T) {
+func TestBoolEValues(t *testing.T) {
 	tests := []struct {
 		name     string
 		key      string
 		value    string
 		def      bool
 		expected bool
+		wantErr  bool
 	}{
-		{"true", testTestBool, "true", false, true},
-		{"1", testTestBool, "1", false, true},
-		{"yes", testTestBool, "yes", false, true},
-		{"y", testTestBool, "y", false, true},
-		{"True uppercase", testTestBool, "True", false, true},
-		{"YES uppercase", testTestBool, "YES", false, true},
-		{testTrimApplied, testTestBool, "  true  ", false, true},
-		{"on", testTestBool, "on", false, true},
-		{"false", testTestBool, "false", true, false},
-		{"0", testTestBool, "0", true, false},
-		{"no", testTestBool, "no", true, false},
-		{"n", testTestBool, "n", true, false},
-		{"off", testTestBool, "off", true, false},
-		{"OFF uppercase", testTestBool, "OFF", true, false},
-		{"unrecognized returns default true", testTestBool, "maybe", true, true},
-		{"unrecognized returns default false", testTestBool, "maybe", false, false},
-		{testEmptyReturnsDefault, testTestBool, "", true, true},
-		{"empty returns default false", testTestBool, "", false, false},
+		{"true", testTestBool, "true", false, true, false},
+		{"True uppercase", testTestBool, "True", false, true, false},
+		{"YES uppercase", testTestBool, "YES", false, true, false},
+		{testTrimApplied, testTestBool, "  true  ", false, true, false},
+		{"OFF uppercase", testTestBool, "OFF", true, false, false},
+		{"unrecognized returns error", testTestBool, "maybe", true, false, true},
+		{testEmptyReturnsDefault, testTestBool, "", true, true, false},
+		{"empty returns default false", testTestBool, "", false, false, false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv(tt.key, tt.value)
 
-			result := Bool(tt.key, tt.def)
-			if result != tt.expected {
-				t.Errorf("Bool(%q, %v) = %v, want %v", tt.key, tt.def, result, tt.expected)
+			result, err := BoolE(tt.key, tt.def)
+			if (err != nil) != tt.wantErr || result != tt.expected {
+				t.Errorf("BoolE(%q, %v) = (%v, %v), want (%v, error=%t)", tt.key, tt.def, result, err, tt.expected, tt.wantErr)
 			}
 		})
 	}
 }
 
-func TestFloat(t *testing.T) {
+func TestFloatEValues(t *testing.T) {
 	tests := []struct {
 		name     string
 		key      string
 		value    string
 		def      float64
 		expected float64
+		wantErr  bool
 	}{
-		{"valid float", testTestFloat, "3.14", 0.0, 3.14},
-		{testTrimApplied, testTestFloat, "  3.14  ", 0.0, 3.14},
-		{"negative float", testTestFloat, "-2.5", 0.0, -2.5},
-		{"scientific notation", testTestFloat, "1.5e2", 0.0, 150.0},
-		{"invalid returns default", testTestFloat, "invalid", 99.9, 99.9},
-		{testEmptyReturnsDefault, testTestFloat, "", 99.9, 99.9},
+		{"valid float", testTestFloat, "3.14", 0.0, 3.14, false},
+		{testTrimApplied, testTestFloat, "  3.14  ", 0.0, 3.14, false},
+		{"negative float", testTestFloat, "-2.5", 0.0, -2.5, false},
+		{"scientific notation", testTestFloat, "1.5e2", 0.0, 150.0, false},
+		{"invalid returns error", testTestFloat, "invalid", 99.9, 0, true},
+		{testEmptyReturnsDefault, testTestFloat, "", 99.9, 99.9, false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv(tt.key, tt.value)
 
-			result := Float(tt.key, tt.def)
-			if result != tt.expected {
-				t.Errorf("Float(%q, %f) = %f, want %f", tt.key, tt.def, result, tt.expected)
+			result, err := FloatE(tt.key, tt.def)
+			if (err != nil) != tt.wantErr || result != tt.expected {
+				t.Errorf("FloatE(%q, %f) = (%f, %v), want (%f, error=%t)", tt.key, tt.def, result, err, tt.expected, tt.wantErr)
 			}
 		})
 	}
 }
 
-func TestDuration(t *testing.T) {
+func TestDurationEValues(t *testing.T) {
 	tests := []struct {
 		name     string
 		key      string
 		value    string
 		def      time.Duration
 		expected time.Duration
+		wantErr  bool
 	}{
-		{"seconds", testTestDuration, "30s", 0, 30 * time.Second},
-		{"minutes", testTestDuration, "5m", 0, 5 * time.Minute},
-		{"hours", testTestDuration, "1h", 0, 1 * time.Hour},
-		{"combined", testTestDuration, "1h30m", 0, 90 * time.Minute},
-		{testTrimApplied, testTestDuration, "  30s  ", 0, 30 * time.Second},
-		{"invalid returns default", testTestDuration, "invalid", 99 * time.Second, 99 * time.Second},
-		{testEmptyReturnsDefault, testTestDuration, "", 99 * time.Second, 99 * time.Second},
+		{"seconds", testTestDuration, "30s", 0, 30 * time.Second, false},
+		{"minutes", testTestDuration, "5m", 0, 5 * time.Minute, false},
+		{"hours", testTestDuration, "1h", 0, 1 * time.Hour, false},
+		{"combined", testTestDuration, "1h30m", 0, 90 * time.Minute, false},
+		{testTrimApplied, testTestDuration, "  30s  ", 0, 30 * time.Second, false},
+		{"invalid returns error", testTestDuration, "invalid", 99 * time.Second, 0, true},
+		{testEmptyReturnsDefault, testTestDuration, "", 99 * time.Second, 99 * time.Second, false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv(tt.key, tt.value)
 
-			result := Duration(tt.key, tt.def)
-			if result != tt.expected {
-				t.Errorf("Duration(%q, %v) = %v, want %v", tt.key, tt.def, result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestStringAny(t *testing.T) {
-	tests := []struct {
-		name     string
-		setup    map[string]string
-		keys     []string
-		expected string
-	}{
-		{
-			"first key exists",
-			map[string]string{testKey1: "value1", testKey2: testValue2},
-			[]string{testKey1, testKey2},
-			"value1",
-		},
-		{
-			"second key exists",
-			map[string]string{testKey2: testValue2},
-			[]string{testKey1, testKey2},
-			testValue2,
-		},
-		{
-			testTrimApplied,
-			map[string]string{testKey1: "  value1  "},
-			[]string{testKey1, testKey2},
-			"value1",
-		},
-		{
-			"skip empty first",
-			map[string]string{testKey1: "", testKey2: testValue2},
-			[]string{testKey1, testKey2},
-			testValue2,
-		},
-		{
-			"all empty returns empty",
-			map[string]string{testKey1: "", testKey2: ""},
-			[]string{testKey1, testKey2},
-			"",
-		},
-		{
-			"no keys returns empty",
-			map[string]string{},
-			[]string{},
-			"",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			for k, v := range tt.setup {
-				t.Setenv(k, v)
-			}
-
-			result := StringAny(tt.keys...)
-			if result != tt.expected {
-				t.Errorf("StringAny(%v) = %q, want %q", tt.keys, result, tt.expected)
+			result, err := DurationE(tt.key, tt.def)
+			if (err != nil) != tt.wantErr || result != tt.expected {
+				t.Errorf("DurationE(%q, %v) = (%v, %v), want (%v, error=%t)", tt.key, tt.def, result, err, tt.expected, tt.wantErr)
 			}
 		})
 	}

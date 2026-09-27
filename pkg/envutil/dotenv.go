@@ -28,7 +28,22 @@ func ServiceDotenvPath(serviceName string) string {
 }
 
 // LoadDotenv는 service env file과 local dotenv 후보를 옵션에 맞춰 로드한다.
+// LocalEnableKey와 <PREFIX>_REQUIRE_STATIC_SECRETS는 BoolE 규칙으로 읽으며, 빈 값은 미설정(false)이고
+// 받아들일 수 없는 값은 어떤 파일도 읽기 전에 설정 오류로 반환한다.
 func LoadDotenv(opts DotenvOptions) error {
+	// service env file이 처리되어 local 단계에 이르지 않는 경우에도 받아들일 수 없는 값을 드러내도록
+	// service 단계보다 먼저 판정한다. service 단계가 처리하지 않았다면 아무 파일도 읽지 않았으므로 값은 같다.
+	localEnabled := true
+
+	if opts.LocalEnableKey != "" {
+		enabled, err := BoolE(opts.LocalEnableKey, false)
+		if err != nil {
+			return fmt.Errorf("read local dotenv enable flag: %w", err)
+		}
+
+		localEnabled = enabled
+	}
+
 	serviceName := strings.TrimSpace(opts.ServiceName)
 	if serviceName != "" {
 		handled, err := loadServiceDotenv(serviceName)
@@ -41,7 +56,7 @@ func LoadDotenv(opts DotenvOptions) error {
 		}
 	}
 
-	if opts.LocalEnableKey != "" && !dotenvBool(opts.LocalEnableKey, false) {
+	if !localEnabled {
 		return nil
 	}
 
@@ -156,7 +171,12 @@ func loadStrictDotenvFile(path string, info os.FileInfo) error {
 
 func loadServiceDotenv(serviceName string) (bool, error) {
 	prefix := serviceEnvPrefix(serviceName)
-	requireStaticSecrets := dotenvBool(prefix+"_REQUIRE_STATIC_SECRETS", false)
+
+	requireStaticSecrets, err := BoolE(prefix+"_REQUIRE_STATIC_SECRETS", false)
+	if err != nil {
+		return false, fmt.Errorf("read static secrets guard: %w", err)
+	}
+
 	defaultPath := ServiceDotenvPath(serviceName)
 
 	if envFile := strings.TrimSpace(os.Getenv(prefix + "_ENV_FILE")); envFile != "" {
@@ -268,18 +288,4 @@ func defaultPathDir(path string) string {
 	}
 
 	return filepath.Dir(path)
-}
-
-func dotenvBool(key string, def bool) bool {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return def
-	}
-
-	parsed, ok := lookupBool(value)
-	if !ok {
-		return def
-	}
-
-	return parsed
 }

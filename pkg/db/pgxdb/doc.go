@@ -5,16 +5,14 @@
 // pgx parsing 전에 검사한다. 생략하면 pgx가 "prefer"로 조용히 대체해 호출자의 TLS
 // posture(verify-full·disable 등)를 바꿔버리므로 호출자가 posture를 명시해야 한다.
 //
-// # sslrootcert 이중 경로 계약
+// # sslrootcert 계약
 //
-// Config.SSLRootCert와 POSTGRES_SSLROOTCERT env는 같은 DSN 파라미터(sslrootcert)를 채우는
-// 두 경로다. buildDSN은 구조체 필드를 먼저 보고, trim 후 빈 값일 때에만 env로 폴백한다.
-// 둘 다 비면 sslrootcert 자체를 DSN에서 생략해 pgx/libpq 기본 탐색
-// 경로(~/.postgresql/root.crt 등)에 위임한다.
-// 이 폴백은 Config 경유 경로(OpenPool)에만 적용된다: OpenPoolDSN은 호출자가 준 DSN 원문을
-// 그대로 쓰므로 sslrootcert도 그 DSN에 직접 써야 한다. verify-ca·verify-full posture에서 CA를
-// env로만 주는 배포는 env 이름 오타나 미주입이 곧 검증 실패로 이어지므로 양쪽 중 하나는
-// 반드시 실제 파일 경로를 가리켜야 한다.
+// Config 경유 경로(OpenPool)에서 DSN의 sslrootcert는 Config.SSLRootCert 하나로만 채운다.
+// 이 패키지는 POSTGRES_SSLROOTCERT env를 읽지 않으므로, CA 경로를 env로 받는 소비자는 자기 설정
+// 로더에서 읽어 필드로 넘긴다(DEC-20260926-stack-shared-go-compat-api-retirement). 필드가 trim 후
+// 비면 sslrootcert를 DSN에서 생략하고 pgx 기본 처리(libpq 호환 PGSSLROOTCERT env, 없으면 시스템
+// 인증서 풀)에 맡긴다. OpenPoolDSN은 호출자가 준 DSN 원문을 그대로 쓰므로 sslrootcert도 그 DSN에
+// 직접 써야 한다. verify-ca·verify-full posture에서는 필드나 DSN이 실제 CA 파일 경로를 가리켜야 한다.
 //
 // # 풀 기본값(fallback) 계약
 //

@@ -1,8 +1,10 @@
 package envutil
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -24,7 +26,7 @@ func (tc loadDotenvFileCase) run(t *testing.T) {
 	t.Helper()
 
 	dir := t.TempDir()
-	path := filepath.Join(dir, ".env")
+	path := filepath.Join(dir, testDotenvFileName)
 
 	if !tc.pathEmpty {
 		if err := os.WriteFile(path, []byte(tc.content), 0o600); err != nil {
@@ -130,18 +132,19 @@ func TestLoadDotenvFileMissingOptional(t *testing.T) {
 func TestServiceDotenvPath(t *testing.T) {
 	t.Parallel()
 
-	if got := ServiceDotenvPath("twentyq"); got != "/run/twentyq/twentyq.env" {
+	if got := ServiceDotenvPath(testServiceTwentyq); got != "/run/twentyq/twentyq.env" {
 		t.Fatalf("ServiceDotenvPath() = %q, want /run/twentyq/twentyq.env", got)
 	}
 }
 
 type loadDotenvCase struct {
-	name    string
-	opts    DotenvOptions
-	setup   func(*testing.T, string)
-	wantKey string
-	wantVal string
-	wantErr string
+	name      string
+	opts      DotenvOptions
+	setup     func(*testing.T, string)
+	wantKey   string
+	wantVal   string
+	wantErr   string
+	wantErrIs error
 }
 
 func (tc loadDotenvCase) run(t *testing.T) {
@@ -150,15 +153,17 @@ func (tc loadDotenvCase) run(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 
+	if tc.wantKey != "" {
+		testsupport.UnsetEnvOnCleanup(t, tc.wantKey)
+	}
+
 	if tc.setup != nil {
 		tc.setup(t, dir)
 	}
 
 	err := LoadDotenv(tc.opts)
 	if tc.wantErr != "" {
-		if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
-			t.Fatalf("LoadDotenv() error = %v, want substring %q", err, tc.wantErr)
-		}
+		tc.assertFailure(t, err)
 
 		return
 	}
@@ -172,12 +177,33 @@ func (tc loadDotenvCase) run(t *testing.T) {
 	}
 }
 
+func (tc loadDotenvCase) assertFailure(t *testing.T, err error) {
+	t.Helper()
+
+	if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+		t.Fatalf("LoadDotenv() error = %v, want substring %q", err, tc.wantErr)
+	}
+
+	if tc.wantErrIs != nil && !errors.Is(err, tc.wantErrIs) {
+		t.Fatalf("LoadDotenv() error = %v, want errors.Is %v", err, tc.wantErrIs)
+	}
+
+	if tc.wantKey == "" {
+		return
+	}
+
+	// 설정 오류로 멈춘 경우 어떤 dotenv 파일도 적용되지 않아야 한다.
+	if got, ok := os.LookupEnv(tc.wantKey); ok {
+		t.Fatalf("%s = %q after LoadDotenv() error, want unset", tc.wantKey, got)
+	}
+}
+
 func TestLoadDotenv(t *testing.T) {
 	tests := []loadDotenvCase{
 		{
 			name: "chatbotgo local opt in",
 			opts: DotenvOptions{
-				LocalEnableKey: "CHATBOTGO_LOAD_DOTENV",
+				LocalEnableKey: testChatbotgoLoadDotenv,
 				LocalPathKey:   "CHATBOTGO_DOTENV_PATH",
 			},
 			setup: func(t *testing.T, dir string) {
@@ -188,7 +214,7 @@ func TestLoadDotenv(t *testing.T) {
 					t.Fatalf("write local dotenv: %v", err)
 				}
 
-				t.Setenv("CHATBOTGO_LOAD_DOTENV", "true")
+				t.Setenv(testChatbotgoLoadDotenv, "true")
 				t.Setenv("CHATBOTGO_DOTENV_PATH", path)
 			},
 			wantKey: "LOCAL_ONLY",
@@ -197,24 +223,24 @@ func TestLoadDotenv(t *testing.T) {
 		{
 			name: "local disabled",
 			opts: DotenvOptions{
-				LocalEnableKey: "CHATBOTGO_LOAD_DOTENV",
-				LocalPaths:     []string{".env"},
+				LocalEnableKey: testChatbotgoLoadDotenv,
+				LocalPaths:     []string{testDotenvFileName},
 			},
 			setup: func(t *testing.T, dir string) {
 				t.Helper()
 
-				if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("DISABLED_LOCAL=1\n"), 0o600); err != nil {
+				if err := os.WriteFile(filepath.Join(dir, testDotenvFileName), []byte("DISABLED_LOCAL=1\n"), 0o600); err != nil {
 					t.Fatalf("write local dotenv: %v", err)
 				}
 
-				t.Setenv("CHATBOTGO_LOAD_DOTENV", "false")
+				t.Setenv(testChatbotgoLoadDotenv, "false")
 			},
 			wantKey: "DISABLED_LOCAL",
 			wantVal: "",
 		},
 		{
 			name: "service explicit env file",
-			opts: DotenvOptions{ServiceName: "twentyq"},
+			opts: DotenvOptions{ServiceName: testServiceTwentyq},
 			setup: func(t *testing.T, dir string) {
 				t.Helper()
 
@@ -230,14 +256,168 @@ func TestLoadDotenv(t *testing.T) {
 		},
 		{
 			name: "service required missing",
-			opts: DotenvOptions{ServiceName: "twentyq"},
+			opts: DotenvOptions{ServiceName: testServiceTwentyq},
 			setup: func(t *testing.T, dir string) {
 				t.Helper()
 
 				t.Setenv("TWENTYQ_ENV_FILE", filepath.Join(dir, "missing.env"))
-				t.Setenv("TWENTYQ_REQUIRE_STATIC_SECRETS", "true")
+				t.Setenv(testRequireStaticSecrets, "true")
 			},
 			wantErr: "stat dotenv file failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.run(t)
+		})
+	}
+}
+
+func writeDotenvFile(t *testing.T, path, content string, perm os.FileMode) {
+	t.Helper()
+
+	if err := os.WriteFile(path, []byte(content), perm); err != nil {
+		t.Fatalf("write dotenv %s: %v", path, err)
+	}
+
+	// umask와 관계없이 의도한 권한을 고정한다.
+	if err := os.Chmod(path, perm); err != nil {
+		t.Fatalf("chmod dotenv %s: %v", path, err)
+	}
+}
+
+// LocalEnableKey는 BoolE와 같은 규칙으로 판정하고, 받아들일 수 없는 값은 기본값(false)으로 접지 않고
+// 설정 오류로 돌려준다(DEC-20260927-shared-go-dotenv-bool-strict).
+func TestLoadDotenvLocalEnableFlag(t *testing.T) {
+	localOpts := DotenvOptions{
+		LocalEnableKey: testChatbotgoLoadDotenv,
+		LocalPaths:     []string{testDotenvFileName},
+	}
+
+	tests := []loadDotenvCase{
+		{
+			name: "unacceptable value fails",
+			opts: localOpts,
+			setup: func(t *testing.T, dir string) {
+				t.Helper()
+
+				writeDotenvFile(t, filepath.Join(dir, testDotenvFileName), "LOCAL_FLAG_INVALID=loaded\n", 0o600)
+				t.Setenv(testChatbotgoLoadDotenv, "enabled")
+			},
+			wantKey:   "LOCAL_FLAG_INVALID",
+			wantErr:   "invalid bool env " + testChatbotgoLoadDotenv,
+			wantErrIs: strconv.ErrSyntax,
+		},
+		{
+			name: "accepts BoolE true spelling",
+			opts: localOpts,
+			setup: func(t *testing.T, dir string) {
+				t.Helper()
+
+				writeDotenvFile(t, filepath.Join(dir, testDotenvFileName), "LOCAL_FLAG_ON=loaded\n", 0o600)
+				t.Setenv(testChatbotgoLoadDotenv, " On ")
+			},
+			wantKey: "LOCAL_FLAG_ON",
+			wantVal: "loaded",
+		},
+		{
+			name: "whitespace only stays unset",
+			opts: localOpts,
+			setup: func(t *testing.T, dir string) {
+				t.Helper()
+
+				writeDotenvFile(t, filepath.Join(dir, testDotenvFileName), "LOCAL_FLAG_BLANK=loaded\n", 0o600)
+				t.Setenv(testChatbotgoLoadDotenv, "   ")
+			},
+			wantKey: "LOCAL_FLAG_BLANK",
+			wantVal: "",
+		},
+		{
+			// service env file이 처리되는 경로에서도 LocalEnableKey 값을 먼저 판정해야 한다.
+			name: "unacceptable value fails before service env file",
+			opts: DotenvOptions{ServiceName: testServiceTwentyq, LocalEnableKey: testChatbotgoLoadDotenv},
+			setup: func(t *testing.T, dir string) {
+				t.Helper()
+
+				path := filepath.Join(dir, "twentyq.env")
+				writeDotenvFile(t, path, "LOCAL_FLAG_SERVICE_INVALID=loaded\n", 0o600)
+				t.Setenv("TWENTYQ_ENV_FILE", path)
+				t.Setenv(testChatbotgoLoadDotenv, "enabled")
+			},
+			wantKey:   "LOCAL_FLAG_SERVICE_INVALID",
+			wantErr:   "invalid bool env " + testChatbotgoLoadDotenv,
+			wantErrIs: strconv.ErrSyntax,
+		},
+		{
+			// 받아들일 수 있는 false는 service env file 적용을 막지 않는다.
+			name: "accepted false keeps service env file",
+			opts: DotenvOptions{ServiceName: testServiceTwentyq, LocalEnableKey: testChatbotgoLoadDotenv},
+			setup: func(t *testing.T, dir string) {
+				t.Helper()
+
+				path := filepath.Join(dir, "twentyq.env")
+				writeDotenvFile(t, path, "LOCAL_FLAG_SERVICE_OFF=loaded\n", 0o600)
+				t.Setenv("TWENTYQ_ENV_FILE", path)
+				t.Setenv(testChatbotgoLoadDotenv, "off")
+			},
+			wantKey: "LOCAL_FLAG_SERVICE_OFF",
+			wantVal: "loaded",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.run(t)
+		})
+	}
+}
+
+// <PREFIX>_REQUIRE_STATIC_SECRETS도 BoolE 규칙으로 판정한다. 오타 값이 false로 접히면
+// local dotenv로 넘어가거나 world-readable env file을 strict 검사 없이 적용하게 된다.
+func TestLoadDotenvStaticSecretsGuard(t *testing.T) {
+	tests := []loadDotenvCase{
+		{
+			name: "unacceptable value fails before local dotenv",
+			opts: DotenvOptions{ServiceName: testServiceTwentyq, LocalPaths: []string{testDotenvFileName}},
+			setup: func(t *testing.T, dir string) {
+				t.Helper()
+
+				writeDotenvFile(t, filepath.Join(dir, testDotenvFileName), "SERVICE_FLAG_LOCAL=loaded\n", 0o600)
+				t.Setenv(testRequireStaticSecrets, "maybe")
+			},
+			wantKey:   "SERVICE_FLAG_LOCAL",
+			wantErr:   "invalid bool env " + testRequireStaticSecrets,
+			wantErrIs: strconv.ErrSyntax,
+		},
+		{
+			name: "unacceptable value fails before explicit env file",
+			opts: DotenvOptions{ServiceName: testServiceTwentyq},
+			setup: func(t *testing.T, dir string) {
+				t.Helper()
+
+				path := filepath.Join(dir, "twentyq.env")
+				writeDotenvFile(t, path, "SERVICE_FLAG_FILE=loaded\n", 0o644)
+				t.Setenv("TWENTYQ_ENV_FILE", path)
+				t.Setenv(testRequireStaticSecrets, "ture")
+			},
+			wantKey:   "SERVICE_FLAG_FILE",
+			wantErr:   "invalid bool env " + testRequireStaticSecrets,
+			wantErrIs: strconv.ErrSyntax,
+		},
+		{
+			name: "accepted true enforces strict env file",
+			opts: DotenvOptions{ServiceName: testServiceTwentyq},
+			setup: func(t *testing.T, dir string) {
+				t.Helper()
+
+				path := filepath.Join(dir, "twentyq.env")
+				writeDotenvFile(t, path, "SERVICE_FLAG_STRICT=loaded\n", 0o644)
+				t.Setenv("TWENTYQ_ENV_FILE", path)
+				t.Setenv(testRequireStaticSecrets, "YES")
+			},
+			wantKey: "SERVICE_FLAG_STRICT",
+			wantErr: "world-accessible",
 		},
 	}
 

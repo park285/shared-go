@@ -81,7 +81,7 @@ func handleRetryFailure(ctx context.Context, opts RetryOptions, attempt int, err
 	}
 
 	if !slept {
-		return retryAttemptOutcome{done: true, err: err}
+		return retryAttemptOutcome{done: true, err: joinContextCause(ctx, err)}
 	}
 
 	return retryAttemptOutcome{lastErr: err}
@@ -105,10 +105,22 @@ func retryContextError(ctx context.Context, lastErr error) error {
 	}
 
 	if lastErr != nil {
-		return lastErr
+		return joinContextCause(ctx, lastErr)
 	}
 
 	return fmt.Errorf("context error: %w", ctx.Err())
+}
+
+// joinContextCause는 취소·만료로 재시도를 멈출 때 직전 fn 에러와 ctx.Err()를 함께 보존해
+// 호출자가 errors.Is로 운영 에러와 context.Canceled/DeadlineExceeded를 모두 판별하게 한다.
+// 주입된 Sleep이 살아 있는 ctx에서 false를 반환한 경우에는 fn 에러만 반환한다.
+func joinContextCause(ctx context.Context, lastErr error) error {
+	ctxErr := ctx.Err()
+	if ctxErr == nil {
+		return lastErr
+	}
+
+	return errors.Join(lastErr, ctxErr)
 }
 
 func shouldContinueRetry(opts RetryOptions, err error) bool {

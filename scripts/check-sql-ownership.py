@@ -32,6 +32,19 @@ DDL_RE = re.compile(
     r"\b(CREATE\s+(?:TABLE|INDEX|ROLE)|ALTER\s+(?:TABLE|ROLE)|DROP\s+(?:TABLE|INDEX)?|TRUNCATE\b|GRANT\s|REVOKE\s)\b",
     re.IGNORECASE,
 )
+# dbmigrate ledger의 literal 치환 금지 토큰.
+# 퇴역 가드가 아니라 재도입을 막는 영구 계약 CI 게이트다. ledger 기록은 filename을 bind
+# parameter($1)로만 넘기고, 값을 SQL 문자열에 끼워 넣는 helper(quoteSQLString)나 템플릿
+# 자리(filename_literal)를 두지 않는다. 판정은 존재 기준이다: pkg/dbmigrate 아래 테스트가
+# 아닌 Go 소스와 SQL 자산 어디에든(주석 포함) 토큰이 나타나면 실패한다. 파일 이름을 바꾸거나
+# 쪼개도 빠지지 않도록 고정 경로가 아니라 패키지 전체를 본다. 검사할 파일이 하나도 없으면
+# 판정할 수 없으므로 통과가 아니라 실패로 보고한다.
+# 도입: 7ed8747(2026-07-07, "refactor(dbmigrate): require parameterized exec")에서 literal
+# 치환 helper를 지우며 추가했다. 운영 env나 데이터에 묶인 퇴역 대상이 아니므로 제거 조건과
+# 재검토 날짜를 두지 않는다. dbmigrate의 bind parameter 계약을 바꾸는 결정이 생길 때만 함께
+# 고친다(stack-audit 2026-09-26 T17에서 퇴역 가드 목록에서 영구 계약으로 재분류).
+DBMIGRATE_DIR_PARTS = ("pkg", "dbmigrate")
+DBMIGRATE_LITERAL_SUBSTITUTION_BAN = ("quoteSQLString", "filename_literal")
 
 
 @dataclass(frozen=True)
@@ -247,13 +260,25 @@ def check_sql_asset_locations() -> list[Finding]:
     return findings
 
 
-def check_dbmigrate_parameterized_api() -> list[Finding]:
-    findings: list[Finding] = []
-    dbmigrate_go = ROOT / "pkg" / "dbmigrate" / "dbmigrate.go"
-    ledger_go = ROOT / "pkg" / "dbmigrate" / "ledger.go"
-    record_sql = ROOT / "pkg" / "dbmigrate" / "queries" / "record_ledger.sql.tpl"
+def missing_contract_target(path: Path) -> Finding:
+    return Finding(
+        path,
+        1,
+        "dbmigrate bind parameter contract target is missing (permanent contract)",
+        "move this check together with the file instead of letting it pass silently",
+    )
 
-    if dbmigrate_go.is_file():
+
+def check_dbmigrate_parameterized_api() -> list[Finding]:
+    # 같은 영구 계약의 양성 검사: bind parameter를 받는 Execer와 VALUES ($1) 기록.
+    # 대상 파일이 없으면 검사가 사라진 것이므로 실패로 보고한다.
+    findings: list[Finding] = []
+    dbmigrate_go = ROOT.joinpath(*DBMIGRATE_DIR_PARTS, "dbmigrate.go")
+    record_sql = ROOT.joinpath(*DBMIGRATE_DIR_PARTS, "queries", "record_ledger.sql.tpl")
+
+    if not dbmigrate_go.is_file():
+        findings.append(missing_contract_target(dbmigrate_go))
+    else:
         source = dbmigrate_go.read_text(encoding="utf-8")
         if "type Execer func(context.Context, string, ...any) error" not in source:
             findings.append(
@@ -274,31 +299,69 @@ def check_dbmigrate_parameterized_api() -> list[Finding]:
                 )
             )
 
-    if ledger_go.is_file():
-        source = ledger_go.read_text(encoding="utf-8")
-        forbidden = ("quoteSQLString", "filename_literal")
-        for token in forbidden:
-            if token in source:
-                findings.append(
-                    Finding(ledger_go, 1, "dbmigrate ledger must not keep literal substitution helper", token)
-                )
-
-    if record_sql.is_file():
+    if not record_sql.is_file():
+        findings.append(missing_contract_target(record_sql))
+    else:
         text = record_sql.read_text(encoding="utf-8")
         if "VALUES ($1)" not in text:
             findings.append(
                 Finding(record_sql, 1, "dbmigrate ledger record must bind filename", excerpt(text))
             )
-        if "filename_literal" in text:
-            findings.append(
-                Finding(record_sql, 1, "dbmigrate ledger record must not template filename literals", excerpt(text))
-            )
 
     return findings
 
 
+def dbmigrate_ban_targets() -> list[Path]:
+    dbmigrate_dir = ROOT.joinpath(*DBMIGRATE_DIR_PARTS)
+    if not dbmigrate_dir.is_dir():
+        return []
+    return sorted(
+        path
+        for path in dbmigrate_dir.rglob("*")
+        if path.is_file()
+        and (
+            (path.suffix == ".go" and not path.name.endswith("_test.go"))
+            or path.name.endswith(".sql")
+            or path.name.endswith(".sql.tpl")
+        )
+    )
+
+
+def check_dbmigrate_literal_substitution_ban() -> list[Finding]:
+    targets = dbmigrate_ban_targets()
+    if not targets:
+        return [
+            Finding(
+                ROOT.joinpath(*DBMIGRATE_DIR_PARTS),
+                1,
+                "dbmigrate literal substitution ban has no files to check (permanent contract)",
+                "move this check together with the package instead of letting it pass silently",
+            )
+        ]
+    findings: list[Finding] = []
+    for path in targets:
+        text = path.read_text(encoding="utf-8")
+        for token in DBMIGRATE_LITERAL_SUBSTITUTION_BAN:
+            offset = text.find(token)
+            if offset >= 0:
+                findings.append(
+                    Finding(
+                        path,
+                        line_number(text, offset),
+                        "dbmigrate must not reintroduce literal substitution (permanent contract)",
+                        token,
+                    )
+                )
+    return findings
+
+
 def main() -> int:
-    findings = check_source_literals() + check_sql_asset_locations() + check_dbmigrate_parameterized_api()
+    findings = (
+        check_source_literals()
+        + check_sql_asset_locations()
+        + check_dbmigrate_parameterized_api()
+        + check_dbmigrate_literal_substitution_ban()
+    )
     if not findings:
         print("SQL ownership check passed")
         return 0

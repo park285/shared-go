@@ -39,21 +39,14 @@ func ConstantTimeStringEqual(left, right string) bool {
 	return subtle.ConstantTimeCompare(leftHash[:], rightHash[:]) == 1 && len(left) == len(right)
 }
 
-// APIKeyFromRequest는 X-API-Key 또는 Bearer Authorization 값을 관리 API key로 추출한다.
+// APIKeyFromRequest는 X-API-Key 헤더 값만 관리 API key로 추출한다. Authorization Bearer는
+// 관리 API key로 받지 않는다(DEC-20260926-stack-shared-go-api-key-single-header).
 func APIKeyFromRequest(r *http.Request) string {
 	if r == nil {
 		return ""
 	}
 
-	if key := strings.TrimSpace(r.Header.Get(HeaderAPIKey)); key != "" {
-		return key
-	}
-
-	if after, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
-		return strings.TrimSpace(after)
-	}
-
-	return ""
+	return strings.TrimSpace(r.Header.Get(HeaderAPIKey))
 }
 
 // WriteJSON은 값을 JSON으로 인코딩해 HTTP 응답 본문으로 쓴다. HTML escape는 적용하지 않는다.
@@ -86,7 +79,8 @@ func WriteErrorJSON(w http.ResponseWriter, status int, code, message string) err
 	return nil
 }
 
-// AdminAuthMiddleware는 twentyq형 관리 API key 인증 middleware를 만든다.
+// AdminAuthMiddleware는 X-API-Key 헤더의 관리 API key를 일정 시간 비교로 검증하는 middleware를 만든다.
+// Authorization Bearer 값은 관리 API key로 보지 않으므로 X-API-Key 없이 보낸 요청은 401이다.
 func AdminAuthMiddleware(cfg AdminAuthConfig) func(http.Handler) http.Handler {
 	expected := strings.TrimSpace(cfg.APIKey)
 

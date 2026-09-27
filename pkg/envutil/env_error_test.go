@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -185,6 +186,12 @@ func TestBoolE(t *testing.T) {
 }
 
 func TestBoolAcceptanceSetIsShared(t *testing.T) {
+	// LoadDotenv의 LocalEnableKey도 같은 수용 집합을 쓰는지 확인한다. 존재하지 않는 선택 경로라 true여도 읽을 파일은 없다.
+	dotenvOpts := DotenvOptions{
+		LocalEnableKey: "TEST_BOOL_TABLE",
+		LocalPaths:     []string{filepath.Join(t.TempDir(), "missing.env")},
+	}
+
 	accepted := map[string]bool{
 		"1": true, "true": true, "TRUE": true, "yes": true, "y": true, "on": true, "ON": true,
 		"0": false, "false": false, "False": false, "no": false, "n": false, "off": false, "OFF": false,
@@ -193,10 +200,6 @@ func TestBoolAcceptanceSetIsShared(t *testing.T) {
 	for value, want := range accepted {
 		t.Run("accept_"+value, func(t *testing.T) {
 			t.Setenv("TEST_BOOL_TABLE", value)
-
-			if got := Bool("TEST_BOOL_TABLE", !want); got != want {
-				t.Errorf("Bool(%q) = %v, want %v", value, got, want)
-			}
 
 			got, err := BoolE("TEST_BOOL_TABLE", !want)
 			if err != nil || got != want {
@@ -208,8 +211,8 @@ func TestBoolAcceptanceSetIsShared(t *testing.T) {
 				t.Errorf("BoolExplicit(%q) = (%v, %v, %v), want (%v, true, nil)", value, gotExplicit, explicit, err, want)
 			}
 
-			if got := dotenvBool("TEST_BOOL_TABLE", !want); got != want {
-				t.Errorf("dotenvBool(%q) = %v, want %v", value, got, want)
+			if err := LoadDotenv(dotenvOpts); err != nil {
+				t.Errorf("LoadDotenv(LocalEnableKey=%q) error = %v, want nil", value, err)
 			}
 		})
 	}
@@ -217,10 +220,6 @@ func TestBoolAcceptanceSetIsShared(t *testing.T) {
 	for _, value := range []string{"maybe", "2", "t", "f", "enabled"} {
 		t.Run("reject_"+value, func(t *testing.T) {
 			t.Setenv("TEST_BOOL_TABLE", value)
-
-			if got := Bool("TEST_BOOL_TABLE", true); !got {
-				t.Errorf("Bool(%q) = %v, want default true", value, got)
-			}
 
 			if _, err := BoolE("TEST_BOOL_TABLE", true); err == nil {
 				t.Errorf("BoolE(%q) error = nil, want error", value)
@@ -230,8 +229,8 @@ func TestBoolAcceptanceSetIsShared(t *testing.T) {
 				t.Errorf("BoolExplicit(%q) error = nil, want error", value)
 			}
 
-			if got := dotenvBool("TEST_BOOL_TABLE", true); !got {
-				t.Errorf("dotenvBool(%q) = %v, want default true", value, got)
+			if err := LoadDotenv(dotenvOpts); !errors.Is(err, strconv.ErrSyntax) {
+				t.Errorf("LoadDotenv(LocalEnableKey=%q) error = %v, want strconv.ErrSyntax", value, err)
 			}
 		})
 	}

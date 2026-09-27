@@ -100,6 +100,10 @@ func TestWithRetry_AllAttemptsFail(t *testing.T) {
 		t.Errorf("expected targetErr, got %v", err)
 	}
 
+	if err != targetErr { //nolint:errorlint // 취소가 없으면 context 원인을 덧붙이지 않고 fn 에러 자체를 반환한다.
+		t.Errorf("uncanceled retry must return the last fn error unchanged, got %v", err)
+	}
+
 	if callCount != 3 {
 		t.Errorf("expected 3 calls, got %d", callCount)
 	}
@@ -377,8 +381,73 @@ func TestWithRetry_ContextCancelPropagatesViaSleep(t *testing.T) {
 		t.Fatalf("expected last error, got %v", err)
 	}
 
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled to be preserved with last error, got %v", err)
+	}
+
 	if callCount != 1 {
 		t.Errorf("expected 1 call before cancel-aborted sleep, got %d", callCount)
+	}
+}
+
+func TestWithRetry_ContextCancelBeforeNextAttemptPreservesBothErrors(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	callCount := 0
+	targetErr := errors.New("transient")
+
+	err := WithRetry(ctx, RetryOptions{
+		MaxAttempts: 5,
+		BaseDelay:   time.Millisecond,
+		Sleep: func(_ context.Context, _ time.Duration) bool {
+			// sleep이 끝난 직후 다음 시도 전에 취소가 관찰되는 경로를 고정한다.
+			cancel()
+
+			return true
+		},
+	}, func(_ context.Context) error {
+		callCount++
+		return targetErr
+	})
+
+	if !errors.Is(err, targetErr) {
+		t.Fatalf("expected last error, got %v", err)
+	}
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled to be preserved with last error, got %v", err)
+	}
+
+	if callCount != 1 {
+		t.Errorf("expected no attempt after cancellation, got %d calls", callCount)
+	}
+}
+
+func TestWithRetry_ContextDeadlineDuringSleepPreservedWithLastError(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancel()
+
+	targetErr := errors.New("transient")
+	callCount := 0
+
+	// 기본 sleep은 BaseDelay(1h)보다 먼저 도착하는 ctx deadline에서 중단된다.
+	err := WithRetry(ctx, RetryOptions{
+		MaxAttempts: 3,
+		BaseDelay:   time.Hour,
+	}, func(_ context.Context) error {
+		callCount++
+		return targetErr
+	})
+
+	if !errors.Is(err, targetErr) {
+		t.Fatalf("expected last error, got %v", err)
+	}
+
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected context.DeadlineExceeded to be preserved with last error, got %v", err)
+	}
+
+	if callCount != 1 {
+		t.Errorf("expected 1 call before deadline-aborted sleep, got %d", callCount)
 	}
 }
 

@@ -26,9 +26,10 @@ type Message struct {
 	CacheBreakpoint bool
 }
 
+// JSONRequest의 지시는 InvariantPrompt/DeveloperPrompt 계층으로만 전달한다. 단일 SystemPrompt
+// 경로는 DEC-20260926-stack-llm-instruction-layering-sole-path에 따라 삭제했다.
 type JSONRequest struct {
 	TaskName        string
-	SystemPrompt    string
 	UserPrompt      string
 	InvariantPrompt string
 	DeveloperPrompt string
@@ -112,14 +113,5 @@ func ValidateJSONRequest(req JSONRequest) error {
 		return fmt.Errorf("%w: schema is empty", ErrInvalidJSONRequest)
 	}
 
-	if hasPromptLayer(req.SystemPrompt) &&
-		(hasPromptLayer(req.InvariantPrompt) || hasPromptLayer(req.DeveloperPrompt)) {
-		return fmt.Errorf("%w: system prompt cannot be combined with invariant or developer prompt layers", ErrInvalidJSONRequest)
-	}
-
 	return nil
-}
-
-func hasPromptLayer(prompt string) bool {
-	return strings.TrimSpace(prompt) != ""
 }

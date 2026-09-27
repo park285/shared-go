@@ -3,7 +3,6 @@ package envutil
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -17,34 +16,6 @@ const (
 	boolOn    = "on"
 	boolOff   = "off"
 )
-
-func warnParse(key, value, kind string, err error, def any) {
-	attrs := []any{
-		"key", key,
-		"value_present", value != "",
-		"kind", kind,
-		"returning_default", def,
-	}
-
-	if err != nil {
-		attrs = append(attrs, "error", parseErrorKind(err))
-	}
-
-	slog.Warn("invalid value for environment variable", attrs...)
-}
-
-func parseErrorKind(err error) string {
-	if numErr, ok := errors.AsType[*strconv.NumError](err); ok {
-		switch {
-		case errors.Is(numErr.Err, strconv.ErrSyntax):
-			return "invalid_syntax"
-		case errors.Is(numErr.Err, strconv.ErrRange):
-			return "out_of_range"
-		}
-	}
-
-	return "parse_failed"
-}
 
 func String(key, def string) string {
 	value := strings.TrimSpace(os.Getenv(key))
@@ -62,22 +33,6 @@ func StringRaw(key, def string) string {
 	}
 
 	return value
-}
-
-func Int(key string, def int) int {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return def
-	}
-
-	parsed, err := strconv.Atoi(value)
-	if err != nil {
-		warnParse(key, value, "int", err, def)
-
-		return def
-	}
-
-	return parsed
 }
 
 func IntE(key string, def int) (int, error) {
@@ -108,22 +63,6 @@ func Int64E(key string, def int64) (int64, error) {
 	return parsed, nil
 }
 
-func Bool(key string, def bool) bool {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return def
-	}
-
-	parsed, ok := lookupBool(value)
-	if !ok {
-		warnParse(key, value, "bool", nil, def)
-
-		return def
-	}
-
-	return parsed
-}
-
 func BoolE(key string, def bool) (bool, error) {
 	value := strings.TrimSpace(os.Getenv(key))
 	if value == "" {
@@ -136,22 +75,6 @@ func BoolE(key string, def bool) (bool, error) {
 	}
 
 	return out, nil
-}
-
-func Float(key string, def float64) float64 {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return def
-	}
-
-	parsed, err := strconv.ParseFloat(value, 64)
-	if err != nil {
-		warnParse(key, value, "float", err, def)
-
-		return def
-	}
-
-	return parsed
 }
 
 func FloatE(key string, def float64) (float64, error) {
@@ -169,7 +92,7 @@ func FloatE(key string, def float64) (float64, error) {
 }
 
 // BoolExplicit은 값과 함께 "명시적으로 설정되었는지"를 반환한다. 미설정과 공백-only는
-// 모두 explicit=false로 접어 unset과 동일하게 다룬다(String/Bool의 trim 규칙과 일치).
+// 모두 explicit=false로 접어 unset과 동일하게 다룬다(String/BoolE의 trim 규칙과 일치).
 func BoolExplicit(key string) (value, explicit bool, err error) {
 	raw, found := os.LookupEnv(key)
 	if !found {
@@ -189,22 +112,6 @@ func BoolExplicit(key string) (value, explicit bool, err error) {
 	return parsed, true, nil
 }
 
-func Duration(key string, def time.Duration) time.Duration {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return def
-	}
-
-	parsed, err := time.ParseDuration(value)
-	if err != nil {
-		warnParse(key, value, "duration", err, def)
-
-		return def
-	}
-
-	return parsed
-}
-
 func DurationE(key string, def time.Duration) (time.Duration, error) {
 	value := strings.TrimSpace(os.Getenv(key))
 	if value == "" {
@@ -219,19 +126,8 @@ func DurationE(key string, def time.Duration) (time.Duration, error) {
 	return parsed, nil
 }
 
-func StringAny(keys ...string) string {
-	for _, key := range keys {
-		value := strings.TrimSpace(os.Getenv(key))
-		if value != "" {
-			return value
-		}
-	}
-
-	return ""
-}
-
-// lookupBool은 Bool/BoolE/BoolExplicit/dotenv 로더가 공유하는 유일한 bool 수용 집합이다.
-// Strict 변형은 미수용 값에 대한 반환(기본값 vs 에러)만 다르고 수용 집합은 같다.
+// lookupBool은 BoolE/BoolExplicit(과 BoolE를 쓰는 LoadDotenv 플래그)이 공유하는 유일한 bool 수용 집합이다.
+// 미수용 값은 모두 에러로 돌려주며 기본값으로 접는 경로는 없다.
 func lookupBool(value string) (parsed, ok bool) {
 	switch strings.ToLower(value) {
 	case "1", boolTrue, boolYes, "y", boolOn:

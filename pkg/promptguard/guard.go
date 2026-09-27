@@ -28,6 +28,19 @@ const (
 	maxLoggedMatchValues      = 16
 )
 
+// fallbackCause는 conservative fallback 원인을 로그에 남기는 고정 분류다. 입력 조각이나
+// 내부 상태를 담을 수 있는 detector 오류 문자열 대신 이 분류만 기록한다.
+type fallbackCause string
+
+const (
+	fallbackCauseCacheUnavailable        fallbackCause = "cache_unavailable"
+	fallbackCauseDetectorError           fallbackCause = "detector_error"
+	fallbackCauseInvalidDetectorDecision fallbackCause = "invalid_detector_decision"
+	fallbackCauseUnexpectedResultType    fallbackCause = "unexpected_result_type"
+)
+
+var errInvalidDetectorDecision = errors.New("invalid detector decision")
+
 type Config struct {
 	Enabled             bool
 	RulepacksDir        string
@@ -161,7 +174,7 @@ func (g *Guard) evaluate(input string, source Source) Evaluation {
 	key := cacheKey(input)
 
 	if g.cache == nil {
-		evaluation := g.fallbackEvaluation(g.policy(), source, ruleEvaluationFallback)
+		evaluation := g.fallbackEvaluation(g.policy(), source, fallbackCauseCacheUnavailable)
 		g.observeEvaluation(evaluation, false, len(input))
 
 		return cloneEvaluation(evaluation)
@@ -190,7 +203,7 @@ func (g *Guard) evaluate(input string, source Source) Evaluation {
 		return result, nil
 	})
 	if err != nil {
-		evaluation := g.fallbackEvaluation(g.policy(), source, err.Error())
+		evaluation := g.fallbackEvaluation(g.policy(), source, detectFailureCause(err))
 		g.observeEvaluation(evaluation, false, len(input))
 
 		return cloneEvaluation(evaluation)
@@ -205,7 +218,7 @@ func (g *Guard) evaluate(input string, source Source) Evaluation {
 		return cloneEvaluation(evaluation)
 	}
 
-	evaluation := g.fallbackEvaluation(g.policy(), source, "evaluation type assertion failed")
+	evaluation := g.fallbackEvaluation(g.policy(), source, fallbackCauseUnexpectedResultType)
 	g.observeEvaluation(evaluation, false, len(input))
 
 	return cloneEvaluation(evaluation)
@@ -217,10 +230,21 @@ func cacheKey(input string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+func detectFailureCause(err error) fallbackCause {
+	if errors.Is(err, errInvalidDetectorDecision) {
+		return fallbackCauseInvalidDetectorDecision
+	}
+
+	return fallbackCauseDetectorError
+}
+
 // fallbackEvaluation은 guard 평가가 실패했을 때의 conservative fallback이다.
-func (g *Guard) fallbackEvaluation(policy compiledPolicy, source Source, _ string) Evaluation {
+func (g *Guard) fallbackEvaluation(policy compiledPolicy, source Source, cause fallbackCause) Evaluation {
 	if g != nil && g.logger != nil {
-		attrs := []any{slog.String("reason", ruleEvaluationFallback)}
+		attrs := []any{
+			slog.String("reason", ruleEvaluationFallback),
+			slog.String("cause", string(cause)),
+		}
 
 		if source != "" {
 			attrs = append(attrs, slog.String("source", string(source)))
@@ -305,7 +329,7 @@ func (g *Guard) detectEvaluation(input string) (Evaluation, error) {
 	}
 
 	if !validDecision(evaluation.Decision) {
-		return Evaluation{}, errors.New("invalid detector decision")
+		return Evaluation{}, errInvalidDetectorDecision
 	}
 
 	return evaluation, nil

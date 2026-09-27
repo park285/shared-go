@@ -20,7 +20,7 @@ cleanup() {
   trap - EXIT INT TERM
 
   if [[ -n "${container_id}" ]]; then
-    if ! docker rm -f "${container_id}" >/dev/null; then
+    if ! docker rm -f -v "${container_id}" >/dev/null; then
       echo 'pgstore-release-gate: disposable PostgreSQL cleanup failed' >&2
       exit_status=1
     fi

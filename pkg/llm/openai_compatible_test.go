@@ -3,8 +3,10 @@ package llm
 import (
 	jsonv2 "encoding/json/v2"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -39,7 +41,8 @@ func TestOpenAICompatibleJSONGeneratorResponsesStructuredRequest(t *testing.T) {
 
 	got, err := RunJSON(t.Context(), generator, JSONRequest{
 		TaskName:        "summarize",
-		SystemPrompt:    "system prompt",
+		InvariantPrompt: "invariant prompt",
+		DeveloperPrompt: "developer prompt",
 		UserPrompt:      "user prompt",
 		SchemaName:      "summary",
 		Schema:          map[string]any{"type": "object"},
@@ -99,13 +102,16 @@ func assertStructuredRequestPayload(t *testing.T, payload map[string]any) {
 		t.Fatalf("payload model = %#v, want gpt-test", got)
 	}
 
-	if got := payload["instructions"]; got != "system prompt" {
-		t.Fatalf("payload instructions = %#v, want system prompt", got)
+	if got, exists := payload["instructions"]; exists {
+		t.Fatalf("payload instructions = %#v, want omitted (instructions travel as developer layers)", got)
 	}
 
-	if !containsJSON(t, payload["input"], "user prompt") {
-		t.Fatalf("payload input = %#v, want user prompt", payload["input"])
-	}
+	assertResponsesInputRoles(t, payload["input"], []string{roleDeveloper, roleDeveloper, roleUser})
+	assertJSONContains(t, payload["input"], applicationInvariantsLabel)
+	assertJSONContains(t, payload["input"], "invariant prompt")
+	assertJSONContains(t, payload["input"], developerInstructionsLabel)
+	assertJSONContains(t, payload["input"], "developer prompt")
+	assertJSONContains(t, payload["input"], "user prompt")
 
 	if got := payload["temperature"]; got != 0.2 {
 		t.Fatalf("payload temperature = %#v, want 0.2", got)
@@ -114,80 +120,6 @@ func assertStructuredRequestPayload(t *testing.T, payload map[string]any) {
 	assertJSONContains(t, payload["reasoning"], "medium")
 	assertJSONContains(t, payload["tools"], "web_search")
 	assertStructuredResponsesFormat(t, payload["text"], "summary")
-}
-
-func TestOpenAICompatibleJSONGeneratorRejectsMixedPromptStylesBeforeNetwork(t *testing.T) {
-	var requestCount atomic.Int64
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		requestCount.Add(1)
-		writeJSON(t, w, `{}`)
-	}))
-
-	defer server.Close()
-
-	generator, err := NewOpenAICompatibleJSONGenerator(OpenAICompatibleConfig{
-		BaseURL: server.URL,
-		APIKey:  testTestKey,
-	})
-	if err != nil {
-		t.Fatalf("NewOpenAICompatibleJSONGenerator error = %v", err)
-	}
-
-	tests := []struct {
-		name            string
-		chatCompletions bool
-		setLayer        func(*JSONRequest)
-	}{
-		{
-			name: "responses invariant",
-			setLayer: func(req *JSONRequest) {
-				req.InvariantPrompt = testInvariant
-			},
-		},
-		{
-			name: "responses developer",
-			setLayer: func(req *JSONRequest) {
-				req.DeveloperPrompt = roleDeveloper
-			},
-		},
-		{
-			name:            "chat completions invariant",
-			chatCompletions: true,
-			setLayer: func(req *JSONRequest) {
-				req.InvariantPrompt = testInvariant
-			},
-		},
-		{
-			name:            "chat completions developer",
-			chatCompletions: true,
-			setLayer: func(req *JSONRequest) {
-				req.DeveloperPrompt = roleDeveloper
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := validJSONRequest()
-
-			req.ChatCompletions = tt.chatCompletions
-			tt.setLayer(&req)
-
-			_, err := generator.GenerateJSON(t.Context(), req)
-			if !errors.Is(err, ErrInvalidJSONRequest) {
-				t.Fatalf("GenerateJSON error = %v, want ErrInvalidJSONRequest", err)
-			}
-
-			if !strings.Contains(err.Error(), "system prompt") {
-				t.Fatalf("GenerateJSON error = %q, want mixed prompt validation detail", err)
-			}
-		})
-	}
-
-	if got := requestCount.Load(); got != 0 {
-		t.Fatalf("network request count = %d, want 0", got)
-	}
 }
 
 func TestOpenAICompatibleJSONGeneratorChatCompletionsStructuredOutput(t *testing.T) {
@@ -215,7 +147,7 @@ func TestOpenAICompatibleJSONGeneratorChatCompletionsStructuredOutput(t *testing
 	}
 
 	got, err := generator.GenerateJSON(t.Context(), JSONRequest{
-		SystemPrompt:    "system prompt",
+		DeveloperPrompt: "developer prompt",
 		UserPrompt:      "user prompt",
 		SchemaName:      "summary",
 		Schema:          map[string]any{"type": "object"},
@@ -239,11 +171,103 @@ func TestOpenAICompatibleJSONGeneratorChatCompletionsStructuredOutput(t *testing
 		t.Fatalf("payload model = %#v, want gpt-test", got)
 	}
 
-	assertJSONContains(t, payload["messages"], "system prompt")
+	assertJSONContains(t, payload["messages"], developerInstructionsLabel)
+	assertJSONContains(t, payload["messages"], "developer prompt")
 	assertJSONContains(t, payload["messages"], "user prompt")
 	assertJSONContains(t, payload["messages"], "type")
 	assertJSONContains(t, payload["messages"], "object")
 	assertJSONContains(t, payload["reasoning_effort"], "low")
+}
+
+// 지시 계층이 모두 비어도 단일 계층 경로를 탄다. Responses 요청은 instructions 없이 user 메시지 하나만
+// 보내고, 계층 label을 만들지 않는다.
+func TestOpenAICompatibleJSONGeneratorResponsesWithoutInstructionLayers(t *testing.T) {
+	var payload map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := jsonv2.UnmarshalRead(r.Body, &payload); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+
+		writeJSON(t, w, `{"id":"resp-1","object":"response","created_at":1,"status":"completed","model":"gpt-test","output":[{"id":"msg-1","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"{\"ok\":true}","annotations":[]}]}]}`)
+	}))
+	defer server.Close()
+
+	generator, err := NewOpenAICompatibleJSONGenerator(OpenAICompatibleConfig{BaseURL: server.URL, APIKey: testTestKey})
+	if err != nil {
+		t.Fatalf("NewOpenAICompatibleJSONGenerator error = %v", err)
+	}
+
+	req := validJSONRequest()
+
+	req.InvariantPrompt = " \t"
+	req.DeveloperPrompt = "\n"
+
+	if _, err := generator.GenerateJSON(t.Context(), req); err != nil {
+		t.Fatalf("GenerateJSON error = %v", err)
+	}
+
+	if got, exists := payload["instructions"]; exists {
+		t.Fatalf("payload instructions = %#v, want omitted", got)
+	}
+
+	assertResponsesInputRoles(t, payload["input"], []string{roleUser})
+
+	if got := chatMessages(t, payload["input"])[0]["content"]; got != req.UserPrompt {
+		t.Fatalf("input[0].content = %#v, want %q", got, req.UserPrompt)
+	}
+
+	if containsJSON(t, payload["input"], applicationInvariantsLabel) || containsJSON(t, payload["input"], developerInstructionsLabel) {
+		t.Fatalf("payload input = %#v, want layer labels omitted", payload["input"])
+	}
+}
+
+// 지시 계층이 모두 비면 Chat Completions의 system 메시지는 schema 지시만 담고, user 입력을 지시로
+// 끌어올리지 않는다.
+func TestOpenAICompatibleJSONGeneratorChatCompletionsWithoutInstructionLayers(t *testing.T) {
+	var payload map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := jsonv2.UnmarshalRead(r.Body, &payload); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+
+		writeJSON(t, w, `{"id":"chatcmpl-1","object":"chat.completion","created":1,"model":"gpt-chat","choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"{\"ok\":true}"}}]}`)
+	}))
+	defer server.Close()
+
+	generator, err := NewOpenAICompatibleJSONGenerator(OpenAICompatibleConfig{BaseURL: server.URL, APIKey: testTestKey})
+	if err != nil {
+		t.Fatalf("NewOpenAICompatibleJSONGenerator error = %v", err)
+	}
+
+	req := validJSONRequest()
+
+	req.DeveloperPrompt = ""
+	req.ChatCompletions = true
+
+	_, err = generator.GenerateJSON(t.Context(), req)
+	if err != nil {
+		t.Fatalf("GenerateJSON error = %v", err)
+	}
+
+	wantSystem, err := chatCompletionsSystemPrompt("", req.Schema)
+	if err != nil {
+		t.Fatalf("chatCompletionsSystemPrompt error = %v", err)
+	}
+
+	messages := chatMessages(t, payload["messages"])
+	if len(messages) != 2 {
+		t.Fatalf("messages = %#v, want system and user", messages)
+	}
+
+	if messages[0]["role"] != roleSystem || messages[0]["content"] != wantSystem {
+		t.Fatalf("messages[0] = %#v, want schema-only system message", messages[0])
+	}
+
+	if messages[1]["role"] != roleUser || messages[1]["content"] != req.UserPrompt {
+		t.Fatalf("messages[1] = %#v, want user prompt", messages[1])
+	}
 }
 
 func TestOpenAICompatibleJSONGeneratorUnsupportedEndpointUsesResponsesOnly(t *testing.T) {
@@ -457,6 +481,43 @@ func assertJSONContains(t *testing.T, value any, want string) {
 	}
 }
 
+func chatMessages(t *testing.T, raw any) []map[string]any {
+	t.Helper()
+
+	list, ok := raw.([]any)
+	if !ok {
+		t.Fatalf("messages = %#v, want array", raw)
+	}
+
+	out := make([]map[string]any, 0, len(list))
+
+	for _, item := range list {
+		message, ok := item.(map[string]any)
+		if !ok {
+			t.Fatalf("message = %#v, want object", item)
+		}
+
+		out = append(out, message)
+	}
+
+	return out
+}
+
+func assertResponsesInputRoles(t *testing.T, raw any, want []string) {
+	t.Helper()
+
+	messages := chatMessages(t, raw)
+	roles := make([]string, 0, len(messages))
+
+	for _, message := range messages {
+		roles = append(roles, fmt.Sprint(message["role"]))
+	}
+
+	if !slices.Equal(roles, want) {
+		t.Fatalf("input roles = %q, want %q", roles, want)
+	}
+}
+
 func assertStructuredResponsesFormat(t *testing.T, raw any, name string) {
 	t.Helper()
 
@@ -529,12 +590,12 @@ func TestOpenAICompatibleJSONGeneratorForwardsPromptCacheKey(t *testing.T) {
 	}
 
 	base := JSONRequest{
-		TaskName:     "summarize",
-		SystemPrompt: "system prompt",
-		UserPrompt:   "user prompt",
-		SchemaName:   "summary",
-		Schema:       map[string]any{"type": "object"},
-		Model:        testGptTest,
+		TaskName:        "summarize",
+		DeveloperPrompt: "developer prompt",
+		UserPrompt:      "user prompt",
+		SchemaName:      "summary",
+		Schema:          map[string]any{"type": "object"},
+		Model:           testGptTest,
 	}
 
 	withKey := base
