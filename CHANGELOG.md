@@ -3,6 +3,17 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## v2.7.2 - 2026-09-27
+
+- `pgstore.Store.PruneInbox`와 `PruneInboxBefore`가 planner가 후보 부분 질의를 nested loop
+  안쪽에서 다시 실행할 때 한 호출에 `limit`보다 많은 inbox 종단 행을 지우던 결함을 수정합니다.
+  후보를 한 번만 계산해 고정하며 scope·보존 기간·cutoff·`(terminal_at, id)` 순서·잠긴 행
+  건너뛰기는 그대로입니다. 공개 API와 환경 변수 fallback은 바꾸지 않습니다.
+- pgxdb 통합 테스트와 pgstore release gate가 일회용 PostgreSQL 컨테이너를 지울 때
+  이미지가 선언한 익명 volume도 함께 지웁니다.
+- pgxdb 통합 테스트가 이미지 pull·platform 경고를 container ID로 읽어 조용히 skip하고,
+  시작한 컨테이너를 남기던 결함을 수정합니다. ID는 stdout에서만 읽습니다.
+
 ## v2.7.1 - 2026-09-25
 
 - gRPC를 보안 수정 안정판 `v1.83.2`로 고정하여 `v1.84.0`에 적용되는
@@ -23,10 +34,6 @@
 - 코드와 URL의 기호 및 빈 줄을 보존하고, NUL·잘못된 UTF-8 입력은 그대로 반환합니다.
   표가 행·열·메시지 전체 출력 한도를 넘거나 헤더보다 많은 셀을 포함하면 표 원문 전체를
   보존해 데이터가 누락되지 않도록 합니다.
-- pgxdb 통합 테스트와 pgstore release gate가 일회용 PostgreSQL 컨테이너를 지울 때
-  이미지가 선언한 익명 volume도 함께 지웁니다.
-- pgxdb 통합 테스트가 이미지 pull·platform 경고를 container ID로 읽어 조용히 skip하고,
-  시작한 컨테이너를 남기던 결함을 수정합니다. ID는 stdout에서만 읽습니다.
 
 ## v2.6.1 - 2026-09-08
 
