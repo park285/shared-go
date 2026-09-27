@@ -50,14 +50,18 @@
 - `promptguard`의 fail-closed fallback 로그가 원인 분류(`cache_unavailable`, `detector_error`,
   `invalid_detector_decision`, `unexpected_result_type`)를 `cause` 속성으로 남깁니다. detector
   오류 원문은 계속 기록하지 않습니다.
+
+## v2.7.2 - 2026-09-27
+
+- `pgstore.Store.PruneInbox`와 `PruneInboxBefore`가 planner가 후보 부분 질의를 nested loop
+  안쪽에서 다시 실행할 때 한 호출에 `limit`보다 많은 inbox 종단 행을 지우던 결함을 수정합니다.
+  후보를 한 번만 계산해 고정하며 scope·보존 기간·cutoff·`(terminal_at, id)` 순서·잠긴 행
+  건너뛰기는 그대로입니다. 공개 API와 환경 변수 fallback은 바꾸지 않습니다.
 - pgxdb 통합 테스트와 pgstore release gate가 일회용 PostgreSQL 컨테이너를 지울 때
   이미지가 선언한 익명 volume도 함께 지웁니다.
 - pgxdb 통합 테스트가 이미지 pull·platform 경고를 container ID로 읽어 조용히 skip하고,
   시작한 컨테이너를 남기던 결함을 수정합니다. ID는 stdout에서만 읽습니다.
-- `pgstore.Store.PruneInbox`와 `PruneInboxBefore`가 한 호출에 `limit`보다 많은 inbox 종단 행을
-  지우던 결함을 수정합니다. planner가 후보 부분 질의를 nested loop 안쪽에서 다시 실행하면
-  `SKIP LOCKED`가 이번 문이 지운 행을 건너뛰고 다음 행을 내줬습니다. 후보를 한 번만 계산해
-  고정하며 scope·보존·cutoff·`(terminal_at, id)` 순서·잠긴 행 건너뛰기는 그대로입니다.
+
 
 ## v2.7.1 - 2026-09-25
 
