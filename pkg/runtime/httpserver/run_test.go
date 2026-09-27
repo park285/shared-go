@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -146,32 +147,43 @@ func TestRunReturnsShutdownError(t *testing.T) {
 }
 
 func TestRunReturnsWhenShutdownDoesNotStopListener(t *testing.T) {
-	server := newBlockingServer(http.ErrServerClosed, nil)
+	synctest.Test(t, func(t *testing.T) {
+		server := newBlockingServer(http.ErrServerClosed, nil)
 
-	server.shutdownStops = false
+		server.shutdownStops = false
 
-	ctx, cancel := context.WithCancel(t.Context())
-	done := make(chan error, 1)
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
 
-	go func() {
-		done <- Run(ctx, server, 100*time.Millisecond)
-	}()
+		done := make(chan error, 1)
 
-	waitForBlockingListen(t, server)
-	cancel()
+		go func() {
+			done <- Run(ctx, server, time.Second)
+		}()
 
-	select {
-	case err := <-done:
-		if !errors.Is(err, context.DeadlineExceeded) {
+		<-server.listenDone
+
+		startedAt := time.Now()
+
+		cancel()
+
+		if err := <-done; !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("Run() error = %v, want context.DeadlineExceeded", err)
 		}
-	case <-time.After(time.Second):
-		t.Fatal("Run() hung after shutdown timeout")
-	}
 
-	if !server.closeCalled.Load() {
-		t.Fatal("Close() was not called after graceful stop timeout")
-	}
+		if elapsed := time.Since(startedAt); elapsed > time.Second {
+			t.Fatalf("Run() returned after %v, exceeding shutdown budget", elapsed)
+		}
+
+		// 비동기 강제 종료의 스케줄링 순서 대신 실제 listener 종료를 검증한다.
+		synctest.Wait()
+
+		select {
+		case <-server.listenStopped:
+		default:
+			t.Fatal("listener remained active after graceful stop timeout")
+		}
+	})
 }
 
 func TestRunReturnsByHardDeadlineWhenForceCloseBlocks(t *testing.T) {

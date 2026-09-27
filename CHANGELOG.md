@@ -18,6 +18,7 @@
 
 ## 미출시
 
+- HTTP 종료 회귀를 `testing/synctest`로 검증해 실제 스케줄링 지연과 종료 예산 판정을 분리합니다. graceful 종료 실패 뒤 listener의 실제 종료와 hard deadline 내 반환을 계속 검사하며 운영 동작은 바꾸지 않습니다.
 - `kakaoformat`은 Goldmark v1.8.5의 구문 트리로 Markdown을 변환합니다. 한글 조사와
   붙은 강조, 중첩 강조·목록, 참조 링크·이미지, 인용문·표·체크 목록의 경계를 보존합니다.
 - 코드와 URL의 기호 및 빈 줄을 보존하고, NUL·잘못된 UTF-8 입력은 그대로 반환합니다.
