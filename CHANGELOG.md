@@ -5,6 +5,11 @@
 
 ## 미출시
 
+## v2.9.1 - 2026-09-28
+
+- **CI**: fast-gate workflow fixture에 Python runtime의 검증된 uv 설치 스크립트를 포함합니다.
+  공개 API와 실행 동작은 변경하지 않습니다.
+
 ## v2.9.0 - 2026-09-28
 - HTTP 종료 회귀를 `testing/synctest`로 검증해 실제 스케줄링 지연과 종료 예산 판정을 분리합니다. graceful 종료 실패 뒤 listener의 실제 종료와 hard deadline 내 반환을 계속 검사하며 운영 동작은 바꾸지 않습니다.
 

@@ -145,6 +145,7 @@ def verify_stage_ownership(root: Path) -> None:
         Path(".github/workflows/ci.yml"),
         Path(".github/workflows/security.yml"),
         Path(".github/actions/python-runtime/action.yml"),
+        Path(".github/actions/python-runtime/install-uv.sh"),
         Path("scripts/ci/workflow-gate-profile"),
         Path("scripts/ci/workflow-ci-owner"),
         Path("go.mod"),
