@@ -1,5 +1,5 @@
 # 이 파일은 tools/lint/golangci.template.yml에서 생성된다. 직접 고치지 말고 템플릿을 고친 뒤
-# bash tools/lint/render-golangci.sh 를 실행한다. 저장소별 차이는 tools/lint/golangci-repos.tsv의 module path·import prefix뿐이다.
+# bash tools/lint/render-golangci.sh 를 실행한다. 저장소별 차이는 tools/lint/golangci-repos.tsv의 열 값뿐이다.
 version: "2"
 
 run:
