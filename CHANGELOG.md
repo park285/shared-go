@@ -9,6 +9,9 @@
   저장소 사본 구조 예산 검사를 제거했습니다. 파일 줄 수 800 상한은 revive `file-length-limit`이
   CI에서 강제하고, 구조 예산과 workflow 보안 불변식은 iris-stack 메타 pre-push stack gate가
   소유합니다. 공개 API와 실행 동작은 변경하지 않습니다.
+- **CI**: `scripts/ci/python-runner.sh`를 iris-bridge 정본과 같게 맞췄습니다. 인자를 해석기 탐색 전에
+  검사해 `--` 뒤 인자가 없거나 `--print-interpreter`에 인자가 붙으면 usage와 종료 코드 2로 끝나고,
+  `.python-version`은 symlink가 아닌 개행으로 끝나는 한 줄짜리 regular 파일만 받습니다.
 
 ## v2.9.1 - 2026-09-28
 
