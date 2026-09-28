@@ -183,6 +183,12 @@ linters:
         - name: unnecessary-if
         - name: unsecure-url-scheme
         - name: use-waitgroup-go
+        # 저장소별 파일 줄 수 hard 상한이다. 0은 규칙을 끈다.
+        - name: file-length-limit
+          arguments:
+            - max: 800
+          exclude:
+            - '~^$'
 
     nolintlint:
       allow-unused: false
