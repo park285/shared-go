@@ -95,6 +95,8 @@ go test ./...
 go build ./...
 ```
 
-**CI 정책:** 본 리포지토리는 원격 깃허브 액션(GitHub Actions)이 실제 검증 주체입니다. `ci.yml`은 PR 및 `main` push마다 workflow secret 경계 검사, SQL ownership 검사, `gofmt`, `go vet`, `golangci-lint`, 경합 조건 검사를 포함한 테스트 슈트(`go test -race -count=1 ./...`)를 수행하며, `security.yml`은 `main` push·주간 스케줄·수동 dispatch 시 `govulncheck` 취약점 분석을 수행합니다.
+**CI 정책:** 본 리포지토리는 원격 깃허브 액션(GitHub Actions)이 실제 검증 주체입니다. `ci.yml`은 PR 및 `main` push마다 module tidy drift, 고정 Unicode 생성 테이블, SQL ownership 검사, `gofmt`, `go vet`, `golangci-lint`, 경합 조건 검사를 포함한 테스트 슈트(`go test -race -count=1 ./...`)를 수행하며, `security.yml`은 `main` push·주간 스케줄·수동 dispatch 시 `govulncheck` 취약점 분석을 수행합니다.
+
+파일 줄 수(800)와 함수 길이 상한은 `.golangci.yml`의 revive `file-length-limit`과 `funlen`이 이 저장소 CI에서 강제합니다. 파일당 함수 수·타입당 메서드 수·struct 필드 수·`_partN` 분할 금지 같은 구조 예산과 workflow 보안 불변식(action 전체 SHA 고정, `id-token`·`attestations` 권한은 `release.yml`만, PR workflow의 secret 사용 금지)은 이 저장소 CI나 `release-gate.sh`가 아니라 iris-stack 메타 저장소의 pre-push stack gate(`tools/structure/check_repo_budgets.py`, `tools/checks/check-workflow-policy.py`)가 소유합니다. 메타 저장소 push에서만 실행되므로 이 저장소 단독 push·태그 흐름에서는 검사되지 않습니다.
 
 릴리스 검증(`bash scripts/ci/release-gate.sh`)은 Docker가 준비된 환경에서 별도 일회용 PostgreSQL 컨테이너를 소유합니다. `pkg/irisdurable/...`의 race 테스트를 실제 DB로 실행하고 필수 pgstore 사례의 pass와 전체 skip=0을 확인합니다. 컨테이너를 준비할 수 없으면 릴리스 검증은 실패합니다.
