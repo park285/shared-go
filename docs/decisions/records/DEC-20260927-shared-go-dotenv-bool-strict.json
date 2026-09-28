@@ -3,14 +3,19 @@
   "id": "DEC-20260927-shared-go-dotenv-bool-strict",
   "title": "shared-go envutil dotenvBool은 받아들일 수 없는 값을 기본값으로 접지 않고 오류로 반환한다",
   "decision_status": "accepted",
-  "delivery_status": "planned",
+  "delivery_status": "in_progress",
   "scope": [
     "shared-go"
   ],
   "decided_at": "2026-09-27",
   "summary": "2026-09-27 사용자가 PLN-20260926-stack-audit-refactoring을 권장안대로 끝까지 완결하도록 지시해, orchestrator가 DEC-20260731-legacy-fade-out-no-dual-path와 비엄격 파서 퇴역 방향에 따라 권장안으로 기록했다(사용자 검토 대상). T10에서 비엄격 Int/Bool/Float/Duration과 warnParse를 지운 뒤에도 pkg/envutil/dotenv.go의 dotenvBool은 LocalEnableKey와 <PREFIX>_REQUIRE_STATIC_SECRETS에서 받아들일 수 없는 값을 경고 없이 기본값으로 바꾼다. 이 경로도 BoolE와 같은 규칙(1/true/yes/on, 0/false/no/off, 빈 값은 미설정)으로 판정하고 그 밖의 값은 설정 오류로 반환해 호출자가 기동에 실패하게 한다. 변경은 T10의 비엄격 파서 삭제와 같은 lockstep 태그에 묶는다(DEC-20260824-shared-go-v2-lockstep-fadeout). 배포 선행 운영 작업: 새 shared-go를 쓰는 소비자 배포 전에 각 소비자 ops가 해당 키 값이 새 규칙으로 파싱되는지 값을 출력하지 않고 확인한다. 근거는 iris-stack docs/agent-workflows/evidence/2026-09-26-stack-audit/의 fadeout-candidates.tsv sharedgo-envutil-dotenvbool-nonstrict 행이고 PLN-20260926-stack-audit-refactoring T10 후속으로 수행한다.",
   "sources": [],
-  "evidence": [],
-  "implementation": [],
+  "evidence": [
+    "pkg/envutil/dotenv_test.go"
+  ],
+  "implementation": [
+    "pkg/envutil/dotenv.go",
+    "shared-go@36d47654f2c0ee6bc6c88e9d50997de3f1495e51"
+  ],
   "supersedes": []
 }
