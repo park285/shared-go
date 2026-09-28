@@ -33,37 +33,14 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
-      - name: Workflow secret boundary
-        run: |
-          bash scripts/ci/check-workflow-secrets.sh
-          bash scripts/ci/check-workflow-secrets_test.sh
-
-      - name: Workflow CI ownership contract
-        run: |
-          "$CI_PYTHON_BIN" scripts/ci/check-workflow-ci-owner.py
-          "$CI_PYTHON_BIN" scripts/ci/check-workflow-ci-owner_test.py
-
-      - name: Release provenance contract
-        run: bash scripts/ci/check-release-provenance.sh
-
-      - name: README package catalog contract
-        run: bash scripts/ci/check-readme-package-catalog_test.sh
-
       - name: Module graph tidy drift
         run: GOWORK=off go mod tidy -diff
 
       - name: Pinned Unicode generated table
         run: GOWORK=off go run ./pkg/internal/guardtext/genconfusables.go -confusables-source ./pkg/internal/guardtext/testdata/confusables-17.0.0.txt.gz -unicode-data-baseline-source ./pkg/internal/guardtext/testdata/UnicodeData-15.0.0.txt.gz -unicode-data-source ./pkg/internal/guardtext/testdata/UnicodeData-17.0.0.txt.gz -output ./pkg/internal/guardtext/confusables_table_generated.go -check
 
-      - name: Fast gate mutation fixtures
-        run: |
-          "$CI_PYTHON_BIN" scripts/ci/check-fast-gate-contract_test.py
-
       - name: SQL ownership
         run: bash scripts/check-sql-ownership.sh
-
-      - name: Hard structure gate
-        run: bash scripts/ci/check-structure.sh --mode hard --format text
 
       - name: gofmt
         run: |

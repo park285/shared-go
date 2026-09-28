@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# tools/checks/toolchain-pins.json에서 생성. 내려받은 byte를 실행 전에 검증한다.
+# 내려받은 byte를 실행 전에 고정 SHA-256으로 검증한다.
 case "${RUNNER_OS:?}/${RUNNER_ARCH:?}" in
   Linux/ARM64) archive_url="https://releases.astral.sh/github/uv/releases/download/0.12.18/uv-aarch64-unknown-linux-gnu.tar.gz"; expected_sha="afb6291f3f0a6b4521fc67b947822506c41dde5b60d2189dd8f3695b2ac8c9e7" ;;
   Linux/X64) archive_url="https://releases.astral.sh/github/uv/releases/download/0.12.18/uv-x86_64-unknown-linux-gnu.tar.gz"; expected_sha="89eadd7c76fc063887959510d5ba0ab1264dfd5f1143b925ddb73021a40acf16" ;;

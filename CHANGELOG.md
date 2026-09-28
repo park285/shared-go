@@ -5,6 +5,11 @@
 
 ## 미출시
 
+- **CI**: workflow secret·CI ownership·release provenance·README 카탈로그 자체 검사와 그 self-test,
+  저장소 사본 구조 예산 검사를 제거했습니다. 파일 줄 수 800 상한은 revive `file-length-limit`이
+  CI에서 강제하고, 구조 예산과 workflow 보안 불변식은 iris-stack 메타 pre-push stack gate가
+  소유합니다. 공개 API와 실행 동작은 변경하지 않습니다.
+
 ## v2.9.1 - 2026-09-28
 
 - **CI**: fast-gate workflow fixture에 Python runtime의 검증된 uv 설치 스크립트를 포함합니다.

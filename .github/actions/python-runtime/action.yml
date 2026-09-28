@@ -2,7 +2,7 @@ name: Python runtime
 description: >-
   .python-version 이 고정한 CPython 을 actions/setup-python 으로 고르고, 고정 release archive의 SHA-256을 검증해
   정확한 uv 를 설치한 뒤 scripts/ci/python-runner.sh 가 고른 해석기를 CI_PYTHON_BIN 으로 export 한다.
-  스택 전체가 같은 바이트의 사본을 가지며 핀 값은 iris-stack tools/checks/toolchain-pins.json 이 소유한다.
+  uv 핀 값은 이 저장소의 install-uv.sh와 scripts/ci/python-runner.sh가 소유한다.
 
 inputs:
   working-directory:
