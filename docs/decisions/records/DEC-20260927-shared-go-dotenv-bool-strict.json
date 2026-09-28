@@ -3,7 +3,7 @@
   "id": "DEC-20260927-shared-go-dotenv-bool-strict",
   "title": "shared-go envutil dotenvBool은 받아들일 수 없는 값을 기본값으로 접지 않고 오류로 반환한다",
   "decision_status": "accepted",
-  "delivery_status": "in_progress",
+  "delivery_status": "verified",
   "scope": [
     "shared-go"
   ],

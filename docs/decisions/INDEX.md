@@ -6,6 +6,6 @@ iris-stack의 `bash tools/checks/check-decision-catalog.sh render`가 생성하�
 
 | ID | 제목 | 결정 상태 | 이행 상태 | scope | 결정일 | 재검토 | 대체 관계 | 원본 |
 |---|---|---|---|---|---|---|---|---|
-| [DEC-20260927-shared-go-dotenv-bool-strict](records/DEC-20260927-shared-go-dotenv-bool-strict.json) | shared-go envutil dotenvBool은 받아들일 수 없는 값을 기본값으로 접지 않고 오류로 반환한다 | accepted | in_progress | shared-go | 2026-09-27 | - | - | - |
+| [DEC-20260927-shared-go-dotenv-bool-strict](records/DEC-20260927-shared-go-dotenv-bool-strict.json) | shared-go envutil dotenvBool은 받아들일 수 없는 값을 기본값으로 접지 않고 오류로 반환한다 | accepted | verified | shared-go | 2026-09-27 | - | - | - |
 | [DEC-20260612-shared-go-transport-idle-conns](records/DEC-20260612-shared-go-transport-idle-conns.json) | shared-go TransportProfile MaxIdleConns 기본값은 external 128 / internal 256 | accepted | implemented | shared-go | 2026-06-12 | - | - | [iris-stack: 28_open_decisions.md](../../../docs/performance_reliability_program_v2/28_open_decisions.md) |
 | [DEC-20260610-shared-go-telemetry-retention](records/DEC-20260610-shared-go-telemetry-retention.json) | 소비자가 없는 shared-go/pkg/telemetry를 삭제할지 OTel 대비로 유지할지 | superseded | unknown | shared-go | 2026-06-10 | - | superseded by DEC-20260805-shared-go-telemetry-retained | [iris-stack: 2026-06-10-iris-stack-refactoring-roadmap.md](../../../docs/agent-workflows/plans/2026-06-10-iris-stack-refactoring-roadmap.md) |
