@@ -12,8 +12,20 @@ fail() {
   exit 1
 }
 
-[[ "$(cat "${ROOT_DIR}/.python-version" 2>/dev/null)" == "${PYTHON_VERSION}" ]] ||
-  fail ".python-version must contain exactly ${PYTHON_VERSION}"
+usage() {
+  echo "usage: $0 --print-interpreter | -- <python-args...>" >&2
+  exit 2
+}
+case "${1:-}" in
+  --print-interpreter) (( $# == 1 )) || usage ;;
+  --) (( $# > 1 )) || usage ;;
+  *) usage ;;
+esac
+
+pin_file="${ROOT_DIR}/.python-version"
+# 개행으로 끝나는 한 줄만 허용한다. 끝의 sentinel은 명령 치환이 뒤쪽 개행을 지우지 않게 한다.
+[[ -f "${pin_file}" && ! -L "${pin_file}" && "$(cat -- "${pin_file}"; printf x)" == "${PYTHON_VERSION}"$'\n'x ]] ||
+  fail ".python-version must be a regular file containing exactly one line: ${PYTHON_VERSION}"
 uv_version="$(uv --version 2>/dev/null || true)"
 [[ "${uv_version}" == "uv ${UV_VERSION}" || "${uv_version}" == "uv ${UV_VERSION} "* ]] ||
   fail "uv ${UV_VERSION} is required, got ${uv_version:-none}"
@@ -23,8 +35,9 @@ interpreter="$(UV_NO_CONFIG=1 UV_PYTHON_DOWNLOADS=never \
 [[ "$("${interpreter}" -I -S -c 'import platform; print(platform.python_version())')" == "${PYTHON_VERSION}" ]] ||
   fail "resolved interpreter is not CPython ${PYTHON_VERSION}"
 
-case "${1:-}" in
-  --print-interpreter) printf '%s\n' "${interpreter}" ;;
-  --) shift; exec "${interpreter}" "$@" ;;
-  *) echo "usage: $0 --print-interpreter | -- <python-args...>" >&2; exit 2 ;;
-esac
+if [[ "$1" == "--print-interpreter" ]]; then
+  printf '%s\n' "${interpreter}"
+else
+  shift
+  exec "${interpreter}" "$@"
+fi
