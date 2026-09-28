@@ -27,18 +27,6 @@ type contextBlockingTransport struct {
 	once    sync.Once
 }
 
-func TestMessageAlias(t *testing.T) {
-	t.Parallel()
-
-	shared := sharedllm.Message{Role: testUser, Content: "hello"}
-
-	preset := shared
-
-	if preset != shared {
-		t.Fatalf("openaipreset.Message = %#v, want %#v", preset, shared)
-	}
-}
-
 func (t *contextBlockingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	t.once.Do(func() { close(t.started) })
 	<-req.Context().Done()
@@ -77,7 +65,7 @@ func completionPayloadOptionCases() []completionPayloadCase {
 		{
 			name: "basic",
 			req: openaipreset.CompletionRequest{
-				Messages: []openaipreset.Message{
+				Messages: []sharedllm.Message{
 					{Role: testSystem, Content: " system prompt "},
 					{Role: "assistant", Content: "previous"},
 					{Role: testUser, Content: "   "},
@@ -89,7 +77,7 @@ func completionPayloadOptionCases() []completionPayloadCase {
 		{
 			name: "all options",
 			req: openaipreset.CompletionRequest{
-				Messages:        []openaipreset.Message{{Role: testDeveloper, Content: "stay terse"}},
+				Messages:        []sharedllm.Message{{Role: testDeveloper, Content: "stay terse"}},
 				Model:           " gpt-override ",
 				Temperature:     &temp,
 				ReasoningEffort: " high ",
@@ -111,7 +99,7 @@ func completionPayloadRoleCases() []completionPayloadCase {
 		{
 			name: "role mapping",
 			req: openaipreset.CompletionRequest{
-				Messages: []openaipreset.Message{
+				Messages: []sharedllm.Message{
 					{Role: testDeveloper, Content: "developer content"},
 					{Role: testSystem, Content: "system content"},
 					{Role: testUser, Content: "user content"},
@@ -125,7 +113,7 @@ func completionPayloadRoleCases() []completionPayloadCase {
 		{
 			name: "explicit cache breakpoint and mode",
 			req: openaipreset.CompletionRequest{
-				Messages: []openaipreset.Message{
+				Messages: []sharedllm.Message{
 					{Role: testDeveloper, Content: "stable prefix", CacheBreakpoint: true},
 					{Role: testUser, Content: "variable question"},
 				},
@@ -146,7 +134,7 @@ func completionPayloadProfileCases() []completionPayloadCase {
 		{
 			name: "openai instruction profile",
 			req: openaipreset.CompletionRequest{
-				Messages: []openaipreset.Message{
+				Messages: []sharedllm.Message{
 					{Role: testSystem, Content: testInvariant},
 					{Role: testDeveloper, Content: testDeveloper},
 					{Role: testUser, Content: testQuestion},
@@ -158,7 +146,7 @@ func completionPayloadProfileCases() []completionPayloadCase {
 		{
 			name: "single developer instruction profile",
 			req: openaipreset.CompletionRequest{
-				Messages: []openaipreset.Message{
+				Messages: []sharedllm.Message{
 					{Role: testSystem, Content: testInvariant},
 					{Role: testDeveloper, Content: testDeveloper},
 					{Role: testUser, Content: testQuestion},
@@ -170,7 +158,7 @@ func completionPayloadProfileCases() []completionPayloadCase {
 		{
 			name: "single system instruction profile",
 			req: openaipreset.CompletionRequest{
-				Messages: []openaipreset.Message{
+				Messages: []sharedllm.Message{
 					{Role: testSystem, Content: testInvariant},
 					{Role: testDeveloper, Content: testDeveloper},
 					{Role: testUser, Content: testQuestion},
@@ -437,7 +425,7 @@ func TestCompleteRejectsInvalidInstructionAdaptationBeforeNetwork(t *testing.T) 
 		{
 			name: "invalid sequence",
 			req: openaipreset.CompletionRequest{
-				Messages: []openaipreset.Message{
+				Messages: []sharedllm.Message{
 					{Role: testUser, Content: testQuestion},
 					{Role: testDeveloper, Content: "late instruction"},
 				},
@@ -448,7 +436,7 @@ func TestCompleteRejectsInvalidInstructionAdaptationBeforeNetwork(t *testing.T) 
 		{
 			name: "invalid profile",
 			req: openaipreset.CompletionRequest{
-				Messages:           []openaipreset.Message{{Role: testUser, Content: testQuestion}},
+				Messages:           []sharedllm.Message{{Role: testUser, Content: testQuestion}},
 				InstructionProfile: &invalidProfile,
 			},
 			wantErr: sharedllm.ErrInvalidInstructionProfile,
@@ -512,7 +500,7 @@ func TestCompleteRejectsRefusalAndEmptyToolEnvelope(t *testing.T) {
 			}
 
 			_, err = client.Complete(t.Context(), openaipreset.CompletionRequest{
-				Messages: []openaipreset.Message{{Role: testUser, Content: "hello"}},
+				Messages: []sharedllm.Message{{Role: testUser, Content: "hello"}},
 			})
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("Complete error = %v, want %v", err, tt.wantErr)
@@ -601,7 +589,7 @@ func TestCompletePreservesInFlightContextErrors(t *testing.T) {
 			}()
 
 			_, err = client.Complete(ctx, openaipreset.CompletionRequest{
-				Messages: []openaipreset.Message{{Role: testUser, Content: "hello"}},
+				Messages: []sharedllm.Message{{Role: testUser, Content: "hello"}},
 			})
 
 			<-triggered

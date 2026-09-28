@@ -173,7 +173,7 @@ func (c *Client) GenerateLayeredResponsesJSON(ctx context.Context, task string, 
 	profile := sharedllm.InstructionProfileOpenAI
 
 	params, model, err := c.completionParams(CompletionRequest{
-		Messages: []Message{{Role: "system", Content: prompts.Invariant}, {Role: "developer", Content: prompts.Developer}, {Role: "user", Content: prompts.User}},
+		Messages: []sharedllm.Message{{Role: "system", Content: prompts.Invariant}, {Role: "developer", Content: prompts.Developer}, {Role: "user", Content: prompts.User}},
 		Model:    c.model, ResponseFormat: &ResponseFormat{Name: sharedllm.ResponsesSchemaName(task), Schema: schema, Strict: true}, InstructionProfile: &profile,
 		CacheKey: c.promptCacheKeyFor(task),
 	})

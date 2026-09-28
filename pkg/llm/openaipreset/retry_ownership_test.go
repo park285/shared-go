@@ -70,7 +70,7 @@ func TestClientRetryAttemptsAreOwnedByOption(t *testing.T) {
 			}
 
 			if _, err := client.Complete(t.Context(), openaipreset.CompletionRequest{
-				Messages: []openaipreset.Message{{Role: testUser, Content: "hi"}},
+				Messages: []sharedllm.Message{{Role: testUser, Content: "hi"}},
 			}); err == nil {
 				t.Fatal("Complete() error = nil, want provider failure")
 			}

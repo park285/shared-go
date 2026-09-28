@@ -15,8 +15,6 @@ import (
 	"github.com/park285/shared-go/v2/pkg/llm/internal/openaidiag"
 )
 
-type Message = sharedllm.Message
-
 type ResponseFormat struct {
 	Name   string
 	Schema map[string]any
@@ -24,7 +22,7 @@ type ResponseFormat struct {
 }
 
 type CompletionRequest struct {
-	Messages           []Message
+	Messages           []sharedllm.Message
 	Model              string
 	Temperature        *float64
 	ReasoningEffort    string
@@ -85,7 +83,7 @@ func (c *Client) Complete(ctx context.Context, req CompletionRequest) (Completio
 	return out, nil
 }
 
-func completionPromptLen(messages []Message) int {
+func completionPromptLen(messages []sharedllm.Message) int {
 	total := 0
 
 	for i := range messages {
@@ -181,7 +179,7 @@ func (c *Client) completionReasoningEffort(effort string) string {
 	return strings.TrimSpace(c.reasoningEffort)
 }
 
-func completionInput(messages []Message) responses.ResponseInputParam {
+func completionInput(messages []sharedllm.Message) responses.ResponseInputParam {
 	out := make(responses.ResponseInputParam, 0, len(messages))
 	for _, message := range messages {
 		content := strings.TrimSpace(message.Content)

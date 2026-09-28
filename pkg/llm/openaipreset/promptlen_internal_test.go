@@ -3,6 +3,8 @@ package openaipreset
 import (
 	"strings"
 	"testing"
+
+	sharedllm "github.com/park285/shared-go/v2/pkg/llm"
 )
 
 func TestJoinedPromptLenMatchesTrimmedJoin(t *testing.T) {
@@ -66,7 +68,7 @@ func TestCompletionPromptLenMatchesJoinedTrimmedMessages(t *testing.T) {
 
 	const roleUser = "user"
 
-	messages := []Message{
+	messages := []sharedllm.Message{
 		{Role: "system", Content: "  sys  "},
 		{Role: roleUser, Content: ""},
 		{Role: "developer", Content: "\n"},

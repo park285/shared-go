@@ -4,7 +4,15 @@
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
 ## 미출시
+
+## v2.9.0 - 2026-09-28
 - HTTP 종료 회귀를 `testing/synctest`로 검증해 실제 스케줄링 지연과 종료 예산 판정을 분리합니다. graceful 종료 실패 뒤 listener의 실제 종료와 hard deadline 내 반환을 계속 검사하며 운영 동작은 바꾸지 않습니다.
+
+### 호환성이 깨지는 변경
+
+- `openaipreset.Message` 별칭을 제거합니다. `CompletionRequest.Messages`의 정본 타입은
+  `llm.Message`이며, 호출자는 `github.com/park285/shared-go/v2/pkg/llm`의 `Message`를 사용해야 합니다.
+  스택 소비자는 이 릴리스로 올리기 전에 해당 타입 이름을 이관해야 합니다.
 
 ## v2.8.0 - 2026-09-28
 

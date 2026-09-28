@@ -267,7 +267,7 @@ linters:
         - golang.org/x/sync/*
         # 타입이 있는 오류 생성자 패키지와 SDK 내부 구현은 호출자가 그 오류를 그대로 공개 표면으로 낸다.
         - github.com/kapu/hololive-youtube-collector/internal/runtime/collecterr
-        - github.com/park285/iris-client-go/v2/internal/*
+        - github.com/park285/iris-client-go/v3/internal/*
 
     usestdlibvars:
       http-method: true
