@@ -232,6 +232,8 @@ linters:
       report-internal-errors: false
       ignore-sigs:
         - .Errorf(
+        # shared-go logging.LogAndWrapError는 기록과 함께 "op: err"로 감싸므로 Errorf와 같이 맥락을 붙인 결과다.
+        - .LogAndWrapError(
         - errors.New(
         - errors.Join(
         - errors.Unwrap(
