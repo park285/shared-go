@@ -30,13 +30,17 @@ func CodeRanges(input string) []CodeRange {
 }
 
 func codeBlocks(input string) []CodeRange {
-	var result []CodeRange
+	var (
+		result []CodeRange
+		lists  listContext
+	)
 
 	previousBlank := true
 
 	for offset := 0; offset < len(input); {
 		lineEnd := codeLineEnd(input, offset)
-		block, ok := codeBlockAt(input, offset, lineEnd, previousBlank)
+		base := lists.observe(input[offset:lineEnd], previousBlank)
+		block, ok := codeBlockAt(input, offset, lineEnd, previousBlank, base)
 
 		previousBlank = strings.TrimSpace(input[offset:lineEnd]) == ""
 
@@ -51,7 +55,8 @@ func codeBlocks(input string) []CodeRange {
 	return result
 }
 
-func codeBlockAt(input string, offset, lineEnd int, previousBlank bool) (CodeRange, bool) {
+// codeBlockAt은 base가 0보다 크면 그 목록 항목 내용 들여쓰기를 기준으로 코드 블록을 판정한다.
+func codeBlockAt(input string, offset, lineEnd int, previousBlank bool, base int) (CodeRange, bool) {
 	content, quotes := stripCodeQuotes(input[offset:lineEnd])
 	indent := len(content) - len(strings.TrimLeft(content, " "))
 	trimmed := content[indent:]
@@ -61,18 +66,24 @@ func codeBlockAt(input string, offset, lineEnd int, previousBlank bool) (CodeRan
 		trimmed = strings.TrimLeft(trimmed[listWidth:], " ")
 	}
 
-	if previousBlank && quotes == 0 && listWidth == 0 && (indent >= 4 || strings.HasPrefix(content, "\t")) {
-		end := indentedCodeEnd(input, lineEnd)
+	if quotes > 0 || indent < base {
+		base = 0
+	}
+
+	relative := indent - base
+
+	if previousBlank && quotes == 0 && listWidth == 0 && (relative >= 4 || base == 0 && strings.HasPrefix(content, "\t")) {
+		end := indentedCodeEnd(input, lineEnd, base)
 		return CodeRange{Start: offset, End: end, BodyStart: offset, BodyEnd: end, Block: true}, true
 	}
 
 	width := codeFenceWidth(trimmed)
-	if width < 3 || indent > 3 || trimmed[0] == '`' && strings.Contains(trimmed[width:], "`") {
+	if width < 3 || relative > 3 || trimmed[0] == '`' && strings.Contains(trimmed[width:], "`") {
 		return CodeRange{}, false
 	}
 
 	block := CodeRange{Start: offset, End: len(input), BodyStart: lineEnd, BodyEnd: len(input), Indent: content[:indent], Language: strings.TrimSpace(trimmed[width:]), Width: width, Block: true, Fenced: true, Container: quotes > 0 || listWidth > 0}
-	listIndent := 0
+	listIndent := base
 
 	if listWidth > 0 {
 		listIndent = indent + listWidth
@@ -81,13 +92,15 @@ func codeBlockAt(input string, offset, lineEnd int, previousBlank bool) (CodeRan
 	return closeCodeBlock(input, block, quotes, listIndent, trimmed[0]), true
 }
 
-func indentedCodeEnd(input string, start int) int {
+func indentedCodeEnd(input string, start, base int) int {
+	prefix := strings.Repeat(" ", base+4)
+
 	end := start
 	for end < len(input) {
 		next := codeLineEnd(input, end)
 		part := input[end:next]
 
-		if strings.TrimSpace(part) != "" && !strings.HasPrefix(part, "    ") && !strings.HasPrefix(part, "\t") {
+		if strings.TrimSpace(part) != "" && !strings.HasPrefix(part, prefix) && (base > 0 || !strings.HasPrefix(part, "\t")) {
 			break
 		}
 
@@ -196,4 +209,62 @@ func markdownEscaped(input string, index int) bool {
 	}
 
 	return count%2 != 0
+}
+
+// listContext는 목록 항목 내용의 들여쓰기를 추적한다. 항목 안에서 빈 줄 뒤 4칸 들여쓴 문단과 fence는
+// CommonMark에서 항목 내용이므로, 문서 최상위 기준으로 들여쓰기 코드로 오인하지 않게 한다.
+type listContext struct{ indents []int }
+
+// observe는 줄이 속한 목록 항목의 내용 들여쓰기를 반환하고, 그 줄이 목록 항목이면 다음 줄을 위해 기록한다.
+func (c *listContext) observe(line string, previousBlank bool) int {
+	if strings.TrimSpace(line) == "" {
+		return 0
+	}
+
+	content, quotes := stripCodeQuotes(line)
+	if quotes > 0 {
+		// 인용 안 목록은 추적하지 않으며 인용 시작은 바깥 목록을 끝낸다.
+		c.indents = c.indents[:0]
+
+		return 0
+	}
+
+	indent := len(content) - len(strings.TrimLeft(content, " "))
+	trimmed := content[indent:]
+	marker := codeListPrefix(trimmed)
+
+	for len(c.indents) > 0 && indent < c.indents[len(c.indents)-1] {
+		// 빈 줄 없이 덜 들여쓴 일반 줄은 앞 문단의 lazy continuation이므로 항목을 닫지 않는다.
+		if !previousBlank && marker == 0 && codeFenceWidth(trimmed) < 3 {
+			return 0
+		}
+
+		c.indents = c.indents[:len(c.indents)-1]
+	}
+
+	base := 0
+
+	if len(c.indents) > 0 {
+		base = c.indents[len(c.indents)-1]
+	}
+
+	if marker > 0 {
+		c.indents = append(c.indents, indent+listContentOffset(trimmed, marker))
+	}
+
+	return base
+}
+
+// listContentOffset은 목록 표식 뒤 공백까지 포함한 항목 내용의 시작 열을 CommonMark 규칙대로 계산한다.
+func listContentOffset(line string, marker int) int {
+	spaces := 0
+	for marker-1+spaces < len(line) && line[marker-1+spaces] == ' ' {
+		spaces++
+	}
+
+	if spaces > 4 {
+		spaces = 1
+	}
+
+	return marker - 1 + spaces
 }

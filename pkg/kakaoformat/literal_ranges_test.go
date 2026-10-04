@@ -46,3 +46,33 @@ func TestCodeContainerEndDoesNotHideFollowingText(t *testing.T) {
 		t.Fatalf("container boundary: %q", got)
 	}
 }
+
+func TestRenderListContentIndentIsNotIndentedCode(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct{ name, input, want string }{
+		{"paragraph", "- 항목\n\n    설명 **굵게**\n\n- 다음", "⦁ 항목\n\n  설명 ❪굵게❫\n⦁ 다음"},
+		{"nested paragraph", "- 상위\n\n    - 하위\n\n        하위 **문단**", "⦁ 상위\n\n  ￮ 하위\n\n    하위 ❪문단❫"},
+		{"top level code after list", "- 항목\n\n본문\n\n    **코드**", "⦁ 항목\n\n본문\n\n    **코드**"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := Render(tc.input); got != tc.want {
+				t.Fatalf("Render() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+
+	input := "1. 설치합니다.\n\n    ```bash\n    **pip** install\n    ```\n\n2. 실행합니다."
+
+	ranges := CodeRanges(input)
+	if len(ranges) != 1 || !ranges[0].Fenced || ranges[0].Language != "bash" {
+		t.Fatalf("CodeRanges() = %+v, want one bash fence", ranges)
+	}
+
+	got := Render(input)
+	if !strings.Contains(got, "┏━━━━━ bash ━━━━━┓") || !strings.Contains(got, "**pip** install") || strings.Contains(got, "```") {
+		t.Fatalf("Render() = %q, want boxed list fence", got)
+	}
+}

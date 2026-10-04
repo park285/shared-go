@@ -196,3 +196,46 @@ func TestRenderLeavesPlainText(t *testing.T) {
 		t.Fatalf("Render() = %q", got)
 	}
 }
+
+func TestRenderKoreanTextConventions(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct{ name, input, want string }{
+		{"tilde ranges", "기간은 3~5일이고, 비용은 10~20만 원입니다.", "기간은 3~5일이고, 비용은 10~20만 원입니다."},
+		{"double tilde strike", "~~취소~~와 ~단일~", "취̶소̶와 ~단일~"},
+		{"date line", "2026. 10. 4. 기준입니다.\n1. 첫째\n2. 둘째", "2026. 10. 4. 기준입니다.\n1. 첫째\n2. 둘째"},
+		{"footnote", "근거[^1]입니다.\n\n[^1]: 출처 문서", "근거[1]입니다.\n\n[1] 출처 문서"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := Render(tc.input); got != tc.want {
+				t.Fatalf("Render() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRenderInlineHTMLMeaning(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct{ name, input, want string }{
+		{"break", "줄1<br/>줄2<BR>줄3", "줄1\n줄2\n줄3"},
+		{"comment", "<!-- 메모 -->\n본문<!-- 인라인 --> 끝", "본문 끝"},
+		{"scripts", "x<sup>2</sup>와 H<sub>2</sub>O, e<sup>-x</sup>", "x²와 H₂O, e^(-x)"},
+		{"unclosed script", "x<sup>2 끝", "x<sup>2 끝"},
+		{
+			"table cell break",
+			"| a | b |\n|---|---|\n| 1<br>2 | 3 |",
+			"【a】\n    《1》 1\n        2\n-------------------------\n【b】\n    《1》 3\n-------------------------",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := Render(tc.input); got != tc.want {
+				t.Fatalf("Render() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

@@ -19,8 +19,12 @@ const (
 )
 
 var plainParser = parser.New(
-	parser.WithExtensions(extension.TableParser, extension.StrikethroughParser, extension.TaskListItemParser),
-	parser.WithInlineParsers(util.Prioritized[parser.InlineParser](&literalURLParser{}, 150)),
+	parser.WithExtensions(extension.TableParser, extension.TaskListItemParser, extension.FootnoteParser),
+	parser.WithInlineParsers(
+		util.Prioritized[parser.InlineParser](&literalURLParser{}, 150),
+		util.Prioritized[parser.InlineParser](strikethroughParser{}, 500),
+	),
+	parser.WithParseDelimiterFunc(parseEmphasisDelimiter),
 )
 
 type (
@@ -35,7 +39,7 @@ type (
 func render(input string) string {
 	literal := newStore("NEUTRALIZED")
 	code := newStore("CODE")
-	source := []byte(protectCodeRanges(protectNeutralizedMarkers(input, literal), code))
+	source := []byte(escapeDateListMarkers(protectCodeRanges(protectNeutralizedMarkers(input, literal), code)))
 	root := plainParser.Parse(source)
 	document := plainDocument{source: source, shapes: make(map[ast.Node]spanShape)}
 	document.measure(root)
@@ -124,7 +128,14 @@ func (d *plainDocument) block(node ast.Node, level int) string {
 
 		return strings.TrimSpace(codeBox("", language, body))
 	case *ast.HTMLBlock:
+		// HTML 주석은 화면에 보일 내용이 없으므로 원문 표식을 남기지 않는다.
+		if n.HTMLBlockKind == ast.HTMLBlockKind2 {
+			return ""
+		}
+
 		return strings.TrimSuffix(n.Value.Str(d.source), "\n")
+	case *extast.FootnoteDefinition:
+		return "[" + n.Label.Str(d.source) + "] " + d.blocks(node, level)
 	default:
 		return d.blocks(node, level)
 	}
@@ -207,6 +218,14 @@ func (d *plainDocument) inline(parent ast.Node, style int) string {
 
 func (d *plainDocument) inlines(output *strings.Builder, parent ast.Node, style int) {
 	for child := parent.FirstChild(); child != nil; child = child.NextSibling() {
+		if end, value, ok := d.scriptTag(child, style); ok {
+			output.WriteString(value)
+
+			child = end
+
+			continue
+		}
+
 		d.inlineNode(output, child, style)
 	}
 }
@@ -236,7 +255,9 @@ func (d *plainDocument) inlineNode(output *strings.Builder, node ast.Node, style
 	case *ast.CodeSpan:
 		output.WriteString("⦗ " + n.Value.Value(d.source) + " ⦘")
 	case *ast.RawHTML:
-		output.WriteString(n.Value.Value(d.source))
+		output.WriteString(rawHTMLText(n.Value.Value(d.source)))
+	case *extast.FootnoteReference:
+		output.WriteString("[" + n.Label.Str(d.source) + "]")
 	default:
 		d.inlines(output, node, style)
 	}
@@ -377,7 +398,8 @@ func (d *plainDocument) table(node *extast.Table) string {
 		cells := make([]string, 0, columns)
 
 		for cell := row.FirstChild(); cell != nil; cell = cell.NextSibling() {
-			cells = append(cells, d.inline(cell, 0))
+			// 칸 안 <br> 줄바꿈은 다음 줄을 칸 값 위치에 맞춰 같은 행으로 읽히게 한다.
+			cells = append(cells, strings.ReplaceAll(d.inline(cell, 0), "\n", "\n        "))
 		}
 
 		values = append(values, cells)

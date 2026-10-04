@@ -70,3 +70,25 @@ func TestRenderExchangeRateAnswer(t *testing.T) {
 		t.Fatalf("Render() = %q, want %q", got, want)
 	}
 }
+
+func TestRenderEmphasisBeforeKoreanParticle(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct{ input, want string }{
+		{"**최대 50%**까지 할인됩니다.", "❪최대 𝟱𝟬%❫까지 할인됩니다."},
+		{`**"인용"**은 중요합니다.`, `❪"인용"❫은 중요합니다.`},
+		{"**사과(apple)**는 과일입니다.", "❪사과(𝗮𝗽𝗽𝗹𝗲)❫는 과일입니다."},
+		{"**주의:**다음을 확인하세요.", "❪주의:❫다음을 확인하세요."},
+		{"*'참고'*로 표시합니다.", "❬'참고'❭로 표시합니다."},
+		{"3*4*5 = 60이고 2**10 = 1024", "3*4*5 = 60이고 2**10 = 1024"},
+		{"__init__.py와 __init__(self), __강조__.", "__init__.py와 __init__(self), ❪강조❫."},
+	} {
+		t.Run(tc.input, func(t *testing.T) {
+			t.Parallel()
+
+			if got := Render(tc.input); got != tc.want {
+				t.Fatalf("Render() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
