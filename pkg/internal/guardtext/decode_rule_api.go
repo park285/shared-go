@@ -17,9 +17,8 @@ func HasPotentialRuleDecodeSurface(input string) bool {
 	return changed
 }
 
-// DecodeCandidatesWithContextForRules expands standard transforms and short
-// Base64/hex fragments that can contribute to a compiled rule. All paths share
-// the existing decode budgets and retain fail-closed status reporting.
+// DecodeCandidatesWithContextForRules는 규칙에 영향을 줄 표준 변환과 짧은 Base64·hex 조각을 확장한다.
+// 모든 경로에 기존 디코딩 한도를 적용하고 실패 상태를 보존한다.
 func DecodeCandidatesWithContextForRules(input string, mayContribute func(string) bool) DecodeResult {
 	if mayContribute == nil {
 		return DecodeCandidatesWithContext(input)
@@ -73,8 +72,7 @@ func decodeCandidatesForRules(input string, mayContribute func(string) bool) Dec
 	return mergeSemanticCandidates(semantic.candidates, decoded)
 }
 
-// DecodeCandidatesWithContextForRuleOwner avoids allocating an owner-bound
-// callback when the input has no transform surface.
+// DecodeCandidatesWithContextForRuleOwner는 변환할 입력이 없으면 소유자 콜백을 할당하지 않는다.
 func DecodeCandidatesWithContextForRuleOwner[T any](
 	input string,
 	owner T,

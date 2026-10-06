@@ -66,7 +66,7 @@ func readRegularProfile(path string) ([]byte, error) {
 		return nil, profileFileError{code: ProfileFileTypeInvalid}
 	}
 
-	// #nosec G304 -- path is the explicit operator-owned profile source; Lstat/File.Stat inode checks reject substitution.
+	// #nosec G304 -- 운영자가 지정한 프로필 경로이며 Lstat·File.Stat의 inode 비교로 바꿔치기를 거부한다.
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, profileFileError{code: ProfileFileUnreadable}

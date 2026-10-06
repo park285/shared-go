@@ -11,14 +11,14 @@ run:
 linters:
   default: none
   enable:
-    # correctness
+    # 정확성
     - errcheck
     - govet
     - ineffassign
     - staticcheck
     - unused
 
-    # resources / context / concurrency
+    # 자원·컨텍스트·동시성
     - bodyclose
     - rowserrcheck
     - sqlclosecheck
@@ -28,7 +28,7 @@ linters:
     - fatcontext
     - copyloopvar
 
-    # modern Go / stdlib / simplification
+    # 최신 Go·표준 라이브러리·단순화
     - durationcheck
     - embeddedstructfieldcheck
     - exptostd
@@ -41,7 +41,7 @@ linters:
     - unqueryvet
     - usestdlibvars
 
-    # errors
+    # 오류 처리
     - errchkjson
     - errname
     - errorlint
@@ -50,7 +50,7 @@ linters:
     - nilnil
     - wrapcheck
 
-    # style / docs / suppression hygiene
+    # 스타일·문서·진단 억제 관리
     - godot
     - misspell
     - nakedret
@@ -63,7 +63,7 @@ linters:
     - wsl_v5
     - wastedassign
 
-    # maintainability
+    # 유지보수성
     - dupl
     - exhaustive
     - funlen
@@ -77,13 +77,13 @@ linters:
     - prealloc
     - unparam
 
-    # tests
+    # 테스트
     - testifylint
     - thelper
     - tparallel
     - usetesting
 
-    # security / text safety
+    # 보안·텍스트 안전성
     - bidichk
     - gosec
 

@@ -42,29 +42,11 @@ jobs:
       - name: SQL ownership
         run: bash scripts/check-sql-ownership.sh
 
-      - name: gofmt
-        run: |
-          mapfile -t files < <(find . -path './.git' -prune -o -name '*.go' -print)
-          if (( ${#files[@]} == 0 )); then
-            exit 0
-          fi
-          unformatted="$(gofmt -l "${files[@]}")"
-          if [[ -n "${unformatted}" ]]; then
-            echo "::error::gofmt required for the following files:"
-            echo "${unformatted}"
-            exit 1
-          fi
-
-      - name: go vet
-        run: go vet ./...
-
       - name: golangci-lint
         run: bash scripts/ci/go-tooling.sh golangci-lint run -c .golangci.yml ./...
 
       - name: Deterministic allocation ceilings
-        run: |
-          go test -count=1 -run '^TestPromptGuardAllocationCeilings$' ./pkg/promptguard
-          go test -count=1 -run '^TestLoggingAllocationCeilings$' ./pkg/logging
+        run: make test-allocations
 
       - name: go test race
         run: go test -race -count=1 ./...

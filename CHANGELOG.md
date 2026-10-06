@@ -5,6 +5,9 @@
 
 ## 미출시
 
+- **CI:** golangci-lint(gofumpt·gci·goimports formatter와 govet)가 이미 검사하는 `gofmt`·`go vet` 단계를 지우고,
+  release gate는 race 테스트와 별도의 할당 상한 검사를 실행합니다. 공개 API와 실행 동작은 변경하지 않습니다.
+
 ## v2.9.3 - 2026-10-06
 
 - **의존성**: goldmark v2.1.6, OpenTelemetry v1.47.0(otelhttp v0.72.0), gRPC v1.84.0,

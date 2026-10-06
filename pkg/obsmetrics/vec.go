@@ -26,13 +26,11 @@ type seriesEntry[T any] struct {
 }
 
 const (
-	// DefaultMaxMetricSeries bounds the process-lifetime cardinality retained by
-	// every vector created through the compatibility constructors.
+	// DefaultMaxMetricSeries는 기존 생성자로 만든 벡터가 보유할 시계열 수를 제한한다.
 	DefaultMaxMetricSeries = 1024
-	// DefaultMaxMetricLabels bounds the number of labels in one series.
+	// DefaultMaxMetricLabels는 시계열 하나의 라벨 수를 제한한다.
 	DefaultMaxMetricLabels = 16
-	// DefaultMaxMetricLabelNameBytes and DefaultMaxMetricLabelValueBytes bound
-	// allocations performed while canonicalizing attacker-influenced labels.
+	// DefaultMaxMetricLabelNameBytes와 DefaultMaxMetricLabelValueBytes는 외부 라벨 정규화 시 할당을 제한한다.
 	DefaultMaxMetricLabelNameBytes  = 128
 	DefaultMaxMetricLabelValueBytes = 256
 )
@@ -43,8 +41,7 @@ const (
 	droppedSeriesHelp          = "Total series dropped because a cardinality or label limit was reached."
 )
 
-// VecOptions configures hard resource limits for a metric vector. Non-positive
-// values select the safe defaults; there is intentionally no unbounded mode.
+// VecOptions는 메트릭 벡터의 자원 상한이다. 0 이하이면 기본 상한을 적용하며 무제한 모드는 없다.
 type VecOptions struct {
 	MaxSeries          int
 	MaxLabels          int
