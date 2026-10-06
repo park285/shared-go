@@ -5,6 +5,14 @@
 
 ## 미출시
 
+- **의존성**: goldmark v2.1.6, OpenTelemetry v1.47.0(otelhttp v0.72.0), gRPC v1.84.0,
+  openai-go v3.71.2로 올렸습니다.
+- **kakaoformat**: goldmark v2.1.6에서 `parser.ParseDelimiterFunc`가 `ast.Node`를 반환하고, 기본
+  `parser.ParseDelimiter`가 단순 강조를 판정 보정 전에 완성 노드로 만드는 fast path를 갖게 되었습니다.
+  강조 구분자를 직접 판정·등록하도록 바꿔 `**50%**까지`·`3*4*5`·`__init__.py` 처리를 v2.9.2와 같게
+  유지합니다. goldmark v2.1.6을 쓰는 소비자는 이 릴리스 이상이 필요합니다.
+- **CI**: golangci-lint v2.14.0, uv 0.12.23, CPython 3.14.8로 올렸습니다.
+
 ## v2.9.2 - 2026-10-04
 
 - **kakaoformat**: 한국어 답변에서 Markdown 변환이 원문을 훼손하던 경우를 고쳤습니다. `~` 하나는 더 이상

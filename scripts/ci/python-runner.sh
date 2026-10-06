@@ -3,8 +3,8 @@ set -euo pipefail
 
 # .python-version이 고정한 CPython을 uv가 이미 설치한 해석기 중에서 offline으로 고른다.
 # 자동 다운로드나 ambient python으로 대체하지 않는다.
-UV_VERSION="0.12.18"
-PYTHON_VERSION="3.14.7"
+UV_VERSION="0.12.23"
+PYTHON_VERSION="3.14.8"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 
 fail() {

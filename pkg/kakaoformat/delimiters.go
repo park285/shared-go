@@ -14,18 +14,33 @@ import (
 // parseEmphasisDelimiter는 CommonMark 구분자 판정을 따르되 한국어 답변에서 흔한 세 경우만 조정한다.
 // 문장부호로 끝난 강조 뒤에 조사가 붙은 `**50%**까지`는 닫히고, 숫자 사이 `3*4*5`의 곱셈 기호와
 // `__init__.py`처럼 이름 안에서 끝나는 밑줄은 강조로 보지 않는다.
-func parseEmphasisDelimiter(block text.Reader, minimum int, processor parser.DelimiterProcessor, pc parser.Context) *parser.Delimiter {
+//
+// 기본 구현인 parser.ParseDelimiter는 단순 강조를 보정 전에 완성 노드로 반환하는 fast path가 있어 위임하지 않는다.
+// CommonMark 판정과 보정을 마친 구분자를 직접 등록하며, 짝이 없는 구분자는 goldmark가 텍스트로 되돌린다.
+func parseEmphasisDelimiter(block text.Reader, minimum int, processor parser.DelimiterProcessor, pc parser.Context) ast.Node {
 	before := block.PrecedingCharacter()
-	line, _ := block.PeekLine()
+	line, segment := block.PeekLine()
 
-	delimiter := parser.ParseDelimiter(block, minimum, processor, pc)
-	if delimiter == nil {
+	if len(line) == 0 || !processor.IsDelimiter(line[0]) {
 		return nil
 	}
 
-	after, next := delimiterNeighbors(line, delimiter.OriginalLength)
+	char := line[0]
 
-	switch delimiter.Char {
+	length := 0
+	for length < len(line) && line[length] == char {
+		length++
+	}
+
+	if length < minimum {
+		return nil
+	}
+
+	after, next := delimiterNeighbors(line, length)
+	canOpen, canClose := commonMarkFlanking(char, before, after)
+	delimiter := parser.NewDelimiter(canOpen, canClose, length, char, processor)
+
+	switch char {
 	case '*':
 		adjustStarDelimiter(delimiter, before, after)
 	case '_':
@@ -34,7 +49,23 @@ func parseEmphasisDelimiter(block text.Reader, minimum int, processor parser.Del
 		}
 	}
 
+	delimiter.Value = text.NewSingleLineValueFromSegment(segment.WithStop(segment.Start+length), block.Decoder())
+	block.Advance(length)
+	pc.PushDelimiter(delimiter)
+
 	return delimiter
+}
+
+// commonMarkFlanking은 CommonMark 강조 규칙의 열기·닫기 가능 여부를 계산한다.
+func commonMarkFlanking(char byte, before, after rune) (canOpen, canClose bool) {
+	left := parser.IsLeftFlankingDelimiterRun(before, after)
+	right := parser.IsRightFlankingDelimiterRun(before, after)
+
+	if char != '_' {
+		return left, right
+	}
+
+	return left && (!right || util.IsPunctRune(before)), right && (!left || util.IsPunctRune(after))
 }
 
 // delimiterNeighbors는 구분자 묶음 바로 뒤 글자와 그다음 글자를 반환하며 줄 끝은 공백으로 본다.

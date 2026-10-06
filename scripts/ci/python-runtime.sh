@@ -4,7 +4,7 @@ set -euo pipefail
 REPO_CI_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd "${REPO_CI_DIR}/../.." && pwd -P)"
 REPO_PYTHON_RUNNER="${REPO_CI_DIR}/python-runner.sh"
-REPO_PYTHON_VERSION="3.14.7"
+REPO_PYTHON_VERSION="3.14.8"
 
 repo_python_init() {
   local actual_version
