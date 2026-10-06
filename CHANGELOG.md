@@ -5,6 +5,10 @@
 
 ## 미출시
 
+- **CI:** 최소 지원 버전 이상의 설치된 Go 도구를 재사용하며, 없거나 미달일 때만 지정한 버전을 설치합니다.
+
+- **CI:** 실제 PostgreSQL로 race 실행한 `pkg/irisdurable/...`를 후속 race에서 제외해 중복 실행을 줄입니다.
+
 - **CI:** golangci-lint(gofumpt·gci·goimports formatter와 govet)가 이미 검사하는 `gofmt`·`go vet` 단계를 지우고,
   release gate는 race 테스트와 별도의 할당 상한 검사를 실행합니다. 공개 API와 실행 동작은 변경하지 않습니다.
 

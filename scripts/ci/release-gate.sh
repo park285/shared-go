@@ -21,7 +21,20 @@ run_stage bash scripts/check-sql-ownership.sh
 run_stage bash scripts/ci/pgstore-release-gate.sh
 run_stage make lint
 run_stage make test-allocations
-run_stage make test-race
+
+# irisdurable은 위 PostgreSQL 게이트에서 실제 DB와 함께 race로 실행했다.
+all_packages="$(GOWORK=off go list ./...)"
+race_packages=()
+while IFS= read -r package; do
+  case "${package}" in
+    */pkg/irisdurable|*/pkg/irisdurable/*) ;;
+    *) race_packages+=("${package}") ;;
+  esac
+done <<<"${all_packages}"
+if ((${#race_packages[@]} > 0)); then
+  run_stage env GOWORK=off go test -race -count=1 "${race_packages[@]}"
+fi
+
 run_stage make vulncheck
 run_stage env GOWORK=off go mod tidy -diff
 run_stage env GOWORK=off go run ./pkg/internal/guardtext/genconfusables.go \
