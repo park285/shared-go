@@ -5,6 +5,8 @@
 
 ## 미출시
 
+## v2.9.3 - 2026-10-06
+
 - **의존성**: goldmark v2.1.6, OpenTelemetry v1.47.0(otelhttp v0.72.0), gRPC v1.84.0,
   openai-go v3.71.2로 올렸습니다.
 - **kakaoformat**: goldmark v2.1.6에서 `parser.ParseDelimiterFunc`가 `ast.Node`를 반환하고, 기본
