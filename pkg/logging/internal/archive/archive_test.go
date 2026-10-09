@@ -55,6 +55,180 @@ func TestMoveAndPrune_MovesAndPrunesBackups(t *testing.T) {
 	}
 }
 
+func TestMoveAndPrune_FiltersSourceAndArchiveEntries(t *testing.T) {
+	t.Parallel()
+
+	logDir := t.TempDir()
+	archiveDir := filepath.Join(logDir, DirName)
+
+	if err := os.Mkdir(archiveDir, LogDirPerm); err != nil {
+		t.Fatalf("create archive dir: %v", err)
+	}
+
+	backups := []string{
+		"service-2026-01-02T03-04-05.006.log.gz",
+		"service-2026-01-02T04-04-05.006.log.gz",
+	}
+	for _, name := range backups {
+		if err := os.WriteFile(filepath.Join(logDir, name), []byte(name), 0o600); err != nil {
+			t.Fatalf("write backup: %v", err)
+		}
+	}
+
+	ignoredFiles := []string{
+		filepath.Join(logDir, "other-2026-01-02T03-04-05.006.log.gz"),
+		filepath.Join(logDir, "service-2026-01-02T03-04-05.006.log"),
+		filepath.Join(logDir, "service-2026-01-02T03-04-05.006.txt.gz"),
+		filepath.Join(archiveDir, "service-not-a-timestamp.log.gz"),
+		filepath.Join(archiveDir, "other-2026-01-02T03-04-05.006.log.gz"),
+		filepath.Join(archiveDir, "service-2026-01-02T03-04-05.006.log"),
+	}
+	for _, path := range ignoredFiles {
+		if err := os.WriteFile(path, []byte(filepath.Base(path)), 0o600); err != nil {
+			t.Fatalf("write ignored file: %v", err)
+		}
+	}
+
+	ignoredDirs := []string{
+		filepath.Join(logDir, "service-2026-01-02T05-04-05.006.log.gz"),
+		filepath.Join(archiveDir, "service-2026-01-02T05-04-05.006.log.gz"),
+	}
+	for _, path := range ignoredDirs {
+		if err := os.Mkdir(path, LogDirPerm); err != nil {
+			t.Fatalf("create ignored directory: %v", err)
+		}
+	}
+
+	if err := MoveAndPrune(filepath.Join(logDir, "service.log"), 1, 0); err != nil {
+		t.Fatalf("MoveAndPrune() error = %v", err)
+	}
+
+	for _, name := range backups {
+		assertPathMissing(t, filepath.Join(logDir, name))
+	}
+
+	assertPathMissing(t, filepath.Join(archiveDir, backups[0]))
+
+	assertRegularFileContent(t, filepath.Join(archiveDir, backups[1]), backups[1])
+
+	for _, path := range ignoredFiles {
+		assertRegularFileContent(t, path, filepath.Base(path))
+	}
+
+	for _, path := range ignoredDirs {
+		info, err := os.Lstat(path)
+		if err != nil {
+			t.Fatalf("stat ignored directory %s: %v", path, err)
+		}
+
+		if !info.IsDir() {
+			t.Fatalf("ignored entry %s is no longer a directory", path)
+		}
+	}
+}
+
+func TestMoveAndPrune_ReturnsDirectoryReadErrors(t *testing.T) {
+	// readDirFn is package-wide; these subtests must remain nonparallel.
+	for _, directory := range []string{"source", "archive"} {
+		t.Run(directory, func(t *testing.T) {
+			logDir := t.TempDir()
+			archiveDir := filepath.Join(logDir, DirName)
+
+			if err := os.Mkdir(archiveDir, LogDirPerm); err != nil {
+				t.Fatalf("create archive dir: %v", err)
+			}
+
+			expired := writeArchivedBackup(t, archiveDir, time.Now().UTC().Add(-72*time.Hour))
+			failDir := logDir
+
+			if directory == "archive" {
+				failDir = archiveDir
+			}
+
+			t.Cleanup(setReadDirFn(func(name string) ([]os.DirEntry, error) {
+				if name == failDir {
+					return nil, os.ErrPermission
+				}
+
+				return os.ReadDir(name)
+			}))
+
+			err := MoveAndPrune(filepath.Join(logDir, "service.log"), 0, 1)
+			if !errors.Is(err, os.ErrPermission) {
+				t.Fatalf("MoveAndPrune() error = %v, want %v", err, os.ErrPermission)
+			}
+
+			assertRegularFileContent(t, expired, filepath.Base(expired))
+		})
+	}
+}
+
+func TestMoveAndPrune_ToleratesBackupDisappearingAfterEnumeration(t *testing.T) {
+	logDir := t.TempDir()
+	archiveDir := filepath.Join(logDir, DirName)
+
+	if err := os.Mkdir(archiveDir, LogDirPerm); err != nil {
+		t.Fatalf("create archive dir: %v", err)
+	}
+
+	now := time.Now().UTC()
+	selected := writeArchivedBackup(t, archiveDir, now.Add(-72*time.Hour))
+	otherExpired := writeArchivedBackup(t, archiveDir, now.Add(-48*time.Hour))
+	recent := writeArchivedBackup(t, archiveDir, now.Add(-12*time.Hour))
+
+	afterArchiveEnumeration(t, archiveDir, func() {
+		if err := os.Remove(selected); err != nil {
+			t.Fatalf("remove selected backup after enumeration: %v", err)
+		}
+	})
+
+	if err := MoveAndPrune(filepath.Join(logDir, "service.log"), 0, 1); err != nil {
+		t.Fatalf("MoveAndPrune() error = %v", err)
+	}
+
+	assertPathMissing(t, selected)
+	assertPathMissing(t, otherExpired)
+	assertRegularFileContent(t, recent, filepath.Base(recent))
+}
+
+func TestMoveAndPrune_ReturnsRemovalErrorAfterBackupReplacement(t *testing.T) {
+	logDir := t.TempDir()
+	archiveDir := filepath.Join(logDir, DirName)
+
+	if err := os.Mkdir(archiveDir, LogDirPerm); err != nil {
+		t.Fatalf("create archive dir: %v", err)
+	}
+
+	now := time.Now().UTC()
+	selected := writeArchivedBackup(t, archiveDir, now.Add(-72*time.Hour))
+	recent := writeArchivedBackup(t, archiveDir, now.Add(-12*time.Hour))
+	child := filepath.Join(selected, "child")
+
+	afterArchiveEnumeration(t, archiveDir, func() {
+		if err := os.Remove(selected); err != nil {
+			t.Fatalf("remove selected backup after enumeration: %v", err)
+		}
+
+		if err := os.Mkdir(selected, LogDirPerm); err != nil {
+			t.Fatalf("replace selected backup with directory: %v", err)
+		}
+
+		if err := os.WriteFile(child, []byte("child"), 0o600); err != nil {
+			t.Fatalf("write replacement child: %v", err)
+		}
+	})
+
+	err := MoveAndPrune(filepath.Join(logDir, "service.log"), 0, 1)
+
+	pathErr, ok := errors.AsType[*os.PathError](err)
+	if !ok || pathErr.Op != "remove" || pathErr.Path != selected {
+		t.Fatalf("MoveAndPrune() error = %v, want removal PathError for %s", err, selected)
+	}
+
+	assertRegularFileContent(t, child, "child")
+	assertRegularFileContent(t, recent, filepath.Base(recent))
+}
+
 func TestPruneArchivedCompressedBackups_RemovesBackupsOlderThanMaxAge(t *testing.T) {
 	t.Parallel()
 
@@ -471,6 +645,41 @@ func archiveEntryNames(t *testing.T, archiveDir string) []string {
 	slices.Sort(names)
 
 	return names
+}
+
+// afterArchiveEnumeration uses the package-wide seam, so callers must remain nonparallel.
+func afterArchiveEnumeration(t *testing.T, archiveDir string, mutate func()) {
+	t.Helper()
+	t.Cleanup(setReadDirFn(func(dir string) ([]os.DirEntry, error) {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return nil, fmt.Errorf("read archive test directory: %w", err)
+		}
+
+		if dir == archiveDir {
+			mutate()
+		}
+
+		return entries, nil
+	}))
+}
+
+func assertRegularFileContent(t *testing.T, path, want string) {
+	t.Helper()
+
+	info, err := os.Lstat(path)
+	if err != nil {
+		t.Fatalf("stat fixture %s: %v", path, err)
+	}
+
+	if !info.Mode().IsRegular() {
+		t.Fatalf("fixture %s is no longer a regular file", path)
+	}
+
+	content, err := os.ReadFile(path) // #nosec G304 -- 호출자가 t.TempDir 아래 직접 만든 테스트 파일만 읽는다.
+	if err != nil || string(content) != want {
+		t.Fatalf("fixture %s = %q, error = %v, want %q", path, content, err, want)
+	}
 }
 
 func assertPathExists(t *testing.T, path string) {

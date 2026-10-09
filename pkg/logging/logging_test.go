@@ -168,6 +168,109 @@ func TestConfig_Validation(t *testing.T) {
 	}
 }
 
+func TestEnableFileLoggingWithOptions_RejectsDirectoryAsLogFile(t *testing.T) {
+	logDir := t.TempDir()
+	logPath := filepath.Join(logDir, "service.log")
+	child := filepath.Join(logPath, "child")
+
+	if err := os.Mkdir(logPath, 0o700); err != nil {
+		t.Fatalf("create log-path directory: %v", err)
+	}
+
+	if err := os.WriteFile(child, []byte("sentinel"), 0o600); err != nil {
+		t.Fatalf("write sentinel: %v", err)
+	}
+
+	before, err := os.Lstat(logPath)
+	if err != nil {
+		t.Fatalf("stat log-path directory: %v", err)
+	}
+
+	assertFileLoggingPathFailure(t, logDir, "service.log", nil)
+	assertLogPathPreserved(t, logPath, child, before.Mode())
+}
+
+func TestEnableFileLoggingWithOptions_RejectsMissingFileParent(t *testing.T) {
+	logDir := t.TempDir()
+	fileName := filepath.Join("missing", "service.log")
+
+	assertFileLoggingPathFailure(t, logDir, fileName, os.ErrNotExist)
+
+	for _, path := range []string{filepath.Join(logDir, "missing"), filepath.Join(logDir, fileName)} {
+		if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("stat %s error = %v, want %v", path, err, os.ErrNotExist)
+		}
+	}
+}
+
+func TestEnableFileLoggingWithOptions_RejectsFileAsDirectoryParent(t *testing.T) {
+	parent := filepath.Join(t.TempDir(), "parent")
+	logDir := filepath.Join(parent, "nested")
+
+	if err := os.WriteFile(parent, []byte("sentinel"), 0o600); err != nil {
+		t.Fatalf("write sentinel: %v", err)
+	}
+
+	before, err := os.Lstat(parent)
+	if err != nil {
+		t.Fatalf("stat parent file: %v", err)
+	}
+
+	assertFileLoggingPathFailure(t, logDir, "service.log", nil)
+	assertLogPathPreserved(t, parent, parent, before.Mode())
+
+	info, err := os.Lstat(filepath.Join(logDir, "service.log"))
+	if err == nil || info != nil {
+		t.Errorf("nested log output stat = %v, error = %v, want no output", info, err)
+	}
+}
+
+func assertFileLoggingPathFailure(t *testing.T, logDir, fileName string, wantErr error) {
+	t.Helper()
+
+	config := Config{
+		Dir:        logDir,
+		MaxSizeMB:  10,
+		MaxBackups: 5,
+		MaxAgeDays: 7,
+	}
+
+	logger, closer, err := EnableFileLoggingWithOptions(config, fileName, Options{})
+	if closer != nil {
+		t.Cleanup(func() { _ = closer.Close() })
+	}
+
+	if err == nil {
+		t.Error("EnableFileLoggingWithOptions() succeeded for an invalid path")
+	}
+
+	if wantErr != nil && !errors.Is(err, wantErr) {
+		t.Errorf("EnableFileLoggingWithOptions() error = %v, want %v", err, wantErr)
+	}
+
+	if logger != nil || closer != nil {
+		t.Errorf("EnableFileLoggingWithOptions() returned logger=%v, closer=%v, want nil outputs", logger, closer)
+	}
+}
+
+func assertLogPathPreserved(t *testing.T, path, contentPath string, wantMode os.FileMode) {
+	t.Helper()
+
+	info, err := os.Lstat(path)
+	if err != nil {
+		t.Fatalf("stat existing path after initialization: %v", err)
+	}
+
+	if info.Mode() != wantMode {
+		t.Errorf("existing path mode = %v, want unchanged %v", info.Mode(), wantMode)
+	}
+
+	content, err := os.ReadFile(contentPath) // #nosec G304 -- 호출자가 t.TempDir 아래 직접 만든 sentinel 파일만 읽는다.
+	if err != nil || string(content) != "sentinel" {
+		t.Errorf("sentinel = %q, error = %v, want sentinel", content, err)
+	}
+}
+
 func TestEnableFileLogging_UsesRestrictedFileAndDirectoryPerms(t *testing.T) {
 	logDir := t.TempDir()
 	serviceLogPath := filepath.Join(logDir, "service.log")
