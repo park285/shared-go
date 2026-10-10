@@ -276,6 +276,9 @@ linters:
         # 타입이 있는 오류 생성자 패키지와 SDK 내부 구현은 호출자가 그 오류를 그대로 공개 표면으로 낸다.
         - github.com/kapu/hololive-youtube-collector/internal/runtime/collecterr
         - github.com/park285/iris-client-go/v3/internal/*
+        # iris-console의 공개 오류 코드(apierr)와 JSON 값 검증기(value)는 HTTP 응답 코드로 그대로 쓰이는 typed error를 만든다.
+        - github.com/park285/iris-console/internal/apierr
+        - github.com/park285/iris-console/internal/value
 
     usestdlibvars:
       http-method: true
