@@ -24,7 +24,6 @@ type asyncDropWriter struct {
 	done         chan struct{}
 	stopped      chan struct{}
 	stop         sync.Once
-	summarize    sync.Once
 	maxLineBytes int
 	dropped      atomic.Uint64
 	truncated    atomic.Uint64
@@ -62,6 +61,7 @@ func (w *asyncDropWriter) run() {
 			w.forward(line)
 		case <-w.done:
 			w.drain()
+			w.writeLossSummary()
 
 			return
 		}
@@ -144,21 +144,18 @@ func trimPartialRune(line []byte) []byte {
 func (w *asyncDropWriter) Close() error {
 	w.stop.Do(func() { close(w.done) })
 
-	// stopped 분기에서만 run goroutine이 종료를 마쳐 target에 동시 기록이 없다.
-	// 타임아웃 분기에서는 run이 아직 forward 중일 수 있어 요약 기록을 생략한다.
-	// stopped는 닫힌 채 유지되므로 Once 없이는 Close마다 요약이 반복되고, 동시 Close에서는
-	// 두 goroutine이 같은 target에 함께 쓴다.
+	// 요약까지 sole writer인 run이 담당한다. 타임아웃은 대기만 끝내며,
+	// 막힌 target.Write를 취소하거나 run의 종료를 보장하지 않는다.
 	select {
 	case <-w.stopped:
-		w.summarize.Do(w.writeLossSummary)
 	case <-time.After(asyncDropWriterCloseTimeout):
 	}
 
 	return nil
 }
 
-// 요약도 JSON handler를 거쳐야 stdout 스트림의 파싱 계약을 보존한다. Run goroutine이 이미
-// 종료했으므로 queue를 거치지 않고 target에 직접 쓰는 일회용 handler를 만든다.
+// 요약도 JSON handler를 거쳐 stdout 파싱 계약을 보존한다. Run만 호출하므로
+// 일반 라인과 직렬화되고, 요약 쓰기가 막혀도 Close의 대기 시간은 늘지 않는다.
 func (w *asyncDropWriter) writeLossSummary() {
 	dropped, truncated := w.dropped.Load(), w.truncated.Load()
 	if dropped == 0 && truncated == 0 {

@@ -239,54 +239,35 @@ func TestExtract_ResultDoesNotPinInputBuffer(t *testing.T) {
 	}
 }
 
-func TestFindMatchingEnd(t *testing.T) {
+func TestExtract_BracketSemantics(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name  string
-		input string
-		start int
-		want  int
-	}{
-		{
-			name:  "단순 객체",
-			input: `{"a": 1}`,
-			start: 0,
-			want:  7,
-		},
-		{
-			name:  "중첩 객체",
-			input: `{"outer": {"inner": 1}}`,
-			start: 0,
-			want:  22,
-		},
-		{
-			name:  "문자열 내 괄호 무시",
-			input: `{"msg": "test {value}"}`,
-			start: 0,
-			want:  22,
-		},
-		{
-			name:  "이스케이프 쿼테이션",
-			input: `{"quote": "He said \"hi\""}`,
-			start: 0,
-			want:  26,
-		},
-		{
-			name:  "매칭 실패",
-			input: `{"broken`,
-			start: 0,
-			want:  -1,
-		},
+	tests := []extractCase{
+		{name: "invalid outer valid inner", input: `{"bad": [1,], "ok": {"v":2}}`, wantJSON: `{"v":2}`},
+		{name: "unclosed outer valid inner", input: `{"outer": {"ok":true}`, wantJSON: `{"ok":true}`},
+		{name: "mixed mismatched outer", input: `{[} {"ok":true}]`, wantJSON: `{"ok":true}`},
+		{name: "quoted prose opener", input: `"prose [1,2] text"`, wantJSON: `[1,2]`},
+		{name: "candidate in invalid object's string", input: `{"text":"[1,2]",bad}`, wantJSON: `[1,2]`},
+		{name: "candidate crosses quote context", input: `{"text":"[","]" broken}`, wantJSON: `[","]`},
+		{name: "escaped quoted candidate", input: `{"text":"{\"ok\":1}",bad}`, wantError: ErrNoJSONFound},
+		{name: "escaped backslash before quote", input: `prefix {"s":"\\","v":[1]} tail`, wantJSON: `{"s":"\\","v":[1]}`},
+		{name: "mismatched brackets in string", input: `prefix {"s":"][}{","v":[]} tail`, wantJSON: `{"s":"][}{","v":[]}`},
+		{name: "duplicate escaped key", input: `{"a":[],"\u0061":1}`, wantJSON: `[]`},
+		{name: "invalid number", input: `[01,{"ok":true}]`, wantJSON: `{"ok":true}`},
+		{name: "invalid UTF8", input: "[\"\xff\",{}]", wantJSON: `{}`},
+		{name: "invalid surrogate", input: `["\ud800",{}]`, wantJSON: `{}`},
+		{name: "only first fence prioritized", input: "{} ```json\ninvalid\n``` ```json\n[2]\n```", wantJSON: `{}`},
+		{name: "fence before earlier raw candidate", input: "{} ```json\n[2]\n```", wantJSON: `[2]`},
+		{name: "fenced scalar", input: "[] ```json\n42\n```", wantJSON: `42`},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			result := findMatchingEnd([]byte(tt.input), tt.start)
-			if result != tt.want {
-				t.Errorf("findMatchingEnd() = %d, want %d", result, tt.want)
+			got, err := Extract(tt.input)
+			if !errors.Is(err, tt.wantError) || string(got) != tt.wantJSON {
+				t.Fatalf("Extract(%q) = %q, %v; want %q, %v", tt.input, got, err, tt.wantJSON, tt.wantError)
 			}
 		})
 	}

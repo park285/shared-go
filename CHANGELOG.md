@@ -3,7 +3,12 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
-## 미출시
+## v2.10.0 - 2026-10-11
+
+- **jsonutil:** `Extract`는 후보별 suffix 재탐색 대신 검증한 자식의 범위·깊이를 재사용합니다. whole JSON·첫 코드펜스 우선순위, 잘못된 outer 안의 유효 inner, quote·escape·중복 key·깊이 제한과 1 MiB 상한은 유지합니다.
+- **logging:** async stdout의 drain과 loss summary를 한 writer가 직렬화합니다. summary 출력이 막혀도 `Close`의 bounded wait를 벗어나지 않으며 timeout을 실제 worker 종료로 해석하지 않습니다. 동기 파일 lane은 유지합니다.
+- **workercontract:** TwentyQ의 정확한 worker 집합은 `webhook_inbox`·`pending_queue`·`reply_outbox`입니다. 구형 player worker 입력은 거절합니다.
+- **검증:** 변경 패키지 race·30초 differential fuzz·lint와 공개 API smoke를 통과했습니다. 막힌 stdout에서도 `Close`는 약 2초에 반환했고 파일 기록 2,001개와 최종 loss summary 1개를 확인했습니다. opener+마지막 closer 입력의 로컬 benchmark는 4,096/8,192/16,384/32,768개에서 중앙값 약 32/64/117/232µs였으며 production 수치는 아닙니다.
 
 - **logging 검증:** 보존된 미완료 테스트에서 실제 보존·오류 경계만 통합했습니다. 로그 이동·보존 필터,
   디렉터리 조회 실패, 열거 뒤 파일 소멸·디렉터리 교체, 잘못된 출력 경로의 초기화 실패를 실제

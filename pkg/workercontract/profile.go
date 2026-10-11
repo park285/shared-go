@@ -92,7 +92,7 @@ type Identity struct {
 var knownWorkerSets = map[string][]string{
 	"iris/runtime":               {"reply_delivery", "webhook_delivery"},
 	"chatbotgo/bot":              {"command", "compaction", "draw", "summary", "webhook_inbox"},
-	"twentyq/bot":                {"pending_queue", "player_registration", "reply_outbox", "webhook_inbox"},
+	"twentyq/bot":                {"pending_queue", "reply_outbox", "webhook_inbox"},
 	"hololive/api":               {"bot_reply_outbox", "bot_webhook_inbox", "source_observation"},
 	"hololive/alarm-worker":      {"alarm_dispatch", "notification_delivery", "youtube_delivery"},
 	"hololive/youtube-collector": {"collection"},

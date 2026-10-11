@@ -5,28 +5,22 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 )
 
-func TestExtract_BracketFloodTerminates(t *testing.T) {
+func TestExtract_HostileInputs(t *testing.T) {
 	t.Parallel()
 
-	input := strings.Repeat("{", 200000)
+	for _, size := range []int{4096, 8192, 16384, 32768} {
+		for _, tc := range hostileExtractCases(size) {
+			t.Run(tc.name+"/"+strconv.Itoa(size), func(t *testing.T) {
+				t.Parallel()
 
-	done := make(chan error, 1)
-
-	go func() {
-		_, err := Extract(input)
-		done <- err
-	}()
-
-	select {
-	case err := <-done:
-		if !errors.Is(err, ErrNoJSONFound) {
-			t.Fatalf("Extract() error = %v, want ErrNoJSONFound", err)
+				got, err := Extract(tc.input)
+				if !errors.Is(err, tc.wantError) || string(got) != tc.wantJSON {
+					t.Fatalf("Extract() returned %d bytes, %v; want %d bytes, %v", len(got), err, len(tc.wantJSON), tc.wantError)
+				}
+			})
 		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("Extract() did not terminate within 3s on bracket flood")
 	}
 }
 
@@ -91,24 +85,41 @@ func BenchmarkExtractEmbeddedDocument(b *testing.B) {
 	}
 }
 
-func TestExtract_ArrayBracketFloodTerminates(t *testing.T) {
-	t.Parallel()
+func hostileExtractCases(size int) []extractCase {
+	depth := min(size, extractMaxDepth)
 
-	input := strings.Repeat("[", 200000)
+	return []extractCase{
+		{name: "object_openers_one_closer", input: strings.Repeat("{", size) + "}", wantJSON: "{}"},
+		{name: "array_openers_one_closer", input: strings.Repeat("[", size) + "]", wantJSON: "[]"},
+		{name: "object_no_closer", input: strings.Repeat("{", size), wantError: ErrNoJSONFound},
+		{name: "array_no_closer", input: strings.Repeat("[", size), wantError: ErrNoJSONFound},
+		{name: "balanced_invalid_objects", input: strings.Repeat("{", size) + strings.Repeat("}", size), wantJSON: "{}"},
+		{name: "balanced_invalid_arrays", input: strings.Repeat("[", size) + "x" + strings.Repeat("]", size), wantError: ErrNoJSONFound},
+		{name: "deep_valid_arrays", input: "prefix " + strings.Repeat("[", size) + strings.Repeat("]", size), wantJSON: strings.Repeat("[", depth) + strings.Repeat("]", depth)},
+		{name: "mixed_mismatches", input: strings.Repeat("[{", size) + strings.Repeat("]}", size), wantError: ErrNoJSONFound},
+		{name: "escaped_quotes", input: strings.Repeat(`{\"`, size) + "}", wantError: ErrNoJSONFound},
+		{name: "overlapping_quoted_candidates", input: strings.Repeat(`["`, size) + "x" + strings.Repeat(`"]`, size), wantJSON: `["x"]`},
+		{name: "overlapping_escaped_strings", input: strings.Repeat(`["\\`, size) + `"]`, wantJSON: `["\\"]`},
+		{name: "quoted_candidates", input: `{"s":"` + strings.Repeat("[", size) + `]",bad}`, wantJSON: "[]"},
+		{name: "late_invalid_wide_array", input: "[" + strings.Repeat("0,", size) + "] {}", wantJSON: "{}"},
+		{name: "nested_duplicate_names", input: strings.Repeat(`{"x":`, size) + "0" + strings.Repeat(`,"x":0}`, size), wantError: ErrNoJSONFound},
+	}
+}
 
-	done := make(chan error, 1)
+func BenchmarkExtractHostileScaling(b *testing.B) {
+	for _, size := range []int{4096, 8192, 16384, 32768} {
+		for _, tc := range hostileExtractCases(size) {
+			b.Run(tc.name+"/"+strconv.Itoa(size), func(b *testing.B) {
+				b.ReportAllocs()
+				b.SetBytes(int64(len(tc.input)))
 
-	go func() {
-		_, err := Extract(input)
-		done <- err
-	}()
-
-	select {
-	case err := <-done:
-		if !errors.Is(err, ErrNoJSONFound) {
-			t.Fatalf("Extract() error = %v, want ErrNoJSONFound", err)
+				for b.Loop() {
+					got, err := Extract(tc.input)
+					if !errors.Is(err, tc.wantError) || len(got) != len(tc.wantJSON) {
+						b.Fatalf("Extract() returned %d bytes, %v; want %d bytes, %v", len(got), err, len(tc.wantJSON), tc.wantError)
+					}
+				}
+			})
 		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("Extract() did not terminate within 3s on array bracket flood")
 	}
 }

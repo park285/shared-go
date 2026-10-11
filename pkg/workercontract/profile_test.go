@@ -3,8 +3,10 @@ package workercontract_test
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	jsonv2 "encoding/json/v2"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -53,6 +55,74 @@ func TestLoadProfileFileValidatesExactBytesAndIdentity(t *testing.T) {
 
 	if loaded.Profile.ProfileID != "chatbotgo-contract-fixture" || len(loaded.Profile.Workers) != 5 {
 		t.Fatalf("Profile = %+v", loaded.Profile)
+	}
+}
+
+func TestLoadTwentyQProfileRequiresThreeWorkers(t *testing.T) {
+	t.Parallel()
+
+	identity := knownIdentity(t, "twentyq", "bot")
+	wantIDs := []string{"pending_queue", "reply_outbox", "webhook_inbox"}
+
+	if !slices.Equal(identity.WorkerIDs, wantIDs) {
+		t.Fatalf("TwentyQ WorkerIDs = %v, want %v", identity.WorkerIDs, wantIDs)
+	}
+
+	raw, err := os.ReadFile(validProfilePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var profile workercontract.Profile
+
+	if err := jsonv2.Unmarshal(raw, &profile); err != nil {
+		t.Fatal(err)
+	}
+
+	worker := profile.Workers["command"]
+
+	profile.Service = identity.Service
+	profile.Role = identity.Role
+
+	for _, tc := range []struct {
+		name    string
+		ids     []string
+		wantErr bool
+	}{
+		{name: "exact roster", ids: wantIDs},
+		{name: "removed worker rejected", ids: append(slices.Clone(wantIDs), "player_registration"), wantErr: true},
+		{name: "missing worker rejected", ids: wantIDs[:2], wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			profile := profile
+
+			profile.Workers = make(map[string]workercontract.WorkerProfile, len(tc.ids))
+
+			for _, id := range tc.ids {
+				profile.Workers[id] = worker
+			}
+
+			data, err := jsonv2.Marshal(profile)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			path := filepath.Join(t.TempDir(), "twentyq.json")
+			if err = os.WriteFile(path, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			loaded, err := workercontract.LoadProfileFile(path, identity)
+			if tc.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "workers: got") {
+					t.Fatalf("LoadProfileFile() error = %v, want exact worker-set rejection", err)
+				}
+			} else if err != nil || len(loaded.Profile.Workers) != 3 {
+				t.Fatalf("LoadProfileFile() = %+v, %v; want three-worker profile", loaded.Profile, err)
+			}
+		})
 	}
 }
 

@@ -7,7 +7,9 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/park285/shared-go/v2/pkg/internal/testsupport"
 )
@@ -282,5 +284,101 @@ func TestAsyncDropWriter_CloseNoSummaryWhenNoDrops(t *testing.T) {
 
 	if strings.Contains(target.String(), "dropped") {
 		t.Fatalf("did not expect drop summary, got: %q", target.String())
+	}
+}
+
+type summaryBlockingWriter struct {
+	buf       bytes.Buffer
+	started   chan struct{}
+	release   chan struct{}
+	summaries atomic.Int32
+}
+
+func (w *summaryBlockingWriter) Write(p []byte) (int, error) {
+	if bytes.Contains(p, []byte("async stdout writer lost lines")) {
+		if w.summaries.Add(1) == 1 {
+			close(w.started)
+		}
+
+		<-w.release
+	}
+
+	n, err := w.buf.Write(p)
+	if err != nil {
+		return n, fmt.Errorf("write summary test buffer: %w", err)
+	}
+
+	return n, nil
+}
+
+func TestAsyncDropWriter_BlockedSummaryKeepsConcurrentCloseBounded(t *testing.T) {
+	t.Parallel()
+
+	target := &summaryBlockingWriter{started: make(chan struct{}), release: make(chan struct{})}
+	releaseTarget := sync.OnceFunc(func() { close(target.release) })
+	t.Cleanup(releaseTarget)
+
+	w := newAsyncDropWriter(target, 8)
+
+	w.maxLineBytes = 16
+	testsupport.WriteBytes(t, w, bytes.Repeat([]byte("A"), 1024))
+
+	var closers sync.WaitGroup
+
+	for range 4 {
+		closers.Go(func() {
+			if err := w.Close(); err != nil {
+				t.Errorf("Close() error = %v", err)
+			}
+		})
+	}
+
+	closed := make(chan struct{})
+
+	go func() {
+		closers.Wait()
+		close(closed)
+	}()
+
+	waitForSummarySignal(t, target.started, asyncDropWriterCloseTimeout+time.Second, "loss summary did not reach target")
+	waitForSummarySignal(t, closed, asyncDropWriterCloseTimeout+time.Second, "Close blocked on the loss summary")
+
+	// A bounded wait is not cancellation or a completed join. The sole writer
+	// still owns the blocked summary until the target permits it to finish.
+	select {
+	case <-w.stopped:
+		t.Fatal("writer reported stopped while its summary was blocked")
+	default:
+	}
+
+	if got := target.summaries.Load(); got != 1 {
+		t.Fatalf("summary writes = %d, want 1", got)
+	}
+
+	releaseTarget()
+
+	waitForSummarySignal(t, w.stopped, time.Second, "writer did not finish after target release")
+
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close() after join error = %v", err)
+	}
+
+	if got := target.summaries.Load(); got != 1 {
+		t.Fatalf("summary writes after repeated Close = %d, want 1", got)
+	}
+
+	lines := strings.Split(strings.TrimSpace(target.buf.String()), "\n")
+	if len(lines) != 2 || !strings.Contains(lines[1], "async stdout writer lost lines") {
+		t.Fatalf("summary must follow the drained line, got %q", target.buf.String())
+	}
+}
+
+func waitForSummarySignal(t *testing.T, signal <-chan struct{}, timeout time.Duration, message string) {
+	t.Helper()
+
+	select {
+	case <-signal:
+	case <-time.After(timeout):
+		t.Fatal(message)
 	}
 }
