@@ -88,6 +88,90 @@ func (s *Store) RecoverInboxBefore(ctx context.Context, leaseBefore time.Time, m
 	return result, nil
 }
 
+// InboxRecoveryDecision은 잠근 inbox snapshot에 적용할 소비자의 복구 판정이다.
+// ClaimToken이 비어 있으면 미청구 pending, 아니면 LeaseUntil까지 일치하는 processing만 바꾼다.
+type InboxRecoveryDecision struct {
+	ID         int64
+	MessageID  string
+	ClaimToken string
+	Attempts   int
+	LeaseUntil time.Time
+	Status     string
+	Reason     string
+}
+
+// ApplyInboxRecovery는 pending·completed·manual_review 판정을 한 문장으로 적용한다.
+// Store는 호출자의 transaction에 묶여 있어야 한다. 호출자는 선택·업무 행을 잠그고 미청구·만료
+// inbox 또는 자신이 소유한 처리 claim만 판정한다. 살아 있는 업무 lease는 소비자가 제외한다.
+// 오류 시 업무 변경을 포함한 transaction 전체를 rollback한다.
+// ErrClaimLost는 일부 행만 바뀐 경우에도 반환하므로 이 메서드의 오류를 무시하고 commit하면 안 된다.
+func (s *Store) ApplyInboxRecovery(ctx context.Context, decisions []InboxRecoveryDecision) error {
+	if _, ok := s.db.(txQuerier); !ok {
+		return errors.New("pgstore: apply inbox recovery requires a transaction")
+	}
+
+	for i := range decisions {
+		decision := &decisions[i]
+		if decision.ID <= 0 || decision.MessageID == "" || decision.Attempts < 0 {
+			return fmt.Errorf("pgstore: inbox recovery decision %d requires positive ID, messageID and nonnegative attempts", i)
+		}
+
+		if decision.ClaimToken != "" && decision.LeaseUntil.IsZero() {
+			return fmt.Errorf("pgstore: inbox recovery decision %d requires a processing lease snapshot", i)
+		}
+
+		switch decision.Status {
+		case "pending":
+			if decision.Reason != "" {
+				return fmt.Errorf("pgstore: inbox recovery decision %d pending reason must be empty", i)
+			}
+		case "completed":
+		case "manual_review":
+			if decision.Reason == "" {
+				return fmt.Errorf("pgstore: inbox recovery decision %d manual review requires a reason", i)
+			}
+		default:
+			return fmt.Errorf("pgstore: inbox recovery decision %d has an invalid target status", i)
+		}
+	}
+
+	if len(decisions) == 0 {
+		return nil
+	}
+
+	ids := make([]int64, len(decisions))
+	messageIDs := make([]string, len(decisions))
+	tokens := make([]string, len(decisions))
+	attempts := make([]int, len(decisions))
+	leases := make([]time.Time, len(decisions))
+	statuses := make([]string, len(decisions))
+	reasons := make([]string, len(decisions))
+
+	for i := range decisions {
+		decision := &decisions[i]
+
+		ids[i] = decision.ID
+		messageIDs[i] = decision.MessageID
+		tokens[i] = decision.ClaimToken
+		attempts[i] = decision.Attempts
+		leases[i] = decision.LeaseUntil.UTC()
+		statuses[i] = decision.Status
+		reasons[i] = decision.Reason
+	}
+
+	tag, err := s.db.Exec(ctx, queryApplyInboxRecovery, s.opts.Scope,
+		ids, messageIDs, tokens, attempts, leases, statuses, reasons, s.opts.DiscardInboxManualReviewPayload)
+	if err != nil {
+		return fmt.Errorf("pgstore: apply inbox recovery: %w", err)
+	}
+
+	if tag.RowsAffected() != int64(len(decisions)) {
+		return fmt.Errorf("pgstore: apply inbox recovery: %w", ErrClaimLost)
+	}
+
+	return nil
+}
+
 // CompletePendingInboxBefore는 createdBefore보다 오래된 미청구 pending을 유한하게 종단 처리한다.
 // 처리 중인 claim은 변경하지 않고 본문을 지운다. Reason은 성공과 만료 같은 종단 사유를 구분한다.
 func (s *Store) CompletePendingInboxBefore(ctx context.Context, createdBefore time.Time, limit int, reason string) (int64, error) {

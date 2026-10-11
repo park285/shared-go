@@ -3,6 +3,11 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## v2.11.0 - 2026-10-11
+
+- **pgstore:** transaction-bound `InboxRecoveryDecision`·`ApplyInboxRecovery`로 업무 복구 판정을 한 bulk SQL에 적용합니다. scope·ID·message ID·attempts·token·정확한 lease snapshot을 fence로 대조하며 공용 inbox 변경은 shared-go가 소유합니다. 영향 행 수가 다르면 `ErrClaimLost`를 반환하고 호출자가 전체 transaction을 rollback해야 합니다. completed payload 제거와 수동 검토 payload 정책은 유지합니다.
+- **검증:** 실제 PostgreSQL에서 stale snapshot·부분 적용 rollback·중복 decision·사전 검증·payload 보존의 race 회귀와 ChatBotGo의 draw 복구 통합을 통과했습니다.
+
 ## v2.10.0 - 2026-10-11
 
 - **jsonutil:** `Extract`는 후보별 suffix 재탐색 대신 검증한 자식의 범위·깊이를 재사용합니다. whole JSON·첫 코드펜스 우선순위, 잘못된 outer 안의 유효 inner, quote·escape·중복 key·깊이 제한과 1 MiB 상한은 유지합니다.

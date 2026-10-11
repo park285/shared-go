@@ -1,13 +1,24 @@
 package pgstore_test
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/stretchr/testify/require"
 
 	"github.com/park285/shared-go/v2/pkg/irisdurable"
 	"github.com/park285/shared-go/v2/pkg/irisdurable/pgstore"
 	"github.com/park285/shared-go/v2/pkg/workercontract"
+)
+
+const (
+	inboxCompletedStatus = "completed"
+	inboxRecoveryScope   = "recovery"
 )
 
 func TestInboxBatchKeepsFIFOAndRequiresBoundedRecovery(t *testing.T) {
@@ -183,4 +194,267 @@ func claimFIFOHeads(t *testing.T, store *pgstore.Store) []pgstore.InboxClaim {
 	}
 
 	return claims
+}
+
+func TestApplyInboxRecoveryFencesSnapshots(t *testing.T) {
+	pool := newMigratedPool(t)
+	tests := []struct {
+		name       string
+		pending    bool
+		otherScope bool
+		change     func(*pgstore.InboxRecoveryDecision)
+	}{
+		{name: "ID", change: func(d *pgstore.InboxRecoveryDecision) { d.ID += 1000000 }},
+		{name: "message", change: func(d *pgstore.InboxRecoveryDecision) { d.MessageID += "-replacement" }},
+		{name: "attempts", change: func(d *pgstore.InboxRecoveryDecision) { d.Attempts++ }},
+		{name: "token", change: func(d *pgstore.InboxRecoveryDecision) { d.ClaimToken += "-stale" }},
+		{name: "renewed lease", change: func(d *pgstore.InboxRecoveryDecision) { d.LeaseUntil = d.LeaseUntil.Add(-time.Microsecond) }},
+		{name: "pending snapshot cannot replace processing", change: func(d *pgstore.InboxRecoveryDecision) { d.ClaimToken = ""; d.LeaseUntil = time.Time{} }},
+		{name: "processing snapshot cannot replace pending", pending: true, change: func(d *pgstore.InboxRecoveryDecision) { d.ClaimToken = "stale"; d.LeaseUntil = time.Now() }},
+		{name: "scope", otherScope: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			decision := seedInboxRecovery(t, pool, tt.name, tt.pending)
+			before := inboxRecoverySnapshot(t, pool, decision.ID)
+			id := decision.ID
+			opts := pgstore.Options{Scope: inboxRecoveryScope}
+
+			if tt.otherScope {
+				opts.Scope = "another-owner"
+			}
+
+			if tt.change != nil {
+				tt.change(&decision)
+			}
+
+			store, tx := inboxRecoveryTransaction(t, pool, opts)
+			require.ErrorIs(t, store.ApplyInboxRecovery(t.Context(), []pgstore.InboxRecoveryDecision{decision}), pgstore.ErrClaimLost)
+			require.Equal(t, before, inboxRecoverySnapshot(t, tx, id), "lost snapshot changed the row")
+			require.NoError(t, tx.Rollback(t.Context()))
+		})
+	}
+}
+
+func TestApplyInboxRecoveryRollbackRestoresPartialBatch(t *testing.T) {
+	pool := newMigratedPool(t)
+
+	for _, duplicate := range []bool{false, true} {
+		t.Run(fmt.Sprintf("duplicate=%t", duplicate), func(t *testing.T) {
+			first := seedInboxRecovery(t, pool, t.Name()+"-first", false)
+			second := seedInboxRecovery(t, pool, t.Name()+"-second", true)
+			beforeFirst := inboxRecoverySnapshot(t, pool, first.ID)
+			beforeSecond := inboxRecoverySnapshot(t, pool, second.ID)
+			decisions := []pgstore.InboxRecoveryDecision{first, second}
+
+			if duplicate {
+				decisions[1] = first
+			} else {
+				decisions[1].MessageID += "-stale"
+			}
+
+			store, tx := inboxRecoveryTransaction(t, pool, pgstore.Options{Scope: inboxRecoveryScope})
+			require.ErrorIs(t, store.ApplyInboxRecovery(t.Context(), decisions), pgstore.ErrClaimLost)
+
+			var status string
+
+			require.NoError(t, tx.QueryRow(t.Context(), "SELECT status FROM iris_webhook_inbox WHERE id = $1", first.ID).Scan(&status))
+			require.Equal(t, inboxCompletedStatus, status, "matching rows change before caller rollback")
+			require.Equal(t, beforeSecond, inboxRecoverySnapshot(t, tx, second.ID))
+			require.NoError(t, tx.Rollback(t.Context()))
+			require.Equal(t, beforeFirst, inboxRecoverySnapshot(t, pool, first.ID))
+			require.Equal(t, beforeSecond, inboxRecoverySnapshot(t, pool, second.ID))
+		})
+	}
+}
+
+func TestApplyInboxRecoveryValidatesBeforeMutation(t *testing.T) {
+	pool := newMigratedPool(t)
+	first := seedInboxRecovery(t, pool, "valid-first", false)
+	second := seedInboxRecovery(t, pool, "invalid-second", false)
+	before := inboxRecoverySnapshot(t, pool, first.ID)
+	tests := []struct {
+		name   string
+		change func(*pgstore.InboxRecoveryDecision)
+	}{
+		{name: "zero ID", change: func(d *pgstore.InboxRecoveryDecision) { d.ID = 0 }},
+		{name: "negative ID", change: func(d *pgstore.InboxRecoveryDecision) { d.ID = -1 }},
+		{name: "message", change: func(d *pgstore.InboxRecoveryDecision) { d.MessageID = "" }},
+		{name: "attempts", change: func(d *pgstore.InboxRecoveryDecision) { d.Attempts = -1 }},
+		{name: "lease", change: func(d *pgstore.InboxRecoveryDecision) { d.LeaseUntil = time.Time{} }},
+		{name: "target", change: func(d *pgstore.InboxRecoveryDecision) { d.Status = "processing" }},
+		{name: "pending reason", change: func(d *pgstore.InboxRecoveryDecision) { d.Status = "pending" }},
+		{name: "review reason", change: func(d *pgstore.InboxRecoveryDecision) { d.Status = "manual_review"; d.Reason = "" }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			invalid := second
+			tt.change(&invalid)
+
+			store, tx := inboxRecoveryTransaction(t, pool, pgstore.Options{Scope: inboxRecoveryScope})
+			err := store.ApplyInboxRecovery(t.Context(), []pgstore.InboxRecoveryDecision{first, invalid})
+			require.Error(t, err)
+			require.NotErrorIs(t, err, pgstore.ErrClaimLost)
+			require.Equal(t, before, inboxRecoverySnapshot(t, tx, first.ID), "validation must precede the entire batch")
+			require.NoError(t, tx.Rollback(t.Context()))
+		})
+	}
+
+	store := newScopedStoreWithOptions(t, pool, pgstore.Options{Scope: inboxRecoveryScope})
+	require.Error(t, store.ApplyInboxRecovery(t.Context(), []pgstore.InboxRecoveryDecision{first}))
+	require.Error(t, store.ApplyInboxRecovery(t.Context(), nil))
+	require.Equal(t, before, inboxRecoverySnapshot(t, pool, first.ID), "pool must not open its own transaction")
+
+	bound, tx := inboxRecoveryTransaction(t, pool, store.Options())
+	require.NoError(t, bound.ApplyInboxRecovery(t.Context(), nil))
+	require.NoError(t, tx.Rollback(t.Context()))
+}
+
+func TestApplyInboxRecoveryTerminalPayloadPolicy(t *testing.T) {
+	pool := newMigratedPool(t)
+
+	for _, discard := range []bool{false, true} {
+		t.Run(fmt.Sprintf("discard=%t", discard), func(t *testing.T) {
+			decisions := make([]pgstore.InboxRecoveryDecision, 0, 8)
+
+			for _, pending := range []bool{false, true} {
+				for _, target := range []struct {
+					status string
+					reason string
+				}{
+					{status: "pending"},
+					{status: inboxCompletedStatus},
+					{status: inboxCompletedStatus, reason: "reconciled"},
+					{status: "manual_review", reason: "delivery ambiguous"},
+				} {
+					messageID := fmt.Sprintf("%s/%t/%s/%s", t.Name(), pending, target.status, target.reason)
+					decision := seedInboxRecovery(t, pool, messageID, pending)
+
+					decision.Status = target.status
+					decision.Reason = target.reason
+					decisions = append(decisions, decision)
+				}
+			}
+
+			store, tx := inboxRecoveryTransaction(t, pool, pgstore.Options{
+				Scope: inboxRecoveryScope, DiscardInboxManualReviewPayload: discard,
+			})
+
+			var appliedAt time.Time
+
+			require.NoError(t, tx.QueryRow(t.Context(), "SELECT now()").Scan(&appliedAt))
+			require.NoError(t, store.ApplyInboxRecovery(t.Context(), decisions))
+			require.NoError(t, tx.Commit(t.Context()))
+
+			for _, decision := range decisions {
+				assertInboxRecoveryResult(t, pool, decision, appliedAt, discard)
+			}
+
+			// A terminal row cannot be changed again using its former claim snapshot.
+			again, retryTx := inboxRecoveryTransaction(t, pool, store.Options())
+			require.ErrorIs(t, again.ApplyInboxRecovery(t.Context(), decisions[1:2]), pgstore.ErrClaimLost)
+			require.NoError(t, retryTx.Rollback(t.Context()))
+		})
+	}
+}
+
+func seedInboxRecovery(t *testing.T, db pgstore.Querier, messageID string, pending bool) pgstore.InboxRecoveryDecision {
+	t.Helper()
+
+	decision := pgstore.InboxRecoveryDecision{MessageID: messageID, Status: inboxCompletedStatus, Reason: "reconciled"}
+
+	const query = `INSERT INTO iris_webhook_inbox
+		(scope, message_id, ordering_key, payload, status, attempts, claim_token, lease_until, available_at, updated_at)
+		VALUES ('recovery', $1, $1, '{"private":"body"}'::jsonb,
+		        CASE WHEN $2 THEN 'pending' ELSE 'processing' END, 2,
+		        CASE WHEN $2 THEN NULL ELSE 'original-token' END,
+		        CASE WHEN $2 THEN NULL ELSE now() - interval '1 hour' END,
+		        now() + interval '1 day', now() - interval '1 hour')
+		RETURNING id, attempts, coalesce(claim_token, ''), coalesce(lease_until, '0001-01-01 UTC'::timestamptz)`
+
+	require.NoError(t, db.QueryRow(t.Context(), query, messageID, pending).
+		Scan(&decision.ID, &decision.Attempts, &decision.ClaimToken, &decision.LeaseUntil))
+
+	return decision
+}
+
+func inboxRecoveryTransaction(t *testing.T, pool *pgxpool.Pool, opts pgstore.Options) (*pgstore.Store, pgx.Tx) {
+	t.Helper()
+
+	tx, err := pool.Begin(t.Context())
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
+		defer cancel()
+
+		rollbackErr := tx.Rollback(ctx)
+		if rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
+			t.Errorf("rollback recovery: %v", rollbackErr)
+		}
+	})
+
+	store, err := pgstore.New(tx, opts)
+	require.NoError(t, err)
+
+	return store, tx
+}
+
+func inboxRecoverySnapshot(t *testing.T, db pgstore.Querier, id int64) string {
+	t.Helper()
+
+	var snapshot string
+
+	require.NoError(t, db.QueryRow(t.Context(),
+		"SELECT to_jsonb(inbox)::text FROM iris_webhook_inbox AS inbox WHERE id = $1", id).Scan(&snapshot))
+
+	return snapshot
+}
+
+func assertInboxRecoveryResult(t *testing.T, db pgstore.Querier, decision pgstore.InboxRecoveryDecision, appliedAt time.Time, discard bool) {
+	t.Helper()
+
+	var (
+		status, payload, messageID string
+		reason, token              *string
+		lease, terminal            *time.Time
+		available, updated         time.Time
+		attempts                   int
+	)
+
+	const query = `SELECT status, payload::text, message_id, terminal_reason, claim_token,
+		lease_until, terminal_at, available_at, updated_at, attempts FROM iris_webhook_inbox WHERE id = $1`
+
+	require.NoError(t, db.QueryRow(t.Context(), query, decision.ID).
+		Scan(&status, &payload, &messageID, &reason, &token, &lease, &terminal, &available, &updated, &attempts))
+	require.Equal(t, decision.Status, status)
+	require.Equal(t, decision.MessageID, messageID)
+	require.Equal(t, decision.Attempts, attempts)
+	require.Nil(t, token)
+	require.Nil(t, lease)
+	require.True(t, available.Equal(appliedAt))
+	require.True(t, updated.Equal(appliedAt))
+
+	if decision.Status == "pending" {
+		require.Nil(t, terminal)
+	} else {
+		require.NotNil(t, terminal)
+		require.True(t, terminal.Equal(appliedAt))
+	}
+
+	if decision.Reason == "" {
+		require.Nil(t, reason)
+	} else {
+		require.NotNil(t, reason)
+		require.Equal(t, decision.Reason, *reason)
+	}
+
+	expectedPayload := `{"private":"body"}`
+
+	if decision.Status == inboxCompletedStatus || (decision.Status == "manual_review" && discard) {
+		expectedPayload = `{}`
+	}
+
+	require.JSONEq(t, expectedPayload, payload)
 }

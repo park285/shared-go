@@ -85,6 +85,21 @@ Blocking CI는 머신별 baseline이나 상대 wall-clock 비교를 사용하지
 
 Prompt guard는 v3 rulepack과 source/enforcement를 명시하는 `Check`만 지원합니다.
 
+## Inbox 업무 복구 transaction
+
+`pgstore.InboxRecoveryDecision`과 `Store.ApplyInboxRecovery`는 소비자가 잠근 inbox·업무 행을
+판정한 뒤 공용 inbox 상태 변경만 한 bulk SQL로 적용합니다. `Store`는 기존 transaction에
+묶어야 하며 pool에서 자동 transaction을 열지 않습니다. 소비자는 선택·업무 행을 잠그고
+미청구·만료 inbox 또는 자신이 소유한 처리 claim만 판정합니다. 살아 있는 업무 lease의 제외와
+업무 정산·환불·metadata 변경도 같은 transaction에서 소유합니다.
+
+판정은 `pending`·`completed`·`manual_review`만 허용합니다. scope·ID·message ID·attempts와
+processing token·정확한 lease snapshot을 대조하며, 빈 token은 token·lease가 NULL인 pending만
+바꿉니다. `pending` 사유는 비어야 하고 `manual_review`는 사유가 필요합니다.
+모든 입력을 SQL 전에 검증하고, 영향 행 수가 판정 수와 다르면 `ErrClaimLost`를 반환합니다.
+일부 행은 이미 바뀌었을 수 있으므로 **오류가 나면 호출자가 전체 transaction을 rollback**해야 합니다.
+완료 payload는 지우고 수동 검토 payload는 `DiscardInboxManualReviewPayload` 정책을 따릅니다.
+
 ## 로컬 검증 (Verification)
 
 개발 시 로컬에서 아래 명령어로 검증할 수 있습니다.

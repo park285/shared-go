@@ -251,7 +251,7 @@ func TestCompleteRecordsANonSuccessReason(t *testing.T) {
 		t.Fatalf("read the completed row: %v", err)
 	}
 
-	if status != "completed" || reason == nil || *reason != "invalid_payload" {
+	if status != inboxCompletedStatus || reason == nil || *reason != "invalid_payload" {
 		t.Fatalf("completed row = (%q, %v); want completed with the recorded reason", status, reason)
 	}
 }
