@@ -2,7 +2,7 @@
 set -euo pipefail
 
 GOLANGCI_LINT_VERSION="${GOLANGCI_LINT_VERSION:-v2.14.0}"
-GOVULNCHECK_VERSION="${GOVULNCHECK_VERSION:-v1.8.0}"
+GOVULNCHECK_VERSION="${GOVULNCHECK_VERSION:-v1.9.0}"
 
 go_bin_tool() {
   local tool="$1" minimum="${2:-}" probe="${3:-}" pattern=""
