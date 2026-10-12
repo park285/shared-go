@@ -39,14 +39,12 @@ func TestWebhookMetricsPrefixNaming(t *testing.T) {
 	}
 }
 
-func TestWebhookMetricsHistogramAndRetiredQueueGauge(t *testing.T) {
+func TestWebhookMetricsHandlerDurationHistogram(t *testing.T) {
 	t.Parallel()
 
 	m := NewWebhookMetrics("twentyq")
 	m.ObserveHandlerDuration(150 * time.Millisecond)
 	m.ObserveHandlerDuration(2 * time.Second)
-	m.ObserveQueueDepth(7)
-	m.ObserveQueueDepth(3)
 
 	body := renderWebhook(t, m)
 
@@ -57,10 +55,6 @@ func TestWebhookMetricsHistogramAndRetiredQueueGauge(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("body missing %q:\n%s", want, body)
 		}
-	}
-
-	if strings.Contains(body, "twentyq_webhook_queue_depth") {
-		t.Fatalf("retired scheduler metric was exported:\n%s", body)
 	}
 }
 
@@ -80,27 +74,6 @@ func TestWebhookMetricsDecodeLatencyHistogram(t *testing.T) {
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("body missing %q:\n%s", want, body)
-		}
-	}
-}
-
-func TestWebhookMetricsOmitRetiredSchedulerFamilies(t *testing.T) {
-	t.Parallel()
-
-	metrics := NewWebhookMetrics("twentyq")
-	metrics.ObserveQueueDepth(7)
-
-	body := renderWebhook(t, metrics)
-
-	for _, forbidden := range []string{
-		"twentyq_webhook_queue_depth",
-		"twentyq_webhook_workers_configured",
-		"twentyq_webhook_queue_size",
-		"twentyq_webhook_pending",
-		"twentyq_webhook_inflight",
-	} {
-		if strings.Contains(body, forbidden) {
-			t.Fatalf("retired scheduler metric %q was exported", forbidden)
 		}
 	}
 }

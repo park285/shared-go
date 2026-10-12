@@ -131,8 +131,7 @@ func TestConfigDSN_RootCertAndQueryExecMode(t *testing.T) {
 	}
 }
 
-// Config.SSLRootCert만 sslrootcert를 채운다. POSTGRES_SSLROOTCERT env 폴백은
-// DEC-20260926-stack-shared-go-compat-api-retirement에 따라 삭제했으므로 env가 있어도 DSN에 들어가지 않는다.
+// Config.SSLRootCert만 sslrootcert를 채우며 POSTGRES_SSLROOTCERT 환경 변수는 읽지 않는다.
 func TestConfigDSN_IgnoresPostgresSSLRootCertEnv(t *testing.T) {
 	t.Setenv("POSTGRES_SSLROOTCERT", "/env/ca.pem")
 

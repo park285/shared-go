@@ -287,8 +287,7 @@ func writeDotenvFile(t *testing.T, path, content string, perm os.FileMode) {
 	}
 }
 
-// LocalEnableKey는 BoolE와 같은 규칙으로 판정하고, 받아들일 수 없는 값은 기본값(false)으로 접지 않고
-// 설정 오류로 돌려준다(DEC-20260927-shared-go-dotenv-bool-strict).
+// LocalEnableKey는 BoolE 규칙을 따르며 잘못된 값은 설정 오류로 반환한다.
 func TestLoadDotenvLocalEnableFlag(t *testing.T) {
 	localOpts := DotenvOptions{
 		LocalEnableKey: testChatbotgoLoadDotenv,

@@ -72,8 +72,7 @@ func (c *Config) SafeDSN() (string, error) {
 	return c.buildDSN(password), nil
 }
 
-// buildDSN은 sslrootcert를 Config.SSLRootCert에서만 채운다. POSTGRES_SSLROOTCERT env 폴백은
-// DEC-20260926-stack-shared-go-compat-api-retirement에 따라 삭제했다.
+// buildDSN은 sslrootcert를 Config.SSLRootCert에서만 채운다.
 func (c *Config) buildDSN(password string) string {
 	sslRootCert := strings.TrimSpace(c.SSLRootCert)
 	queryExecMode := normalizeQueryExecMode(c.QueryExecMode)

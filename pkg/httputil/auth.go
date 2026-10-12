@@ -39,8 +39,7 @@ func ConstantTimeStringEqual(left, right string) bool {
 	return subtle.ConstantTimeCompare(leftHash[:], rightHash[:]) == 1 && len(left) == len(right)
 }
 
-// APIKeyFromRequest는 X-API-Key 헤더 값만 관리 API key로 추출한다. Authorization Bearer는
-// 관리 API key로 받지 않는다(DEC-20260926-stack-shared-go-api-key-single-header).
+// APIKeyFromRequest는 X-API-Key 헤더 값만 관리 API key로 추출한다.
 func APIKeyFromRequest(r *http.Request) string {
 	if r == nil {
 		return ""

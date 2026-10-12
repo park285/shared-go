@@ -23,8 +23,7 @@ test-race:
 # race 계측은 할당 횟수를 바꾸므로 별도로 측정한다.
 .PHONY: test-allocations
 test-allocations:
-	$(GO) test -count=1 -run '^TestPromptGuardAllocationCeilings$$' ./pkg/promptguard
-	$(GO) test -count=1 -run '^TestLoggingAllocationCeilings$$' ./pkg/logging
+	$(GO) test -count=1 -run '^Test(PromptGuard|Logging)AllocationCeilings$$' ./pkg/promptguard ./pkg/logging
 
 .PHONY: vulncheck
 vulncheck:

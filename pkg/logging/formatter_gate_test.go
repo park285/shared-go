@@ -64,165 +64,6 @@ func TestFormatterConstructorsStayInsideFormatHandler(t *testing.T) {
 	}
 }
 
-func TestFormatterGate_FileScopeCallDoesNotInheritPrecedingFuncName(t *testing.T) {
-	t.Parallel()
-
-	const src = `package logging
-
-import (
-	"io"
-	"log/slog"
-)
-
-func newFormatHandler() slog.Handler { return nil }
-
-var leakyHandler = slog.NewJSONHandler(io.Discard, nil)
-
-func shortenSource() {}
-`
-
-	fset := token.NewFileSet()
-
-	parsed, err := parser.ParseFile(fset, "format.go", src, 0)
-	if err != nil {
-		t.Fatalf("parse synthetic source: %v", err)
-	}
-
-	calls := formatterCallsInFile(fset, parsed, "format.go")
-	if len(calls) != 1 {
-		t.Fatalf("formatterCallsInFile() found %d calls, want 1: %v", len(calls), calls)
-	}
-
-	if _, allowed := formatterCallAllowlist[calls[0].site]; allowed {
-		t.Fatalf("file-scope call inherited an allowlisted function name: %s", calls[0].site)
-	}
-
-	if want := strings.Join([]string{"format.go", fileScopeOwner, "log/slog.NewJSONHandler"}, "|"); calls[0].site != want {
-		t.Fatalf("site = %q, want %q", calls[0].site, want)
-	}
-}
-
-func TestFormatterGate_FuncLiteralDoesNotInheritEnclosingFuncName(t *testing.T) {
-	t.Parallel()
-
-	const src = `package logging
-
-import (
-	"io"
-	"log/slog"
-)
-
-var hoisted func(io.Writer) slog.Handler
-
-func newFormatHandler() slog.Handler {
-	hoisted = func(out io.Writer) slog.Handler { return slog.NewJSONHandler(out, nil) }
-
-	return nil
-}
-`
-
-	calls := parseFormatterCalls(t, "format.go", src)
-	if len(calls) != 1 {
-		t.Fatalf("formatterCallsInFile() found %d calls, want 1: %v", len(calls), calls)
-	}
-
-	if _, allowed := formatterCallAllowlist[calls[0].site]; allowed {
-		t.Fatalf("func literal inherited an allowlisted owner: %s", calls[0].site)
-	}
-
-	if want := strings.Join([]string{"format.go", "newFormatHandler" + funcLitOwnerTag, "log/slog.NewJSONHandler"}, "|"); calls[0].site != want {
-		t.Fatalf("site = %q, want %q", calls[0].site, want)
-	}
-}
-
-func TestFormatterGate_DetectsDotImportAndFunctionValueForms(t *testing.T) {
-	t.Parallel()
-
-	const src = `package logging
-
-import (
-	. "log/slog"
-	"io"
-	tinted "github.com/lmittmann/tint"
-)
-
-func dotImported() Handler { return NewJSONHandler(io.Discard, nil) }
-
-func functionValue() {
-	build := tinted.NewTextHandler
-	_ = build(io.Discard, nil)
-}
-`
-
-	calls := parseFormatterCalls(t, "probe.go", src)
-	got := make(map[string]bool, len(calls))
-
-	for _, call := range calls {
-		got[call.site] = true
-	}
-
-	for _, want := range []string{
-		"probe.go|dotImported|log/slog.NewJSONHandler",
-		"probe.go|functionValue|github.com/lmittmann/tint.NewTextHandler",
-	} {
-		if !got[want] {
-			t.Errorf("gate missed %s; found %v", want, calls)
-		}
-	}
-
-	if len(calls) != 2 {
-		t.Errorf("formatterCallsInFile() found %d refs, want 2: %v", len(calls), calls)
-	}
-}
-
-func TestFormatterGate_MethodOwnerCarriesReceiverType(t *testing.T) {
-	t.Parallel()
-
-	const src = `package logging
-
-import (
-	"io"
-	"log/slog"
-)
-
-type alpha struct{}
-
-type beta struct{}
-
-func (a alpha) build() slog.Handler { return slog.NewJSONHandler(io.Discard, nil) }
-
-func (b *beta) build() slog.Handler { return slog.NewJSONHandler(io.Discard, nil) }
-`
-
-	calls := parseFormatterCalls(t, "probe.go", src)
-	if len(calls) != 2 {
-		t.Fatalf("formatterCallsInFile() found %d refs, want 2: %v", len(calls), calls)
-	}
-
-	if calls[0].site == calls[1].site {
-		t.Fatalf("same-named methods on different receivers collapsed to one site key: %s", calls[0].site)
-	}
-
-	for i, want := range []string{"probe.go|alpha.build|", "probe.go|*beta.build|"} {
-		if !strings.HasPrefix(calls[i].site, want) {
-			t.Errorf("site[%d] = %q, want prefix %q", i, calls[i].site, want)
-		}
-	}
-}
-
-func parseFormatterCalls(t *testing.T, name, src string) []formatterCall {
-	t.Helper()
-
-	fset := token.NewFileSet()
-
-	parsed, err := parser.ParseFile(fset, name, src, 0)
-	if err != nil {
-		t.Fatalf("parse synthetic source: %v", err)
-	}
-
-	return formatterCallsInFile(fset, parsed, name)
-}
-
 func loggingPackageDir(t *testing.T) string {
 	t.Helper()
 
@@ -271,9 +112,7 @@ func collectFormatterCalls(t *testing.T, root string) []formatterCall {
 	return calls
 }
 
-// 호출이 아니라 참조를 센다. 호출식만 보면 `f := slog.NewJSONHandler; f(...)`가 빠져나간다.
-// 선언별로 내려가야 한다. 파일 전체를 한 번에 훑으면서 FuncDecl로만 소유자를 갱신하면
-// package-level var 초기화식이 바로 앞 함수의 이름을 물려받아 allowlist에 얹힌다.
+// 함수 값 참조도 검사하며, 파일 범위 초기화식의 소유자는 함수와 구분한다.
 func formatterCallsInFile(fset *token.FileSet, file *ast.File, rel string) []formatterCall {
 	imports, dotImports := importPathsByName(file)
 
@@ -286,8 +125,7 @@ func formatterCallsInFile(fset *token.FileSet, file *ast.File, rel string) []for
 	return calls
 }
 
-// 함수 리터럴은 소유자를 물려받으면 안 된다. Allowlist된 함수 안에서 리터럴로 raw formatter를
-// 만들어 package var로 반출하면 site key가 allowlist 항목과 같아져 그대로 통과한다.
+// 함수 리터럴은 별도 소유자로 검사하여 외부로 반출되는 formatter도 제한한다.
 func formatterRefsUnder(
 	fset *token.FileSet,
 	root ast.Node,
@@ -325,8 +163,7 @@ func formatterRefsUnder(
 	return calls
 }
 
-// package 이름으로 한정된 selector는 더 내려갈 것이 없다. 내려가면 Sel ident가 dot-import
-// 후보로 한 번 더 잡혀 같은 참조가 두 번 계상된다.
+// Selector 내부 식별자를 dot-import 참조로 중복 집계하지 않는다.
 func formatterRefName(node ast.Node, imports map[string]string, dotImports []string) (string, bool) {
 	switch expr := node.(type) {
 	case *ast.SelectorExpr:

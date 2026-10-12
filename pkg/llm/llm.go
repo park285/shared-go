@@ -26,8 +26,7 @@ type Message struct {
 	CacheBreakpoint bool
 }
 
-// JSONRequest의 지시는 InvariantPrompt/DeveloperPrompt 계층으로만 전달한다. 단일 SystemPrompt
-// 경로는 DEC-20260926-stack-llm-instruction-layering-sole-path에 따라 삭제했다.
+// JSONRequest의 지시는 InvariantPrompt/DeveloperPrompt 계층으로 전달한다.
 type JSONRequest struct {
 	TaskName        string
 	UserPrompt      string

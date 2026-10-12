@@ -136,9 +136,7 @@ func (c *Client) Model() string {
 	return c.model
 }
 
-// GenerateJSONAs는 지시를 PromptLayers 계층으로만 받고, task를 schema 이름과 prompt cache key
-// 접미사로 쓴다. 단일 system prompt를 받던 GenerateJSON은
-// DEC-20260926-stack-llm-instruction-layering-sole-path에 따라 삭제했다.
+// GenerateJSONAs는 PromptLayers로 지시를 받고 task를 schema 이름과 prompt cache key 접미사로 쓴다.
 func (c *Client) GenerateJSONAs[T any](
 	ctx context.Context,
 	task string,
