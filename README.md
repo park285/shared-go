@@ -59,6 +59,25 @@ go get github.com/park285/shared-go/v2@latest
 
 새로운 공통 기능이 필요할 경우, `pkg/` 하위에 신규 패키지 형식으로 추가해 주십시오.
 
+## stdout 사본과 유실 계측
+
+파일 로깅의 `Options.AsyncStdout`은 stdout 사본에만 bounded queue를 적용합니다.
+정상 JSON은 그대로 전달하고, 64 KiB를 넘는 사본은 유효한 JSON으로 축약합니다.
+`time/level/msg/event/trace_id/span_id/request_id` 문자열을 각각 최대 1024 UTF-8 bytes로
+보존하며 `stdout_truncated`·`stdout_original_bytes`를 추가합니다. 나머지 필드의
+전체 sanitized 원본은 동기 파일 lane에 남습니다.
+
+`logging.SnapshotStdout()`과 `obsmetrics.WriteLoggingMetrics(w)`는 프로세스 수명 동안의
+`iris_stack_logging_stdout_dropped_total`·`iris_stack_logging_stdout_truncated_total`을
+제공합니다. 큐 포화·종료 후 쓰기·sink 오류·short write는 dropped, 성공적으로 전달한
+축약 사본은 truncated입니다. 파일 쓰기·console-only logger·종료 진단 자체는 집계하지 않습니다.
+async 유실 요약은 파일에도 기록되며, 포화 큐에서는 복사 전에 거절해 추가 할당을 하지 않습니다.
+
+`Close`의 2초 제한은 대기 상한이지 I/O 취소가 아닙니다. timeout 이후에도 pending write가
+완료될 수 있으므로 종료 요약은 기록 시점에 알려진 결과만 나타냅니다.
+새 API를 사용하는 소비자는 같은 shared-go 소스로 workspace 검증한 뒤 실제 게시 버전으로
+의존성을 함께 갱신해야 합니다. 소스 구현은 운영 배포를 뜻하지 않습니다.
+
 ## Prompt guard 계약
 
 `Check` 호출은 `Source`와 `Enforcement`를 모두 명시해야 합니다. `EnforcementUnspecified`와 알 수 없는 값은 탐지나 cache 조회 전에 `ErrInvalidCheckRequest`로 거부됩니다.

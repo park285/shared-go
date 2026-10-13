@@ -2,163 +2,246 @@ package logging
 
 import (
 	"bytes"
+	jsonv2 "encoding/json/v2"
 	"errors"
+	"io"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"unicode/utf8"
 )
 
-func TestSG05AsyncWriterCapsPerLineBytes_38e7cbe7(t *testing.T) {
-	t.Parallel()
+const (
+	stdoutTestEventKey     = "event"
+	stdoutTestRequestIDKey = "request_id"
+)
 
-	var buf bytes.Buffer
+func oversizedJSON(t *testing.T) []byte {
+	t.Helper()
 
-	writer := newAsyncDropWriter(&buf, 64)
-
-	writer.maxLineBytes = 32
-
-	oversize := bytes.Repeat([]byte("A"), 4096)
-
-	n, err := writer.Write(oversize)
+	data, err := jsonv2.Marshal(map[string]string{
+		"time":                 "2026-10-13T10:00:00Z",
+		"level":                "ERROR",
+		"msg":                  "diagnostic failed",
+		stdoutTestEventKey:     "diagnostic_failure",
+		"trace_id":             "0123456789abcdef0123456789abcdef",
+		"span_id":              "0123456789abcdef",
+		stdoutTestRequestIDKey: "request-42",
+		"diagnostic":           strings.Repeat("한\\\"\n", 20000),
+	})
 	if err != nil {
-		t.Fatalf("Write(oversize) error = %v, want nil", err)
+		t.Fatal(err)
 	}
 
-	if n != len(oversize) {
-		t.Fatalf("Write(oversize) n = %d, want %d (io.Writer contract reports full length)", n, len(oversize))
+	return append(data, '\n')
+}
+
+func decodeLogLine(t *testing.T, line string) map[string]any {
+	t.Helper()
+
+	var record map[string]any
+
+	if err := jsonv2.Unmarshal([]byte(line), &record); err != nil {
+		t.Fatalf("invalid JSON record (%d bytes): %v", len(line), err)
 	}
 
-	if err := writer.Close(); err != nil {
-		t.Fatalf("Close() error = %v", err)
-	}
+	return record
+}
 
-	// Close가 손실 요약 라인을 덧붙이므로 버퍼 전체가 아니라 전달된 첫 라인으로 상한을 잰다.
-	forwarded, _, found := strings.Cut(buf.String(), "\n")
-	if !found {
-		t.Fatalf("forwarded payload has no record separator: %q", buf.String())
-	}
+func TestAsyncDropWriterJSONByteBoundary(t *testing.T) {
+	t.Parallel()
 
-	if got := len(forwarded) + 1; got > writer.maxLineBytes {
-		t.Fatalf("forwarded bytes = %d, want <= cap %d (line must be truncated before queuing)", got, writer.maxLineBytes)
-	}
+	for _, size := range []int{asyncStdoutMaxLineBytes - 1, asyncStdoutMaxLineBytes, asyncStdoutMaxLineBytes + 1} {
+		t.Run(strconv.Itoa(size), func(t *testing.T) {
+			t.Parallel()
 
-	if writer.truncatedCount() != 1 {
-		t.Fatalf("truncatedCount() = %d, want 1", writer.truncatedCount())
+			const envelope = "{\"msg\":\"\"}\n"
+
+			payload := []byte("{\"msg\":\"" + strings.Repeat("x", size-len(envelope)) + "\"}\n")
+
+			var output bytes.Buffer
+
+			writer := newAsyncDropWriter(&output, 4)
+
+			if n, err := writer.Write(payload); n != size || err != nil {
+				t.Fatalf("Write = (%d, %v), want (%d, nil)", n, err, size)
+			}
+
+			if err := writer.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			line, _, _ := strings.Cut(output.String(), "\n")
+			if len(line)+1 > asyncStdoutMaxLineBytes {
+				t.Fatalf("stdout record exceeds cap: %d", len(line)+1)
+			}
+
+			record := decodeLogLine(t, line)
+			if size <= asyncStdoutMaxLineBytes {
+				if output.String() != string(payload) || writer.truncatedCount() != 0 {
+					t.Fatal("in-bound record changed or counted as truncated")
+				}
+			} else if record["stdout_truncated"] != true || writer.truncatedCount() != 1 {
+				t.Fatal("oversized record missing truncation metadata/count")
+			}
+		})
 	}
 }
 
-// 절단된 조각이 다음 record와 한 줄로 이어붙으면 JSON lane에서 2건이 함께 깨진다.
-func TestAsyncDropWriterTruncationKeepsRecordBoundary(t *testing.T) {
+func TestAsyncDropWriterTruncationKeepsJSONCorrelationAndNextRecord(t *testing.T) {
 	t.Parallel()
 
-	var buf bytes.Buffer
+	payload := oversizedJSON(t)
+	original := bytes.Clone(payload)
 
-	writer := newAsyncDropWriter(&buf, 64)
+	var output bytes.Buffer
 
-	writer.maxLineBytes = 32
+	writer := newAsyncDropWriter(&output, 4)
 
-	if _, err := writer.Write(append(bytes.Repeat([]byte("A"), 4096), '\n')); err != nil {
-		t.Fatalf("Write(oversize) error = %v", err)
+	if _, err := writer.Write(payload); err != nil {
+		t.Fatal(err)
 	}
 
-	if _, err := writer.Write([]byte("survivor\n")); err != nil {
-		t.Fatalf("Write(survivor) error = %v", err)
+	if !bytes.Equal(payload, original) {
+		t.Fatal("stdout truncation mutated original file record")
+	}
+
+	clear(payload) // writer owns its queued copy after Write returns.
+
+	if _, err := writer.Write([]byte("{\"msg\":\"survivor\"}\n")); err != nil {
+		t.Fatal(err)
 	}
 
 	if err := writer.Close(); err != nil {
-		t.Fatalf("Close() error = %v", err)
+		t.Fatal(err)
 	}
 
-	lines := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
-	if len(lines) < 2 {
-		t.Fatalf("truncated record swallowed the next one: %q", buf.String())
+	lines := strings.Split(strings.TrimSuffix(output.String(), "\n"), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("records = %d, want truncated record, survivor and summary", len(lines))
 	}
 
-	if got := lines[0]; got != strings.Repeat("A", writer.maxLineBytes-1) {
-		t.Fatalf("truncated line = %q, want %d A's followed by a newline", got, writer.maxLineBytes-1)
+	first := decodeLogLine(t, lines[0])
+	full := decodeLogLine(t, string(original))
+
+	for _, key := range []string{"time", "level", "msg", stdoutTestEventKey, "trace_id", "span_id", stdoutTestRequestIDKey} {
+		if first[key] != full[key] {
+			t.Errorf("correlation %s = %v, want %v", key, first[key], full[key])
+		}
 	}
 
-	if lines[1] != "survivor" {
-		t.Fatalf("line after truncation = %q, want %q", lines[1], "survivor")
-	}
-}
-
-// 절단은 조용히 유실되면 안 되고 종료 요약에 관측 가능해야 한다.
-func TestAsyncDropWriterCloseReportsTruncationWithoutDrops(t *testing.T) {
-	t.Parallel()
-
-	var buf bytes.Buffer
-
-	writer := newAsyncDropWriter(&buf, 64)
-
-	writer.maxLineBytes = 32
-
-	if _, err := writer.Write(bytes.Repeat([]byte("A"), 4096)); err != nil {
-		t.Fatalf("Write(oversize) error = %v", err)
+	if first["stdout_truncated"] != true || first["stdout_original_bytes"] != float64(len(original)) {
+		t.Fatalf("truncation metadata = %v", first)
 	}
 
-	if err := writer.Close(); err != nil {
-		t.Fatalf("Close() error = %v", err)
+	if _, ok := first["diagnostic"]; ok {
+		t.Fatal("oversized arbitrary field retained")
 	}
 
-	if writer.droppedCount() != 0 {
-		t.Fatalf("droppedCount() = %d, want 0 (queue never overflowed)", writer.droppedCount())
+	if decodeLogLine(t, lines[1])["msg"] != "survivor" {
+		t.Fatal("truncation damaged next JSON record")
 	}
 
-	if !strings.Contains(buf.String(), `"truncated":1`) {
-		t.Fatalf("close summary must report truncation, got: %q", buf.String())
+	if decodeLogLine(t, lines[2])["truncated"] != float64(1) {
+		t.Fatal("shutdown summary omitted truncation")
 	}
 }
 
-func TestAsyncDropWriterTruncationCountsOnlyDeliveredLines(t *testing.T) {
+func TestAsyncDropWriterBoundsEveryRetainedField(t *testing.T) {
 	t.Parallel()
 
-	target := &syncBuffer{started: make(chan struct{}), release: make(chan struct{})}
-	releaseTarget := sync.OnceFunc(func() { close(target.release) })
-	t.Cleanup(releaseTarget)
+	for _, value := range []string{strings.Repeat("\x00", 20000), strings.Repeat("한😀\\\"\n", 10000)} {
+		fields := make(map[string]string)
+
+		for _, key := range []string{"time", "level", "msg", stdoutTestEventKey, "trace_id", "span_id", stdoutTestRequestIDKey, "extra"} {
+			fields[key] = value
+		}
+
+		payload, err := jsonv2.Marshal(fields)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		writer := &asyncDropWriter{}
+		line := writer.boundedCopy(payload)
+
+		if len(line.data) > asyncStdoutMaxLineBytes || !utf8.Valid(line.data) || !line.truncated {
+			t.Fatalf("invalid bounded result: bytes=%d truncated=%v", len(line.data), line.truncated)
+		}
+
+		record := decodeLogLine(t, string(line.data))
+
+		for key := range fields {
+			if key == "extra" {
+				continue
+			}
+
+			got, ok := record[key].(string)
+			if !ok || len(got) > 1024 || !strings.HasPrefix(value, got) {
+				t.Errorf("%s is not a bounded original string", key)
+			}
+		}
+	}
+}
+
+func TestAsyncDropWriterMalformedOversizeDoesNotExposeRawPrefix(t *testing.T) {
+	t.Parallel()
+
+	writer := &asyncDropWriter{}
+	line := writer.boundedCopy([]byte(strings.Repeat("private-invalid-json", 5000)))
+	record := decodeLogLine(t, string(line.data))
+
+	if record["stdout_invalid_json"] != true || record["stdout_truncated"] != true || bytes.Contains(line.data, []byte("private")) {
+		t.Fatalf("malformed record was not safely identified: %s", line.data)
+	}
+}
+
+func TestAsyncDropWriterFullQueueDoesNotAllocate(t *testing.T) {
+	// AllocsPerRun changes GOMAXPROCS; keep this test nonparallel.
+	target := &stallingWriter{started: make(chan struct{}), release: make(chan struct{})}
+	release := sync.OnceFunc(func() { close(target.release) })
+	t.Cleanup(release)
 
 	writer := newAsyncDropWriter(target, 1)
+	payload := oversizedJSON(t)
 
-	writer.maxLineBytes = 16
-
-	const writes = 20
-
-	oversize := bytes.Repeat([]byte("A"), 1024)
-
-	if _, err := writer.Write(oversize); err != nil {
-		t.Fatalf("Write() error = %v", err)
+	if _, err := writer.Write(payload); err != nil {
+		t.Fatal(err)
 	}
 
 	<-target.started
 
-	for range writes - 1 {
-		if _, err := writer.Write(oversize); err != nil {
-			t.Fatalf("Write() error = %v", err)
+	if _, err := writer.Write(payload); err != nil {
+		t.Fatal(err)
+	}
+
+	before := writer.droppedCount()
+	allocations := testing.AllocsPerRun(100, func() {
+		if _, err := writer.Write(payload); err != nil {
+			t.Fatal(err)
 		}
+	})
+
+	if allocations != 0 {
+		t.Fatalf("full queue allocated %v times per write", allocations)
 	}
 
-	if writer.droppedCount() == 0 {
-		t.Fatal("droppedCount() = 0, want > 0 (depth-1 queue must overflow while target stalls)")
+	if writer.droppedCount()-before != 101 {
+		t.Fatalf("full queue drops = %d, want 101", writer.droppedCount()-before)
 	}
 
-	releaseTarget()
+	release()
 
 	if err := writer.Close(); err != nil {
-		t.Fatalf("Close() error = %v", err)
+		t.Fatal(err)
 	}
 
-	if got := writer.droppedCount() + writer.truncatedCount(); got != writes {
-		t.Fatalf("dropped(%d) + truncated(%d) = %d, want %d (a write is dropped or truncated, never both)",
-			writer.droppedCount(), writer.truncatedCount(), got, writes)
-	}
-
-	reached := strings.Count(target.String(), strings.Repeat("A", writer.maxLineBytes-1))
-	switch {
-	case reached < 0 || reached > writes:
-		t.Fatalf("truncated lines reaching target = %d, want within [0, %d]", reached, writes)
-	case uint64(reached) != writer.truncatedCount():
-		t.Fatalf("truncatedCount() = %d but %d truncated lines reached the target", writer.truncatedCount(), reached)
+	if writer.truncatedCount() != 2 {
+		t.Fatalf("delivered truncations = %d, want 2", writer.truncatedCount())
 	}
 }
 
@@ -168,103 +251,107 @@ func (failingWriter) Write([]byte) (int, error) {
 	return 0, errors.New("target write failed")
 }
 
-func TestAsyncDropWriterTruncationExcludesLinesTargetRejected(t *testing.T) {
+type shortStdout struct{}
+
+func (shortStdout) Write(p []byte) (int, error) {
+	return len(p) - 1, nil
+}
+
+func TestAsyncDropWriterRejectedTruncationsCountOnlyAsDrops(t *testing.T) {
 	t.Parallel()
 
-	writer := newAsyncDropWriter(failingWriter{}, 64)
+	for _, target := range []io.Writer{failingWriter{}, shortStdout{}} {
+		writer := newAsyncDropWriter(target, 8)
+		payload := oversizedJSON(t)
 
-	writer.maxLineBytes = 16
-
-	const writes = 5
-
-	for range writes {
-		if _, err := writer.Write(bytes.Repeat([]byte("A"), 1024)); err != nil {
-			t.Fatalf("Write() error = %v", err)
+		for range 5 {
+			if _, err := writer.Write(payload); err != nil {
+				t.Fatal(err)
+			}
 		}
-	}
 
-	if err := writer.Close(); err != nil {
-		t.Fatalf("Close() error = %v", err)
-	}
+		if err := writer.Close(); err != nil {
+			t.Fatal(err)
+		}
 
-	if got := writer.truncatedCount(); got != 0 {
-		t.Fatalf("truncatedCount() = %d, want 0 (no truncated line reached the target)", got)
-	}
-
-	if got := writer.droppedCount(); got != writes {
-		t.Fatalf("droppedCount() = %d, want %d", got, writes)
+		if writer.droppedCount() != 5 || writer.truncatedCount() != 0 {
+			t.Fatalf("outcomes = (%d, %d), want (5, 0)", writer.droppedCount(), writer.truncatedCount())
+		}
 	}
 }
 
-// '한'은 3바이트라 cap 17의 절단 경계(16)가 rune을 쪼갠다. Cap 16이면 경계가 rune에 맞아떨어져
-// 절단 로직을 되돌려도 통과한다.
-func TestAsyncDropWriterTruncationKeepsRuneBoundary(t *testing.T) {
-	t.Parallel()
+func findJSONLogRecord(t *testing.T, text, message string, maxLineBytes int) map[string]any {
+	t.Helper()
 
-	var buf bytes.Buffer
+	var found map[string]any
 
-	writer := newAsyncDropWriter(&buf, 64)
+	for line := range strings.SplitSeq(strings.TrimSpace(text), "\n") {
+		if maxLineBytes > 0 && len(line)+1 > maxLineBytes {
+			t.Fatalf("stdout line exceeds byte cap: %d", len(line)+1)
+		}
 
-	writer.maxLineBytes = 17
-
-	if _, err := writer.Write([]byte(strings.Repeat("한", 64))); err != nil {
-		t.Fatalf("Write(oversize) error = %v", err)
-	}
-
-	if err := writer.Close(); err != nil {
-		t.Fatalf("Close() error = %v", err)
-	}
-
-	line, _, found := strings.Cut(buf.String(), "\n")
-	if !found {
-		t.Fatalf("forwarded payload has no record separator: %q", buf.String())
-	}
-
-	if !utf8.ValidString(line) {
-		t.Fatalf("truncated line is not valid UTF-8: %q", line)
-	}
-
-	if want := strings.Repeat("한", 5); line != want {
-		t.Fatalf("truncated line = %q, want %q", line, want)
-	}
-}
-
-func TestSG05AsyncWriterBoundsQueuedMemory_38e7cbe7(t *testing.T) {
-	t.Parallel()
-
-	target := &stallingWriter{started: make(chan struct{}), release: make(chan struct{})}
-
-	const depth = 8
-
-	writer := newAsyncDropWriter(target, depth)
-
-	writer.maxLineBytes = 16
-
-	releaseTarget := sync.OnceFunc(func() { close(target.release) })
-	t.Cleanup(releaseTarget)
-
-	huge := bytes.Repeat([]byte("Z"), 1<<20)
-	if writer.maxLineBytes >= len(huge) {
-		t.Fatalf("test setup: cap %d must be smaller than line %d", writer.maxLineBytes, len(huge))
-	}
-
-	for range 100 {
-		if _, err := writer.Write(huge); err != nil {
-			t.Fatalf("Write() error = %v", err)
+		record := decodeLogLine(t, line)
+		if record["msg"] == message {
+			found = record
 		}
 	}
 
-	if writer.droppedCount() == 0 {
-		t.Fatal("droppedCount() = 0, want > 0 (bounded queue must drop excess under stall)")
+	if found == nil {
+		t.Fatalf("missing log record %q", message)
 	}
 
-	releaseTarget()
+	return found
+}
 
-	if err := writer.Close(); err != nil {
-		t.Fatalf("Close() error = %v", err)
+func TestEnableFileLoggingOversizePreservesSanitizedFileRecord(t *testing.T) {
+	t.Parallel()
+
+	var stdout bytes.Buffer
+
+	dir := t.TempDir()
+	config := Config{Level: testInfo, Dir: dir, MaxSizeMB: 5, MaxBackups: 1, MaxAgeDays: 1}
+
+	logger, closer, err := enableFileLoggingWithStdout(&stdout, config, "oversize.log", Options{AsyncStdout: true})
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	if writer.truncatedCount() == 0 {
-		t.Fatal("truncatedCount() = 0, want > 0 (oversize lines must be truncated)")
+	const secret = "synthetic-credential-canary"
+
+	diagnostic := strings.Repeat("diagnostic detail ", 5000)
+	logger.Error("diagnostic_failed", Event("diagnostic_failed"), RequestID("request-42"),
+		slog.String("trace_id", "0123456789abcdef0123456789abcdef"),
+		slog.String("span_id", "0123456789abcdef"),
+		slog.Any("error", errors.New("API_TOKEN="+secret+" "+diagnostic)))
+	logger.Info("survivor")
+
+	if closeErr := closer.Close(); closeErr != nil {
+		t.Fatal(closeErr)
+	}
+
+	file, err := os.ReadFile(filepath.Join(dir, "oversize.log")) //nolint:gosec // Test-owned temporary file.
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if bytes.Contains(file, []byte(secret)) || strings.Contains(stdout.String(), secret) {
+		t.Fatal("sanitization was bypassed")
+	}
+
+	full := findJSONLogRecord(t, string(file), "diagnostic_failed", 0)
+	capped := findJSONLogRecord(t, stdout.String(), "diagnostic_failed", asyncStdoutMaxLineBytes)
+	summary := findJSONLogRecord(t, string(file), "stdout lane write failed", 0)
+	fullError, ok := full["error"].(string)
+
+	if !ok || !strings.Contains(fullError, diagnostic) {
+		t.Fatal("file diagnostic was truncated")
+	}
+
+	if capped["stdout_truncated"] != true || capped[stdoutTestRequestIDKey] != "request-42" {
+		t.Fatalf("stdout missing bounded diagnostic/correlation: %v", capped)
+	}
+
+	if summary == nil || summary["dropped"] != float64(0) || summary["truncated"] != float64(1) {
+		t.Fatalf("file truncation summary = %v", summary)
 	}
 }

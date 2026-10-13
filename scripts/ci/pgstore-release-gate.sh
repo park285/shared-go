@@ -36,6 +36,7 @@ trap 'exit 143' TERM
 
 # 호스트 loopback의 임의 포트에만 노출한다. 인증은 이 일회용 서버 내부에서만 생략한다.
 container_id="$(docker run --rm -d -p 127.0.0.1::5432 \
+  --label io.iris.observability.logs=exclude \
   -e POSTGRES_HOST_AUTH_METHOD=trust "${POSTGRES_IMAGE}")"
 port_binding="$(docker port "${container_id}" 5432/tcp)"
 if [[ ! "${port_binding}" =~ ^127\.0\.0\.1:([0-9]+)$ ]]; then

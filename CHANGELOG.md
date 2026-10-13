@@ -3,6 +3,14 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## 미출시
+
+## v2.12.0 - 2026-10-13
+
+- **logging:** oversized stdout 사본을 유효 JSON으로 축약하고 원본 파일을 보존합니다. full/closed admission은 복사 전 거절하며, async 내부 유실도 파일 종료 요약에 포함합니다.
+- **관측:** `SnapshotStdout`·`WriteLoggingMetrics`로 파일 기반 stdout 사본의 drop/truncate를 프로세스 누적 counter로 노출합니다. console-only·파일 lane·종료 진단은 제외하며 2초 Close는 I/O 취소를 보장하지 않습니다.
+- **CI:** 일회용 PostgreSQL에 중앙 로그 수집 제외 라벨을 명시합니다. 로컬 CI 로그와 정리 소유권은 유지합니다.
+
 ## v2.11.0 - 2026-10-11
 
 - **pgstore:** transaction-bound `InboxRecoveryDecision`·`ApplyInboxRecovery`로 업무 복구 판정을 한 bulk SQL에 적용합니다. scope·ID·message ID·attempts·token·정확한 lease snapshot을 fence로 대조하며 공용 inbox 변경은 shared-go가 소유합니다. 영향 행 수가 다르면 `ErrClaimLost`를 반환하고 호출자가 전체 transaction을 rollback해야 합니다. completed payload 제거와 수동 검토 payload 정책은 유지합니다.

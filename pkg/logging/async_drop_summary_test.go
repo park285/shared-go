@@ -210,9 +210,7 @@ func TestAsyncDropWriter_CloseIsIdempotent(t *testing.T) {
 
 	w := newAsyncDropWriter(&target, 8)
 
-	w.maxLineBytes = 16
-
-	if _, err := w.Write(bytes.Repeat([]byte("A"), 1024)); err != nil {
+	if _, err := w.Write(oversizedJSON(t)); err != nil {
 		t.Fatalf("Write() error = %v", err)
 	}
 
@@ -236,9 +234,7 @@ func TestAsyncDropWriter_ConcurrentCloseDoesNotRaceOnTarget(t *testing.T) {
 
 	w := newAsyncDropWriter(&target, 8)
 
-	w.maxLineBytes = 16
-
-	if _, err := w.Write(bytes.Repeat([]byte("A"), 1024)); err != nil {
+	if _, err := w.Write(oversizedJSON(t)); err != nil {
 		t.Fatalf("Write() error = %v", err)
 	}
 
@@ -320,8 +316,7 @@ func TestAsyncDropWriter_BlockedSummaryKeepsConcurrentCloseBounded(t *testing.T)
 
 	w := newAsyncDropWriter(target, 8)
 
-	w.maxLineBytes = 16
-	testsupport.WriteBytes(t, w, bytes.Repeat([]byte("A"), 1024))
+	testsupport.WriteBytes(t, w, oversizedJSON(t))
 
 	var closers sync.WaitGroup
 

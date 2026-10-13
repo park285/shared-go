@@ -1,9 +1,13 @@
 package logging
 
 import (
+	"bytes"
 	"context"
+	"encoding/json/jsontext"
+	jsonv2 "encoding/json/v2"
 	"io"
 	"log/slog"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -19,14 +23,14 @@ const (
 // stdout이 느린 fd에 묶여도 로깅 전체가 블로킹되지 않도록 큐가 가득 차면 해당 라인을 버린다.
 // 파일(lumberjack) lane은 동기 기록을 유지하므로 유실은 stdout 사본에 한정된다.
 type asyncDropWriter struct {
-	target       io.Writer
-	queue        chan queuedLine
-	done         chan struct{}
-	stopped      chan struct{}
-	stop         sync.Once
-	maxLineBytes int
-	dropped      atomic.Uint64
-	truncated    atomic.Uint64
+	target    io.Writer
+	queue     chan queuedLine
+	done      chan struct{}
+	stopped   chan struct{}
+	mu        sync.Mutex
+	closed    bool
+	dropped   atomic.Uint64
+	truncated atomic.Uint64
 }
 
 type queuedLine struct {
@@ -40,11 +44,10 @@ func newAsyncDropWriter(target io.Writer, depth int) *asyncDropWriter {
 	}
 
 	w := &asyncDropWriter{
-		target:       target,
-		queue:        make(chan queuedLine, depth),
-		done:         make(chan struct{}),
-		stopped:      make(chan struct{}),
-		maxLineBytes: asyncStdoutMaxLineBytes,
+		target:  target,
+		queue:   make(chan queuedLine, depth),
+		done:    make(chan struct{}),
+		stopped: make(chan struct{}),
 	}
 
 	go w.run()
@@ -80,69 +83,126 @@ func (w *asyncDropWriter) drain() {
 }
 
 func (w *asyncDropWriter) forward(line queuedLine) {
-	if _, err := w.target.Write(line.data); err != nil {
-		w.dropped.Add(1)
+	if n, err := w.target.Write(line.data); err != nil || n != len(line.data) {
+		w.recordDrop()
 
 		return
 	}
 
 	if line.truncated {
 		w.truncated.Add(1)
+		stdoutTruncated.Add(1)
 	}
 }
 
 func (w *asyncDropWriter) Write(p []byte) (int, error) {
-	line := w.boundedCopy(p)
+	// admission과 enqueue를 직렬화해 복사 전에 자리를 예약한다. Consumer는 이
+	// lock을 잡지 않으며 target I/O도 lock 밖이다. Full/closed 경로는 할당하지 않는다.
+	w.mu.Lock()
+	defer w.mu.Unlock()
 
-	select {
-	case w.queue <- line:
-	default:
-		w.dropped.Add(1)
+	if w.closed || len(w.queue) == cap(w.queue) {
+		w.recordDrop()
+
+		return len(p), nil
 	}
+
+	w.queue <- w.boundedCopy(p)
 
 	return len(p), nil
 }
 
-// 절단은 record 구분자를 남겨야 한다. 개행까지 잘라내면 잘린 조각이 다음 record와 한 줄로
-// 이어붙어, JSON lane에서는 절단된 record와 그 다음 record 2건이 함께 파싱 불가가 된다.
-func (w *asyncDropWriter) boundedCopy(p []byte) queuedLine {
-	if w.maxLineBytes <= 0 || len(p) <= w.maxLineBytes {
-		data := make([]byte, len(p))
-		copy(data, p)
+func (w *asyncDropWriter) recordDrop() {
+	w.dropped.Add(1)
+	stdoutDropped.Add(1)
+}
 
-		return queuedLine{data: data}
+// 정상 record는 JSON을 다시 해석하지 않는다. Oversized 사본만 이미 정제된 JSON에서
+// correlation을 재구성하고 나머지 필드를 생략한다. 원문 prefix를 싣지 않아 정제 전
+// 데이터를 복원하지 않으며 파일 lane에 전달할 p도 변경하지 않는다.
+func (w *asyncDropWriter) boundedCopy(p []byte) queuedLine {
+	if len(p) <= asyncStdoutMaxLineBytes {
+		return queuedLine{data: bytes.Clone(p)}
 	}
 
-	body := trimPartialRune(p[:w.maxLineBytes-1])
-	data := make([]byte, len(body)+1)
-	copy(data, body)
+	data := []byte(`{"stdout_truncated":true,"stdout_original_bytes":`)
 
-	data[len(body)] = '\n'
+	data = strconv.AppendInt(data, int64(len(p)), 10)
+
+	// Unknown fields are skipped rather than copied into a map: the oversized
+	// diagnostic is usually exactly the field this stdout copy must omit.
+	var fields struct {
+		Time      jsontext.Value `json:"time"`
+		Level     jsontext.Value `json:"level"`
+		Message   jsontext.Value `json:"msg"`
+		Event     jsontext.Value `json:"event"`
+		TraceID   jsontext.Value `json:"trace_id"`
+		SpanID    jsontext.Value `json:"span_id"`
+		RequestID jsontext.Value `json:"request_id"`
+	}
+
+	if err := jsonv2.Unmarshal(p, &fields, jsontext.AllowDuplicateNames(true)); err != nil {
+		data = append(data, ",\"stdout_invalid_json\":true}\n"...)
+
+		return queuedLine{data: data, truncated: true}
+	}
+
+	// 각 string은 최대 1024 bytes, JSON escaping은 최대 6배다.
+	// 7개 고정 key와 metadata를 포함해 항상 64 KiB보다 작다.
+	for _, field := range [...]struct {
+		key string
+		raw jsontext.Value
+	}{
+		{"time", fields.Time},
+		{"level", fields.Level},
+		{"msg", fields.Message},
+		{"event", fields.Event},
+		{"trace_id", fields.TraceID},
+		{"span_id", fields.SpanID},
+		{"request_id", fields.RequestID},
+	} {
+		var value string
+
+		if len(field.raw) == 0 || jsonv2.Unmarshal(field.raw, &value) != nil {
+			continue
+		}
+
+		if len(value) > 1024 {
+			end := 1024
+			for !utf8.RuneStart(value[end]) {
+				end--
+			}
+
+			value = value[:end]
+		}
+
+		data = append(data, ',', '"')
+		data = append(data, field.key...)
+		data = append(data, '"', ':')
+
+		var quoteErr error
+
+		data, quoteErr = jsontext.AppendQuote(data, value)
+		if quoteErr != nil {
+			// AppendQuote preserves valid JSON while reporting invalid UTF-8.
+			data = append(data, `,"stdout_invalid_utf8":true`...)
+		}
+	}
+
+	data = append(data, '}', '\n')
 
 	return queuedLine{data: data, truncated: true}
 }
 
-// 절단 지점이 multi-byte rune 한가운데면 남은 바이트가 invalid UTF-8이 되어, 여러 수집기가
-// 이를 JSON parse 오류보다 험하게 다룬다. 마지막 rune 시작 바이트까지만 되짚어(UTF-8은 최대
-// 4바이트) 잘린 sequence를 떼어낸다.
-func trimPartialRune(line []byte) []byte {
-	for i := len(line) - 1; i >= 0 && i > len(line)-utf8.UTFMax; i-- {
-		if !utf8.RuneStart(line[i]) {
-			continue
-		}
+func (w *asyncDropWriter) Close() error {
+	w.mu.Lock()
 
-		if r, size := utf8.DecodeRune(line[i:]); r == utf8.RuneError && size == 1 {
-			return line[:i]
-		}
-
-		break
+	if !w.closed {
+		w.closed = true
+		close(w.done)
 	}
 
-	return line
-}
-
-func (w *asyncDropWriter) Close() error {
-	w.stop.Do(func() { close(w.done) })
+	w.mu.Unlock()
 
 	// 요약까지 sole writer인 run이 담당한다. 타임아웃은 대기만 끝내며,
 	// 막힌 target.Write를 취소하거나 run의 종료를 보장하지 않는다.

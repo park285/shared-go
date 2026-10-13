@@ -169,8 +169,9 @@ type bestEffortWriter struct {
 }
 
 func (w *bestEffortWriter) Write(p []byte) (int, error) {
-	if _, err := w.target.Write(p); err != nil {
+	if n, err := w.target.Write(p); err != nil || n != len(p) {
 		w.dropped.Add(1)
+		stdoutDropped.Add(1)
 	}
 
 	return len(p), nil
@@ -185,12 +186,23 @@ func (w *bestEffortWriter) Close() error {
 // 요약을 stdout으로 되돌리면 이미 실패한 lane에 다시 쓰는 셈이라 파일 lane에만 남긴다.
 func (w *bestEffortWriter) writeLossSummary() {
 	dropped := w.dropped.Load()
-	if dropped == 0 || w.summary == nil {
+
+	var truncated uint64
+
+	if async, ok := w.target.(*asyncDropWriter); ok {
+		// Async Write는 의도적으로 성공을 반환한다. Inner queue의 결과를 직접
+		// 읽어 파일에도 남기되 process counter는 원래 실패 지점에서만 증가시킨다.
+		dropped += async.droppedCount()
+
+		truncated = async.truncatedCount()
+	}
+
+	if (dropped == 0 && truncated == 0) || w.summary == nil {
 		return
 	}
 
 	record := slog.NewRecord(time.Now(), slog.LevelWarn, "stdout lane write failed", 0)
-	record.AddAttrs(slog.Uint64("dropped", dropped))
+	record.AddAttrs(slog.Uint64("dropped", dropped), slog.Uint64("truncated", truncated))
 
 	if err := newFormatHandler(record.Level, w.summary).Handle(context.Background(), record); err != nil {
 		return
