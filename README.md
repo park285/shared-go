@@ -70,8 +70,14 @@ go get github.com/park285/shared-go/v2@latest
 `logging.SnapshotStdout()`과 `obsmetrics.WriteLoggingMetrics(w)`는 프로세스 수명 동안의
 `iris_stack_logging_stdout_dropped_total`·`iris_stack_logging_stdout_truncated_total`을
 제공합니다. 큐 포화·종료 후 쓰기·sink 오류·short write는 dropped, 성공적으로 전달한
-축약 사본은 truncated입니다. 파일 쓰기·console-only logger·종료 진단 자체는 집계하지 않습니다.
+축약 사본은 truncated입니다. 두 counter는 파일 쓰기·console-only logger·종료 진단 자체를 집계하지 않습니다.
 async 유실 요약은 파일에도 기록되며, 포화 큐에서는 복사 전에 거절해 추가 할당을 하지 않습니다.
+
+파일 lane 쓰기 실패는 `logging.SnapshotFile().WriteFailed`로 세고, 같은 `WriteLoggingMetrics`가
+`iris_stack_logging_file_write_failed_total`로 노출합니다. 오류나 short write로 끝난 동기 파일 기록
+(`MaxSizeMB`를 넘는 record, 디스크 부족, rotate·open 실패, 종료 시 유실 요약 기록 포함)이
+대상이며 실패한 record는 일부만 기록됐을 수 있습니다. console-only logger에는 파일 lane이 없습니다.
+0은 알려진 실패가 없다는 뜻일 뿐 내구 저장을 증명하지 않습니다.
 
 `Close`의 2초 제한은 대기 상한이지 I/O 취소가 아닙니다. timeout 이후에도 pending write가
 완료될 수 있으므로 종료 요약은 기록 시점에 알려진 결과만 나타냅니다.

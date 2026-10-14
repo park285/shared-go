@@ -77,7 +77,7 @@ func TestMoveAndPrune_FiltersSourceAndArchiveEntries(t *testing.T) {
 
 	ignoredFiles := []string{
 		filepath.Join(logDir, "other-2026-01-02T03-04-05.006.log.gz"),
-		filepath.Join(logDir, "service-2026-01-02T03-04-05.006.log"),
+		filepath.Join(logDir, "service-2026-01-02T06-04-05.006.log"),
 		filepath.Join(logDir, "service-2026-01-02T03-04-05.006.txt.gz"),
 		filepath.Join(archiveDir, "service-not-a-timestamp.log.gz"),
 		filepath.Join(archiveDir, "other-2026-01-02T03-04-05.006.log.gz"),
@@ -125,6 +125,61 @@ func TestMoveAndPrune_FiltersSourceAndArchiveEntries(t *testing.T) {
 			t.Fatalf("ignored entry %s is no longer a directory", path)
 		}
 	}
+}
+
+func TestMoveAndPrune_DefersCompressedBackupUntilOriginalRemoved(t *testing.T) {
+	t.Parallel()
+
+	logDir := t.TempDir()
+	logPath := filepath.Join(logDir, "service.log")
+	archiveDir := filepath.Join(logDir, DirName)
+
+	if err := os.Mkdir(archiveDir, LogDirPerm); err != nil {
+		t.Fatalf("create archive dir: %v", err)
+	}
+
+	archived := filepath.Join(archiveDir, "service-2026-01-02T03-04-05.006.log.gz")
+	if err := os.WriteFile(archived, []byte("archived"), LogFilePerm); err != nil {
+		t.Fatalf("write archived backup: %v", err)
+	}
+
+	const name = "service-2026-01-02T04-04-05.006.log.gz"
+
+	pending := filepath.Join(logDir, name)
+	original := filepath.Join(logDir, "service-2026-01-02T04-04-05.006.log")
+
+	if err := os.WriteFile(pending, []byte("partial"), 0o600); err != nil {
+		t.Fatalf("write pending backup: %v", err)
+	}
+
+	if err := os.WriteFile(original, []byte("original"), 0o600); err != nil {
+		t.Fatalf("write original: %v", err)
+	}
+
+	// 원본이 남은 .gz는 옮기지 않으므로 archive 보존 개수 계산에도 들어가지 않는다.
+	if err := MoveAndPrune(logPath, 1, 0); err != nil {
+		t.Fatalf("MoveAndPrune() with original error = %v", err)
+	}
+
+	assertRegularFileContent(t, pending, "partial")
+	assertRegularFileContent(t, original, "original")
+	assertPathMissing(t, filepath.Join(archiveDir, name))
+	assertRegularFileContent(t, archived, "archived")
+
+	if err := os.Remove(original); err != nil {
+		t.Fatalf("remove original: %v", err)
+	}
+
+	if err := MoveAndPrune(logPath, 1, 0); err != nil {
+		t.Fatalf("MoveAndPrune() after original removal error = %v", err)
+	}
+
+	moved := filepath.Join(archiveDir, name)
+
+	assertPathMissing(t, pending)
+	assertRegularFileContent(t, moved, "partial")
+	assertPathPerm(t, moved, LogFilePerm)
+	assertPathMissing(t, archived)
 }
 
 func TestMoveAndPrune_ReturnsDirectoryReadErrors(t *testing.T) {
@@ -361,16 +416,18 @@ func TestEnsureLogDirPerm_CreatesAndCorrectsDirectoryMode(t *testing.T) {
 	assertPathPerm(t, logDir, LogDirPerm)
 }
 
-func TestAwareWriterWrite_TriggersArchiverOnSuccessAndFailure(t *testing.T) {
+func TestAwareWriterWrite_TriggersArchiverAndCountsFailures(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name         string
 		inner        io.Writer
 		wantWriteErr bool
+		wantFailures uint64
 	}{
 		{name: "success", inner: &bytes.Buffer{}},
-		{name: "failure", inner: failingWriter{}, wantWriteErr: true},
+		{name: "failure", inner: failingWriter{}, wantWriteErr: true, wantFailures: 1},
+		{name: "short write", inner: shortWriter{}, wantFailures: 1},
 	}
 
 	for _, tt := range tests {
@@ -386,9 +443,12 @@ func TestAwareWriterWrite_TriggersArchiverOnSuccessAndFailure(t *testing.T) {
 
 			backupPath := writeCompressedBackup(t, logDir, time.Now().UTC())
 
+			var failures atomic.Uint64
+
 			writer := &AwareWriter{
 				Inner:    tt.inner,
 				Archiver: NewCompressedLogArchiver(logPath, 5, 7, true),
+				Failures: &failures,
 			}
 
 			if _, err := writer.Write([]byte("entry\n")); (err != nil) != tt.wantWriteErr {
@@ -396,6 +456,10 @@ func TestAwareWriterWrite_TriggersArchiverOnSuccessAndFailure(t *testing.T) {
 			}
 
 			writer.Archiver.wait()
+
+			if got := failures.Load(); got != tt.wantFailures {
+				t.Fatalf("failures = %d, want %d", got, tt.wantFailures)
+			}
 
 			assertPathMissing(t, backupPath)
 			assertPathExists(t, filepath.Join(logDir, DirName, filepath.Base(backupPath)))
@@ -605,6 +669,12 @@ type failingWriter struct{}
 
 func (failingWriter) Write([]byte) (int, error) {
 	return 0, errors.New("write failed")
+}
+
+type shortWriter struct{}
+
+func (shortWriter) Write(p []byte) (int, error) {
+	return len(p) - 1, nil
 }
 
 func writeArchivedBackup(t *testing.T, archiveDir string, timestamp time.Time) string {

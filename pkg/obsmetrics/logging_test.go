@@ -11,7 +11,7 @@ import (
 	"github.com/park285/shared-go/v2/pkg/logging"
 )
 
-func exerciseStdoutOutcomes(t *testing.T) logging.StdoutStats {
+func exerciseLoggingOutcomes(t *testing.T) (logging.StdoutStats, logging.FileStats) {
 	t.Helper()
 
 	// Public constructors capture os.Stdout; isolate this replacement from parallel tests.
@@ -28,6 +28,7 @@ func exerciseStdoutOutcomes(t *testing.T) logging.StdoutStats {
 
 	config := logging.Config{Level: "info", Dir: t.TempDir(), MaxSizeMB: 5, MaxBackups: 1, MaxAgeDays: 1}
 	before := logging.SnapshotStdout()
+	beforeFile := logging.SnapshotFile()
 
 	os.Stdout = capture
 
@@ -49,7 +50,10 @@ func exerciseStdoutOutcomes(t *testing.T) logging.StdoutStats {
 		t.Fatal(closeErr)
 	}
 
-	os.Stdout = capture // A closed fd deterministically exercises synchronous stdout failure.
+	// A closed fd deterministically fails the synchronous stdout copy, and a record above
+	// MaxSizeMB is rejected by the file lane, so one record fails both lanes independently.
+	config.MaxSizeMB = 1
+	os.Stdout = capture
 	logger, closer, err = logging.EnableFileLoggingWithOptions(config, "failure.log", logging.Options{})
 	os.Stdout = originalStdout
 
@@ -57,21 +61,26 @@ func exerciseStdoutOutcomes(t *testing.T) logging.StdoutStats {
 		t.Fatal(err)
 	}
 
-	logger.Info("write_failed")
+	logger.Info("write_failed", "detail", strings.Repeat("oversized ", 1<<17))
 
 	if closeErr := closer.Close(); closeErr != nil {
 		t.Fatal(closeErr)
 	}
 
-	return before
+	return before, beforeFile
 }
 
 func TestWriteLoggingMetricsExportsLiveProcessOutcomes(t *testing.T) {
-	before := exerciseStdoutOutcomes(t)
+	before, beforeFile := exerciseLoggingOutcomes(t)
 
 	stats := logging.SnapshotStdout()
 	if stats.Dropped-before.Dropped != 2 || stats.Truncated-before.Truncated != 1 {
 		t.Fatalf("actual logging outcomes = %v, baseline = %v", stats, before)
+	}
+
+	fileStats := logging.SnapshotFile()
+	if fileStats.WriteFailed-beforeFile.WriteFailed != 1 {
+		t.Fatalf("actual file outcomes = %v, baseline = %v", fileStats, beforeFile)
 	}
 
 	var output bytes.Buffer
@@ -81,8 +90,9 @@ func TestWriteLoggingMetricsExportsLiveProcessOutcomes(t *testing.T) {
 	}
 
 	values := map[string]uint64{
-		"iris_stack_logging_stdout_dropped_total":   stats.Dropped,
-		"iris_stack_logging_stdout_truncated_total": stats.Truncated,
+		"iris_stack_logging_stdout_dropped_total":    stats.Dropped,
+		"iris_stack_logging_stdout_truncated_total":  stats.Truncated,
+		"iris_stack_logging_file_write_failed_total": fileStats.WriteFailed,
 	}
 	for name, value := range values {
 		if !strings.Contains(output.String(), "# TYPE "+name+" counter\n") {
@@ -97,6 +107,10 @@ func TestWriteLoggingMetricsExportsLiveProcessOutcomes(t *testing.T) {
 
 	if got := logging.SnapshotStdout(); got != stats {
 		t.Fatalf("scraping changed monotonic counters: %v -> %v", stats, got)
+	}
+
+	if got := logging.SnapshotFile(); got != fileStats {
+		t.Fatalf("scraping changed monotonic file counters: %v -> %v", fileStats, got)
 	}
 }
 
@@ -117,7 +131,8 @@ func (w *failLoggingMetricWrite) Write(p []byte) (int, error) {
 func TestWriteLoggingMetricsStopsOnExpositionFailure(t *testing.T) {
 	t.Parallel()
 
-	for failAt := 1; failAt <= 6; failAt++ {
+	// Each counter writes HELP, TYPE, and its sample; every write position must stop exposition.
+	for failAt := 1; failAt <= 9; failAt++ {
 		writer := &failLoggingMetricWrite{failAt: failAt}
 		if WriteLoggingMetrics(writer) {
 			t.Errorf("write %d failure was hidden", failAt)

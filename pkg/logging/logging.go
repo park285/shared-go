@@ -145,7 +145,7 @@ func buildLogLanes(stdout io.Writer, logFile *lumberjack.Logger, logArchiver *ar
 		closers = append(closers, asyncStdout)
 	}
 
-	fileLane := &archive.AwareWriter{Inner: logFile, Archiver: logArchiver}
+	fileLane := &archive.AwareWriter{Inner: logFile, Archiver: logArchiver, Failures: &fileWriteFailed}
 	// 요약은 stdout lane 종료 뒤 파일에 남아야 하므로 logFile Close보다 앞서 실행된다.
 	stdoutGuard := &bestEffortWriter{target: stdoutLane, summary: fileLane}
 
@@ -160,7 +160,8 @@ func buildLogLanes(stdout io.Writer, logFile *lumberjack.Logger, logArchiver *ar
 
 // io.MultiWriter는 첫 writer가 실패하면 나머지를 건너뛴다. Stdout이 EPIPE·ENOSPC로 죽었을 때
 // 그 뒤의 파일 lane까지 함께 멈추면 내구 기록이 사라지므로, stdout 사본의 실패는 삼키고
-// 유실 건수만 세어 Close에서 파일 lane으로 요약한다. 파일 lane은 감싸지 않아 실패가 전파된다.
+// 유실 건수만 세어 Close에서 파일 lane으로 요약한다. 파일 lane은 감싸지 않아 실패가 전파되고,
+// 실패 건수는 AwareWriter가 센다.
 type bestEffortWriter struct {
 	target   io.Writer
 	summary  io.Writer

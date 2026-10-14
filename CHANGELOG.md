@@ -5,6 +5,12 @@
 
 ## 미출시
 
+## v2.13.0 - 2026-10-14
+
+- **logging:** 파일 lane 쓰기가 오류·short write로 끝난 건수를 `SnapshotFile`의 프로세스 누적 counter로 셉니다. 종료 시 유실 요약 기록도 포함하며 0은 내구 저장 증명이 아닙니다.
+- **관측:** `WriteLoggingMetrics`가 `iris_stack_logging_file_write_failed_total`을 함께 씁니다. 소비자는 새 tag로 의존성을 올린 뒤 노출됩니다.
+- **logging archive:** 압축 백업은 lumberjack이 원본을 지운 뒤에만 `archive/`로 옮깁니다. 원본이 남은 압축 중·실패 잔여 `.gz`는 로그 디렉터리에 남아 archive 보존 개수에 섞이지 않습니다.
+
 ## v2.12.0 - 2026-10-13
 
 - **logging:** oversized stdout 사본을 유효 JSON으로 축약하고 원본 파일을 보존합니다. full/closed admission은 복사 전 거절하며, async 내부 유실도 파일 종료 요약에 포함합니다.
