@@ -5,6 +5,8 @@
 
 ## 미출시
 
+- **의존성:** openai-go v3.78.0, grpc-gateway v2.32.0, `golang.org/x/crypto` v0.58.0·`x/net` v0.61.0·`x/sys` v0.49.0·`x/text` v0.43.0, genproto 최신본으로 갱신합니다. CI uv bootstrap과 로컬 하한은 0.13.1입니다. 공개 API는 유지합니다.
+
 ## v2.13.0 - 2026-10-14
 
 - **logging:** 파일 lane 쓰기가 오류·short write로 끝난 건수를 `SnapshotFile`의 프로세스 누적 counter로 셉니다. 종료 시 유실 요약 기록도 포함하며 0은 내구 저장 증명이 아닙니다.
