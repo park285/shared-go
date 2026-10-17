@@ -6,6 +6,7 @@
 ## 미출시
 
 - **의존성:** openai-go v3.78.0, grpc-gateway v2.32.0, `golang.org/x/crypto` v0.58.0·`x/net` v0.61.0·`x/sys` v0.49.0·`x/text` v0.43.0, genproto 최신본으로 갱신합니다. CI uv bootstrap과 로컬 하한은 0.13.1입니다. 공개 API는 유지합니다.
+- **전송·검증 도구:** quic-go v0.64.0, release SBOM Syft v1.54.1, pgxdb 통합 테스트의 PostgreSQL 18.6 고정 이미지를 적용합니다. 전체 release gate와 실제 PostgreSQL·HTTP/3 경계 검증을 통과했습니다.
 
 ## v2.13.0 - 2026-10-14
 

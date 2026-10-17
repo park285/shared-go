@@ -8,7 +8,7 @@ require (
 	github.com/gin-gonic/gin v1.12.0
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/openai/openai-go/v3 v3.78.0
-	github.com/quic-go/quic-go v0.63.0
+	github.com/quic-go/quic-go v0.64.0
 	github.com/stretchr/testify v1.12.1
 	github.com/ymw0407/jamo v1.0.0
 	github.com/yuin/goldmark/v2 v2.1.6

@@ -69,7 +69,7 @@ func startPostgres() (string, string, error) {
 	out, err := exec.CommandContext(runCtx, "docker", "run", "-d", "--rm",
 		"-e", "POSTGRES_PASSWORD=sharedgo-local-test-placeholder",
 		"-e", "POSTGRES_DB=sharedgo_test",
-		"-P", "postgres:16-alpine",
+		"-P", "postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873",
 	).Output()
 	if err != nil {
 		return "", "", fmt.Errorf("docker run: %w: %s", err, commandStderr(err))
