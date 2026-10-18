@@ -34,7 +34,7 @@ func (s *Store) ClaimBatch(ctx context.Context, limit int) ([]InboxClaim, error)
 			payload string
 		)
 
-		if err := rows.Scan(&claim.ID, &claim.MessageID, &claim.OrderingKey, &payload, &claim.ClaimToken, &claim.Attempts, &claim.CreatedAt); err != nil {
+		if err := rows.Scan(&claim.ID, &claim.MessageID, &claim.OrderingKey, &payload, &claim.ClaimToken, &claim.Attempts, &claim.CreatedAt, &claim.EligibleAt); err != nil {
 			return claims, fmt.Errorf("pgstore: scan inbox batch: %w", err)
 		}
 

@@ -1,6 +1,7 @@
 package workercontract
 
 import (
+	"bytes"
 	"encoding/json/jsontext"
 	jsonv2 "encoding/json/v2"
 	"errors"
@@ -11,47 +12,152 @@ import (
 	"strings"
 )
 
+// DecodeWorkerSettingsSet는 모든 worker의 decoder를 빠짐없이 지정한 뒤 strict decode한다.
+func DecodeWorkerSettingsSet(loaded LoadedProfile, destinations map[string]any) error {
+	if len(loaded.Profile.Workers) != len(destinations) {
+		return errors.New("worker settings: decoder worker set must match profile")
+	}
+
+	ids := sortedWorkerIDs(loaded.Profile.Workers)
+	for _, id := range ids {
+		if _, ok := destinations[id]; !ok {
+			return fmt.Errorf("decode %s settings: worker decoder is missing", id)
+		}
+	}
+
+	for _, id := range ids {
+		if err := DecodeWorkerSettings(loaded, id, destinations[id]); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // DecodeWorkerSettings는 workerID의 service-owned settings를 destination(struct pointer)에 해석한다.
 //
-// Settings의 키 집합은 destination의 json 태그 필드 집합과 정확히 같아야 한다. 알 수 없는 키는
-// DecodeSettings가, 빠진 키는 이 함수가 거부하므로 zero value로 조용히 채워지는 설정이 없다.
+// Settings의 모든 struct 키 집합은 json 태그 필드 집합과 정확히 같아야 한다.
+// 포인터 외의 null과 빠진 키는 거부하므로 zero value로 조용히 채워지는 설정이 없다.
 func DecodeWorkerSettings(loaded LoadedProfile, workerID string, destination any) error {
 	worker, ok := loaded.Profile.Workers[workerID]
 	if !ok {
 		return fmt.Errorf("decode %s settings: worker is missing", workerID)
 	}
 
-	expected, err := settingsKeys(destination)
-	if err != nil {
-		return fmt.Errorf("decode %s settings: %w", workerID, err)
+	typ := reflect.TypeOf(destination)
+	if typ == nil || typ.Kind() != reflect.Pointer || typ.Elem().Kind() != reflect.Struct {
+		return fmt.Errorf("decode %s settings: settings destination must be a struct pointer", workerID)
+	}
+
+	if reflect.ValueOf(destination).IsNil() {
+		return fmt.Errorf("decode %s settings: settings destination must not be nil", workerID)
 	}
 
 	if err := DecodeSettings(worker.Settings, destination); err != nil {
 		return fmt.Errorf("decode %s settings: %w", workerID, err)
 	}
 
-	var fields map[string]jsontext.Value
-
-	if err := jsonv2.Unmarshal(worker.Settings, &fields); err != nil {
-		return fmt.Errorf("decode %s settings keys: %w", workerID, err)
-	}
-
-	actual := slices.Sorted(maps.Keys(fields))
-	if !slices.Equal(actual, expected) {
-		return fmt.Errorf("decode %s settings: got keys %v, want %v", workerID, actual, expected)
+	if err := validateSettingsValue(worker.Settings, typ.Elem(), "settings"); err != nil {
+		return fmt.Errorf("decode %s settings: %w", workerID, err)
 	}
 
 	return nil
 }
 
-func settingsKeys(destination any) ([]string, error) {
-	typ := reflect.TypeOf(destination)
-	if typ == nil || typ.Kind() != reflect.Pointer || typ.Elem().Kind() != reflect.Struct {
-		return nil, errors.New("settings destination must be a struct pointer")
+func validateSettingsValue(raw jsontext.Value, typ reflect.Type, path string) error {
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		if typ.Kind() != reflect.Pointer {
+			return fmt.Errorf("%s: null requires a pointer field", path)
+		}
+
+		return nil
 	}
 
-	typ = typ.Elem()
+	for typ.Kind() == reflect.Pointer {
+		typ = typ.Elem()
+	}
 
+	switch {
+	case typ.Kind() == reflect.Struct:
+		return validateSettingsStruct(raw, typ, path)
+	case typ.Kind() == reflect.Map:
+		return validateSettingsMap(raw, typ, path)
+	case typ.Kind() == reflect.Slice || typ.Kind() == reflect.Array:
+		return validateSettingsArray(raw, typ, path)
+	default:
+		return nil
+	}
+}
+
+func validateSettingsStruct(raw jsontext.Value, typ reflect.Type, path string) error {
+	expected, err := settingsKeys(typ)
+	if err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+
+	var fields map[string]jsontext.Value
+
+	if err := jsonv2.Unmarshal(raw, &fields); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+
+	actual := slices.Sorted(maps.Keys(fields))
+	if !slices.Equal(actual, expected) {
+		return fmt.Errorf("%s: got keys %v, want %v", path, actual, expected)
+	}
+
+	for field := range typ.Fields() {
+		name, included := settingsFieldName(field)
+		if !included {
+			continue
+		}
+
+		if err := validateSettingsValue(fields[name], field.Type, path+"."+name); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func validateSettingsMap(raw jsontext.Value, typ reflect.Type, path string) error {
+	var entries map[string]jsontext.Value
+
+	if err := jsonv2.Unmarshal(raw, &entries); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+
+	for key, value := range entries {
+		if err := validateSettingsValue(value, typ.Elem(), fmt.Sprintf("%s[%q]", path, key)); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func validateSettingsArray(raw jsontext.Value, typ reflect.Type, path string) error {
+	// Byte slices may be encoded as strings rather than JSON arrays.
+	if bytes.TrimSpace(raw)[0] != '[' {
+		return nil
+	}
+
+	var elements []jsontext.Value
+
+	if err := jsonv2.Unmarshal(raw, &elements); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+
+	for index, value := range elements {
+		if err := validateSettingsValue(value, typ.Elem(), fmt.Sprintf("%s[%d]", path, index)); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func settingsKeys(typ reflect.Type) ([]string, error) {
 	keys := make([]string, 0, typ.NumField())
 
 	for field := range typ.Fields() {
@@ -59,23 +165,29 @@ func settingsKeys(destination any) ([]string, error) {
 			return nil, errors.New("settings destination must not embed structs")
 		}
 
-		if !field.IsExported() {
-			continue
+		if name, included := settingsFieldName(field); included {
+			keys = append(keys, name)
 		}
-
-		name, _, _ := strings.Cut(field.Tag.Get("json"), ",")
-
-		switch name {
-		case "-":
-			continue
-		case "":
-			name = field.Name
-		}
-
-		keys = append(keys, name)
 	}
 
 	slices.Sort(keys)
 
 	return keys, nil
+}
+
+func settingsFieldName(field reflect.StructField) (string, bool) {
+	if !field.IsExported() {
+		return "", false
+	}
+
+	name, _, _ := strings.Cut(field.Tag.Get("json"), ",")
+	if name == "-" {
+		return "", false
+	}
+
+	if name == "" {
+		name = field.Name
+	}
+
+	return name, true
 }

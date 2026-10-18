@@ -9,6 +9,7 @@ import (
 	"io"
 	"regexp"
 	"slices"
+	"time"
 )
 
 const (
@@ -45,6 +46,21 @@ const (
 type DurationPolicy struct {
 	Mode         DurationMode `json:"mode"`
 	Milliseconds *int64       `json:"milliseconds"`
+}
+
+// Milliseconds는 service가 범위를 검증한 값을 기본값이나 보정 없이 변환한다.
+func Milliseconds(value int64) time.Duration {
+	return time.Duration(value) * time.Millisecond
+}
+
+// FixedDuration은 유효한 fixed 정책만 반환한다. None/per_job은 별도 정책이다.
+func (p DurationPolicy) FixedDuration() (time.Duration, bool) {
+	if p.Mode != DurationModeFixed || p.Milliseconds == nil ||
+		*p.Milliseconds < 1 || *p.Milliseconds > MaxFixedDurationMS {
+		return 0, false
+	}
+
+	return Milliseconds(*p.Milliseconds), true
 }
 
 // CapacityPolicy는 bounded/unbounded queue 용량을 표현한다.
@@ -110,13 +126,46 @@ func KnownIdentity(service, role string) (Identity, error) {
 
 // LoadedProfile은 검증된 profile과 exact-byte identity다.
 type LoadedProfile struct {
-	Profile Profile
-	Hash    string
-	path    string
+	Profile    Profile
+	Hash       string
+	path       string
+	sourcePath string
 }
 
-// Path는 file checker가 같은 source를 다시 확인할 때만 사용한다.
+// Path는 실행 설정을 읽은 파일 경로를 반환한다. 별도 source 경로는 drift 관측에만 쓰인다.
 func (p LoadedProfile) Path() string { return p.path }
+
+// IdentitySummary는 preflight에서 설정 원문과 파일 경로 없이 공개하는 loaded identity다.
+type IdentitySummary struct {
+	ContractVersion int      `json:"contractVersion"`
+	Service         string   `json:"service"`
+	Role            string   `json:"role"`
+	ProfileID       string   `json:"profileId"`
+	ProfileHash     string   `json:"profileHash"`
+	Workers         []string `json:"workers"`
+}
+
+func (p LoadedProfile) IdentitySummary() IdentitySummary {
+	return IdentitySummary{
+		ContractVersion: p.Profile.ContractVersion,
+		Service:         p.Profile.Service,
+		Role:            p.Profile.Role,
+		ProfileID:       p.Profile.ProfileID,
+		ProfileHash:     p.Hash,
+		Workers:         sortedWorkerIDs(p.Profile.Workers),
+	}
+}
+
+func sortedWorkerIDs(workers map[string]WorkerProfile) []string {
+	ids := make([]string, 0, len(workers))
+	for id := range workers {
+		ids = append(ids, id)
+	}
+
+	slices.Sort(ids)
+
+	return ids
+}
 
 // DecodeSettings는 service-owned settings를 unknown field와 trailing JSON 없이 해석한다.
 func DecodeSettings(raw jsontext.Value, destination any) error {

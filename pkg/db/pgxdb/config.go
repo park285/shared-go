@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 var queryExecModeNames = map[string]string{
@@ -40,8 +42,8 @@ func (c *Config) Validate() error {
 		return errors.New("pgxdb: host or socket path is required")
 	}
 
-	if strings.TrimSpace(c.SSLMode) == "" {
-		return errors.New("pgxdb: sslmode is required (no default; caller must set it explicitly)")
+	if _, err := NormalizeSSLMode(c.SSLMode); err != nil {
+		return err
 	}
 
 	if c.QueryExecMode != "" && normalizeQueryExecMode(c.QueryExecMode) == "" {
@@ -92,7 +94,7 @@ func (c *Config) buildDSN(password string) string {
 		libpqKeywordValue("user", c.User),
 		libpqKeywordValue("password", password),
 		libpqKeywordValue("dbname", c.Name),
-		libpqKeywordValue("sslmode", c.SSLMode),
+		libpqKeywordValue("sslmode", strings.ToLower(strings.TrimSpace(c.SSLMode))),
 	)
 
 	if sslRootCert != "" {
@@ -133,79 +135,213 @@ func normalizeQueryExecMode(mode string) string {
 	return queryExecModeNames[strings.ToLower(strings.TrimSpace(mode))]
 }
 
-func validateExplicitSSLMode(rawDSN string) error {
-	values, err := explicitSSLModeValues(rawDSN)
-	if err != nil {
-		return fmt.Errorf("explicit SSL mode values: %w", err)
+// NormalizeSSLMode requires an explicit supported mode and normalizes its case
+// and surrounding whitespace. Services enforce their own deployment TLS policy.
+func NormalizeSSLMode(mode string) (string, error) {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	switch mode {
+	case "disable", "allow", "prefer", "require", "verify-ca", "verify-full":
+		return mode, nil
+	case "":
+		return "", errors.New("pgxdb: sslmode is required (no implicit default)")
+	default:
+		return "", errors.New("pgxdb: invalid sslmode (allowed: disable, allow, prefer, require, verify-ca, verify-full)")
 	}
-
-	if len(values) == 0 {
-		return errors.New("pgxdb: sslmode is required in dsn (no implicit default)")
-	}
-
-	if len(values) != 1 {
-		return errors.New("pgxdb: sslmode must be specified exactly once in dsn")
-	}
-
-	if strings.TrimSpace(values[0]) == "" {
-		return errors.New("pgxdb: sslmode must not be empty in dsn")
-	}
-
-	return nil
 }
 
-func explicitSSLModeValues(rawDSN string) ([]string, error) {
+// ParseConfig parses a single-connection DSN with an explicit, normalized sslmode.
+// Deployment-specific TLS requirements remain the caller's responsibility.
+// Parse failures deliberately omit the underlying error: parsers may include
+// credentials even when their connection-string redaction succeeds.
+func ParseConfig(rawDSN string) (*pgx.ConnConfig, error) {
+	dsn, err := normalizeDSN(rawDSN)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg, err := pgx.ParseConfig(dsn)
+	if err != nil {
+		return nil, errors.New("pgxdb: parse dsn: invalid connection configuration")
+	}
+
+	return cfg, nil
+}
+
+func normalizeDSN(rawDSN string) (string, error) {
+	rawDSN = strings.TrimSpace(rawDSN)
+	if rawDSN == "" {
+		return "", errors.New("pgxdb: dsn is required")
+	}
+
 	if strings.HasPrefix(rawDSN, "postgres://") || strings.HasPrefix(rawDSN, "postgresql://") {
-		parsed, err := url.Parse(rawDSN)
-		if err != nil {
-			return nil, fmt.Errorf("pgxdb: parse dsn URL: %w", err)
-		}
-
-		query, err := url.ParseQuery(parsed.RawQuery)
-		if err != nil {
-			return nil, fmt.Errorf("pgxdb: parse dsn query: %w", err)
-		}
-
-		return query["sslmode"], nil
+		return normalizeURLDSN(rawDSN)
 	}
 
-	out, err := keywordSSLModeValues(rawDSN)
-	if err != nil {
-		return out, fmt.Errorf("keyword SSL mode values: %w", err)
-	}
-
-	return out, nil
+	return normalizeKeywordDSN(rawDSN)
 }
 
-func keywordSSLModeValues(rawDSN string) ([]string, error) {
-	remaining := strings.TrimLeft(rawDSN, dsnASCIISpaces)
+func normalizeURLDSN(rawDSN string) (string, error) {
+	queryOffset := urlDSNQueryStart(rawDSN)
+	if queryOffset < 0 {
+		return "", errors.New("pgxdb: sslmode is required in dsn (no implicit default)")
+	}
 
-	var values []string
+	mode := ""
+	valueStart, valueEnd := 0, 0
 
-	for remaining != "" {
-		equals := strings.IndexByte(remaining, '=')
-		if equals < 0 {
-			return nil, errors.New("pgxdb: invalid keyword/value dsn")
+	for remaining := rawDSN[queryOffset:]; remaining != ""; {
+		pair, rest, _ := strings.Cut(remaining, "&")
+		key, value, hasValue := strings.Cut(pair, "=")
+
+		if !hasValue || strings.Contains(value, "=") {
+			return "", errors.New("pgxdb: parse dsn query: invalid query")
 		}
 
-		key := strings.Trim(remaining[:equals], dsnASCIISpaces)
-		if key == "" {
-			return nil, errors.New("pgxdb: invalid keyword/value dsn")
-		}
-
-		value, rest, err := consumeKeywordDSNValue(strings.TrimLeft(remaining[equals+1:], dsnASCIISpaces))
+		// pgx trims raw ASCII spaces before percent-decoding keys and keeps
+		// literal '+'. Decoded spaces must not turn another key into sslmode.
+		key, err := url.PathUnescape(strings.Trim(key, " "))
 		if err != nil {
-			return nil, fmt.Errorf("consume keyword DSN value: %w", err)
+			return "", errors.New("pgxdb: parse dsn query: invalid key")
 		}
 
 		if key == "sslmode" {
-			values = append(values, value)
+			if mode != "" {
+				return "", errors.New("pgxdb: sslmode must be specified exactly once in dsn (no implicit default)")
+			}
+
+			// Retain the existing form-encoded whitespace normalization for
+			// this policy value only; other URI values follow pgx semantics.
+			decoded, err := url.QueryUnescape(value)
+			if err != nil {
+				return "", errors.New("pgxdb: parse dsn query: invalid sslmode")
+			}
+
+			mode, err = NormalizeSSLMode(decoded)
+			if err != nil {
+				return "", err
+			}
+
+			valueStart = len(rawDSN) - len(remaining) + len(pair) - len(value)
+			valueEnd = valueStart + len(value)
 		}
 
 		remaining = rest
 	}
 
-	return values, nil
+	if mode == "" {
+		return "", errors.New("pgxdb: sslmode must be specified exactly once in dsn (no implicit default)")
+	}
+
+	if rawDSN[valueStart:valueEnd] == mode {
+		return rawDSN, nil
+	}
+
+	// Replace only the mode value; preserve raw query boundaries, semicolons,
+	// '+' and percent-encoded bytes in credentials and unrelated options.
+	return rawDSN[:valueStart] + mode + rawDSN[valueEnd:], nil
+}
+
+// urlDSNQueryStart follows pgx v5's userinfo, host-list, port and path
+// boundaries without interpreting the components. Full URI validation is pgx's
+// responsibility; -1 means no query could be located at those boundaries.
+func urlDSNQueryStart(rawDSN string) int {
+	_, remaining, _ := strings.Cut(rawDSN, "://")
+	if i := strings.IndexAny(remaining, "@/"); i >= 0 && remaining[i] == '@' {
+		remaining = remaining[i+1:]
+	}
+
+	for {
+		if strings.HasPrefix(remaining, "[") {
+			var closed bool
+
+			_, remaining, closed = strings.Cut(remaining, "]")
+
+			if !closed {
+				return -1
+			}
+		} else {
+			i := strings.IndexAny(remaining, ":/?,")
+			if i < 0 {
+				return -1
+			}
+
+			remaining = remaining[i:]
+		}
+
+		if port, ok := strings.CutPrefix(remaining, ":"); ok {
+			i := strings.IndexAny(port, "/?,")
+			if i < 0 {
+				return -1
+			}
+
+			remaining = port[i:]
+		}
+
+		nextHost, ok := strings.CutPrefix(remaining, ",")
+		if !ok {
+			break
+		}
+
+		remaining = nextHost
+	}
+
+	if strings.HasPrefix(remaining, "/") {
+		i := strings.IndexByte(remaining, '?')
+		if i < 0 {
+			return -1
+		}
+
+		remaining = remaining[i:]
+	}
+
+	if !strings.HasPrefix(remaining, "?") {
+		return -1
+	}
+
+	return len(rawDSN) - len(remaining) + 1
+}
+
+func normalizeKeywordDSN(rawDSN string) (string, error) {
+	remaining := rawDSN
+	mode := ""
+	valueStart, valueEnd := 0, 0
+
+	for remaining != "" {
+		key, input, ok := strings.Cut(remaining, "=")
+		if !ok || strings.Trim(key, dsnASCIISpaces) == "" {
+			return "", errors.New("pgxdb: invalid keyword/value dsn")
+		}
+
+		input = strings.TrimLeft(input, dsnASCIISpaces)
+
+		value, rest, err := consumeKeywordDSNValue(input)
+		if err != nil {
+			return "", err
+		}
+
+		if strings.Trim(key, dsnASCIISpaces) == "sslmode" {
+			if mode != "" {
+				return "", errors.New("pgxdb: sslmode must be specified exactly once in dsn")
+			}
+
+			mode, err = NormalizeSSLMode(value)
+			if err != nil {
+				return "", err
+			}
+
+			valueStart = len(rawDSN) - len(input)
+			valueEnd = len(rawDSN) - len(rest)
+		}
+
+		remaining = rest
+	}
+
+	if mode == "" {
+		return "", errors.New("pgxdb: sslmode is required in dsn (no implicit default)")
+	}
+
+	// Replace only sslmode; preserve all other options and escaped credentials.
+	return rawDSN[:valueStart] + libpqQuote(mode) + " " + rawDSN[valueEnd:], nil
 }
 
 func consumeKeywordDSNValue(input string) (string, string, error) {
@@ -264,15 +400,16 @@ type PoolConfig struct {
 	ConnMaxLifetime       time.Duration
 	ConnMaxLifetimeJitter time.Duration
 	ConnMaxIdleTime       time.Duration
-	// HealthCheckPeriod가 0 이하면 pgx가 채운 값(ParseConfig 기본 1분)을 그대로 둔다.
-	// pgxpool은 이 값으로 time.NewTicker를 만들므로 0을 pgxpool.Config에 대입하면 panic한다.
+	// Zero preserves pgx's parsed health-check period; negative values are invalid.
 	HealthCheckPeriod time.Duration
+	// PingTimeout bounds acquire-time health pings, not the startup Ping budget.
+	// Zero preserves the parsed pgx/DSN value.
+	PingTimeout time.Duration
 }
 
 func DefaultPoolConfig() PoolConfig {
 	return PoolConfig{
-		// MinConns 0은 pgx 기본값이다. withPoolDefaults의 <=0 sentinel이 소비자가 명시한
-		// 0(풀 최소 크기 없음)을 다시 기본값으로 덮어쓰지 않으려면 여기서도 0이어야 한다.
+		// Zero explicitly permits an idle pool with no minimum connections.
 		MinConns:        0,
 		MaxConns:        20,
 		ConnMaxLifetime: time.Hour,

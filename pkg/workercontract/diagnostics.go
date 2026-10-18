@@ -224,13 +224,13 @@ type WorkerDiagnostics struct {
 	Totals   WorkerTotals        `json:"totals"`
 }
 
-// ExecutorDiagnostics는 process-local executor 상태다.
+// ExecutorDiagnostics는 process-local executor 상태다. 관측 불가인 동적 값은 함께 nil이다.
 type ExecutorDiagnostics struct {
-	Enabled             bool  `json:"enabled"`
-	ConfiguredWorkers   int   `json:"configuredWorkers"`
-	RunningWorkers      int64 `json:"runningWorkers"`
-	InFlight            int64 `json:"inFlight"`
-	OldestInFlightAgeMS int64 `json:"oldestInFlightAgeMs"`
+	Enabled             bool   `json:"enabled"`
+	ConfiguredWorkers   int    `json:"configuredWorkers"`
+	RunningWorkers      *int64 `json:"runningWorkers"`
+	InFlight            *int64 `json:"inFlight"`
+	OldestInFlightAgeMS *int64 `json:"oldestInFlightAgeMs"`
 }
 
 // QueueDiagnostics는 latest-attempt snapshot 의미를 보존한다.

@@ -42,6 +42,10 @@ func LoadProfileFile(path string, identity Identity) (LoadedProfile, error) {
 		return LoadedProfile{}, fmt.Errorf("read regular profile: %w", err)
 	}
 
+	if len(raw) == 0 || len(raw) > MaxProfileBytes || bytes.HasPrefix(raw, []byte{0xef, 0xbb, 0xbf}) {
+		return LoadedProfile{}, errors.New("worker profile: invalid file content")
+	}
+
 	profile, err := decodeProfile(raw, identity)
 	if err != nil {
 		return LoadedProfile{}, fmt.Errorf("worker profile: %w", err)
@@ -53,44 +57,30 @@ func LoadProfileFile(path string, identity Identity) (LoadedProfile, error) {
 }
 
 func readRegularProfile(path string) ([]byte, error) {
-	before, err := os.Lstat(path)
+	file, err := openRegularProfile(path)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, profileFileError{code: ProfileFileMissing}
-		}
-
-		return nil, profileFileError{code: ProfileFileUnreadable}
-	}
-
-	if !before.Mode().IsRegular() {
-		return nil, profileFileError{code: ProfileFileTypeInvalid}
-	}
-
-	// #nosec G304 -- 운영자가 지정한 프로필 경로이며 Lstat·File.Stat의 inode 비교로 바꿔치기를 거부한다.
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, profileFileError{code: ProfileFileUnreadable}
+		return nil, profileOpenError(err)
 	}
 	defer file.Close()
-
-	after, lstatErr := os.Lstat(path)
-	opened, statErr := file.Stat()
-
-	if lstatErr != nil || statErr != nil || !after.Mode().IsRegular() || !opened.Mode().IsRegular() ||
-		!os.SameFile(before, after) || !os.SameFile(after, opened) {
-		return nil, profileFileError{code: ProfileFileTypeInvalid}
-	}
 
 	raw, err := io.ReadAll(io.LimitReader(file, MaxProfileBytes+1))
 	if err != nil {
 		return nil, profileFileError{code: ProfileFileUnreadable}
 	}
 
-	if len(raw) == 0 || len(raw) > MaxProfileBytes || bytes.HasPrefix(raw, []byte{0xef, 0xbb, 0xbf}) {
-		return nil, profileFileError{code: ProfileFileTypeInvalid}
+	return raw, nil
+}
+
+func profileOpenError(err error) error {
+	if fileErr, ok := errors.AsType[profileFileError](err); ok {
+		return fileErr
 	}
 
-	return raw, nil
+	if errors.Is(err, os.ErrNotExist) {
+		return profileFileError{code: ProfileFileMissing}
+	}
+
+	return profileFileError{code: ProfileFileUnreadable}
 }
 
 // ProfileFileStatus는 loaded bytes와 현재 source의 match 상태만 공개한다.
@@ -110,7 +100,7 @@ type ProfileFileChecker struct {
 
 // NewProfileFileChecker는 이미 load된 exact hash를 기준으로 checker를 만든다.
 func NewProfileFileChecker(profile LoadedProfile, loadedAt time.Time) *ProfileFileChecker {
-	return &ProfileFileChecker{
+	checker := &ProfileFileChecker{
 		path:       profile.path,
 		loadedHash: profile.Hash,
 		status: ProfileFileStatus{
@@ -118,6 +108,13 @@ func NewProfileFileChecker(profile LoadedProfile, loadedAt time.Time) *ProfileFi
 			CheckedAtEpochMS: loadedAt.UnixMilli(),
 		},
 	}
+
+	if profile.sourcePath != "" {
+		checker.path = profile.sourcePath
+		checker.Check(loadedAt)
+	}
+
+	return checker
 }
 
 // Check는 현재 bytes를 비교하고 replacement hash를 보존하지 않는다.

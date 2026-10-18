@@ -134,11 +134,15 @@ func (r *Registry) addSingleWorkerMetricSamples(byName map[string]*MetricFamily,
 	addSample(byName, "iris_stack_worker_policy_info", policyLabels, 1)
 	addSample(byName, "iris_stack_worker_enabled", labels, boolFloat(diagnostics.Executor.Enabled))
 	addSample(byName, "iris_stack_worker_configured_workers", labels, float64(diagnostics.Executor.ConfiguredWorkers))
-	addSample(byName, "iris_stack_worker_running_workers", labels, float64(diagnostics.Executor.RunningWorkers))
 	addWorkerPolicySamples(byName, labels, profileWorker)
 	addWorkerQueueSamples(byName, labels, diagnostics)
-	addSample(byName, "iris_stack_worker_in_flight", labels, float64(diagnostics.Executor.InFlight))
-	addSample(byName, "iris_stack_worker_oldest_in_flight_age_seconds", labels, millisecondsToSeconds(diagnostics.Executor.OldestInFlightAgeMS))
+
+	if diagnostics.Executor.RunningWorkers != nil {
+		addSample(byName, "iris_stack_worker_running_workers", labels, float64(*diagnostics.Executor.RunningWorkers))
+		addSample(byName, "iris_stack_worker_in_flight", labels, float64(*diagnostics.Executor.InFlight))
+		addSample(byName, "iris_stack_worker_oldest_in_flight_age_seconds", labels, millisecondsToSeconds(*diagnostics.Executor.OldestInFlightAgeMS))
+	}
+
 	addAdmissionSamples(byName, labels, diagnostics.Totals.Admissions)
 	addAttemptSamples(byName, labels, diagnostics.Totals.Attempts)
 	addDiscardSamples(byName, labels, diagnostics.Totals.Discarded)

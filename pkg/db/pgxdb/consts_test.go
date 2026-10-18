@@ -1,6 +1,7 @@
 package pgxdb
 
 const (
-	testDisable   = "disable"
-	testLocalhost = "localhost"
+	testDisable    = "disable"
+	testLocalhost  = "localhost"
+	testVerifyFull = "verify-full"
 )

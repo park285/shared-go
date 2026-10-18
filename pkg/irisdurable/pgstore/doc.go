@@ -15,6 +15,16 @@
 // 행을 볼 수 없으므로, Admit이 ordering key마다 advisory transaction lock을 잡아 같은 key의
 // 삽입 순서와 가시성 순서를 일치시킨다.
 //
+// Claim and ready snapshots compose the same executable eligibility fragments.
+// Ready age uses available_at, or the later expired lease threshold when claims
+// directly reclaim work. It is not the historical instant a predecessor stopped
+// blocking the row. Snapshots include logically eligible locked rows; SKIP LOCKED
+// remains claim-only. InboxClaim retains both EligibleAt and original CreatedAt.
+//
+// Retire requires an existing transaction before any SQL is issued. Its caller
+// must roll back on every query, scan or read error and consume returned payloads
+// only after confirmed commit. No ambiguous commit is converted into a retry.
+//
 // 봇별 확장(operator grant, replay/discard audit, image fallback 행, chunk 진행)은 이 패키지가
 // 만든 행 id를 참조하는 봇 소유 side table이나 phase 값으로 표현하고 공용 상태 기계를 우회하지
 // 않는다. reissue 세대는 client_request_id 파생(irisdurable.ReissueLadder)으로 표현하므로

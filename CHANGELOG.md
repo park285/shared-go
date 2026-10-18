@@ -3,8 +3,17 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
-## 미출시
+## v2.14.0 - 2026-10-18
 
+- **소비자 동시 이전:** `workercontract.ExecutorDiagnostics`의 `RunningWorkers`·`InFlight`·`OldestInFlightAgeMS`가 `int64`에서 `*int64`로 바뀝니다. 직접 읽는 호출자는 nil을 관측 불가로 처리해야 하며, `ExecutorSnapshot`의 scalar 필드는 유지합니다. 구조화 pool의 양수 `MaxConns`, settings의 정확한 필드 집합, transaction 안의 `Retire`가 필수입니다. 스택 소비자 코드·프로필·pin을 함께 이전하는 릴리스이며 하위 호환 patch가 아닙니다.
+- **PostgreSQL SCRAM:** `pgxdb.SCRAMVerifier`는 PostgreSQL/libpq SASLprep과 pgx PRECIS의 원문 fallback까지 비교해 양쪽 클라이언트가 같은 바이트를 사용할 때만 verifier를 생성합니다. 호환 Unicode와 원문 fallback은 보존하고, 서로 다른 준비 결과·빈 값·NUL·잘못된 UTF-8은 역할 변경 전에 일반 오류로 거부합니다. `github.com/xdg-go/stringprep v1.0.4`를 직접 의존성으로 고정하며 4096회·새 128-bit salt를 사용합니다.
+- **워커 설정·진단:** settings의 중첩 필드 집합과 non-pointer `null`을 엄격히 검증합니다. 마지막 성공 표본이 32초를 넘으면 `queue_snapshot_stale`·HTTP 503으로 보고하고 depth·age를 숨깁니다. 포인터 `null`, 마지막 성공 시각과 최신 실패 원인은 보존합니다.
+- **PostgreSQL 연결·정리:** 명시적 sslmode 검증·정규화를 공통 경로로 모으고 잘못된 DSN의 파싱 오류에서 입력·비밀번호를 노출하지 않습니다. `ParseConfig`를 단일 연결 호출자에 제공하며, `Rollback`과 `RollbackDeferred`는 호출자 취소와 분리된 5초 예산으로 정리합니다.
+- **PostgreSQL URI 파싱:** bracket·multi-host authority 안의 가짜 sslmode로 명시적 모드 검증을 우회하던 결함을 수정합니다. 실제 query의 sslmode 값만 정규화하여 raw 세미콜론 password·application_name, literal `+`와 percent-encoded 공백을 보존합니다. 실제 pool의 연결 전 거부와 ChatBotGo migrator의 세미콜론 URI 인증·마이그레이션 완료를 확인했습니다.
+- **워커 정본·release 관측:** exact roster/settings decoder, 정렬된 identity summary와 검증된 duration helper를 공통화합니다. 빈 registry와 shape/worker 키 불일치를 거부하며 invalid executor의 세 동적 값만 함께 `null`로 표시합니다. effective profile과 observation-only source를 분리하고 Unix 단일 no-follow/nonblocking open과 Windows 전용 type/reparse 검사를 제공합니다.
+- **DB 실행 정책:** caller-owned `RuntimeParams`, 서버 CancelRequest, acquire health `PingTimeout`, 정적 pool Stat 메트릭을 제공합니다. 구조화 pool은 양수 maximum과 0 이상 minimum이 필수이고 DSN zero overlay는 미지정입니다. jitter 보존과 minimum-pool connect-timeout clamp의 수명을 문서화합니다.
+- **DB control capacity:** opt-in `AcquirePolicy`가 기존 physical maximum 안에 짧은 control 획득 여유를 두고 gate+native acquire에 하나의 deadline을 적용합니다. row/batch/transaction이 release될 때까지 ordinary permit을 유지하며 SQL context·SQLSTATE·기존 tracer를 보존합니다. health ping 종료와 최대 15초인 pgx 실패 연결 정리는 별개입니다.
+- **Durable 큐:** inbox/reply claim과 snapshot이 eligibility 조건을 공유하고 `EligibleAt` 기준 age를 사용합니다. `Retire`는 SQL 실행 전에 transaction-bound querier를 요구합니다.
 - **의존성:** openai-go v3.78.0, grpc-gateway v2.32.0, `golang.org/x/crypto` v0.58.0·`x/net` v0.61.0·`x/sys` v0.49.0·`x/text` v0.43.0, genproto 최신본으로 갱신합니다. CI uv bootstrap과 로컬 하한은 0.13.1입니다. 공개 API는 유지합니다.
 - **전송·검증 도구:** quic-go v0.64.0, release SBOM Syft v1.54.1, pgxdb 통합 테스트의 PostgreSQL 18.6 고정 이미지를 적용합니다. 전체 release gate와 실제 PostgreSQL·HTTP/3 경계 검증을 통과했습니다.
 

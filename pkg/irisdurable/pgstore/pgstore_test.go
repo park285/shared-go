@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/park285/shared-go/v2/pkg/db/pgxdb"
 	"github.com/park285/shared-go/v2/pkg/irisdurable"
 	"github.com/park285/shared-go/v2/pkg/irisdurable/contracttest"
 	"github.com/park285/shared-go/v2/pkg/irisdurable/pgstore"
@@ -307,8 +308,7 @@ func beginAdmittedTx(t *testing.T, pool *pgxpool.Pool, scope, messageID, orderin
 	}
 
 	t.Cleanup(func() {
-		//nolint:usetesting // rollback은 commit 여부와 무관하게 돌아야 하므로 이미 취소된 t.Context()를 쓸 수 없다.
-		if rollbackErr := tx.Rollback(context.Background()); rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
+		if rollbackErr := pgxdb.Rollback(t.Context(), tx); rollbackErr != nil {
 			t.Errorf("rollback: %v", rollbackErr)
 		}
 	})
@@ -380,7 +380,7 @@ func TestReplyRedriveAndRetire(t *testing.T) {
 		t.Fatalf("settle: %v", settleErr)
 	}
 
-	retired, err := store.Retire(ctx, 10)
+	retired, err := retireAndCommit(t, pool, store.Options())
 	if err != nil {
 		t.Fatalf("retire: %v", err)
 	}
@@ -391,7 +391,7 @@ func TestReplyRedriveAndRetire(t *testing.T) {
 
 	exhausted := newScopedStoreWithOptions(t, pool, pgstore.Options{MaxAttempts: 1, Scope: store.Options().Scope})
 
-	retired, err = exhausted.Retire(ctx, 10)
+	retired, err = retireAndCommit(t, pool, exhausted.Options())
 	if err != nil {
 		t.Fatalf("retire with exhausted attempts: %v", err)
 	}
@@ -433,7 +433,7 @@ func TestRetireLeavesInFlightAttemptAlone(t *testing.T) {
 		t.Fatalf("begin attempt: %v", err)
 	}
 
-	retired, err := store.Retire(ctx, 10)
+	retired, err := retireAndCommit(t, pool, store.Options())
 	if err != nil {
 		t.Fatalf("retire while the attempt is in flight: %v", err)
 	}
@@ -458,7 +458,7 @@ func TestRetireLeavesInFlightAttemptAlone(t *testing.T) {
 		t.Fatalf("settle after the lease lapsed: %v", settleErr)
 	}
 
-	retired, err = store.Retire(ctx, 10)
+	retired, err = retireAndCommit(t, pool, store.Options())
 	if err != nil {
 		t.Fatalf("retire after the attempt settled: %v", err)
 	}

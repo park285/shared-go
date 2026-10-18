@@ -6,7 +6,7 @@
   "complete": false,
   "profile": {
     "id": "chatbotgo-contract-fixture",
-    "hash": "d6f1d7a1e12fce3bd9cc90583e40228940f7b395c0446e5cfb52437a52490424",
+    "hash": "c49eab7f529a16c6172ebb29a2dfa0741d3fd35685549c6435ede80f5e562df0",
     "fileMatch": true,
     "fileCheckedAtEpochMs": 1787126399000,
     "fileErrorCode": null
@@ -14,9 +14,213 @@
   "workers": {
     "webhook_inbox": {
       "runtime": "go",
-      "executor": {"enabled": true, "configuredWorkers": 16, "runningWorkers": 16, "inFlight": 2, "oldestInFlightAgeMs": 481},
-      "queue": {"backend": "postgres", "scope": "shared", "bounded": false, "capacity": null, "depth": null, "oldestQueuedAgeMs": null, "snapshotStatus": "unavailable", "lastSuccessAtEpochMs": 1787126384000, "errorCode": "queue_snapshot_failed"},
-      "totals": {"admissions": {"accepted": 100, "duplicate": 2, "rejected": 1, "failed": 0, "outcomeUnknown": 0}, "attempts": {"success": 95, "failed": 2, "timeout": 1, "canceled": 0, "panic": 0, "outcomeUnknown": 0}, "discarded": {"stale": 1, "shutdown": 0}}
+      "executor": {
+        "enabled": true,
+        "configuredWorkers": 16,
+        "runningWorkers": 16,
+        "inFlight": 2,
+        "oldestInFlightAgeMs": 481
+      },
+      "queue": {
+        "backend": "postgres",
+        "scope": "shared",
+        "bounded": false,
+        "capacity": null,
+        "depth": null,
+        "oldestQueuedAgeMs": null,
+        "snapshotStatus": "unavailable",
+        "lastSuccessAtEpochMs": 1787126384000,
+        "errorCode": "queue_snapshot_failed"
+      },
+      "totals": {
+        "admissions": {
+          "accepted": 100,
+          "duplicate": 2,
+          "rejected": 1,
+          "failed": 0,
+          "outcomeUnknown": 0
+        },
+        "attempts": {
+          "success": 95,
+          "failed": 2,
+          "timeout": 1,
+          "canceled": 0,
+          "panic": 0,
+          "outcomeUnknown": 0
+        },
+        "discarded": {
+          "stale": 1,
+          "shutdown": 0
+        }
+      }
+    },
+    "command": {
+      "runtime": "go",
+      "executor": {
+        "enabled": true,
+        "configuredWorkers": 10,
+        "runningWorkers": 10,
+        "inFlight": 0,
+        "oldestInFlightAgeMs": 0
+      },
+      "queue": {
+        "backend": "memory",
+        "scope": "process",
+        "bounded": true,
+        "capacity": 100,
+        "depth": 0,
+        "oldestQueuedAgeMs": 0,
+        "snapshotStatus": "current",
+        "lastSuccessAtEpochMs": 1787126400000,
+        "errorCode": null
+      },
+      "totals": {
+        "admissions": {
+          "accepted": 0,
+          "duplicate": 0,
+          "rejected": 0,
+          "failed": 0,
+          "outcomeUnknown": 0
+        },
+        "attempts": {
+          "success": 0,
+          "failed": 0,
+          "timeout": 0,
+          "canceled": 0,
+          "panic": 0,
+          "outcomeUnknown": 0
+        },
+        "discarded": {
+          "stale": 0,
+          "shutdown": 0
+        }
+      }
+    },
+    "draw": {
+      "runtime": "go",
+      "executor": {
+        "enabled": true,
+        "configuredWorkers": 2,
+        "runningWorkers": null,
+        "inFlight": null,
+        "oldestInFlightAgeMs": null
+      },
+      "queue": {
+        "backend": "memory",
+        "scope": "process",
+        "bounded": true,
+        "capacity": 32,
+        "depth": 0,
+        "oldestQueuedAgeMs": 0,
+        "snapshotStatus": "current",
+        "lastSuccessAtEpochMs": 1787126400000,
+        "errorCode": null
+      },
+      "totals": {
+        "admissions": {
+          "accepted": 0,
+          "duplicate": 0,
+          "rejected": 0,
+          "failed": 0,
+          "outcomeUnknown": 0
+        },
+        "attempts": {
+          "success": 0,
+          "failed": 0,
+          "timeout": 0,
+          "canceled": 0,
+          "panic": 0,
+          "outcomeUnknown": 0
+        },
+        "discarded": {
+          "stale": 0,
+          "shutdown": 0
+        }
+      }
+    },
+    "summary": {
+      "runtime": "go",
+      "executor": {
+        "enabled": true,
+        "configuredWorkers": 4,
+        "runningWorkers": 4,
+        "inFlight": 0,
+        "oldestInFlightAgeMs": 0
+      },
+      "queue": {
+        "backend": "memory",
+        "scope": "process",
+        "bounded": true,
+        "capacity": 64,
+        "depth": 0,
+        "oldestQueuedAgeMs": 0,
+        "snapshotStatus": "current",
+        "lastSuccessAtEpochMs": 1787126400000,
+        "errorCode": null
+      },
+      "totals": {
+        "admissions": {
+          "accepted": 0,
+          "duplicate": 0,
+          "rejected": 0,
+          "failed": 0,
+          "outcomeUnknown": 0
+        },
+        "attempts": {
+          "success": 0,
+          "failed": 0,
+          "timeout": 0,
+          "canceled": 0,
+          "panic": 0,
+          "outcomeUnknown": 0
+        },
+        "discarded": {
+          "stale": 0,
+          "shutdown": 0
+        }
+      }
+    },
+    "compaction": {
+      "runtime": "go",
+      "executor": {
+        "enabled": true,
+        "configuredWorkers": 2,
+        "runningWorkers": 2,
+        "inFlight": 0,
+        "oldestInFlightAgeMs": 0
+      },
+      "queue": {
+        "backend": "memory",
+        "scope": "process",
+        "bounded": true,
+        "capacity": 64,
+        "depth": 0,
+        "oldestQueuedAgeMs": 0,
+        "snapshotStatus": "current",
+        "lastSuccessAtEpochMs": 1787126400000,
+        "errorCode": null
+      },
+      "totals": {
+        "admissions": {
+          "accepted": 0,
+          "duplicate": 0,
+          "rejected": 0,
+          "failed": 0,
+          "outcomeUnknown": 0
+        },
+        "attempts": {
+          "success": 0,
+          "failed": 0,
+          "timeout": 0,
+          "canceled": 0,
+          "panic": 0,
+          "outcomeUnknown": 0
+        },
+        "discarded": {
+          "stale": 0,
+          "shutdown": 0
+        }
+      }
     }
   }
 }

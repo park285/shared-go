@@ -1,7 +1,6 @@
 package pgstore_test
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -11,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
+	"github.com/park285/shared-go/v2/pkg/db/pgxdb"
 	"github.com/park285/shared-go/v2/pkg/irisdurable"
 	"github.com/park285/shared-go/v2/pkg/irisdurable/pgstore"
 	"github.com/park285/shared-go/v2/pkg/workercontract"
@@ -187,7 +187,8 @@ func claimFIFOHeads(t *testing.T, store *pgstore.Store) []pgstore.InboxClaim {
 		t.Fatalf("claim = %v, %v", claims, err)
 	}
 
-	for _, claim := range claims {
+	for index := range claims {
+		claim := &claims[index]
 		if claim.MessageID == "second" || claim.CreatedAt.IsZero() || claim.Attempts != 1 {
 			t.Fatalf("invalid head claim: %+v", claim)
 		}
@@ -232,7 +233,7 @@ func TestApplyInboxRecoveryFencesSnapshots(t *testing.T) {
 			store, tx := inboxRecoveryTransaction(t, pool, opts)
 			require.ErrorIs(t, store.ApplyInboxRecovery(t.Context(), []pgstore.InboxRecoveryDecision{decision}), pgstore.ErrClaimLost)
 			require.Equal(t, before, inboxRecoverySnapshot(t, tx, id), "lost snapshot changed the row")
-			require.NoError(t, tx.Rollback(t.Context()))
+			require.NoError(t, pgxdb.Rollback(t.Context(), tx))
 		})
 	}
 }
@@ -262,7 +263,7 @@ func TestApplyInboxRecoveryRollbackRestoresPartialBatch(t *testing.T) {
 			require.NoError(t, tx.QueryRow(t.Context(), "SELECT status FROM iris_webhook_inbox WHERE id = $1", first.ID).Scan(&status))
 			require.Equal(t, inboxCompletedStatus, status, "matching rows change before caller rollback")
 			require.Equal(t, beforeSecond, inboxRecoverySnapshot(t, tx, second.ID))
-			require.NoError(t, tx.Rollback(t.Context()))
+			require.NoError(t, pgxdb.Rollback(t.Context(), tx))
 			require.Equal(t, beforeFirst, inboxRecoverySnapshot(t, pool, first.ID))
 			require.Equal(t, beforeSecond, inboxRecoverySnapshot(t, pool, second.ID))
 		})
@@ -298,7 +299,7 @@ func TestApplyInboxRecoveryValidatesBeforeMutation(t *testing.T) {
 			require.Error(t, err)
 			require.NotErrorIs(t, err, pgstore.ErrClaimLost)
 			require.Equal(t, before, inboxRecoverySnapshot(t, tx, first.ID), "validation must precede the entire batch")
-			require.NoError(t, tx.Rollback(t.Context()))
+			require.NoError(t, pgxdb.Rollback(t.Context(), tx))
 		})
 	}
 
@@ -309,7 +310,7 @@ func TestApplyInboxRecoveryValidatesBeforeMutation(t *testing.T) {
 
 	bound, tx := inboxRecoveryTransaction(t, pool, store.Options())
 	require.NoError(t, bound.ApplyInboxRecovery(t.Context(), nil))
-	require.NoError(t, tx.Rollback(t.Context()))
+	require.NoError(t, pgxdb.Rollback(t.Context(), tx))
 }
 
 func TestApplyInboxRecoveryTerminalPayloadPolicy(t *testing.T) {
@@ -355,7 +356,7 @@ func TestApplyInboxRecoveryTerminalPayloadPolicy(t *testing.T) {
 			// A terminal row cannot be changed again using its former claim snapshot.
 			again, retryTx := inboxRecoveryTransaction(t, pool, store.Options())
 			require.ErrorIs(t, again.ApplyInboxRecovery(t.Context(), decisions[1:2]), pgstore.ErrClaimLost)
-			require.NoError(t, retryTx.Rollback(t.Context()))
+			require.NoError(t, pgxdb.Rollback(t.Context(), retryTx))
 		})
 	}
 }
@@ -386,11 +387,7 @@ func inboxRecoveryTransaction(t *testing.T, pool *pgxpool.Pool, opts pgstore.Opt
 	tx, err := pool.Begin(t.Context())
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
-		defer cancel()
-
-		rollbackErr := tx.Rollback(ctx)
-		if rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
+		if rollbackErr := pgxdb.Rollback(t.Context(), tx); rollbackErr != nil {
 			t.Errorf("rollback recovery: %v", rollbackErr)
 		}
 	})

@@ -1,1 +1,124 @@
-{"contract_version":1,"service":"chatbotgo","role":"bot","profile_id":"invalid-missing-worker","workers":{"command":{"executor":{"enabled":true,"configured_workers":1,"attempt_timeout":{"mode":"per_job","milliseconds":null}},"queue":{"capacity":{"mode":"bounded","items":1},"max_age":{"mode":"none","milliseconds":null}},"settings":{}}}}
+{
+  "contract_version": 1,
+  "service": "chatbotgo",
+  "role": "bot",
+  "profile_id": "chatbotgo-contract-fixture",
+  "workers": {
+    "webhook_inbox": {
+      "executor": {
+        "enabled": true,
+        "configured_workers": 16,
+        "attempt_timeout": {
+          "mode": "fixed",
+          "milliseconds": 120000
+        }
+      },
+      "queue": {
+        "capacity": {
+          "mode": "unbounded",
+          "items": null
+        },
+        "max_age": {
+          "mode": "fixed",
+          "milliseconds": 600000
+        }
+      },
+      "settings": {
+        "prefetch_capacity": 128,
+        "cleanup_timeout_ms": 15000,
+        "finalize_concurrency": 16,
+        "poll_interval_ms": 500,
+        "claim_batch_size": 16,
+        "processing_lease_ms": 1920000,
+        "retry_base_delay_ms": 1000,
+        "max_attempts": 6,
+        "terminal_retention_ms": 604800000,
+        "prune_interval_ms": 300000,
+        "prune_batch_size": 1000,
+        "prune_max_batches": 10,
+        "admit_timeout_ms": 30000,
+        "dedup_ttl_ms": 960000,
+        "dedup_timeout_ms": 200,
+        "max_body_bytes": 1048576,
+        "shutdown_timeout_ms": 30000
+      }
+    },
+    "command": {
+      "executor": {
+        "enabled": true,
+        "configured_workers": 10,
+        "attempt_timeout": {
+          "mode": "per_job",
+          "milliseconds": null
+        }
+      },
+      "queue": {
+        "capacity": {
+          "mode": "bounded",
+          "items": 100
+        },
+        "max_age": {
+          "mode": "fixed",
+          "milliseconds": 30000
+        }
+      },
+      "settings": {
+        "ask_timeout_ms": 255000,
+        "image_timeout_ms": 135000,
+        "stock_timeout_ms": 240000,
+        "cleanup_timeout_ms": 15000,
+        "finalize_concurrency": 10
+      }
+    },
+    "draw": {
+      "executor": {
+        "enabled": true,
+        "configured_workers": 2,
+        "attempt_timeout": {
+          "mode": "fixed",
+          "milliseconds": 600000
+        }
+      },
+      "queue": {
+        "capacity": {
+          "mode": "bounded",
+          "items": 32
+        },
+        "max_age": {
+          "mode": "fixed",
+          "milliseconds": 30000
+        }
+      },
+      "settings": {
+        "cleanup_timeout_ms": 15000,
+        "primary_timeout_ms": 0,
+        "cleanup_reserve_ms": 15000,
+        "finalize_concurrency": 2
+      }
+    },
+    "compaction": {
+      "executor": {
+        "enabled": true,
+        "configured_workers": 2,
+        "attempt_timeout": {
+          "mode": "fixed",
+          "milliseconds": 20000
+        }
+      },
+      "queue": {
+        "capacity": {
+          "mode": "bounded",
+          "items": 64
+        },
+        "max_age": {
+          "mode": "fixed",
+          "milliseconds": 30000
+        }
+      },
+      "settings": {
+        "cleanup_timeout_ms": 5000,
+        "finalize_concurrency": 2
+      }
+    }
+  }
+}

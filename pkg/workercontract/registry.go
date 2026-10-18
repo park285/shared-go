@@ -188,6 +188,10 @@ func (r *Registry) Seal() error {
 		return nil
 	}
 
+	if len(r.loaded.Profile.Workers) == 0 {
+		return errors.New("worker registry: profile must contain workers")
+	}
+
 	expected := make([]string, 0, len(r.loaded.Profile.Workers))
 	actual := make([]string, 0, len(r.registrations))
 
@@ -251,13 +255,10 @@ func (r *Registry) Diagnostics(observedAt time.Time) (DiagnosticsEnvelope, error
 	for workerID, registration := range r.registrations {
 		profileWorker := r.loaded.Profile.Workers[workerID]
 
-		executor, err := executorDiagnostics(profileWorker, registration)
-		if err != nil {
-			return DiagnosticsEnvelope{}, fmt.Errorf("worker registry: %s: %w", workerID, err)
-		}
-
+		executor := executorDiagnostics(profileWorker, registration)
 		queue := queueDiagnostics(profileWorker, registration, observedAt)
-		if queue.SnapshotStatus != QueueSnapshotCurrent {
+
+		if executor.RunningWorkers == nil || queue.SnapshotStatus != QueueSnapshotCurrent {
 			envelope.Complete = false
 		}
 
@@ -280,25 +281,25 @@ func registrationTotals(registration Registration) WorkerTotals {
 	return registration.Counters.Snapshot()
 }
 
-func executorDiagnostics(profile WorkerProfile, registration Registration) (ExecutorDiagnostics, error) {
+func executorDiagnostics(profile WorkerProfile, registration Registration) ExecutorDiagnostics {
 	diagnostics := ExecutorDiagnostics{
 		Enabled:           profile.Executor.Enabled,
 		ConfiguredWorkers: profile.Executor.ConfiguredWorkers,
 	}
-	if !profile.Executor.Enabled {
-		return diagnostics, nil
+	snapshot := ExecutorSnapshot{}
+
+	if profile.Executor.Enabled {
+		snapshot = registration.ExecutorSnapshot()
+		if snapshot.RunningWorkers < 0 || snapshot.InFlight < 0 || snapshot.OldestInFlightAgeMS < 0 {
+			return diagnostics
+		}
 	}
 
-	snapshot := registration.ExecutorSnapshot()
-	if snapshot.RunningWorkers < 0 || snapshot.InFlight < 0 || snapshot.OldestInFlightAgeMS < 0 {
-		return ExecutorDiagnostics{}, errors.New("invalid executor snapshot")
-	}
+	diagnostics.RunningWorkers = &snapshot.RunningWorkers
+	diagnostics.InFlight = &snapshot.InFlight
+	diagnostics.OldestInFlightAgeMS = &snapshot.OldestInFlightAgeMS
 
-	diagnostics.RunningWorkers = snapshot.RunningWorkers
-	diagnostics.InFlight = snapshot.InFlight
-	diagnostics.OldestInFlightAgeMS = snapshot.OldestInFlightAgeMS
-
-	return diagnostics, nil
+	return diagnostics
 }
 
 func queueDiagnostics(profile WorkerProfile, registration Registration, observedAt time.Time) QueueDiagnostics {
@@ -321,13 +322,20 @@ func queueDiagnostics(profile WorkerProfile, registration Registration, observed
 		snapshot = registration.QueueSnapshot()
 	}
 
-	if !validQueueSnapshot(snapshot) {
-		code := QueueSnapshotFailed
+	var unavailableCode QueueSnapshotErrorCode
 
+	if !validQueueSnapshot(snapshot) {
+		unavailableCode = QueueSnapshotFailed
+	} else if snapshot.Status == QueueSnapshotCurrent &&
+		observedAt.Sub(time.UnixMilli(*snapshot.LastSuccessAtEpochMS)) > 2*QueueSampleInterval+QueueSampleTimeout {
+		unavailableCode = QueueSnapshotStale
+	}
+
+	if unavailableCode != "" {
 		snapshot.Status = QueueSnapshotUnavailable
 		snapshot.Depth = nil
 		snapshot.OldestQueuedAgeMS = nil
-		snapshot.ErrorCode = &code
+		snapshot.ErrorCode = &unavailableCode
 	}
 
 	diagnostics.Depth = snapshot.Depth
@@ -342,7 +350,7 @@ func queueDiagnostics(profile WorkerProfile, registration Registration, observed
 func validQueueSnapshot(snapshot QueueSnapshot) bool {
 	switch snapshot.Status {
 	case QueueSnapshotCurrent:
-		return snapshot.Depth != nil && snapshot.OldestQueuedAgeMS != nil && snapshot.ErrorCode == nil &&
+		return snapshot.Depth != nil && snapshot.OldestQueuedAgeMS != nil && snapshot.LastSuccessAtEpochMS != nil && snapshot.ErrorCode == nil &&
 			*snapshot.Depth >= 0 && *snapshot.OldestQueuedAgeMS >= 0 &&
 			(*snapshot.Depth != 0 || *snapshot.OldestQueuedAgeMS == 0)
 	case QueueSnapshotUnavailable:

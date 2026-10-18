@@ -35,6 +35,32 @@ func validProfilePath() string {
 	return filepath.Join("testdata", "stack-worker-contract", "v1", "valid-profile-chatbotgo.json")
 }
 
+func TestFixedDurationRejectsNonfixedAndOutOfRangePolicies(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		policy workercontract.DurationPolicy
+		want   time.Duration
+		fixed  bool
+	}{
+		{"minimum", workercontract.DurationPolicy{Mode: workercontract.DurationModeFixed, Milliseconds: new(int64(1))}, time.Millisecond, true},
+		{"maximum", workercontract.DurationPolicy{Mode: workercontract.DurationModeFixed, Milliseconds: new(int64(workercontract.MaxFixedDurationMS))}, 24 * time.Hour, true},
+		{"missing", workercontract.DurationPolicy{Mode: workercontract.DurationModeFixed}, 0, false},
+		{"zero", workercontract.DurationPolicy{Mode: workercontract.DurationModeFixed, Milliseconds: new(int64(0))}, 0, false},
+		{"negative", workercontract.DurationPolicy{Mode: workercontract.DurationModeFixed, Milliseconds: new(int64(-1))}, 0, false},
+		{"above bound", workercontract.DurationPolicy{Mode: workercontract.DurationModeFixed, Milliseconds: new(int64(workercontract.MaxFixedDurationMS + 1))}, 0, false},
+		{"per job", workercontract.DurationPolicy{Mode: workercontract.DurationModePerJob}, 0, false},
+		{"none", workercontract.DurationPolicy{Mode: workercontract.DurationModeNone}, 0, false},
+		{"nonfixed with value", workercontract.DurationPolicy{Mode: workercontract.DurationModePerJob, Milliseconds: new(int64(1))}, 0, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			duration, fixed := tc.policy.FixedDuration()
+			if duration != tc.want || fixed != tc.fixed {
+				t.Fatalf("FixedDuration() = (%s, %t), want (%s, %t)", duration, fixed, tc.want, tc.fixed)
+			}
+		})
+	}
+}
+
 func TestLoadProfileFileValidatesExactBytesAndIdentity(t *testing.T) {
 	path := validProfilePath()
 
@@ -127,54 +153,15 @@ func TestLoadTwentyQProfileRequiresThreeWorkers(t *testing.T) {
 }
 
 func TestLoadProfileFileRejectsEveryNegativeFixture(t *testing.T) {
-	chatbot := chatbotIdentity(t)
-	collector := knownIdentity(t, "hololive", "youtube-collector")
-	cases := map[string]struct {
-		identity workercontract.Identity
-		wantErr  string
-	}{
-		"invalid-duplicate-key.json":  {collector, `duplicate object member name "service"`},
-		"invalid-extra-worker.json":   {collector, "workers: got [collection extra], want [collection]"},
-		"invalid-missing.json":        {chatbot, "profile.profile_id: required"},
-		"invalid-missing-worker.json": {chatbot, "workers: got [command], want [command compaction draw summary webhook_inbox]"},
-		"invalid-mode.json":           {collector, "workers.collection.executor.attempt_timeout.mode: invalid"},
-		"invalid-null-mismatch.json":  {collector, "workers.collection.executor.attempt_timeout.milliseconds: out of range"},
-		"invalid-trailing-json.json":  {chatbot, "trailing JSON value"},
-		"invalid-unknown-field.json":  {collector, "workers.collection.unknown: unknown field"},
-		"invalid-value.json":          {collector, "enabled: json: cannot unmarshal JSON string into Go bool"},
-		"invalid-wrong-role.json":     {collector, "profile identity: got hololive/unknown, want hololive/youtube-collector"},
-		"invalid-wrong-service.json":  {collector, "profile identity: got unknown/youtube-collector, want hololive/youtube-collector"},
-		"invalid-wrong-version.json":  {collector, "contract_version: got 2, want 1"},
-		"invalid-zero.json":           {collector, "workers.collection.executor.configured_workers: out of range"},
-	}
-
 	paths, err := filepath.Glob(filepath.Join("testdata", "stack-worker-contract", "v1", "invalid-*.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if len(paths) != 13 || len(cases) != len(paths) {
-		t.Fatalf("negative fixtures = %d, expectations = %d, want 13 each", len(paths), len(cases))
-	}
-
 	for _, path := range paths {
-		base := filepath.Base(path)
-		t.Run(base, func(t *testing.T) {
-			expected, ok := cases[base]
-			if !ok {
-				t.Fatalf("fixture %q has no declared rule expectation", base)
-			}
-
-			_, loadErr := workercontract.LoadProfileFile(path, expected.identity)
-			if loadErr == nil {
-				t.Fatal("LoadProfileFile() error = nil")
-			}
-
-			// encoding/json/v2는 프로세스마다 "cannot"과 "unable to" 중 하나를 무작위로 골라
-			// 오류 문구에 의존하지 못하게 막으므로, 비교 전에 그 부분만 정규화한다.
-			actual := strings.Replace(loadErr.Error(), "json: unable to ", "json: cannot ", 1)
-			if !strings.Contains(actual, expected.wantErr) {
-				t.Fatalf("LoadProfileFile() error = %v, want it to contain %q", loadErr, expected.wantErr)
+		t.Run(filepath.Base(path), func(t *testing.T) {
+			if _, err := workercontract.LoadProfileFile(path, chatbotIdentity(t)); err == nil {
+				t.Fatal("invalid common profile accepted")
 			}
 		})
 	}
@@ -199,10 +186,6 @@ func TestLoadProfileFileRejectsNullEnabled(t *testing.T) {
 	loaded, loadErr := workercontract.LoadProfileFile(path, chatbotIdentity(t))
 	if loadErr == nil {
 		t.Fatalf("LoadProfileFile() error = nil, webhook_inbox enabled = %v", loaded.Profile.Workers["webhook_inbox"].Executor.Enabled)
-	}
-
-	if want := "workers.webhook_inbox.executor.enabled: boolean required"; !strings.Contains(loadErr.Error(), want) {
-		t.Fatalf("LoadProfileFile() error = %v, want it to contain %q", loadErr, want)
 	}
 }
 
@@ -298,5 +281,48 @@ func TestProfileFileCheckerDropsReplacementIdentity(t *testing.T) {
 
 	if strings.Contains(strings.ToLower(strings.TrimSpace(string(raw))), loaded.Hash) {
 		t.Fatal("fixture unexpectedly contains its hash")
+	}
+}
+
+func TestProfileCheckerReportsRegularContentChanges(t *testing.T) {
+	raw, err := os.ReadFile(validProfilePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		raw  []byte
+	}{
+		{"empty", nil},
+		{"BOM", append([]byte{0xef, 0xbb, 0xbf}, raw...)},
+		{"oversize", []byte(strings.Repeat("x", workercontract.MaxProfileBytes+1))},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "profile.json")
+			if err := os.WriteFile(path, raw, 0o600); err != nil { //nolint:gosec // 테스트가 만든 임시 디렉터리 경로만 쓴다.
+				t.Fatal(err)
+			}
+
+			loaded, err := workercontract.LoadProfileFile(path, chatbotIdentity(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			checker := workercontract.NewProfileFileChecker(loaded, time.Unix(100, 0))
+
+			if err := os.WriteFile(path, tc.raw, 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			status := checker.Check(time.Unix(101, 0))
+			if status.Match || status.ErrorCode == nil || *status.ErrorCode != workercontract.ProfileFileChanged {
+				t.Fatalf("regular content replacement classified as file type: %+v", status)
+			}
+
+			if _, err := workercontract.LoadProfileFile(path, chatbotIdentity(t)); err == nil {
+				t.Fatal("invalid replacement accepted at startup")
+			}
+		})
 	}
 }

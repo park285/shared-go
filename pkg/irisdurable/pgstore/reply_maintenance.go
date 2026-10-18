@@ -71,9 +71,14 @@ type RetiredReply struct {
 }
 
 // Retire는 더 보낼 수 없는 행을 dead로 보내고 payload를 지운 뒤 지운 행을 돌려준다.
-// 대체본 stage처럼 정리와 함께 원자적이어야 하는 후속 작업이 있으면 호출자가 트랜잭션 안의
-// Querier를 넘겨 같은 트랜잭션에서 이어가면 된다.
+// Store must use an existing transaction. The caller must roll back on every error,
+// including scan/read errors, and use returned payloads only after confirmed commit.
+// A lost commit response remains ambiguous and must not trigger a retirement retry.
 func (s *Store) Retire(ctx context.Context, limit int) ([]RetiredReply, error) {
+	if _, ok := s.db.(txQuerier); !ok {
+		return nil, errors.New("pgstore: retire requires a transaction")
+	}
+
 	if limit <= 0 {
 		return nil, errors.New("pgstore: retire limit must be positive")
 	}
@@ -148,8 +153,8 @@ func (s *Store) CountRepliesByStatus(ctx context.Context) (map[irisdurable.Reply
 	return counts, nil
 }
 
-// ReplyReadySnapshot은 Redrive가 지금 돌려줄 수 있는 행을 센다. 술어는
-// list_redrivable_replies.sql과 같다.
+// ReplyReadySnapshot measures Redrive eligibility without a batch limit. Age uses
+// the scheduling/expired-lease threshold, not historical predecessor-unblock time.
 func (s *Store) ReplyReadySnapshot(ctx context.Context) (ReadySnapshot, error) {
 	return s.readySnapshot(ctx, "reply ready snapshot", queryReplyReadySnapshot,
 		s.opts.Scope, s.opts.MaxAttempts, s.opts.AutomaticReplayHorizon.Seconds(),

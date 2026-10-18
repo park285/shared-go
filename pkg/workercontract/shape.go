@@ -1,7 +1,6 @@
 package workercontract
 
 import (
-	"maps"
 	"slices"
 )
 
@@ -12,14 +11,16 @@ type WorkerShape struct {
 	MaxAge         DurationMode
 }
 
-// ShapeProblems는 기대 shape와 다른 worker의 문제를 worker ID 순으로 돌려준다.
-// Profile에 없는 worker는 zero profile로 비교되므로 mode mismatch로 드러난다.
+// ShapeProblems는 worker/shape 키와 mode 불일치를 worker ID·문제 순으로 돌려준다.
 func ShapeProblems(workers map[string]WorkerProfile, shapes map[string]WorkerShape) []string {
 	problems := make([]string, 0)
 
-	for _, workerID := range slices.Sorted(maps.Keys(shapes)) {
-		worker := workers[workerID]
-		shape := shapes[workerID]
+	for workerID, shape := range shapes {
+		worker, ok := workers[workerID]
+		if !ok {
+			problems = append(problems, workerID+" worker is missing")
+			continue
+		}
 
 		if worker.Executor.AttemptTimeout.Mode != shape.AttemptTimeout {
 			problems = append(problems, workerID+" attempt_timeout mode mismatch")
@@ -33,6 +34,14 @@ func ShapeProblems(workers map[string]WorkerProfile, shapes map[string]WorkerSha
 			problems = append(problems, workerID+" max_age mode mismatch")
 		}
 	}
+
+	for workerID := range workers {
+		if _, ok := shapes[workerID]; !ok {
+			problems = append(problems, workerID+" shape is missing")
+		}
+	}
+
+	slices.Sort(problems)
 
 	return problems
 }

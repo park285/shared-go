@@ -17,8 +17,10 @@ func TestConfigValidate(t *testing.T) {
 		{name: "no host or socket", cfg: &Config{SSLMode: testDisable}, wantErr: true},
 		{name: "empty sslmode", cfg: &Config{Host: testLocalhost, SSLMode: ""}, wantErr: true},
 		{name: "blank sslmode", cfg: &Config{Host: testLocalhost, SSLMode: "   "}, wantErr: true},
+		{name: "unsupported sslmode", cfg: &Config{Host: testLocalhost, SSLMode: "bogus"}, wantErr: true},
+		{name: "normalized sslmode", cfg: &Config{Host: testLocalhost, SSLMode: " Verify-Full "}, wantErr: false},
 		{name: "invalid query exec mode", cfg: &Config{Host: testLocalhost, SSLMode: testDisable, QueryExecMode: "bogus"}, wantErr: true},
-		{name: "valid tcp", cfg: &Config{Host: testLocalhost, SSLMode: "verify-full"}, wantErr: false},
+		{name: "valid tcp", cfg: &Config{Host: testLocalhost, SSLMode: testVerifyFull}, wantErr: false},
 		{name: "valid socket", cfg: &Config{SocketPath: "/var/run/postgresql", SSLMode: testDisable}, wantErr: false},
 		{name: "valid query exec mode", cfg: &Config{Host: testLocalhost, SSLMode: testDisable, QueryExecMode: "simple_protocol"}, wantErr: false},
 	}
@@ -43,7 +45,7 @@ func TestConfigDSN_RequiresSSLMode(t *testing.T) {
 	}
 }
 
-func TestValidateExplicitSSLMode(t *testing.T) {
+func TestNormalizeDSNRequiresExplicitSSLMode(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -58,28 +60,32 @@ func TestValidateExplicitSSLMode(t *testing.T) {
 		{name: "URL complete verify full", dsn: "postgres://user@db.example/app?sslmode=verify-full&sslrootcert=%2Frun%2Fca.pem"},
 		{name: "URL duplicate same", dsn: "postgres://user@db.example/app?sslmode=disable&sslmode=disable", wantErr: true},
 		{name: "URL duplicate conflicting", dsn: "postgres://user@db.example/app?sslmode=disable&sslmode=verify-full", wantErr: true},
+		{name: "URL unsupported", dsn: "postgres://user@db.example/app?sslmode=bogus", wantErr: true},
+		{name: "URL normalized", dsn: "postgres://user@db.example/app?sslmode=%20VERIFY-FULL%20"},
 		{name: "keyword omitted", dsn: "host=db.example user=app", wantErr: true},
 		{name: "keyword empty", dsn: "host=db.example sslmode=''", wantErr: true},
 		{name: "keyword spaced quoted", dsn: "host = 'db.example' sslmode = 'verify-full'"},
 		{name: "keyword explicit disable", dsn: "host=db.example sslmode=disable"},
 		{name: "keyword duplicate same", dsn: "sslmode=disable host=db.example sslmode='disable'", wantErr: true},
 		{name: "keyword duplicate conflicting", dsn: "sslmode=disable host=db.example sslmode=verify-full", wantErr: true},
+		{name: "keyword unsupported", dsn: "host=db.example sslmode=bogus", wantErr: true},
+		{name: "keyword normalized", dsn: "host=db.example sslmode=' Verify-Full '"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			err := validateExplicitSSLMode(tt.dsn)
+			_, err := normalizeDSN(tt.dsn)
 			if (err != nil) != tt.wantErr {
-				t.Fatalf("validateExplicitSSLMode(%q) error = %v, wantErr %v", tt.dsn, err, tt.wantErr)
+				t.Fatalf("normalizeDSN(%q) error = %v, wantErr %v", tt.dsn, err, tt.wantErr)
 			}
 		})
 	}
 }
 
 func TestConfigDSN_TCP(t *testing.T) {
-	cfg := &Config{Host: "db.example", Port: 6432, User: "svc", Password: "test-dsn-placeholder", Name: "app", SSLMode: "verify-full"} //nolint:gosec // 테스트 자리표시자 문자열이며 실제 자격 증명이 아니다.
+	cfg := &Config{Host: "db.example", Port: 6432, User: "svc", Password: "test-dsn-placeholder", Name: "app", SSLMode: testVerifyFull} //nolint:gosec // 테스트 자리표시자 문자열이며 실제 자격 증명이 아니다.
 
 	dsn, err := cfg.DSN()
 	if err != nil {
@@ -115,7 +121,7 @@ func TestConfigDSN_Socket(t *testing.T) {
 }
 
 func TestConfigDSN_RootCertAndQueryExecMode(t *testing.T) {
-	cfg := &Config{Host: "h", SSLMode: "verify-full", SSLRootCert: "/etc/ssl/ca.pem", QueryExecMode: "SIMPLE_PROTOCOL"}
+	cfg := &Config{Host: "h", SSLMode: testVerifyFull, SSLRootCert: "/etc/ssl/ca.pem", QueryExecMode: "SIMPLE_PROTOCOL"}
 
 	dsn, err := cfg.DSN()
 	if err != nil {
@@ -135,7 +141,7 @@ func TestConfigDSN_RootCertAndQueryExecMode(t *testing.T) {
 func TestConfigDSN_IgnoresPostgresSSLRootCertEnv(t *testing.T) {
 	t.Setenv("POSTGRES_SSLROOTCERT", "/env/ca.pem")
 
-	cfg := &Config{Host: "h", SSLMode: "verify-full"}
+	cfg := &Config{Host: "h", SSLMode: testVerifyFull}
 
 	dsn, err := cfg.DSN()
 	if err != nil {
@@ -238,19 +244,15 @@ func TestDefaultPoolConfig_IgnoresEnvUsesStaticDefaults(t *testing.T) {
 	}
 }
 
-func TestWithPoolDefaults_FillsUnsetFromStaticDefaultPoolConfig(t *testing.T) {
+func TestWithPoolDefaults_FillsDurationsWithoutChoosingMaximum(t *testing.T) {
 	t.Setenv("DB_POOL_MIN_CONNS", "7")
 	t.Setenv("DB_POOL_MAX_CONNS", "33")
 
 	def := DefaultPoolConfig()
 	got := withPoolDefaults(PoolConfig{})
 
-	if got.MinConns != def.MinConns || got.MaxConns != def.MaxConns {
-		t.Errorf("conns = %d/%d, want %d/%d (single source: DefaultPoolConfig)", got.MinConns, got.MaxConns, def.MinConns, def.MaxConns)
-	}
-
-	if got.MinConns != 0 || got.MaxConns != 20 {
-		t.Errorf("conns = %d/%d, want static 0/20 regardless of DB_POOL_* env", got.MinConns, got.MaxConns)
+	if got.MinConns != 0 || got.MaxConns != 0 {
+		t.Errorf("conns = %d/%d, want unchanged 0/0 regardless of DB_POOL_* env", got.MinConns, got.MaxConns)
 	}
 
 	if got.ConnMaxLifetime != def.ConnMaxLifetime || got.ConnMaxIdleTime != def.ConnMaxIdleTime {

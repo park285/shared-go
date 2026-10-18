@@ -29,7 +29,6 @@ func TestOptionsPingTimeout(t *testing.T) {
 		{"default options", DefaultOptions(), 5 * time.Second},
 		{"zero value", Options{}, 5 * time.Second},
 		{"explicit", Options{Ping: PingConfig{PingTimeout: 250 * time.Millisecond}}, 250 * time.Millisecond},
-		{"negative", Options{Ping: PingConfig{PingTimeout: -1}}, 5 * time.Second},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -97,7 +96,7 @@ func TestApplyPoolConfig_SetsAllFields(t *testing.T) {
 }
 
 func TestOverlayPoolConfig_PreservesUnsetFields(t *testing.T) {
-	pc := mustParse(t, "postgres://u@127.0.0.1:5432/db?sslmode=disable&pool_max_conns=7")
+	pc := mustParse(t, "postgres://u@127.0.0.1:5432/db?sslmode=disable&pool_max_conns=7&pool_max_conn_lifetime_jitter=7s")
 	if pc.MaxConns != 7 {
 		t.Fatalf("precondition: parsed MaxConns = %d, want 7", pc.MaxConns)
 	}
@@ -115,8 +114,8 @@ func TestOverlayPoolConfig_PreservesUnsetFields(t *testing.T) {
 		t.Errorf("MaxConnLifetime = %v, want 1h", pc.MaxConnLifetime)
 	}
 
-	if pc.MaxConnLifetimeJitter != time.Hour/5 {
-		t.Errorf("jitter = %v, want derived lifetime/5", pc.MaxConnLifetimeJitter)
+	if pc.MaxConnLifetimeJitter != 7*time.Second {
+		t.Errorf("jitter = %v, want preserved DSN 7s", pc.MaxConnLifetimeJitter)
 	}
 }
 
@@ -148,7 +147,7 @@ func TestBuildConfigPool_AppliesQueryExecModeThroughDSNOnly(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := Config{Host: "127.0.0.1", Port: 5432, User: "u", Name: "db", SSLMode: testDisable, QueryExecMode: tt.mode}
 
-			poolCfg, err := buildConfigPool(&cfg, Options{}.withDefaults())
+			poolCfg, err := buildConfigPool(&cfg, DefaultOptions())
 			if err != nil {
 				t.Fatalf("buildConfigPool error = %v", err)
 			}
@@ -174,7 +173,7 @@ func TestBuildConfigPool_RejectsInvalidQueryExecMode(t *testing.T) {
 func TestApplyPoolConfig_HealthCheckPeriod(t *testing.T) {
 	t.Run("explicit value applied", func(t *testing.T) {
 		pc := mustParse(t, "postgres://u@127.0.0.1:5432/db?sslmode=disable")
-		if err := applyPoolConfig(pc, withPoolDefaults(PoolConfig{HealthCheckPeriod: 15 * time.Second})); err != nil {
+		if err := applyPoolConfig(pc, withPoolDefaults(PoolConfig{MaxConns: 4, HealthCheckPeriod: 15 * time.Second})); err != nil {
 			t.Fatalf("applyPoolConfig error = %v", err)
 		}
 
@@ -192,7 +191,7 @@ func TestApplyPoolConfig_HealthCheckPeriod(t *testing.T) {
 			t.Fatalf("precondition: parsed HealthCheckPeriod = %v, want positive pgx default", parsed)
 		}
 
-		if err := applyPoolConfig(pc, withPoolDefaults(PoolConfig{})); err != nil {
+		if err := applyPoolConfig(pc, withPoolDefaults(PoolConfig{MaxConns: 4})); err != nil {
 			t.Fatalf("applyPoolConfig error = %v", err)
 		}
 

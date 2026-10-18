@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/stretchr/testify/require"
 )
 
 var testDSN string
@@ -278,5 +279,136 @@ func TestIntegration_AfterConnect(t *testing.T) {
 
 	if appName != "sharedgo_ac" {
 		t.Fatalf("application_name = %q, want sharedgo_ac (AfterConnect did not run)", appName)
+	}
+}
+
+func TestIntegration_RollbackCanceledContextReusesConnection(t *testing.T) {
+	dsn := requireContainer(t)
+
+	for _, deferred := range []bool{false, true} {
+		for _, expired := range []bool{false, true} {
+			t.Run(fmt.Sprintf("deferred=%t/expired=%t", deferred, expired), func(t *testing.T) {
+				ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+				defer cancel()
+
+				pool, err := OpenPoolDSN(ctx, dsn, Options{Logger: quietLogger(), Pool: PoolConfig{MaxConns: 1}})
+				require.NoError(t, err)
+
+				defer pool.Close()
+
+				conn, err := pool.Acquire(ctx)
+				require.NoError(t, err)
+
+				defer conn.Release()
+
+				pid := conn.Conn().PgConn().PID()
+
+				tx, err := conn.Begin(ctx)
+				require.NoError(t, err)
+
+				_, statementErr := tx.Exec(ctx, "SELECT 1 / 0")
+				require.Error(t, statementErr)
+
+				var (
+					requestCtx    context.Context
+					requestCancel context.CancelFunc
+				)
+
+				if expired {
+					requestCtx, requestCancel = context.WithDeadline(ctx, time.Now().Add(-time.Second))
+				} else {
+					requestCtx, requestCancel = context.WithCancel(ctx)
+				}
+
+				requestCancel()
+
+				if deferred {
+					operationErr := errors.New("request operation failed")
+
+					err = func() (resultErr error) {
+						defer RollbackDeferred(requestCtx, tx, &resultErr)
+
+						return operationErr
+					}()
+
+					require.ErrorIs(t, err, operationErr)
+				} else {
+					require.NoError(t, Rollback(requestCtx, tx))
+				}
+
+				require.False(t, conn.Conn().IsClosed())
+				require.Equal(t, byte('I'), conn.Conn().PgConn().TxStatus())
+
+				conn.Release()
+
+				reused, err := pool.Acquire(ctx)
+				require.NoError(t, err)
+
+				defer reused.Release()
+
+				require.Equal(t, pid, reused.Conn().PgConn().PID())
+				require.NoError(t, selectOne(ctx, reused))
+			})
+		}
+	}
+}
+
+func TestIntegration_OpenPoolDSNPreservesOptionsAfterNormalization(t *testing.T) {
+	dsn := requireContainer(t)
+
+	parsed, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	query := parsed.Query()
+	query.Set("sslmode", " DISABLE ")
+	query.Set("pool_min_conns", "1")
+	query.Set("pool_max_conns", "3")
+	query.Set("pool_max_conn_lifetime", "13m")
+	query.Set("pool_max_conn_lifetime_jitter", "2m")
+	query.Set("pool_max_conn_idle_time", "7m")
+	query.Set("pool_health_check_period", "42s")
+	query.Set("application_name", "normalized pool")
+	query.Set("default_query_exec_mode", "exec")
+
+	parsed.RawQuery = strings.ReplaceAll(query.Encode(), "+", "%20")
+
+	keywordCfg := testConfig(t)
+
+	keywordDSN, err := keywordCfg.DSN()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	keywordDSN = strings.Replace(keywordDSN, "sslmode='disable'", "sslmode=' DISABLE '", 1) +
+		" pool_min_conns=1 pool_max_conns=3 pool_max_conn_lifetime=13m pool_max_conn_lifetime_jitter=2m pool_max_conn_idle_time=7m pool_health_check_period=42s application_name='normalized pool' default_query_exec_mode=exec"
+
+	multiHostDSN := strings.Replace(parsed.String(), parsed.Host, parsed.Host+",localhost", 1)
+
+	for _, raw := range []string{parsed.String(), keywordDSN, multiHostDSN} {
+		for _, maxConns := range []int{0, 4} {
+			pool, err := OpenPoolDSN(t.Context(), raw, Options{Logger: quietLogger(), Pool: PoolConfig{MaxConns: maxConns}})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			cfg := pool.Config()
+			pool.Close()
+
+			wantMax := int32(3)
+
+			if maxConns != 0 {
+				wantMax = 4
+			}
+
+			if cfg.MinConns != 1 || cfg.MaxConns != wantMax || cfg.MaxConnLifetime != 13*time.Minute || cfg.MaxConnLifetimeJitter != 2*time.Minute || cfg.MaxConnIdleTime != 7*time.Minute || cfg.HealthCheckPeriod != 42*time.Second {
+				t.Fatal("DSN pool options or explicit overlay changed during normalization")
+			}
+
+			if cfg.ConnConfig.RuntimeParams["application_name"] != "normalized pool" || cfg.ConnConfig.DefaultQueryExecMode != pgx.QueryExecModeExec {
+				t.Fatal("connection options changed during pool normalization")
+			}
+		}
 	}
 }

@@ -1,8 +1,6 @@
 package pgstore_test
 
 import (
-	"context"
-	"errors"
 	"maps"
 	"slices"
 	"testing"
@@ -11,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/park285/shared-go/v2/pkg/db/pgxdb"
 	"github.com/park285/shared-go/v2/pkg/irisdurable"
 	"github.com/park285/shared-go/v2/pkg/irisdurable/pgstore"
 )
@@ -102,7 +101,7 @@ func TestPruneInboxSkipsLockedRowsWithinTheLimit(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		if rollbackErr := tx.Rollback(context.WithoutCancel(ctx)); rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
+		if rollbackErr := pgxdb.Rollback(ctx, tx); rollbackErr != nil {
 			t.Errorf("rollback the locking transaction: %v", rollbackErr)
 		}
 	})
@@ -125,7 +124,7 @@ func TestPruneInboxSkipsLockedRowsWithinTheLimit(t *testing.T) {
 		t.Fatalf("prune with %v locked deleted %v (reported %d); want the next %d candidates %v", locked, deleted, pruned, pruneLimit, want)
 	}
 
-	if rollbackErr := tx.Rollback(ctx); rollbackErr != nil {
+	if rollbackErr := pgxdb.Rollback(ctx, tx); rollbackErr != nil {
 		t.Fatalf("release the locked candidates: %v", rollbackErr)
 	}
 
