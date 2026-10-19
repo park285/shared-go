@@ -183,7 +183,7 @@ func TestMoveAndPrune_DefersCompressedBackupUntilOriginalRemoved(t *testing.T) {
 }
 
 func TestMoveAndPrune_ReturnsDirectoryReadErrors(t *testing.T) {
-	// readDirFn is package-wide; these subtests must remain nonparallel.
+	// readDirFn은 패키지 전역이므로 하위 테스트를 병렬 실행하지 않는다.
 	for _, directory := range []string{"source", "archive"} {
 		t.Run(directory, func(t *testing.T) {
 			logDir := t.TempDir()
@@ -717,7 +717,7 @@ func archiveEntryNames(t *testing.T, archiveDir string) []string {
 	return names
 }
 
-// afterArchiveEnumeration uses the package-wide seam, so callers must remain nonparallel.
+// afterArchiveEnumeration은 패키지 전역 함수를 교체하므로 호출자는 병렬 실행하지 않는다.
 func afterArchiveEnumeration(t *testing.T, archiveDir string, mutate func()) {
 	t.Helper()
 	t.Cleanup(setReadDirFn(func(dir string) ([]os.DirEntry, error) {

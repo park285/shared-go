@@ -144,7 +144,7 @@ func TestCheckURLAcceptsHTTP3LoopbackWithServerNameOverride(t *testing.T) {
 
 	clientRoots := x509.NewCertPool()
 
-	clientCertificatePEM, err := os.ReadFile(certFile) //nolint:gosec // test-owned temporary certificate path
+	clientCertificatePEM, err := os.ReadFile(certFile) //nolint:gosec // 테스트 소유 임시 인증서 경로다.
 	if err != nil {
 		t.Fatalf("read client certificate: %v", err)
 	}
@@ -207,7 +207,7 @@ func TestCheckURLRejectsCrossOriginRedirectBeforePresentingClientCertificate(t *
 
 	clientRoots := x509.NewCertPool()
 
-	clientCertificatePEM, err := os.ReadFile(certFile) //nolint:gosec // test-owned temporary certificate path
+	clientCertificatePEM, err := os.ReadFile(certFile) //nolint:gosec // 테스트 소유 임시 인증서 경로다.
 	if err != nil {
 		t.Fatalf("read client certificate: %v", err)
 	}

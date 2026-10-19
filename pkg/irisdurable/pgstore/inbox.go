@@ -25,8 +25,7 @@ type InboxClaim struct {
 	ClaimToken  string
 	Attempts    int
 	CreatedAt   time.Time
-	// EligibleAt is the scheduling/expired-lease threshold before this claim.
-	// It does not replace CreatedAt for admission age or FIFO ordering.
+	// EligibleAt은 이번 획득 전 예약·임대 만료 기준이며, 입장 경과 시간·FIFO의 CreatedAt을 대체하지 않는다.
 	EligibleAt time.Time
 }
 
@@ -192,11 +191,10 @@ type InboxRuntimeSnapshot struct {
 	OldestDueAge time.Duration
 }
 
-// ReadySnapshot counts logically claimable rows, including transiently locked rows.
+// ReadySnapshot은 일시적으로 잠긴 행을 포함해 논리적으로 획득 가능한 행을 센다.
 type ReadySnapshot struct {
 	Ready int64
-	// OldestAge is time since the oldest scheduling/expired-lease threshold among
-	// eligible rows, not time since admission or historical predecessor release.
+	// OldestAge는 적격 행의 가장 오래된 예약·임대 만료 기준부터의 시간이며 입장·선행 행 해제 시각과 다르다.
 	OldestAge time.Duration
 }
 
@@ -218,7 +216,7 @@ func (s *Store) RuntimeSnapshot(ctx context.Context) (InboxRuntimeSnapshot, erro
 	return snapshot, nil
 }
 
-// InboxReadySnapshot composes Claim's eligibility predicate without locks or a limit.
+// InboxReadySnapshot은 잠금·개수 제한 없이 Claim의 적격 조건을 적용한다.
 func (s *Store) InboxReadySnapshot(ctx context.Context) (ReadySnapshot, error) {
 	return s.readySnapshot(ctx, "inbox ready snapshot", queryInboxReadySnapshot, s.opts.Scope, s.opts.InboxExplicitRecovery)
 }

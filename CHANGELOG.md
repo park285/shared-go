@@ -3,6 +3,10 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## 미출시
+
+- **주석 정리:** DB 획득·정산·관측 계약과 테스트 근거를 한국어로 정리하고 반복되는 패키지 소개를 축약했습니다. SQL·Go 실행 의미와 기계 지시문은 유지합니다.
+
 ## v2.14.0 - 2026-10-18
 
 - **소비자 동시 이전:** `workercontract.ExecutorDiagnostics`의 `RunningWorkers`·`InFlight`·`OldestInFlightAgeMS`가 `int64`에서 `*int64`로 바뀝니다. 직접 읽는 호출자는 nil을 관측 불가로 처리해야 하며, `ExecutorSnapshot`의 scalar 필드는 유지합니다. 구조화 pool의 양수 `MaxConns`, settings의 정확한 필드 집합, transaction 안의 `Retire`가 필수입니다. 스택 소비자 코드·프로필·pin을 함께 이전하는 릴리스이며 하위 호환 patch가 아닙니다.

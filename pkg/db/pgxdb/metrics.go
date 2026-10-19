@@ -2,7 +2,7 @@ package pgxdb
 
 import "github.com/jackc/pgx/v5/pgxpool"
 
-// PoolMetricType identifies the cumulative or instantaneous value of a metric.
+// PoolMetricType은 메트릭의 누적값과 순간값을 구분한다.
 type PoolMetricType uint8
 
 const (
@@ -10,8 +10,8 @@ const (
 	PoolMetricCounter
 )
 
-// PoolMetric contains a prefix-independent descriptor and one observed value.
-// State is empty except for the conns family. Callers own pool identity labels.
+// PoolMetric은 접두사와 독립된 설명과 관측값을 담는다.
+// State는 conns 계열에서만 사용하며 풀 식별 레이블은 호출자가 관리한다.
 type PoolMetric struct {
 	Suffix string
 	Help   string
@@ -20,9 +20,9 @@ type PoolMetric struct {
 	Value  float64
 }
 
-// VisitPoolMetrics emits one immutable pgx Stat snapshot without collecting an
-// intermediate map or slice. Callers take one Stat per pool per scrape. Nil
-// inputs emit nothing; an unavailable pool must not be reported as zero-valued.
+// VisitPoolMetrics는 중간 맵·슬라이스 없이 불변 Stat 스냅샷을 전달한다.
+// 호출자는 수집마다 풀별 Stat을 한 번 얻는다. nil 입력은 출력하지 않으며,
+// 사용 불가한 풀을 0으로 보고해서는 안 된다.
 func VisitPoolMetrics(stat *pgxpool.Stat, emit func(PoolMetric)) {
 	if stat == nil || emit == nil {
 		return

@@ -120,7 +120,7 @@ func assertTLSMode(t *testing.T, cfg *pgx.ConnConfig, mode string) {
 func TestParseConfigPreservesEscapedCredentialsAndOptions(t *testing.T) {
 	t.Parallel()
 
-	const password = `dummy'quoted\ password sslmode=bogus` //nolint:gosec // Deliberately malformed test credential; never used for authentication.
+	const password = `dummy'quoted\ password sslmode=bogus` //nolint:gosec // 인증에 쓰지 않는 의도적으로 잘못된 테스트 자격 증명이다.
 
 	for _, dsn := range []string{
 		"host=db.example user=app password=" + libpqQuote(password) + " sslmode=' DISABLE ' application_name='migration worker' connect_timeout=7 default_query_exec_mode=exec",
@@ -283,8 +283,7 @@ func TestParseConfigPreservesQueryKeyBoundaries(t *testing.T) {
 func TestDSNRejectsAuthoritySSLModeDespiteEnvironment(t *testing.T) {
 	t.Setenv("PGSSLMODE", "disable")
 
-	// Even a regressed pool parser can only address this test-owned socket
-	// directory; the canceled context distinguishes validation from dialing.
+	// 파서가 잘못 동작해도 테스트 소유 소켓에만 접근하며, 취소된 컨텍스트로 검증과 접속을 구분한다.
 	host := t.TempDir()
 	query := "?host=" + url.PathEscape(host) + "&port=5432&pool_min_conns=0"
 

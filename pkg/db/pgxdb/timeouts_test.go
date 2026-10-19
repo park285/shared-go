@@ -43,7 +43,7 @@ func TestStartupMinimumPoolBlackholeIsBounded(t *testing.T) {
 			workers.Go(func() {
 				defer closeTestSocket(t, conn)
 
-				// Test watchdog bounds cleanup even if the client clamp regresses.
+				// 클라이언트 제한이 깨져도 테스트 정리는 기한 내 끝나야 한다.
 				if deadlineErr := conn.SetDeadline(time.Now().Add(2 * time.Second)); deadlineErr != nil {
 					t.Errorf("set test connection deadline: %v", deadlineErr)
 
@@ -101,7 +101,7 @@ func TestIntegrationAcquireHealthPingBoundsHalfOpenIdleConnection(t *testing.T) 
 	acquired := make(chan error, 1)
 
 	go func() {
-		//nolint:usetesting // The policy, not a caller deadline, must bound acquisition.
+		//nolint:usetesting // 호출자 기한이 아닌 정책이 획득 시간을 제한해야 한다.
 		conn, acquireErr := pool.Acquire(context.Background())
 		if conn != nil {
 			conn.Release()
@@ -116,8 +116,7 @@ func TestIntegrationAcquireHealthPingBoundsHalfOpenIdleConnection(t *testing.T) 
 		t.Fatal("health ping did not close the half-open connection within its budget")
 	}
 
-	// pgx retains the failed slot during its independent cleanup grace period.
-	// The acquire deadline must expire without waiting for that cleanup.
+	// pgx의 별도 정리 유예가 슬롯을 점유해도 획득 기한은 정리를 기다리지 않고 만료돼야 한다.
 	select {
 	case acquireErr := <-acquired:
 		require.ErrorIs(t, acquireErr, context.DeadlineExceeded)

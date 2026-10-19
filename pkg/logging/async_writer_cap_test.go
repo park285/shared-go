@@ -110,7 +110,7 @@ func TestAsyncDropWriterTruncationKeepsJSONCorrelationAndNextRecord(t *testing.T
 		t.Fatal("stdout truncation mutated original file record")
 	}
 
-	clear(payload) // writer owns its queued copy after Write returns.
+	clear(payload) // Write 반환 뒤에는 쓰기 작업이 큐에 넣은 사본을 소유한다.
 
 	if _, err := writer.Write([]byte("{\"msg\":\"survivor\"}\n")); err != nil {
 		t.Fatal(err)
@@ -201,7 +201,7 @@ func TestAsyncDropWriterMalformedOversizeDoesNotExposeRawPrefix(t *testing.T) {
 }
 
 func TestAsyncDropWriterFullQueueDoesNotAllocate(t *testing.T) {
-	// AllocsPerRun changes GOMAXPROCS; keep this test nonparallel.
+	// AllocsPerRun이 GOMAXPROCS를 바꾸므로 병렬 실행하지 않는다.
 	target := &stallingWriter{started: make(chan struct{}), release: make(chan struct{})}
 	release := sync.OnceFunc(func() { close(target.release) })
 	t.Cleanup(release)
@@ -329,7 +329,7 @@ func TestEnableFileLoggingOversizePreservesSanitizedFileRecord(t *testing.T) {
 		t.Fatal(closeErr)
 	}
 
-	file, err := os.ReadFile(filepath.Join(dir, "oversize.log")) //nolint:gosec // Test-owned temporary file.
+	file, err := os.ReadFile(filepath.Join(dir, "oversize.log")) //nolint:gosec // 테스트 소유 임시 파일이다.
 	if err != nil {
 		t.Fatal(err)
 	}

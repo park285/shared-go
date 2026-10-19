@@ -42,8 +42,7 @@ func retireAndCommit(t *testing.T, pool *pgxpool.Pool, opts pgstore.Options) (re
 }
 
 func TestRetireRequiresTransactionBeforeQuery(t *testing.T) {
-	// Calling any method on the embedded nil Querier panics. Rejection must not
-	// query or implicitly begin a transaction, even for a valid limit.
+	// nil Querier 호출은 패닉이므로 유효한 limit도 SQL·암묵적 트랜잭션 시작 전에 거부해야 한다.
 	store, err := pgstore.New(struct{ pgstore.Querier }{}, pgstore.Options{})
 	require.NoError(t, err)
 
@@ -79,8 +78,7 @@ type retirementFaultRows struct {
 
 func (r retirementFaultRows) Scan(dest ...any) error {
 	if r.scanFailure {
-		// Exercise pgx's real conversion failure after UPDATE RETURNING rather
-		// than a SQL failure (a scan error need not abort the transaction).
+		// 트랜잭션을 중단시키지 않을 수 있는 UPDATE RETURNING 이후의 실제 pgx 변환 오류를 유발한다.
 		var invalidPayload int64
 
 		dest[6] = &invalidPayload

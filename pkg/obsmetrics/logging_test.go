@@ -14,7 +14,7 @@ import (
 func exerciseLoggingOutcomes(t *testing.T) (logging.StdoutStats, logging.FileStats) {
 	t.Helper()
 
-	// Public constructors capture os.Stdout; isolate this replacement from parallel tests.
+	// 생성자가 os.Stdout을 보관하므로 교체 중에는 다른 테스트를 병렬 실행하지 않는다.
 	originalStdout := os.Stdout
 
 	t.Cleanup(func() { os.Stdout = originalStdout })
@@ -50,8 +50,7 @@ func exerciseLoggingOutcomes(t *testing.T) (logging.StdoutStats, logging.FileSta
 		t.Fatal(closeErr)
 	}
 
-	// A closed fd deterministically fails the synchronous stdout copy, and a record above
-	// MaxSizeMB is rejected by the file lane, so one record fails both lanes independently.
+	// 닫힌 fd와 MaxSizeMB 초과 레코드로 표준 출력·파일 쓰기를 각각 실패시킨다.
 	config.MaxSizeMB = 1
 	os.Stdout = capture
 	logger, closer, err = logging.EnableFileLoggingWithOptions(config, "failure.log", logging.Options{})
@@ -131,7 +130,7 @@ func (w *failLoggingMetricWrite) Write(p []byte) (int, error) {
 func TestWriteLoggingMetricsStopsOnExpositionFailure(t *testing.T) {
 	t.Parallel()
 
-	// Each counter writes HELP, TYPE, and its sample; every write position must stop exposition.
+	// 카운터별 HELP·TYPE·샘플 쓰기 중 어느 위치에서 실패해도 출력을 중단해야 한다.
 	for failAt := 1; failAt <= 9; failAt++ {
 		writer := &failLoggingMetricWrite{failAt: failAt}
 		if WriteLoggingMetrics(writer) {

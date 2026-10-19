@@ -137,7 +137,7 @@ func validateSettingsMap(raw jsontext.Value, typ reflect.Type, path string) erro
 }
 
 func validateSettingsArray(raw jsontext.Value, typ reflect.Type, path string) error {
-	// Byte slices may be encoded as strings rather than JSON arrays.
+	// 바이트 슬라이스는 JSON 배열 대신 문자열로 인코딩될 수 있다.
 	if bytes.TrimSpace(raw)[0] != '[' {
 		return nil
 	}

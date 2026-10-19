@@ -14,7 +14,7 @@ func secretFile(key string) (string, error) {
 		return "", fmt.Errorf("%s_FILE is required", key)
 	}
 
-	//nolint:gosec // *_FILE env vars are intentional operator-supplied secret file paths.
+	//nolint:gosec // *_FILE 환경 변수는 운영자가 지정하는 비밀 파일 경로다.
 	info, err := os.Lstat(filePath)
 	if err != nil {
 		return "", fmt.Errorf("%s_FILE path %q is not readable: %w", key, filePath, err)

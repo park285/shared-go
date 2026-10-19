@@ -39,7 +39,7 @@ func TestEnableFileLoggingCountsFileLaneWriteFailures(t *testing.T) {
 		t.Fatalf("file failure changed stdout counters: %v -> %v", beforeStdout, got)
 	}
 
-	file, err := os.ReadFile(filepath.Join(dir, "file.log")) //nolint:gosec // Test-owned temporary file.
+	file, err := os.ReadFile(filepath.Join(dir, "file.log")) //nolint:gosec // 테스트 소유 임시 파일이다.
 	if err != nil {
 		t.Fatal(err)
 	}

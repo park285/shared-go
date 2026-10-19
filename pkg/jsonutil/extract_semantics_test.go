@@ -78,9 +78,8 @@ func assertReferenceExtraction(t *testing.T, input string) {
 	}
 }
 
-// This oracle searches every raw opener independently, including those in quoted
-// prose. Same-type balancing intentionally ignores mismatched other brackets;
-// jsontext then rejects malformed candidates, just as the extraction contract does.
+// 인용된 산문을 포함해 모든 여는 괄호를 독립적으로 탐색한다.
+// 같은 종류만 짝지은 뒤 다른 괄호의 불일치는 추출 계약처럼 jsontext가 거부하게 한다.
 func referenceFirstJSON(input string) ([]byte, error) {
 	for start := range len(input) {
 		open := input[start]

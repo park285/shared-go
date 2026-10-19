@@ -28,7 +28,7 @@ func policyTestPool(t *testing.T, maxConns int, policy *AcquirePolicy) *pgxpool.
 func TestIntegration_AcquirePolicyControlContention(t *testing.T) {
 	policy := &AcquirePolicy{ReservedConns: 1, Timeout: time.Second}
 	pool := policyTestPool(t, 2, policy)
-	// Mutation after construction must not change reserve or timeout.
+	// 생성 후 원본 변경이 예약 용량·기한에 영향을 주어서는 안 된다.
 	*policy = AcquirePolicy{ReservedConns: 0, Timeout: time.Nanosecond}
 
 	ordinary, err := pool.Acquire(t.Context())
@@ -50,8 +50,7 @@ func TestIntegration_AcquirePolicyControlContention(t *testing.T) {
 	}
 
 	controlCtx := WithControlAcquire(t.Context())
-	// A real lease renewal/settlement SQL operation remains possible while
-	// ordinary work holds its entire allowance and more ordinary work queues.
+	// 일반 작업의 허가가 소진되고 대기열이 생겨도 임대 갱신·정산 SQL은 실행 가능해야 한다.
 	_, err = pool.Exec(controlCtx, "CREATE TEMP TABLE acquire_lease (id int, generation int)")
 	require.NoError(t, err)
 
@@ -65,7 +64,7 @@ func TestIntegration_AcquirePolicyControlContention(t *testing.T) {
 	require.Equal(t, 2, generation)
 	require.ErrorIs(t, <-queued, context.DeadlineExceeded)
 	ordinary.Release()
-	ordinary.Release() // pgx's idempotent Release must not return two permits.
+	ordinary.Release() // 멱등적인 Release가 허가를 두 번 반환해서는 안 된다.
 	require.NoError(t, selectOne(t.Context(), pool))
 	require.NoError(t, selectOne(controlCtx, pool))
 }
@@ -120,7 +119,7 @@ func TestIntegration_AcquirePolicyLeaseLifetimes(t *testing.T) {
 				release = func() { require.NoError(t, results.Close()) }
 			}
 
-			// Register before assertions so failed tests cannot leave Close hung.
+			// 검증 실패 시에도 Close가 멈추지 않도록 정리를 먼저 등록한다.
 			onceRelease := sync.OnceFunc(release)
 			t.Cleanup(onceRelease)
 			require.NoError(t, selectOne(WithControlAcquire(ctx), pool))
@@ -140,7 +139,7 @@ func TestIntegration_AcquirePolicyDoesNotBoundSQL(t *testing.T) {
 	_, err := pool.Exec(ctx, "SELECT pg_sleep(0.25)")
 	require.NoError(t, err, "acquire timeout must end before query execution")
 
-	// Native SQL errors remain native, not rewritten as acquisition errors.
+	// SQL 오류를 획득 오류로 바꾸지 않는다.
 	_, err = pool.Exec(ctx, "SELECT 1/0")
 
 	var sqlState interface{ SQLState() string }
@@ -166,7 +165,7 @@ func TestIntegration_AcquirePolicyControlStillObeysPoolLimit(t *testing.T) {
 	_, err = pool.Acquire(ctx)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 
-	_, err = pool.Acquire(t.Context()) // permit acquired, physical pool wait fails
+	_, err = pool.Acquire(t.Context()) // 허가는 얻지만 실제 풀 대기는 실패한다.
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	second.Release()
 	require.NoError(t, selectOne(t.Context(), pool), "failed physical acquire must restore its ordinary permit")
@@ -208,7 +207,6 @@ func TestIntegration_AcquirePolicyCancellationReuseAndReset(t *testing.T) {
 			})
 		}
 
-		// Race cancellation, resource reuse and Reset while leases are out.
 		wg.Go(cancel)
 		wg.Go(pool.Reset)
 
@@ -227,7 +225,7 @@ func TestIntegration_AcquirePolicyCancellationReuseAndReset(t *testing.T) {
 		}
 	}
 
-	// Restore the full ordinary allowance, not merely one successful query.
+	// 쿼리 한 건 성공이 아닌 일반 허가 전체의 복구를 확인한다.
 	restored := make([]*pgxpool.Conn, 0, 3)
 
 	defer func() {
@@ -350,8 +348,7 @@ func TestIntegration_AcquirePolicyConstructorFailureAndTimeout(t *testing.T) {
 				require.ErrorIs(t, err, connectErr)
 			}
 
-			// Puddle may complete construction after the caller's acquire timeout.
-			// Its late idle connection must not inherit a lost ordinary permit.
+			// Puddle의 지연된 생성이 획득 기한 뒤에 끝나도 유휴 연결에 허가가 누수되어서는 안 된다.
 			unblockOnce()
 			require.NoError(t, selectOne(t.Context(), pool))
 			require.NoError(t, selectOne(WithControlAcquire(t.Context()), pool))
@@ -401,8 +398,7 @@ func TestIntegration_AcquirePolicyOneBudgetAcrossGateAndPool(t *testing.T) {
 		result <- err
 	}()
 
-	// AfterRelease deliberately delays physical return after the ordinary
-	// permit is returned, making the second half wait inside the native pool.
+	// 허가 반환 뒤 AfterRelease가 물리 연결 반환을 지연해 실제 풀에서도 대기하게 한다.
 	<-time.After(500 * time.Millisecond)
 	ordinary.Release()
 	require.ErrorIs(t, <-result, context.DeadlineExceeded)

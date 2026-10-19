@@ -14,8 +14,8 @@ func mustQuery(name string) string {
 	return sqlutil.MustQuery(queryFS, name)
 }
 
-// Fragments are composed once at initialization. Claims retain their direct row
-// locks/UPDATE predicates so PostgreSQL rechecks the latest locked row version.
+// 초기화 때 한 번 조합한다. PostgreSQL이 잠근 최신 행을 재검사하도록
+// 획득 쿼리의 직접 행 잠금·UPDATE 조건은 유지한다.
 func inboxQuery(name, explicitRecovery string) string {
 	query := strings.NewReplacer(
 		"{{eligible}}", mustQuery("queries/inbox_eligible.sql"),

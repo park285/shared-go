@@ -135,8 +135,8 @@ func normalizeQueryExecMode(mode string) string {
 	return queryExecModeNames[strings.ToLower(strings.TrimSpace(mode))]
 }
 
-// NormalizeSSLMode requires an explicit supported mode and normalizes its case
-// and surrounding whitespace. Services enforce their own deployment TLS policy.
+// NormalizeSSLMode는 명시된 지원 모드의 대소문자와 주변 공백을 정규화한다.
+// 배포 환경의 TLS 정책은 서비스가 강제한다.
 func NormalizeSSLMode(mode string) (string, error) {
 	mode = strings.ToLower(strings.TrimSpace(mode))
 	switch mode {
@@ -149,10 +149,9 @@ func NormalizeSSLMode(mode string) (string, error) {
 	}
 }
 
-// ParseConfig parses a single-connection DSN with an explicit, normalized sslmode.
-// Deployment-specific TLS requirements remain the caller's responsibility.
-// Parse failures deliberately omit the underlying error: parsers may include
-// credentials even when their connection-string redaction succeeds.
+// ParseConfig는 sslmode를 명시한 단일 연결 DSN을 정규화해 파싱한다.
+// 배포별 TLS 요건은 호출자가 책임진다. 자격 증명이 하위 오류에 포함될 수 있어
+// 파싱 실패 시 원인 오류를 노출하지 않는다.
 func ParseConfig(rawDSN string) (*pgx.ConnConfig, error) {
 	dsn, err := normalizeDSN(rawDSN)
 	if err != nil {
@@ -197,8 +196,8 @@ func normalizeURLDSN(rawDSN string) (string, error) {
 			return "", errors.New("pgxdb: parse dsn query: invalid query")
 		}
 
-		// pgx trims raw ASCII spaces before percent-decoding keys and keeps
-		// literal '+'. Decoded spaces must not turn another key into sslmode.
+		// pgx처럼 디코딩 전 ASCII 공백만 제거하고 '+'를 보존한다.
+		// 디코딩된 공백 때문에 다른 키가 sslmode로 인식되어서는 안 된다.
 		key, err := url.PathUnescape(strings.Trim(key, " "))
 		if err != nil {
 			return "", errors.New("pgxdb: parse dsn query: invalid key")
@@ -209,8 +208,7 @@ func normalizeURLDSN(rawDSN string) (string, error) {
 				return "", errors.New("pgxdb: sslmode must be specified exactly once in dsn (no implicit default)")
 			}
 
-			// Retain the existing form-encoded whitespace normalization for
-			// this policy value only; other URI values follow pgx semantics.
+			// sslmode 값만 폼 인코딩 공백을 정규화하고 나머지는 pgx 해석을 따른다.
 			decoded, err := url.QueryUnescape(value)
 			if err != nil {
 				return "", errors.New("pgxdb: parse dsn query: invalid sslmode")
@@ -236,14 +234,12 @@ func normalizeURLDSN(rawDSN string) (string, error) {
 		return rawDSN, nil
 	}
 
-	// Replace only the mode value; preserve raw query boundaries, semicolons,
-	// '+' and percent-encoded bytes in credentials and unrelated options.
+	// 모드만 바꿔 다른 옵션·자격 증명의 쿼리 경계, 세미콜론, '+', 인코딩 바이트를 보존한다.
 	return rawDSN[:valueStart] + mode + rawDSN[valueEnd:], nil
 }
 
-// urlDSNQueryStart follows pgx v5's userinfo, host-list, port and path
-// boundaries without interpreting the components. Full URI validation is pgx's
-// responsibility; -1 means no query could be located at those boundaries.
+// urlDSNQueryStart는 pgx v5의 사용자 정보·호스트 목록·포트·경로 경계만 따른다.
+// 전체 URI 검증은 pgx가 담당하며 쿼리를 찾지 못하면 -1을 반환한다.
 func urlDSNQueryStart(rawDSN string) int {
 	_, remaining, _ := strings.Cut(rawDSN, "://")
 	if i := strings.IndexAny(remaining, "@/"); i >= 0 && remaining[i] == '@' {
@@ -340,7 +336,7 @@ func normalizeKeywordDSN(rawDSN string) (string, error) {
 		return "", errors.New("pgxdb: sslmode is required in dsn (no implicit default)")
 	}
 
-	// Replace only sslmode; preserve all other options and escaped credentials.
+	// sslmode만 바꾸고 다른 옵션과 이스케이프된 자격 증명을 보존한다.
 	return rawDSN[:valueStart] + libpqQuote(mode) + " " + rawDSN[valueEnd:], nil
 }
 
@@ -400,16 +396,16 @@ type PoolConfig struct {
 	ConnMaxLifetime       time.Duration
 	ConnMaxLifetimeJitter time.Duration
 	ConnMaxIdleTime       time.Duration
-	// Zero preserves pgx's parsed health-check period; negative values are invalid.
+	// 0이면 pgx가 파싱한 상태 검사 주기를 유지하며 음수는 허용하지 않는다.
 	HealthCheckPeriod time.Duration
-	// PingTimeout bounds acquire-time health pings, not the startup Ping budget.
-	// Zero preserves the parsed pgx/DSN value.
+	// PingTimeout은 시작 시 Ping이 아닌 획득 시 상태 검사를 제한한다.
+	// 0이면 pgx/DSN에서 파싱한 값을 유지한다.
 	PingTimeout time.Duration
 }
 
 func DefaultPoolConfig() PoolConfig {
 	return PoolConfig{
-		// Zero explicitly permits an idle pool with no minimum connections.
+		// 유휴 상태에서 연결을 하나도 유지하지 않아도 된다.
 		MinConns:        0,
 		MaxConns:        20,
 		ConnMaxLifetime: time.Hour,

@@ -21,16 +21,16 @@ type Options struct {
 	Pool         PoolConfig
 	Ping         PingConfig
 	AfterConnect func(ctx context.Context, conn *pgx.Conn) error
-	// RuntimeParams overrides session startup parameters without retaining the map.
+	// RuntimeParams는 세션 시작 매개변수를 덮어쓰며 전달받은 맵을 보관하지 않는다.
 	RuntimeParams map[string]string
-	// Nil preserves pgx's default cancellation handler.
+	// nil이면 pgx 기본 취소 처리를 유지한다.
 	CancelRequest *CancelRequestConfig
-	// Nil preserves native pgxpool acquisition; non-nil is copied at construction.
+	// nil이면 pgxpool 기본 획득 동작을 유지하며, 값이 있으면 생성 시 복사한다.
 	AcquirePolicy *AcquirePolicy
 }
 
-// CancelRequestConfig opts into server cancellation with a bounded socket deadline.
-// Receiving a cancellation response does not establish the outcome of a lost COMMIT.
+// CancelRequestConfig는 소켓 기한을 제한한 서버 취소를 선택적으로 활성화한다.
+// 취소 응답을 받아도 응답이 유실된 COMMIT의 결과는 확정되지 않는다.
 type CancelRequestConfig struct {
 	CancelRequestDelay time.Duration
 	DeadlineDelay      time.Duration
@@ -196,8 +196,8 @@ func newPoolAndPing(ctx context.Context, poolCfg *pgxpool.Config, opts Options) 
 	return pool, nil
 }
 
-// The clamp persists for the entire pool lifetime, including reconnects. Pgx's
-// minimum-pool background constructors can outlive the startup Ping context.
+// pgx의 최소 연결 수 유지 작업은 시작 Ping보다 오래 실행될 수 있다.
+// 제한은 재접속을 포함한 풀 수명 전체에 적용한다.
 func boundInitialConnectTimeout(poolCfg *pgxpool.Config, pingTimeout time.Duration) {
 	if poolCfg == nil || poolCfg.ConnConfig == nil || poolCfg.MinConns <= 0 || pingTimeout <= 0 {
 		return

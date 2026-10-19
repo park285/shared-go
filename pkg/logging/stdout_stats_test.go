@@ -12,7 +12,7 @@ import (
 )
 
 func TestSnapshotStdoutCountsOutcomesExactlyOnce(t *testing.T) {
-	// Process aggregates require isolation from the package's parallel tests.
+	// 프로세스 전체 집계이므로 패키지의 병렬 테스트와 격리한다.
 	before := SnapshotStdout()
 	payload := oversizedJSON(t)
 
@@ -244,7 +244,7 @@ func TestEnableFileLoggingAsyncFailuresReachFileSummary(t *testing.T) {
 			t.Fatal(closeErr)
 		}
 
-		file, err := os.ReadFile(filepath.Join(dir, "failed.log")) //nolint:gosec // Test-owned temporary file.
+		file, err := os.ReadFile(filepath.Join(dir, "failed.log")) //nolint:gosec // 테스트 소유 임시 파일이다.
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -301,7 +301,7 @@ func TestEnableFileLoggingBlockedCloseStillSummarizesKnownDrops(t *testing.T) {
 		t.Fatal("file-backed close exceeded bounded stdout wait")
 	}
 
-	file, err := os.ReadFile(filepath.Join(dir, "blocked.log")) //nolint:gosec // Test-owned temporary file.
+	file, err := os.ReadFile(filepath.Join(dir, "blocked.log")) //nolint:gosec // 테스트 소유 임시 파일이다.
 	if err != nil {
 		t.Fatal(err)
 	}

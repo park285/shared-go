@@ -111,7 +111,7 @@ func TestCertificateReloaderAppliesChangeAndKeepsCachedCertificateOnFailure(t *t
 func mustReadFile(t *testing.T, path string) []byte {
 	t.Helper()
 
-	data, err := os.ReadFile(path) //nolint:gosec // test-owned temporary path
+	data, err := os.ReadFile(path) //nolint:gosec // 테스트 소유 임시 경로다.
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}

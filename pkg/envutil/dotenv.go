@@ -92,7 +92,7 @@ func LoadDotenvFile(path string, required, strict bool) error {
 		return nil
 	}
 
-	info, err := os.Lstat(path) //nolint:gosec // dotenv path is operator supplied and validated before loading.
+	info, err := os.Lstat(path) //nolint:gosec // 운영자가 지정한 dotenv 경로를 로드 전에 검증한다.
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) && !required {
 			return nil
@@ -200,7 +200,7 @@ func loadServiceDotenv(serviceName string) (bool, error) {
 }
 
 func loadDotenvFile(path string) error {
-	file, err := os.Open(path) //nolint:gosec // dotenv path is operator supplied and validated by caller.
+	file, err := os.Open(path) //nolint:gosec // 운영자가 지정하고 호출자가 검증한 dotenv 경로다.
 	if err != nil {
 		return fmt.Errorf("open dotenv file %s: %w", path, err)
 	}

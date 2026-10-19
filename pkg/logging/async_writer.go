@@ -129,8 +129,7 @@ func (w *asyncDropWriter) boundedCopy(p []byte) queuedLine {
 
 	data = strconv.AppendInt(data, int64(len(p)), 10)
 
-	// Unknown fields are skipped rather than copied into a map: the oversized
-	// diagnostic is usually exactly the field this stdout copy must omit.
+	// 미지의 필드는 생략한다. 제외할 대형 진단 값을 맵에 복사하지 않기 위해서다.
 	var fields struct {
 		Time      jsontext.Value `json:"time"`
 		Level     jsontext.Value `json:"level"`
@@ -184,7 +183,7 @@ func (w *asyncDropWriter) boundedCopy(p []byte) queuedLine {
 
 		data, quoteErr = jsontext.AppendQuote(data, value)
 		if quoteErr != nil {
-			// AppendQuote preserves valid JSON while reporting invalid UTF-8.
+			// AppendQuote는 잘못된 UTF-8을 보고해도 유효한 JSON을 유지한다.
 			data = append(data, `,"stdout_invalid_utf8":true`...)
 		}
 	}

@@ -55,8 +55,8 @@ func validJSONRequest() JSONRequest {
 func TestRunJSONRejectsNilContext(t *testing.T) {
 	generator := &recordingGenerator{}
 
-	//lint:ignore SA1012 intentionally passing nil to assert rejection
-	_, err := RunJSON(nil, generator, validJSONRequest(), "openai", NoopUsageReporter{}) //nolint:staticcheck // intentionally passing nil to assert rejection
+	//lint:ignore SA1012 거부 동작을 검증하기 위해 의도적으로 nil을 전달한다.
+	_, err := RunJSON(nil, generator, validJSONRequest(), "openai", NoopUsageReporter{}) //nolint:staticcheck // 거부 동작 검증용 nil이다.
 	if err == nil {
 		t.Fatal("RunJSON(nil context) error = nil, want error")
 	}

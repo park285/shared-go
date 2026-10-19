@@ -353,7 +353,7 @@ func TestApplyInboxRecoveryTerminalPayloadPolicy(t *testing.T) {
 				assertInboxRecoveryResult(t, pool, decision, appliedAt, discard)
 			}
 
-			// A terminal row cannot be changed again using its former claim snapshot.
+			// 종결된 행은 이전 획득 스냅샷으로 다시 변경할 수 없다.
 			again, retryTx := inboxRecoveryTransaction(t, pool, store.Options())
 			require.ErrorIs(t, again.ApplyInboxRecovery(t.Context(), decisions[1:2]), pgstore.ErrClaimLost)
 			require.NoError(t, pgxdb.Rollback(t.Context(), retryTx))
