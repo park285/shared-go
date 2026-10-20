@@ -41,6 +41,11 @@ func ruleDecodePreflight(input string) (bool, bool) {
 		needsNormalization = norm.NFKC.QuickSpanString(input) != len(input)
 	}
 
+	// 표지 없는 hex는 정규화 입력에서 표지를 붙여 읽는다.
+	if !needsNormalization {
+		_, needsNormalization = nextReadableBareHex(input, 0)
+	}
+
 	return potential, needsNormalization
 }
 

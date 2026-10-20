@@ -29,6 +29,8 @@ type rawRule struct {
 	Weight         float64  `yaml:"weight"`
 	MatchMode      string   `yaml:"match_mode"`
 	MaxOccurrences int      `yaml:"max_occurrences"`
+	Exclude        []string `yaml:"exclude"`
+	SentenceBreak  int      `yaml:"sentence_break"`
 }
 
 type compiledPolicy struct {
@@ -47,6 +49,7 @@ type compiledRule struct {
 	View                    string
 	Segments                map[segmentKind]struct{}
 	Pattern                 *regexp.Regexp
+	DecodePrograms          []compiledDecodePattern
 	Phrases                 []string
 	Weight                  float64
 	MatchMode               string
@@ -56,6 +59,19 @@ type compiledRule struct {
 	RawCasePrefilter        [][]string
 	RawCaseStablePrefilter  [][]string
 	AggregatePrefilter      []string
+	Exclude                 []*regexp.Regexp
+	// ExcludeLiteralGroups는 Exclude와 같은 순서로 각 예외 정규식이 일치하려면 원문에 있어야 하는 소문자 리터럴 묶음이다.
+	ExcludeLiteralGroups [][][]string
+	// SentenceBreak는 일치가 문장 경계를 건널 때 간격으로 세는 rune 수다. 0이면 경계를 따로 세지 않는다.
+	SentenceBreak int
+	// MaxMatchRunes는 예외 문맥이나 문장 경계를 가리는 규칙의 정규식이 일치할 수 있는 최대 rune 수다.
+	MaxMatchRunes int
+	// MaskKey는 예외 정규식과 문장 경계 간격을 나타낸다. 가림 설정이 같은 규칙은 가린 view를 공유한다.
+	MaskKey string
+	// requiredLiterals는 Guard가 모든 규칙의 필수 리터럴로 만든 오토마톤이고, requiredLiteralMasks는
+	// 이 규칙의 대안별 필수 리터럴 묶음을 그 오토마톤의 리터럴 번호 집합으로 바꾼 값이다.
+	requiredLiterals     *requiredLiteralFilter
+	requiredLiteralMasks [][]requiredLiteralSet
 }
 
 type compiledPack struct {

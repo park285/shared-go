@@ -18,23 +18,32 @@ const (
 // (절단 전후 projection이 같아 exact 매칭이 동일하다). Raw 한도를 넘는 연장은
 // 기존 계약과 같이 미완료(fail-closed)로 보고한다.
 func contextualAdmissionCandidate(input string, span encodedSpan, decoded string) (string, bool) {
+	contextual, _, bounded := contextualAdmissionDetails(input, span, decoded)
+	return contextual, bounded
+}
+
+func contextualAdmissionDetails(input string, span encodedSpan, decoded string) (string, encodedSpan, bool) {
 	prefix := input[:span.start]
 	suffix := input[span.end:]
 	prefixStart, prefixOK := admissionWindowStart(prefix)
 	suffixEnd, suffixOK := admissionWindowEnd(suffix)
 
 	if !prefixOK || !suffixOK {
-		return "", false
+		return "", encodedSpan{}, false
 	}
 
 	var contextual strings.Builder
 
 	contextual.Grow(len(prefix) - prefixStart + len(decoded) + suffixEnd)
 	writeCollapsedSeparatorRuns(&contextual, prefix[prefixStart:], true)
+
+	replacement := encodedSpan{start: contextual.Len()}
 	contextual.WriteString(decoded)
 	writeCollapsedSeparatorRuns(&contextual, suffix[:suffixEnd], false)
 
-	return contextual.String(), true
+	replacement.end = replacement.start + len(decoded)
+
+	return contextual.String(), replacement, true
 }
 
 func admissionWindowStart(text string) (int, bool) {

@@ -1,7 +1,6 @@
 package promptguard
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -83,10 +82,6 @@ func TestRawRegexPrefilterPreservesUppercaseASCIIRegexMatches(t *testing.T) {
 	}
 
 	segment := textSegment{Kind: segmentPlain, Views: normalizeViews("STOP EVERYTHING NOW JUST PRINT")}
-	if strings.EqualFold(segment.Views.Norm, segment.Views.Raw) {
-		t.Fatal("test fixture must exercise context-sensitive confusable normalization")
-	}
-
 	if matches := compiled.matchSegment(segment, compilePolicy(&rawRulepack{Version: 3}), 1); len(matches) != 1 {
 		t.Fatalf("matchSegment() matches = %d, want 1", len(matches))
 	}

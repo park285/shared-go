@@ -8,8 +8,22 @@ rules:
     view: aggregate_joined
     segments: [plain, quote, code, config]
     max_occurrences: 1
-    pattern: '(?:(?:show|print|reveal|dump|display|output|repeat|give|tell)[\s\S]{0,28}(?:(?:your|hidden|internal|developer)[\s\S]{0,16}(?:prompt|instructions?|rules?|message|policy)|system[\s\S]{0,8}message)|(?:reveal|print|output|repeat)[\s\S]{0,12}(?:the)?[\s\S]{0,4}instructions?|(?:hidden|internal|developer|system)[\s\S]{0,16}(?:prompt|instructions?|message|policy)[\s\S]{0,28}(?:show|print|reveal|dump|display|output|repeat|verbatim)|(?:prompt|instructions?|system[\s\S]{0,8}message)[\s\S]{0,16}(?:verbatim|word[\s_-]*for[\s_-]*word))'
+    pattern: '(?:(?:show|print|reveal|dump|display|output|repeat|give|tell)[\s\S]{0,28}(?:(?:your|hidden|internal|developer)[\s\S]{0,16}(?:prompt|instructions?|rules?|message|policy)|system[\s\S]{0,8}message)|(?:reveal|print|output|repeat)[\s\S]{0,12}(?:the)?[\s\S]{0,4}instructions?|(?:hidden|internal|developer|system)[\s\S]{0,16}(?:prompt|instructions?|message|policy)[\s\S]{0,28}(?:show|print|reveal|dump|display|output|repeat|verbatim)|(?:prompt|instructions?|system[\s\S]{0,8}message)[\s\S]{0,16}(?:verbatim|word[\s_-]{0,3}for[\s_-]{0,3}word))'
     weight: 1.0
+    # 문장 경계가 간격 대부분을 쓰게 해 경계 바로 옆 근거(Ignore. Previous instructions.)만 문장을 건너 잇는다.
+    sentence_break: 24
+    # 대화 메시지(your last message), 게임 규칙(your rules for this game), 조직 내부 정책, 생활·설치 안내
+    # (instructions for assembling, installation instructions), 앱의 숨김 메시지와 API의 developer message 형식은
+    # 프롬프트 유출 요청이 아니다.
+    exclude:
+      - '(?i)\byour[\s]+(?:last|previous|prior|recent|latest|earlier|first|second|final|own)[\s]+(?:messages?|repl(?:y|ies)|answers?|responses?)\b'
+      - '(?i)\byour[\s]+rules?[\s]+(?:for|of|in)[\s]+(?:(?:this|the|our|a)[\s]+)?(?:game|quiz|match|round|contest|challenge|puzzle|riddle|trivia|tournament|league|class|course)\b'
+      - '(?i)\b(?:the|our|company(?:''s)?|team|hr|school|corporate|official)[\s]+internal[\s]+polic(?:y|ies)[\s]+(?:on|for|about|regarding)\b'
+      - '(?i)\b(?:our|company(?:''s)?|team|hr|school|corporate)[\s]+internal[\s]+polic(?:y|ies)\b'
+      - '(?i)\b(?:installation|install|setup|set-up|assembly|assembling|cooking|recipe|baking|washing|laundry|care|usage|operating|safety|build|building|download|shipping|delivery|return|parking|exam|homework|lego|ikea|step[\s-]*by[\s-]*step)[\s]+instructions?\b'
+      - '(?i)\binstructions?[\s]+(?:for|on|to)[\s]+(?:[a-z]+ing\b|(?:the|a|an|my|our|this)[\s]+(?:recipe|desk|game|exam|test|homework|assignment|kit|device|app|printer|router|tv|camera|machine|appliance|product|medicine|medication|dish|cake|bread|form|application|visa|lab|experiment|project|furniture|bike|car)\b)'
+      - '(?i)\bhidden[\s]+(?:messages?|chats?)[\s]+(?:in|on|from)[\s]+(?:slack|discord|kakao(?:talk)?|telegram|whatsapp|teams|imessage|messenger|line|wechat|instagram|facebook|gmail|outlook)\b'
+      - '(?i)\bdeveloper[\s_-]+messages?[\s_-]+(?:format|role|type|field|schema|object|example|param(?:eter)?s?)\b'
 
   - id: instruction_override_en
     family: override
@@ -18,8 +32,26 @@ rules:
     view: aggregate_joined
     segments: [plain, quote, code, config]
     max_occurrences: 1
-    pattern: '(?:(?:[il]gnore|disregard|forget|override|bypass|reset)[\s\S]{0,28}(?:all[\s\S]{0,8})?(?:previous|prior|developer)[\s\S]{0,16}(?:instructions?|prompts?|policies?|rules?)|(?:previous|prior|system|developer)[\s\S]{0,16}(?:instructions?|prompts?|policies?|rules?)[\s\S]{0,28}(?:[il]gnore|disregard|forget|override|bypass|reset|do not follow))'
+    pattern: '(?:(?:[il]gnore|disregard|forget|override|bypass|(?:^|[^p])reset)[\s\S]{0,28}(?:all[\s\S]{0,8})?(?:previous|prior|developer)[\s\S]{0,16}(?:instructions?|prompts?|policies?|rules?)|(?:previous|prior|system|developer)[\s\S]{0,16}(?:instructions?|prompts?|policies?|rules?)(?:[\s\S]{0,16}(?:[il]gnore|disregard|forget|override|bypass|do not follow)|(?:[\s\S]{0,15}[^p])?reset))'
     weight: 1.0
+    sentence_break: 24
+    # 단어 내부(.gitignore, preset), 코드 식별자(developerPrompt, override.Shared),
+    # 파일·디렉터리를 꾸미는 명사와 관용구(rules of thumb)는 지시 변경 근거가 아니다.
+    # 사용자가 자기 이전 지시를 정정하는 말(ignore my previous instructions)은 그 한정어만 가리고, 영역 이름이
+    # 붙은 규칙·정책(previous ESLint rules, firewall rules, game rules)은 그 명사구만 가린다.
+    # 정형 공격 문구의 뜻·유래를 묻거나 설명하는 말("ignore previous instructions" 밈이 뭐야, what does … mean)은
+    # 문구 바로 뒤에 메타 명사와 질문·설명 낱말이 이어질 때만 가린다. 뜻대로·밈처럼·같은 문장을 실행해는 가리지 않는다.
+    exclude:
+      - '(?i)\b(?:firewall|iptables|nftables|eslint|tslint|stylelint|prettier|lint(?:er|ing)?|css|style|styling|routing|route|validation|business|game|grammar|spelling|naming|commit|branch|protection|network|mail|e-?mail|inbox|spam|filter(?:ing)?|cache|caching|proxy|nginx|apache|waf|nat|acl|alert(?:ing)?|scoring|matching|pricing|tax|grading|chess|card|board|house|traffic|iam|rbac|retention|lifecycle|backup|sync|rewrite|redirect|formatting|format|compiler|build|test|sonar|security[\s_-]*group|ingress|egress|password|cookie|cors|csp|version)[\s_-]+(?:rules?|polic(?:y|ies))\b'
+      - '(?i)\b(?:my|our)(?:[\s]+own)?[\s]+(?:previous|prior|earlier|last|above|original)\b'
+      - '[a-z0-9](?:ignore|reset|override|bypass)'
+      - '[A-Z0-9](?:IGNORE|RESET|OVERRIDE|BYPASS)'
+      - '\b(?:ignore|reset|override|bypass)\.[A-Za-z_]'
+      - '\b[a-z][A-Za-z0-9]*?(?:Prompts?|Instructions?|Rules?|Polic(?:y|ies))\b'
+      - '(?i)\b(?:rules?|prompts?|instructions?|polic(?:y|ies))[\s_-]*(?:files?|director(?:y|ies)|dirs?|folders?|paths?|templates?|cache|tables?|configs?|loaders?|engines?|sets?|lists?|editors?|builders?|managers?)\b'
+      - '(?i)\brules?\s+of\s+thumb\b'
+      - '(?i)(?:[il]gnore|disregard|forget)(?:[\s]+(?:all|any|the|your|of))*[\s]+(?:previous|prior|above|earlier)[\s]+(?:instructions?|prompts?|rules?)(?:["''”’]?[\s]*(?:(?:가|이|는|은|란|이란|라는|이라는|같은|와[\s]*같은|과[\s]*같은)[\s]*)?(?:(?:말|문장|문구|표현|밈|meme|뜻|의미|유래|공격)[\s]*(?:이|가|은|는|의|을|를)?[\s]*){1,2}(?:무슨|뭐|뭔|무엇|어떤|왜|어떻게|어디|설명|알려|유래|대표적|유명|유행|위험|인젝션|예시|사례)|["''”’][\s]*(?:가|이|는|은|란|이란)[\s]*(?:무슨|뭔|어떤)[\s]*(?:말|문장|문구|표현|밈|뜻|의미|공격))'
+      - '(?i)\b(?:what[\s]+(?:does|do|did|is)|the)[\s]+["''“‘]?(?:[il]gnore|disregard|forget)(?:[\s]+(?:all|any|the|your|of))*[\s]+(?:previous|prior|above|earlier)[\s]+(?:instructions?|prompts?|rules?)["''”’]?[\s]+(?:mean|meme|trend|joke)\b'
 
   - id: live_secret_exfil_en
     family: secret_exfil
@@ -28,8 +60,66 @@ rules:
     view: aggregate_joined
     segments: [plain, quote, code, config]
     max_occurrences: 1
-    pattern: '(?:(?:show|print|reveal|dump|copy|cat|echo)[\s\S]{0,32}(?:api[\s_-]*key|secret[\s_-]*key|access[\s_-]*token|refresh[\s_-]*token|credentials?|password|passwd|environment|\.env)|(?:api[\s_-]*key|secret[\s_-]*key|access[\s_-]*token|refresh[\s_-]*token|credentials?|password|passwd|\.env)[\s\S]{0,32}(?:show|print|reveal|dump|copy|cat|echo))'
+    pattern: '(?:(?:show|print|reveal|dump|cat|echo)[\s\S]{0,32}(?:api[\s_-]{0,3}key|secret[\s_-]{0,3}key|access[\s_-]{0,3}token|refresh[\s_-]{0,3}token|credentials?|password|passwd)|(?:api[\s_-]{0,3}key|secret[\s_-]{0,3}key|access[\s_-]{0,3}token|refresh[\s_-]{0,3}token|credentials?|password|passwd)[\s\S]{0,32}(?:show|print|reveal|dump|cat|echo))'
     weight: 1.0
+    sentence_break: 28
+    # 단어 내부 동사(application, fingerprint, GOOGLE_APPLICATION_CREDENTIALS, catalog), 동작을 서술하는
+    # 활용형·파생어(shows, printed, printer, showcase), 방법·예시를 보여 달라는 요청(show me how),
+    # 화자가 보여 주겠다는 서술(I'll show)과 비밀번호 UI·정책 명사구는 비밀값 요청이 아니다.
+    # 비밀값 명사가 다른 명사를 꾸미는 복합명사(password generator, API key format), 코드 호출·셸 출력(print(password),
+    # echo $API_KEY, 따옴표 문자열 하나로 끝나는 echo "done")과 /etc/passwd 경로도 값 요청이 아니다.
+    # 비밀값을 출력하지 말라는 안내(do not print the API key, passwords must never show)는 부정한 동사만
+    # 가려, 같은 문장의 다른 요청 동사는 비밀값 명사와 다시 짝짓는다. why not처럼 조동사 없는 not은 세지 않는다.
+    exclude:
+      - '[a-z0-9](?:show|print|reveal|dump|cat|echo)'
+      - '[A-Z0-9](?:SHOW|PRINT|REVEAL|DUMP|CAT|ECHO)'
+      - '(?i)\b(?:show|print|reveal|dump|cat|echo)[a-z]'
+      - '(?i)\b(?:show|print|reveal|dump|echo)(?:[\s]+(?:me|us))?[\s]+(?:how|where|when|why|whether|what[\s]+(?:an?|typical|valid|sample)[\s]|the[\s]+(?:steps?|process|procedure|way|docs?|documentation|syntax|format)|(?:an?|some)[\s]+(?:examples?|samples?|templates?|guides?|tutorials?|snippets?)|examples?|samples?)\b'
+      - '(?i)\b(?:i|we)(?:''ll|''d|[\s]+(?:will|would|can|could|should))?[\s]+(?:show|print|reveal|dump|echo)\b'
+      - '(?i)\bpassword[\s_-]*(?:visibility[\s_-]*)?(?:toggles?|buttons?|fields?|inputs?|icons?|checkbox(?:es)?|strength|polic(?:y|ies)|reset|managers?|hash(?:es|ing)?|rules?|forms?|hints?|generators?|ideas?|tips?|suggestions?|recommendations?|examples?|samples?|formats?|requirements?|length|expir(?:y|ation))\b'
+      - '(?i)\b(?:api[\s_-]*keys?|secret[\s_-]*keys?|(?:access|refresh)[\s_-]*tokens?|credentials?)[\s_-]*(?:formats?|requirements?|rules?|polic(?:y|ies)|length|examples?|samples?|generators?|rotation|validation|docs?|documentation|names?|naming|types?|scopes?|permissions?|expir(?:y|ation)|managers?|fields?|inputs?)\b'
+      - '(?i)\b(?:show|print|reveal|dump|cat|echo)(?:\(|[\s]*["'']?\$)'
+      - '(?im)\b(echo)[\s]+(?:"[^"\n]*"|''[^''\n]*'')[\s]*(?:$|[;&|>])'
+      - '(?i)/etc/passwd\b'
+      - '(?i)\b((?:never|(?:do|does|did|will|would|should|must|can|could|may|might)[\s]+not|(?:don|doesn|didn|won|wouldn|shouldn|mustn|can|couldn)[''’]t|cannot)(?:[\s]+(?:ever|accidentally|directly|publicly|again|(?:share|log|store|send|commit|copy|paste|expose|leak|write|output|display|return|include|save|upload|email|hardcode)[\s]+(?:or|and|nor)))*[\s]+(?:show|print|reveal|dump|cat|echo))(?:[\s]+(?:me|us|them|him|her|anyone|anybody|others))?[\s]+(?:(?:the|your|my|our|their|any|its|this|that|these|those|raw|plain(?:text)?|real|actual|full|stored|users?[''’]?s?)[\s]+){0,2}(?:api[\s_-]*keys?|secret[\s_-]*keys?|(?:access|refresh)[\s_-]*tokens?|credentials?|passwords?|passwd)\b'
+      - '(?i)\b(?:api[\s_-]*keys?|secret[\s_-]*keys?|(?:access|refresh)[\s_-]*tokens?|credentials?|passwords?|passwd)[\s]+(?:(?:must|should|will|would|can|could|may|might|do|does|did)[\s]+)?((?:never|not|(?:don|doesn|didn|won|wouldn|shouldn|mustn|can|couldn)[''’]t|cannot)(?:[\s]+(?:ever|be))?[\s]+(?:show|print|reveal|dump|cat|echo))\b'
+
+  # tell·give는 일반 대화에 흔하므로 me/us, 또는 your가 붙은 them/him/her 바로 뒤에 비밀값 명사가 오는 요청만 센다.
+  - id: secret_tell_request_en
+    family: secret_exfil
+    type: regex
+    action: block
+    view: aggregate_joined
+    segments: [plain, quote, code, config]
+    max_occurrences: 1
+    pattern: '(?:tell|give)(?:(?:me|us)(?:allof|all)?(?:your|the|its)?|(?:them|him|her)your)(?:stored|current|actual|real|admin|root)?(?:api[\s_-]{0,3}keys?|secret[\s_-]{0,3}keys?|access[\s_-]{0,3}tokens?|refresh[\s_-]{0,3}tokens?|credentials?|passwords?|passwd)'
+    weight: 1.0
+    # 단어 내부(foretell, forgive), 활용형(tells, given)과 비밀값의 형식·규칙을 묻는 명사구는 값 요청이 아니다.
+    # 화자가 전하겠다는 서술(I'll tell him)은 요청이 아니고, 부정문(never tell me your password)은 부정한 동사만 가린다.
+    exclude:
+      - '[a-z0-9](?:tell|give)'
+      - '[A-Z0-9](?:TELL|GIVE)'
+      - '(?i)\b(?:tell|give)[a-z]'
+      - '(?i)\b(?:api[\s_-]*keys?|secret[\s_-]*keys?|(?:access|refresh)[\s_-]*tokens?|credentials?|passwords?)[\s_-]*(?:formats?|requirements?|rules?|polic(?:y|ies)|length|examples?|hints?|strength|reset|managers?|ideas?|tips?|suggestions?|recommendations?|generators?|samples?|fields?|docs?|documentation|names?|naming|types?|scopes?|permissions?|expir(?:y|ation))\b'
+      - '(?i)\b(?:i|we)(?:''ll|''d|[\s]+(?:will|would|can|could|should))?[\s]+(?:tell|give)\b'
+      - '(?i)\b((?:never|(?:do|does|did|will|would|should|must|can|could|may|might)[\s]+not|(?:don|doesn|didn|won|wouldn|shouldn|mustn|can|couldn)[''’]t|cannot)(?:[\s]+(?:ever|again))*[\s]+(?:tell|give))[\s]+(?:me|us|them|him|her)[\s]+(?:all[\s]+(?:of[\s]+)?)?(?:(?:your|the|its)[\s]+)?(?:(?:stored|current|actual|real|admin|root)[\s]+)?(?:api[\s_-]*keys?|secret[\s_-]*keys?|(?:access|refresh)[\s_-]*tokens?|credentials?|passwords?|passwd)\b'
+
+  # 결합 view는 마침표를 지우므로 .env 파일명은 문장부호가 남는 view에서 찾는다.
+  - id: env_file_exfil_en
+    family: secret_exfil
+    type: regex
+    action: block
+    view: aggregate_norm
+    segments: [plain, quote, code, config]
+    max_occurrences: 1
+    pattern: '(?:show|print|reveal|dump|cat|echo|paste)[\s\S]{0,24}(?:^|[^\w.])\.env(?:$|[^\w.])'
+    weight: 1.0
+    sentence_break: 24
+    exclude:
+      - '[a-z0-9](?:show|print|reveal|dump|cat|echo|paste)'
+      - '[A-Z0-9](?:SHOW|PRINT|REVEAL|DUMP|CAT|ECHO|PASTE)'
+      - '(?i)\b(?:show|print|reveal|dump|cat|echo|paste)[a-z]'
+      - '(?i)\b(?:show|print|reveal|dump|echo|paste)(?:[\s]+(?:me|us))?[\s]+(?:how|where|when|why|whether|the[\s]+(?:steps?|process|procedure|way|docs?|documentation|syntax|format)|(?:an?|some)[\s]+(?:examples?|samples?|templates?|guides?|tutorials?|snippets?)|examples?|samples?)\b'
 
   - id: memory_poisoning_en
     family: memory_poisoning
@@ -58,7 +148,7 @@ rules:
     view: raw
     segments: [plain]
     max_occurrences: 1
-    pattern: '^[\s]*[\[【<＜][\s]*(?:system|developer|assistant|시스템|개발자|어시스턴트)(?:[\s_-]*message|[\s]*메시지)?[\s]*[\]】>＞][\s\S]{0,96}(?:(?:administrator|admin)[\s\S]{0,16}role[\s\S]{0,12}(?:changed|updated)|(?:from[\s]+now[\s]+on|always)[\s\S]{0,48}(?:reply|answer|respond|output)[\s\S]{0,24}(?:only|exactly)|(?:ignore|disregard|override|bypass)[\s\S]{0,20}(?:instructions?|rules?|polic(?:y|ies)))'
+    pattern: '(?:^|\n)[\s]*[\[【<＜][\s]*(?:system|developer|assistant|시스템|개발자|어시스턴트)(?:[\s_-]*message|[\s]*메시지)?[\s]*[\]】>＞][\s\S]{0,96}(?:(?:administrator|admin)[\s\S]{0,16}role[\s\S]{0,12}(?:changed|updated)|(?:from[\s]+now[\s]+on|always)[\s\S]{0,48}(?:reply|answer|respond|output)[\s\S]{0,24}(?:only|exactly)|(?:ignore|disregard|override|bypass)[\s\S]{0,20}(?:instructions?|rules?|polic(?:y|ies)))'
     weight: 1.0
 
   - id: interrupt_fixed_output_en
@@ -68,7 +158,7 @@ rules:
     view: raw
     segments: [plain]
     max_occurrences: 1
-    pattern: '(?:^|(?:-{4,})[\s\r\n-]*)(?:stop|halt)[\s]+(?:everything|all)[\s\S]{0,48}(?:just|only)(?:[\s]*["“][^"”\r\n]{8,512}["”]|[\s]+(?:print|output|reply|answer|respond))'
+    pattern: '(?m)(?:^|(?:-{4,})[\s\r\n-]*)(?:stop|halt)[\s]+(?:everything|all)[\s\S]{0,48}(?:just|only)(?:[\s]*["“][^"”\r\n]{8,512}["”]|[\s]*(?:print|output|reply|answer|respond))'
     weight: 1.0
 
   - id: role_override
@@ -98,18 +188,22 @@ rules:
     view: aggregate_joined
     segments: [plain, quote, code, config]
     max_occurrences: 1
-    pattern: '(?:policy|guardrail|safety|security|contentpolicy)[\s\S]{0,24}(?:ignore|bypass|disregard|violate)[\s\S]{0,24}(?:answer|continue|comply)'
+    pattern: '(?:(?:policy|guardrail|safety|security|contentpolicy)[\s\S]{0,24}(?:ignore|bypass|disregard|violate)|(?:ignore|bypass|disregard|violate)[\s\S]{0,16}(?:policy|guardrail|safety|security|contentpolicy))[\s\S]{0,24}(?:answer|continue|comply)'
     weight: 0.7
+    # 보안·정책이 다른 명사를 꾸미는 경고·검사·업데이트(ignore the security warning and continue)는 모델 정책 우회가 아니다.
+    exclude:
+      - '(?i)\b(?:security|safety|policy|ssl|tls|certificate)[\s_-]*(?:policy[\s_-]*)?(?:warnings?|alerts?|prompts?|checks?|updates?|patch(?:es)?|scans?|settings?|certificates?|modes?|dialogs?|pop-?ups?|errors?|notices?)\b'
 
   - id: jailbreak_terms_en
     family: jailbreak
-    type: phrases
+    type: regex
     action: score
-    view: aggregate_joined
+    # 결합 view는 단어를 이어 붙여 경계가 사라지므로 원문에서 찾는다.
+    # 점수는 입력 전체에서 합산되므로 사람 이름 Dan과 구분해 탈옥 용어 표기인 대문자 DAN만 센다.
+    view: raw
     segments: [plain, quote, code, config]
-    match_mode: token
     max_occurrences: 1
-    phrases: [dan, developermode, doanythingnow]
+    pattern: '(?-i:\bDAN\b)|\bdeveloper[\s_-]*mode\b|\bdo[\s_-]*anything[\s_-]*now\b'
     weight: 0.5
 
   - id: prompt_reference_en
@@ -120,7 +214,7 @@ rules:
     segments: [plain, quote, code, config]
     max_occurrences: 1
     pattern: '(?:(?:show|reveal)[\s\S]{0,28}(?:example[\s\S]{0,12})?(?:system[\s\S]{0,4}prompt|internal[\s\S]{0,4}polic(?:y|ies))|(?:attempts?|audit|auditors?)[\s\S]{0,28}(?:reveal|expose)[\s\S]{0,16}(?:internal[\s\S]{0,4}polic(?:y|ies)|prompt))'
-    weight: 0.6
+    weight: 0.5
 
   - id: override_reference_en
     family: override_reference
@@ -130,7 +224,7 @@ rules:
     segments: [plain, quote, code, config]
     max_occurrences: 1
     pattern: '(?:ignoring|disregarding)[\s\S]{0,16}(?:previous|prior)[\s\S]{0,12}(?:instructions?|rules?)'
-    weight: 0.6
+    weight: 0.5
 
   - id: role_spoofing
     family: role_spoofing
@@ -140,7 +234,7 @@ rules:
     segments: [plain, quote, code, config]
     max_occurrences: 1
     pattern: '(?:^|[\s\n])(?:system|developer|assistant|시스템|개발자|어시스턴트)(?:[\s]+message|[\s]*메시지)?[\s]*[:：]'
-    weight: 0.65
+    weight: 0.5
 
   - id: transform_reference
     family: transform_reference
@@ -150,7 +244,7 @@ rules:
     segments: [plain, quote, code, config]
     max_occurrences: 1
     pattern: '(?:base64|rot13|hex|encode|decode|encoding|encoded|인코딩|디코드|복호화)[\s\S]{0,28}(?:prompt|instruction|프롬프트|지시)'
-    weight: 0.6
+    weight: 0.5
 
   - id: persistence_reference
     family: persistence_reference
@@ -160,4 +254,4 @@ rules:
     segments: [plain, quote, code, config]
     max_occurrences: 1
     pattern: '(?:memory|session[\s]*memory)[\s\S]{0,24}(?:remember|store|retain)[\s\S]{0,20}(?:user[\s]*instructions?|commands?)'
-    weight: 0.6
+    weight: 0.5

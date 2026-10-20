@@ -2,6 +2,7 @@ package guardtext
 
 import (
 	"encoding/base64"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -146,5 +147,29 @@ func TestProtectedContextRejectsOversizeBeforeMatcherObservation(t *testing.T) {
 
 	if maxObserved > maxDecodedCandidateLen {
 		t.Fatalf("matcher observed %d bytes, want at most %d", maxObserved, maxDecodedCandidateLen)
+	}
+}
+
+func TestContextualAdmissionDeduplicatesBeforeBudgetEnforcement(t *testing.T) {
+	t.Parallel()
+
+	decoder := contextDecoder{visited: make(map[string]struct{})}
+	current := decodeQueueEntry{text: "prefix encoded suffix"}
+	span := encodedSpan{start: 7, end: 14}
+
+	for index := range maxDecodeCandidates {
+		decoder.admitContextual(current, span, fmt.Sprintf("item %d", index))
+	}
+
+	decoder.admitContextual(current, span, "item 0")
+
+	if !decoder.result.Complete() {
+		t.Fatalf("duplicate at exact capacity marked incomplete: %#v", decoder.result)
+	}
+
+	decoder.admitContextual(current, span, "new item")
+
+	if decoder.result.Status&DecodeCandidateLimit == 0 {
+		t.Fatal("new candidate beyond capacity must remain incomplete")
 	}
 }

@@ -12,7 +12,6 @@ import (
 const (
 	maxBase64Candidates         = 8
 	maxDecodedRuleFragmentBytes = 14
-	maxWitnessMinimizeBytes     = 64 << 10
 )
 
 func decodedTextSegments(input string) ([]textSegment, guardtext.DecodeStatus) {
@@ -20,10 +19,10 @@ func decodedTextSegments(input string) ([]textSegment, guardtext.DecodeStatus) {
 }
 
 func (g *Guard) decodedTextSegments(input string) ([]textSegment, guardtext.DecodeStatus) {
-	return g.decodedTextSegmentsWithRaw(input, nil)
+	return g.decodedTextSegmentsWithRaw(input, Evaluation{}, nil)
 }
 
-func (g *Guard) decodedTextSegmentsWithRaw(input string, rawSegments []textSegment) ([]textSegment, guardtext.DecodeStatus) {
+func (g *Guard) decodedTextSegmentsWithRaw(input string, raw Evaluation, budget *guardtext.RuleRegionDecoder) ([]textSegment, guardtext.DecodeStatus) {
 	if g == nil {
 		return decodedTextSegments(input)
 	}
@@ -39,12 +38,14 @@ func (g *Guard) decodedTextSegmentsWithRaw(input string, rawSegments []textSegme
 		decodedContextMayContributeForGuard,
 		oversizedDecodedWouldBlockForGuard,
 		decodedCandidateWouldBlockForGuard,
+		decodedInputCannotContributeForGuard,
+		budget,
 	)
 	scored, overflow := partitionDecodedSegments(result)
 
 	overflow = appendUniqueDecodedSegment(scored, overflow, blockingCandidate)
 
-	witnesses := g.blockingOverflowSegments(rawSegments, scored, overflow)
+	witnesses := g.blockingOverflowSegments(raw, scored, overflow)
 
 	return append(scored, witnesses...), result.Status
 }
@@ -62,26 +63,20 @@ func decodedCandidateWouldBlockForGuard(guard *Guard, candidate string) bool {
 }
 
 func oversizedDecodedWouldBlockForGuard(guard *Guard, original, decoded string, bounded []string) bool {
-	rawSegments, exceeded := buildEvaluationSegmentsFiltered(original, guard.aggregateMayMatch)
-	if exceeded {
-		return false
-	}
-
+	raw := guard.evaluateTextSegments(original)
 	policy := guard.policy()
 
-	fullSegments := append(slices.Clone(rawSegments), decodedCandidateSegment(decoded))
-
-	if guard.evaluateSegments(policy, fullSegments).Decision != DecisionBlock {
+	if guard.evaluateSegmentsWithBase(policy, raw, []textSegment{decodedCandidateSegment(decoded)}).Decision != DecisionBlock {
 		return false
 	}
 
-	boundedSegments := slices.Clone(rawSegments)
+	boundedSegments := make([]textSegment, 0, len(bounded))
 
 	for _, candidate := range bounded {
 		boundedSegments = append(boundedSegments, decodedCandidateSegment(candidate))
 	}
 
-	return guard.evaluateSegments(policy, boundedSegments).Decision != DecisionBlock
+	return guard.evaluateSegmentsWithBase(policy, raw, boundedSegments).Decision != DecisionBlock
 }
 
 func decodedCandidateSegment(candidate string) textSegment {
@@ -137,7 +132,7 @@ func appendUniqueDecodedSegment(scored, overflow []textSegment, candidate string
 	return append(overflow, decodedCandidateSegment(candidate))
 }
 
-func (g *Guard) blockingOverflowSegments(raw, scored, overflow []textSegment) []textSegment {
+func (g *Guard) blockingOverflowSegments(raw Evaluation, scored, overflow []textSegment) []textSegment {
 	if len(overflow) == 0 || g.segmentsBlock(raw, scored, nil) {
 		return nil
 	}
@@ -156,15 +151,9 @@ func (g *Guard) blockingOverflowSegments(raw, scored, overflow []textSegment) []
 		}
 	}
 
-	// 이진 탐색이 고른 prefix는 그 자체로 이미 block이므로, 최소화는 witness를 줄일 뿐
-	// 판정을 바꾸지 않는다. 최소화 1회당 raw+scored 전체를 다시 평가하므로 큰 입력에서는
-	// 평가 비용이 witness 개수만큼 증폭된다. 그래서 큰 입력은 비최소 witness로 되돌린다.
+	// 원문은 이미 규칙별 근거로 집계되어 있으므로 후보 최소화가 원문 크기만큼 재검사하지 않는다.
 	witnesses := make([]textSegment, start)
 	copy(witnesses, overflow[:start])
-
-	if segmentsByteTotal(raw)+segmentsByteTotal(scored) > maxWitnessMinimizeBytes {
-		return witnesses
-	}
 
 	for index := range slices.Backward(witnesses) {
 		withoutCurrent := make([]textSegment, len(witnesses)-1)
@@ -179,45 +168,56 @@ func (g *Guard) blockingOverflowSegments(raw, scored, overflow []textSegment) []
 	return witnesses
 }
 
-func segmentsByteTotal(segments []textSegment) int {
-	total := 0
+func (g *Guard) segmentsBlock(raw Evaluation, scored, overflow []textSegment) bool {
+	segments := make([]textSegment, 0, len(scored)+len(overflow))
 
-	for index := range segments {
-		total += len(segments[index].Views.Raw)
-	}
-
-	return total
-}
-
-func (g *Guard) segmentsBlock(raw, scored, overflow []textSegment) bool {
-	segments := make([]textSegment, 0, len(raw)+len(scored)+len(overflow))
-
-	segments = append(segments, raw...)
 	segments = append(segments, scored...)
 	segments = append(segments, overflow...)
 
-	return g.evaluateSegments(g.policy(), segments).Decision == DecisionBlock
+	return g.evaluateSegmentsWithBase(g.policy(), raw, segments).Decision == DecisionBlock
 }
 
 func (g *Guard) decodedCandidateMayContribute(candidate string) bool {
 	views := normalizeViews(candidate)
-	if decodedCandidateHasBoundarySyntax(views.Raw) {
+	segment := textSegment{Kind: segmentPlain, Views: views}
+	shortFragment := len(candidate) <= maxDecodedRuleFragmentBytes
+
+	if shortFragment && decodedCandidateHasBoundarySyntax(views.Raw) {
 		return true
 	}
-
-	shortFragment := len(candidate) <= maxDecodedRuleFragmentBytes
 
 	for i := range g.packs {
 		for j := range g.packs[i].Rules {
 			rule := &g.packs[i].Rules[j]
+			// 리터럴 없는 사용자 규칙은 이 사전 필터로 무해함을 증명할 수 없다.
+			if len(rule.RequiredLiteralGroups) == 0 {
+				return true
+			}
+
 			text := decodedContributionView(rule, views)
 
 			if shortFragment && decodedTextOverlapsRequiredLiterals(text, rule.RequiredLiteralGroups) {
 				return true
 			}
 
-			if !shortFragment && len(rule.RequiredLiteralGroups) > 0 &&
-				containsAllLiteralGroups(text, rule.RequiredLiteralGroups) {
+			if shortFragment && rule.View == viewRaw && containsASCIIUpper(views.Raw) &&
+				decodedTextOverlapsRequiredLiterals(strings.ToLower(views.Raw), rule.RawCasePrefilter) {
+				return true
+			}
+
+			if shortFragment {
+				continue
+			}
+
+			if rule.View == viewRaw {
+				if rule.literalPrefilterPasses(segment, views.Raw) {
+					return true
+				}
+
+				continue
+			}
+
+			if containsAllLiteralGroups(text, rule.RequiredLiteralGroups) {
 				return true
 			}
 		}
@@ -257,7 +257,19 @@ func (g *Guard) decodedBoundaryCompletesLiteral(left, decoded, right string) boo
 
 			for _, group := range rule.RequiredLiteralGroups {
 				for _, literal := range group {
-					if literalNearDecoded(combined, literal, decodedStart, decodedEnd) {
+					if literalNearDecoded(combined, literal, decodedStart, decodedEnd, strings.Contains) {
+						return true
+					}
+				}
+			}
+
+			if len(rule.RawCasePrefilter) == 0 || !containsASCIIUpper(combinedViews.Raw) {
+				continue
+			}
+
+			for _, group := range rule.RawCasePrefilter {
+				for _, literal := range group {
+					if literalNearDecoded(combinedViews.Raw, literal, len(leftViews.Raw), len(leftDecodedViews.Raw), containsASCIIFold) {
 						return true
 					}
 				}
@@ -268,7 +280,7 @@ func (g *Guard) decodedBoundaryCompletesLiteral(left, decoded, right string) boo
 	return false
 }
 
-func literalNearDecoded(text, literal string, decodedStart, decodedEnd int) bool {
+func literalNearDecoded(text, literal string, decodedStart, decodedEnd int, match func(string, string) bool) bool {
 	if literal == "" || decodedStart < 0 || decodedStart > decodedEnd || decodedStart > len(text) {
 		return false
 	}
@@ -278,23 +290,7 @@ func literalNearDecoded(text, literal string, decodedStart, decodedEnd int) bool
 	windowStart := max(0, decodedStart-len(literal))
 	windowEnd := min(len(text), decodedEnd+len(literal))
 
-	for offset := windowStart; offset <= windowEnd; {
-		index := strings.Index(text[offset:windowEnd], literal)
-		if index < 0 {
-			return false
-		}
-
-		start := offset + index
-		end := start + len(literal)
-
-		if end >= decodedStart && start <= decodedEnd {
-			return true
-		}
-
-		offset = start + 1
-	}
-
-	return false
+	return match(text[windowStart:windowEnd], literal)
 }
 
 func requiredLiteralContextRunes(packs []compiledPack) int {

@@ -19,50 +19,22 @@ const (
 type textSegment struct {
 	Kind      segmentKind
 	Kinds     segmentKindSet
+	Aggregate bool
 	Views     Views
 	rawNorm   string
-	Aggregate bool
+	// rawChunks는 결합 세그먼트 원문 앞쪽(tail) 조각들의 rune 수다. 방문 중에만 유효하다.
+	rawChunks []aggregateTailChunk
+	// piece는 조각 세그먼트 자신의, 결합 세그먼트에서는 오른쪽 조각의 파생 view 캐시다. 방문 중에만 유효하다.
+	piece *segmentPiece
 }
 
 const (
-	guardBoundaryMarker  = "\uE100"
-	maxSegmentBoundaries = 256
-	boundaryWindowRunes  = 256
+	guardBoundaryMarker = "\uE100"
+	boundaryWindowRunes = 256
 )
 
 func JoinParts(parts ...string) string {
 	return strings.Join(parts, guardBoundaryMarker)
-}
-
-func splitTextSegments(text string) []textSegment {
-	segments, exceeded := splitTextSegmentsBounded(text, maxSegmentBoundaries+1)
-	if exceeded {
-		return nil
-	}
-
-	return segments
-}
-
-func splitTextSegmentsBounded(text string, limit int) ([]textSegment, bool) {
-	if limit <= 0 {
-		return nil, true
-	}
-
-	raw := sanitizeUTF8(text)
-	if strings.TrimSpace(raw) == "" {
-		return []textSegment{{Kind: segmentPlain, Views: normalizeViews(raw)}}, false
-	}
-
-	segments, exceeded := segmentizeTextBounded(raw, limit)
-	if exceeded {
-		return nil, true
-	}
-
-	if len(segments) == 0 {
-		return []textSegment{{Kind: segmentPlain, Views: normalizeViews(raw)}}, false
-	}
-
-	return segments, false
 }
 
 func firstRunes(text string, limit int) string {
@@ -137,139 +109,106 @@ func segmentKindBit(kind segmentKind) segmentKindSet {
 }
 
 type segmentizer struct {
-	segments    []textSegment
 	buffer      strings.Builder
 	currentKind segmentKind
 	fenceMarker string
-	limit       int
 	inFence     bool
 }
 
-func segmentizeTextBounded(text string, limit int) ([]textSegment, bool) {
-	state := segmentizer{
-		segments:    make([]textSegment, 0, 8),
-		currentKind: segmentPlain,
-		limit:       limit,
+// walkTextSegments는 서식 경계 수와 무관하게 한 세그먼트씩 전달한다.
+// 입력 byte 한도는 Guard가 소유하며, 서식 수를 차단 근거로 쓰지 않는다.
+func walkTextSegments(text string, yield func(textSegment)) {
+	raw := sanitizeUTF8(text)
+	if strings.TrimSpace(raw) == "" {
+		yield(textSegment{Kind: segmentPlain, Views: normalizeViews(raw)})
+
+		return
 	}
 
-	for line := range strings.Lines(text) {
-		nextKind, marker, changedFence := nextSegmentState(strings.TrimSpace(line), state.inFence, state.fenceMarker)
+	state := segmentizer{currentKind: segmentPlain}
 
+	for line := range strings.Lines(raw) {
+		nextKind, marker, changedFence := nextSegmentState(strings.TrimSpace(line), state.inFence, state.fenceMarker)
 		switch {
 		case changedFence:
-			if !state.applyFenceChange(line, marker) {
-				return nil, true
-			}
+			state.applyFenceChange(line, marker, yield)
 		case state.inFence:
 			state.buffer.WriteString(line)
 		default:
-			if !state.appendLine(line, nextKind) {
-				return nil, true
-			}
+			state.appendLine(line, nextKind, yield)
 		}
 	}
 
-	if !state.flush(state.currentKind) {
-		return nil, true
-	}
-
-	return state.segments, false
+	state.flush(state.currentKind, yield)
 }
 
-func (s *segmentizer) flush(kind segmentKind) bool {
+func (s *segmentizer) flush(kind segmentKind, yield func(textSegment)) {
 	if s.buffer.Len() == 0 {
-		return true
+		return
 	}
 
 	content := s.buffer.String()
 	s.buffer.Reset()
 
 	finalKind := segmentKindFromContent(kind, content)
-
-	var exceeded bool
-
-	s.segments, exceeded = appendSegmentContentBounded(s.segments, finalKind, content, s.limit)
-
-	return !exceeded
+	emitSegmentContent(finalKind, content, yield)
 }
 
-func (s *segmentizer) applyFenceChange(line, marker string) bool {
+func (s *segmentizer) applyFenceChange(line, marker string, yield func(textSegment)) {
 	if s.inFence && marker == s.fenceMarker {
 		s.buffer.WriteString(line)
-
-		if !s.flush(segmentCode) {
-			return false
-		}
+		s.flush(segmentCode, yield)
 
 		s.inFence = false
 		s.fenceMarker = ""
 		s.currentKind = segmentPlain
 
-		return true
+		return
 	}
 
-	if !s.flush(s.currentKind) {
-		return false
-	}
+	s.flush(s.currentKind, yield)
 
 	s.inFence = true
 	s.fenceMarker = marker
 	s.currentKind = segmentCode
-
 	s.buffer.WriteString(line)
-
-	return true
 }
 
-func (s *segmentizer) appendLine(line string, nextKind segmentKind) bool {
+func (s *segmentizer) appendLine(line string, nextKind segmentKind, yield func(textSegment)) {
 	if s.buffer.Len() == 0 {
 		s.currentKind = nextKind
 	} else if nextKind != s.currentKind {
-		if !s.flush(s.currentKind) {
-			return false
-		}
+		s.flush(s.currentKind, yield)
 
 		s.currentKind = nextKind
 	}
 
 	s.buffer.WriteString(line)
-
-	return true
 }
 
-func appendSegmentContentBounded(segments []textSegment, kind segmentKind, content string, limit int) ([]textSegment, bool) {
+func emitSegmentContent(kind segmentKind, content string, yield func(textSegment)) {
 	if kind != segmentPlain || !strings.Contains(content, "`") {
-		if len(segments) >= limit {
-			return nil, true
-		}
+		yield(textSegment{Kind: kind, Views: normalizeViews(content)})
 
-		return append(segments, textSegment{Kind: kind, Views: normalizeViews(content)}), false
+		return
 	}
 
-	initialLength := len(segments)
 	partIndex := 0
+	emitted := false
 
 	for part := range strings.SplitSeq(content, "`") {
 		if part != "" {
-			if len(segments) >= limit {
-				return nil, true
-			}
+			yield(newInlineSegment(part, partIndex))
 
-			segments = append(segments, newInlineSegment(part, partIndex))
+			emitted = true
 		}
 
 		partIndex++
 	}
 
-	if len(segments) == initialLength {
-		if len(segments) >= limit {
-			return nil, true
-		}
-
-		segments = append(segments, textSegment{Kind: kind, Views: normalizeViews(content)})
+	if !emitted {
+		yield(textSegment{Kind: kind, Views: normalizeViews(content)})
 	}
-
-	return segments, false
 }
 
 func nextSegmentState(trimmed string, inFence bool, fenceMarker string) (segmentKind, string, bool) {

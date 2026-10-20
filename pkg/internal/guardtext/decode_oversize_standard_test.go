@@ -78,7 +78,7 @@ func TestDecodeCandidatesWithContextForRuleOwnerChecksNormalizedOversizedTransfo
 	}
 
 	callbackCalls := 0
-	result := DecodeCandidatesWithContextForRuleOwner(
+	result := decodeCandidatesWithContextForRuleOwner(
 		input,
 		&callbackCalls,
 		func(_ *int, _ string) bool { return true },
@@ -87,6 +87,7 @@ func TestDecodeCandidatesWithContextForRuleOwnerChecksNormalizedOversizedTransfo
 			*calls++
 			return true
 		},
+		ruleDecodeProof{},
 	)
 
 	if callbackCalls == 0 || result.Status&DecodeByteLimit == 0 {

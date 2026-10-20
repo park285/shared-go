@@ -88,11 +88,40 @@ func appendShortRuleBase64Whole(
 
 	seen[whole] = struct{}{}
 
-	for subStart := whole.start; subStart < whole.end && len(spans) <= maxDecodeScans && decodeWorkComplete(status); subStart++ {
+	return appendShortRuleBase64Interiors(spans, seen, input, whole, mayContribute, embeddedContextMayContribute, work, status), seen
+}
+
+// appendShortRuleBase64Interiors는 읽을 수 없는 전체 토큰 안에 숨긴 짧은 Base64 구간을 찾는다.
+// 시작점마다 공통 디코딩 접두가 이미 읽을 수 없으면 그 시작점의 더 긴 구간은 디코딩하지 않는다.
+func appendShortRuleBase64Interiors(
+	spans []encodedSpan,
+	seen map[encodedSpan]struct{},
+	input string,
+	whole encodedSpan,
+	mayContribute func(string) bool,
+	embeddedContextMayContribute EmbeddedContextMatcher,
+	work *protectedDecodeWork,
+	status *DecodeStatus,
+) []encodedSpan {
+	minimumInterior := 4
+
+	if work != nil && work.regionInteriors {
+		minimumInterior = minRegionInteriorBase64Len
+	}
+
+	alphabetEnd := base64AlphabetEnd(input, whole)
+
+	for subStart := whole.start; subStart+minimumInterior <= whole.end && len(spans) <= maxDecodeScans && decodeWorkComplete(status); subStart++ {
 		maximumEnd := min(whole.end, subStart+maxShortBase64CandidateLen)
-		for subEnd := maximumEnd; subEnd-subStart >= 4 && len(spans) <= maxDecodeScans; subEnd-- {
+
+		unreadable, ok := base64UnreadablePrefix(input[subStart:max(subStart, min(maximumEnd, alphabetEnd))], work, status)
+		if !ok {
+			break
+		}
+
+		for subEnd := maximumEnd; subEnd-subStart >= minimumInterior && len(spans) <= maxDecodeScans; subEnd-- {
 			span := encodedSpan{start: subStart, end: subEnd}
-			if span == whole {
+			if span == whole || base64PrefixExcludes(unreadable, min(subEnd, alphabetEnd)-subStart) {
 				continue
 			}
 
@@ -103,7 +132,7 @@ func appendShortRuleBase64Whole(
 		}
 	}
 
-	return spans, seen
+	return spans
 }
 
 func appendShortRuleReadableBase64Whole(
@@ -231,7 +260,7 @@ func appendMatchingShortBase64Span(
 
 	seen[span] = struct{}{}
 
-	updated, _ := appendEmbeddedProtectedBase64Span(
+	updated, readable := appendEmbeddedProtectedBase64Span(
 		spans,
 		input,
 		span,
@@ -244,7 +273,7 @@ func appendMatchingShortBase64Span(
 		work,
 		status,
 	)
-	if len(updated) != len(spans) || !decodeWorkComplete(status) {
+	if !readable || len(updated) != len(spans) || !decodeWorkComplete(status) {
 		return updated
 	}
 

@@ -58,6 +58,12 @@ func mergeSemanticCandidates(semantic []string, decoded DecodeResult) DecodeResu
 	return merged
 }
 
+// PrepareRuleInput은 압축·비텍스트 Base64의 기존 의미 투영과 근거를 규칙 검사에 제공한다.
+func PrepareRuleInput(input string, mayContribute func(string) bool) (string, DecodeResult) {
+	semantic := decodeSemanticRuleInput(input, mayContribute)
+	return semantic.projected, DecodeResult{Candidates: semantic.candidates, Status: semantic.status}
+}
+
 func decodeSemanticRuleInput(input string, mayContribute func(string) bool) semanticDecodeResult {
 	result := semanticDecodeResult{projected: input}
 
@@ -185,8 +191,18 @@ func decodeCompressedSemanticText(value string) (string, DecodeStatus, bool) {
 		content, readErr := io.ReadAll(io.LimitReader(reader, maxProtectedDecodeBytes+1))
 		closeErr := reader.Close()
 
-		if readErr != nil || closeErr != nil || len(content) > maxProtectedDecodeBytes {
+		if len(content) > maxProtectedDecodeBytes {
 			return "", DecodeByteLimit, true
+		}
+
+		// 손상·절단된 스트림은 해제된 앞부분만 해석한다. 헤더 모양만 우연히 맞은 키·서명은
+		// 읽을 내용이 없으므로 압축 텍스트가 아니며, 원래 토큰을 다른 디코더가 그대로 검사한다.
+		if readErr != nil || closeErr != nil {
+			if utf8.RuneCount(content) < minSemanticTextRunes || !IsReadableText(content) {
+				continue
+			}
+
+			return string(content), 0, true
 		}
 
 		if !IsReadableText(content) {

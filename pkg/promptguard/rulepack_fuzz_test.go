@@ -15,6 +15,6 @@ func FuzzSplitTextSegments(f *testing.F) {
 	f.Add("ordinary text")
 	f.Add("```text\nquoted\n```\n> value")
 	f.Fuzz(func(_ *testing.T, input string) {
-		_, _ = buildEvaluationSegments(input)
+		walkEvaluationSegments(input, nil, func(textSegment) {}, func(textSegment) {})
 	})
 }

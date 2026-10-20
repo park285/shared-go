@@ -72,18 +72,17 @@ type Match struct {
 }
 
 type Evaluation struct {
-	Decision              Decision `json:"decision"`
-	Score                 float64  `json:"score"`
-	Hits                  []Match  `json:"hits"`
-	Threshold             float64  `json:"threshold"`
-	ReviewThreshold       float64  `json:"review_threshold"`
-	DistinctFamilies      int      `json:"distinct_families"`
-	Source                Source   `json:"source,omitempty"`
-	OversizeBlocked       bool     `json:"oversize_blocked"`
-	FallbackBlocked       bool     `json:"fallback_blocked"`
-	SegmentBudgetExceeded bool     `json:"segment_budget_exceeded"`
-	DecodeIncomplete      bool     `json:"decode_incomplete"`
-	DecodeLimits          []string `json:"decode_limits,omitempty"`
+	Decision         Decision `json:"decision"`
+	Score            float64  `json:"score"`
+	Hits             []Match  `json:"hits"`
+	Threshold        float64  `json:"threshold"`
+	ReviewThreshold  float64  `json:"review_threshold"`
+	DistinctFamilies int      `json:"distinct_families"`
+	Source           Source   `json:"source,omitempty"`
+	OversizeBlocked  bool     `json:"oversize_blocked"`
+	FallbackBlocked  bool     `json:"fallback_blocked"`
+	DecodeIncomplete bool     `json:"decode_incomplete"`
+	DecodeLimits     []string `json:"decode_limits,omitempty"`
 }
 
 type BlockedError struct {

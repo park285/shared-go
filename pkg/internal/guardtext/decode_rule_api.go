@@ -1,5 +1,17 @@
 package guardtext
 
+// ruleDecodeProof는 입력의 모든 해석이 규칙에 무관함을 증명하는 순수 콜백이다.
+// 실패하거나 적용할 수 없으면 기존 디코딩을 그대로 수행한다.
+type ruleDecodeProof struct {
+	inputCannotContribute func(string) bool
+	work                  *protectedDecodeWork
+}
+
+func (proof ruleDecodeProof) excludes(input, normalized string) bool {
+	return proof.inputCannotContribute != nil && proof.inputCannotContribute(input) &&
+		(normalized == "" || proof.inputCannotContribute(normalized))
+}
+
 // HasPotentialRuleDecodeSurface는 rule decode가 필요한 변환 문법의 존재 여부를 빠르게 판정한다.
 func HasPotentialRuleDecodeSurface(input string) bool {
 	potential, needsNormalization := ruleDecodePreflight(input)
@@ -63,7 +75,7 @@ func decodeCandidatesForRules(input string, mayContribute func(string) bool) Dec
 
 	originalPotential, needsNormalization := ruleDecodePreflight(input)
 	normalized := normalizedRuleDecodeInput(input, needsNormalization)
-	decoded := decodeCandidatesWithContextForRules(input, normalized, mayContribute, nil, nil, originalPotential)
+	decoded := decodeCandidatesWithContextForRules(input, normalized, mayContribute, nil, nil, originalPotential, ruleDecodeProof{})
 
 	if len(semantic.candidates) == 0 {
 		return decoded
@@ -72,19 +84,20 @@ func decodeCandidatesForRules(input string, mayContribute func(string) bool) Dec
 	return mergeSemanticCandidates(semantic.candidates, decoded)
 }
 
-// DecodeCandidatesWithContextForRuleOwner는 변환할 입력이 없으면 소유자 콜백을 할당하지 않는다.
-func DecodeCandidatesWithContextForRuleOwner[T any](
+// decodeCandidatesWithContextForRuleOwner는 변환할 입력이 없으면 소유자 콜백을 할당하지 않는다.
+func decodeCandidatesWithContextForRuleOwner[T any](
 	input string,
 	owner T,
 	mayContribute func(T, string) bool,
 	contextMayContribute func(T, string, int, int, string) bool,
 	oversizedWouldBlock func(T, string, string, []string) bool,
+	proof ruleDecodeProof,
 ) DecodeResult {
 	if mayContribute == nil {
 		return DecodeCandidatesWithContext(input)
 	}
 
-	result := decodeForRuleOwner(input, owner, mayContribute, contextMayContribute, oversizedWouldBlock)
+	result := decodeForRuleOwner(input, owner, mayContribute, contextMayContribute, oversizedWouldBlock, proof)
 	joined, changed := normalizeSingleSpaceBase64(input)
 
 	if !changed {
@@ -93,7 +106,7 @@ func DecodeCandidatesWithContextForRuleOwner[T any](
 
 	return mergeSplitBase64Readings(
 		result,
-		decodeForRuleOwner(joined, owner, mayContribute, contextMayContribute, oversizedWouldBlock),
+		decodeForRuleOwner(joined, owner, mayContribute, contextMayContribute, oversizedWouldBlock, proof),
 	)
 }
 
@@ -103,7 +116,16 @@ func decodeForRuleOwner[T any](
 	mayContribute func(T, string) bool,
 	contextMayContribute func(T, string, int, int, string) bool,
 	oversizedWouldBlock func(T, string, string, []string) bool,
+	proof ruleDecodeProof,
 ) DecodeResult {
+	if proof.work != nil {
+		var status DecodeStatus
+
+		if !consumeProtectedContextWork(proof.work, &status, len(input)) {
+			return DecodeResult{Status: status}
+		}
+	}
+
 	matcher := func(candidate string) bool { return mayContribute(owner, candidate) }
 	semantic := decodeSemanticRuleInput(input, matcher)
 
@@ -144,6 +166,7 @@ func decodeForRuleOwner[T any](
 		contextMatcher,
 		oversizedCallback,
 		originalPotential,
+		proof,
 	)
 
 	if len(semantic.candidates) == 0 {
@@ -156,6 +179,7 @@ func decodeForRuleOwner[T any](
 // DecodeCandidatesWithContextForRuleOwnerAndBlockWitness는 일반 후보 admission과 별개로
 // 실제 owner 정책에서 Block인 bounded decode 후보 하나를 보존한다. Decode 한도 자체를
 // 공격 근거로 쓰지 않으면서 depth·candidate 예산 뒤의 확정 공격만 차단할 때 사용한다.
+// InputCannotContribute는 모든 해석이 규칙에 무관함을 증명하는 순수 콜백이며 nil이면 축약하지 않는다.
 func DecodeCandidatesWithContextForRuleOwnerAndBlockWitness[T any](
 	input string,
 	owner T,
@@ -163,15 +187,31 @@ func DecodeCandidatesWithContextForRuleOwnerAndBlockWitness[T any](
 	contextMayContribute func(T, string, int, int, string) bool,
 	oversizedWouldBlock func(T, string, string, []string) bool,
 	candidateWouldBlock func(T, string) bool,
+	inputCannotContribute func(T, string) bool,
+	budget *RuleRegionDecoder,
 ) (DecodeResult, string) {
 	if mayContribute == nil || candidateWouldBlock == nil {
-		return DecodeCandidatesWithContextForRuleOwner(
+		return decodeCandidatesWithContextForRuleOwner(
 			input,
 			owner,
 			mayContribute,
 			contextMayContribute,
 			oversizedWouldBlock,
+			ruleDecodeProof{},
 		), ""
+	}
+
+	var proof ruleDecodeProof
+
+	if budget != nil {
+		budget.work.regionInteriors = true
+		proof.work = &budget.work
+	}
+
+	if inputCannotContribute != nil && budget == nil {
+		proof.inputCannotContribute = func(candidate string) bool {
+			return inputCannotContribute(owner, candidate)
+		}
 	}
 
 	blockingCandidate := ""
@@ -202,12 +242,13 @@ func DecodeCandidatesWithContextForRuleOwnerAndBlockWitness[T any](
 		}
 	}
 
-	result := DecodeCandidatesWithContextForRuleOwner(
+	result := decodeCandidatesWithContextForRuleOwner(
 		input,
 		owner,
 		wrappedMayContribute,
 		wrappedContextMayContribute,
 		oversizedWouldBlock,
+		proof,
 	)
 
 	return result, blockingCandidate

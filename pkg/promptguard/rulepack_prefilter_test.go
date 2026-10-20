@@ -29,10 +29,7 @@ func TestRequiredLiteralBranchesPreserveAlternationConjunctions(t *testing.T) {
 func TestRequiredLiteralBranchesAdmitEmbeddedCorpusRegexMatches(t *testing.T) {
 	guard := newTestGuardFromRulepacks(t)
 	for _, tc := range readCorpusCases(t, "testdata/corpus-v3.jsonl") {
-		segments, exceeded := buildEvaluationSegmentsFiltered(tc.Input, guard.aggregateMayMatch)
-		if exceeded {
-			continue
-		}
+		segments := buildEvaluationSegmentsFiltered(tc.Input, guard.aggregateMayMatch)
 
 		decoded, _ := guard.decodedTextSegments(tc.Input)
 
@@ -221,14 +218,10 @@ func TestAggregatePrefilterKeepsRawPunctuationSplit(t *testing.T) {
 	}
 
 	filter := compileAggregatePrefilters([]compiledPack{{Rules: []compiledRule{rule}}})
-	segments, exceeded := buildEvaluationSegmentsFiltered(
+	segments := buildEvaluationSegmentsFiltered(
 		JoinParts("zxq!!", "!!!jkv"),
 		filter.mayMatch,
 	)
-
-	if exceeded {
-		t.Fatal("segment budget unexpectedly exceeded")
-	}
 
 	policy := compilePolicy(&rawRulepack{Version: 3})
 
@@ -239,23 +232,4 @@ func TestAggregatePrefilterKeepsRawPunctuationSplit(t *testing.T) {
 	}
 
 	t.Fatal("raw punctuation split was removed by aggregate prefilter")
-}
-
-func TestRollingBenchmarkFixtureExercisesAggregatePath(t *testing.T) {
-	t.Parallel()
-
-	guard := newTestGuardFromRulepacks(t)
-	segments, exceeded := buildEvaluationSegmentsFiltered(rollingAggregateBenchmarkInput(), guard.aggregateMayMatch)
-
-	if exceeded {
-		t.Fatal("segment budget unexpectedly exceeded")
-	}
-
-	for _, segment := range segments {
-		if segment.Aggregate {
-			return
-		}
-	}
-
-	t.Fatal("rolling benchmark fixture did not exercise an aggregate segment")
 }

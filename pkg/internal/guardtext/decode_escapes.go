@@ -1,6 +1,7 @@
 package guardtext
 
 import (
+	"bytes"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -11,10 +12,14 @@ import (
 	"unicode"
 )
 
+// hex: 표지 뒤의 바이트 쌍은 구분자 없이 붙여 써도 같은 값이다.
 var (
-	hexPayloadPattern      = regexp.MustCompile(`(?i)(?:^|\b)hex\s*:\s*((?:[0-9a-f]{2}[\s,:-]+){3,}[0-9a-f]{2})(?:[^0-9a-f]|$)`)
-	shortHexPayloadPattern = regexp.MustCompile(`(?i)(?:^|\b)hex\s*:\s*([0-9a-f]{2}(?:[\s,:-]+[0-9a-f]{2})*)(?:[^0-9a-f]|$)`)
+	hexPayloadPattern      = regexp.MustCompile(`(?i)(?:^|\b)hex\s*:\s*((?:[0-9a-f]{2}[\s,:-]*){3,}[0-9a-f]{2})(?:[^0-9a-f]|$)`)
+	shortHexPayloadPattern = regexp.MustCompile(`(?i)(?:^|\b)hex\s*:\s*([0-9a-f]{2}(?:[\s,:-]*[0-9a-f]{2})*)(?:[^0-9a-f]|$)`)
 )
+
+// minBareHexDigits는 표지 없는 hex 토큰으로 읽는 최소 자릿수다. 더 짧은 색상값·짧은 ID는 원문으로만 본다.
+const minBareHexDigits = 16
 
 func percentSpans(input string) []encodedSpan {
 	var spans []encodedSpan
@@ -162,6 +167,89 @@ func hexSpansForPattern(input string, pattern *regexp.Regexp) []encodedSpan {
 	}
 
 	return spans
+}
+
+// bareHexToken은 표지 없는 hex 토큰이다. 시작 위치 start는 0x 접두를 포함하고, digits는 hex 숫자가 시작하는 위치다.
+type bareHexToken struct{ start, digits, end int }
+
+// markReadableBareHex는 읽을 수 있는 텍스트로 풀리는 표지 없는 hex 토큰 앞에 hex: 표지를 붙여
+// 표지가 있는 값과 같은 경로로 읽게 한다. 0x 접두는 표지로 바꾼다.
+func markReadableBareHex(text string) string {
+	token, found := nextReadableBareHex(text, 0)
+	if !found {
+		return text
+	}
+
+	var builder strings.Builder
+
+	builder.Grow(len(text) + len("hex:"))
+
+	last := 0
+
+	for found {
+		builder.WriteString(text[last:token.start])
+		builder.WriteString("hex:")
+		builder.WriteString(text[token.digits:token.end])
+
+		last = token.end
+		token, found = nextReadableBareHex(text, token.end)
+	}
+
+	builder.WriteString(text[last:])
+
+	return builder.String()
+}
+
+// nextReadableBareHex는 from 이후 첫 표지 없는 hex 토큰을 찾는다. 영문·숫자·밑줄이 이어진 단어 전체가
+// 짝수 자리 hex여야 하고, 이미 hex: 표지가 붙은 값은 건너뛴다. 해시·ID 같은 무작위 바이트와 글자 없는
+// 값은 읽을 수 없거나 규칙에 기여하지 않으므로 원문으로만 본다.
+func nextReadableBareHex(text string, from int) (bareHexToken, bool) {
+	for start := from; start < len(text); {
+		if !isHexTokenByte(text[start]) {
+			start++
+
+			continue
+		}
+
+		token := bareHexToken{start: start, digits: start, end: start}
+		for token.end < len(text) && isHexTokenByte(text[token.end]) {
+			token.end++
+		}
+
+		if token.end-start > 2 && text[start] == '0' && (text[start+1] == 'x' || text[start+1] == 'X') {
+			token.digits += 2
+		}
+
+		if readableBareHex(text, token) {
+			return token, true
+		}
+
+		start = token.end
+	}
+
+	return bareHexToken{}, false
+}
+
+func isHexTokenByte(value byte) bool { return isASCIIAlphaNumeric(value) || value == '_' }
+
+// isBareHexLine은 줄 전체가 0x 접두를 허용한 표지 없는 hex 토큰 길이 이상의 hex 숫자인지 확인한다.
+func isBareHexLine(line string) bool {
+	if len(line) > 2 && line[0] == '0' && (line[1] == 'x' || line[1] == 'X') {
+		line = line[2:]
+	}
+
+	return len(line) >= minBareHexDigits && allHex(line)
+}
+
+func readableBareHex(text string, token bareHexToken) bool {
+	digits := text[token.digits:token.end]
+	if len(digits) < minBareHexDigits || len(digits)%2 != 0 || !allHex(digits) || contextualHexStart(text, token.start) != token.start {
+		return false
+	}
+
+	decoded, err := hex.DecodeString(digits)
+
+	return err == nil && IsReadableText(decoded) && bytes.ContainsFunc(decoded, unicode.IsLetter)
 }
 
 func isASCIIAlphaNumeric(b byte) bool {

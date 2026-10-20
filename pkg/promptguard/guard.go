@@ -21,11 +21,10 @@ const (
 )
 
 const (
-	ruleInputOversize         = "input_oversize"
-	ruleEvaluationFallback    = "evaluation_fallback"
-	ruleSegmentBudgetExceeded = "segment_budget_exceeded"
-	ruleDecodeIncomplete      = "decode_incomplete"
-	maxLoggedMatchValues      = 16
+	ruleInputOversize      = "input_oversize"
+	ruleEvaluationFallback = "evaluation_fallback"
+	ruleDecodeIncomplete   = "decode_incomplete"
+	maxLoggedMatchValues   = 16
 )
 
 // fallbackCause는 conservative fallback 원인을 로그에 남기는 고정 분류다. 입력 조각이나
@@ -65,8 +64,15 @@ type Guard struct {
 	effectivePolicy     compiledPolicy
 	rulepackVersion     int
 	aggregateFilter     aggregatePrefilterSet
+	decodeProof         decodeLiteralFilter
 	decodedContextRunes int
 	evaluateInputFn     func(string) (Evaluation, error)
+}
+
+type evaluationState struct {
+	positiveTotal float64
+	hits          []Match
+	hardBlockHit  bool
 }
 
 func NewGuard(cfg Config, logger *slog.Logger) (*Guard, error) {
@@ -95,6 +101,8 @@ func NewGuard(cfg Config, logger *slog.Logger) (*Guard, error) {
 		return nil, fmt.Errorf("load rulepacks: %w", err)
 	}
 
+	attachRequiredLiteralFilter(set.Packs)
+
 	return &Guard{
 		cfg:                 cfg,
 		logger:              logger,
@@ -106,6 +114,7 @@ func NewGuard(cfg Config, logger *slog.Logger) (*Guard, error) {
 		effectivePolicy:     set.Policy,
 		rulepackVersion:     set.Version,
 		aggregateFilter:     compileAggregatePrefilters(set.Packs),
+		decodeProof:         compileDecodeLiteralProof(set.Packs),
 		decodedContextRunes: requiredLiteralContextRunes(set.Packs),
 	}, nil
 }
@@ -135,10 +144,6 @@ func blockedErrorFromEvaluation(evaluation Evaluation) *BlockedError {
 
 	if evaluation.FallbackBlocked {
 		rules = append(rules, ruleEvaluationFallback)
-	}
-
-	if evaluation.SegmentBudgetExceeded {
-		rules = append(rules, ruleSegmentBudgetExceeded)
 	}
 
 	if evaluation.DecodeIncomplete {
@@ -337,23 +342,18 @@ func (g *Guard) detectEvaluation(input string) (Evaluation, error) {
 
 func (g *Guard) evaluateRaw(input string) Evaluation {
 	policy := g.policy()
-	segments, budgetExceeded := buildEvaluationSegmentsFiltered(input, g.aggregateMayMatch)
+	raw := g.evaluateTextSegments(input)
 
-	if budgetExceeded {
-		return Evaluation{
-			Decision:              DecisionBlock,
-			Score:                 policy.BlockThreshold,
-			Threshold:             policy.BlockThreshold,
-			ReviewThreshold:       policy.ReviewThreshold,
-			SegmentBudgetExceeded: true,
-		}
+	if evaluation, handled := g.evaluateDecodedRegions(input, raw); handled {
+		return evaluation
 	}
 
-	decoded, status := g.decodedTextSegmentsWithRaw(input, segments)
+	decoded, status := g.decodedTextSegmentsWithRaw(input, raw, nil)
+	evaluation := raw
 
-	segments = append(segments, decoded...)
-
-	evaluation := g.evaluateSegments(policy, segments)
+	if len(decoded) > 0 {
+		evaluation = g.evaluateSegmentsWithBase(policy, raw, decoded)
+	}
 
 	if status != 0 {
 		evaluation.DecodeIncomplete = true
@@ -394,20 +394,18 @@ func (g *Guard) aggregateMayMatch(tail *aggregateTail, right textSegment) bool {
 }
 
 func (g *Guard) evaluateSegments(policy compiledPolicy, segments []textSegment) Evaluation {
-	state := evaluationState{hits: make([]Match, 0)}
+	return g.evaluateSegmentsWithBase(policy, Evaluation{}, segments)
+}
 
-	for _, pack := range g.packs {
-		state.collectPackHits(pack, segments, policy)
-	}
-
-	families := distinctPositiveFamilies(state.hits)
-	score := math.Max(0, state.positiveTotal)
-	decision := decideEvaluation(policy, score, len(families), state.hardBlockHit)
+func (s *evaluationState) evaluation(policy compiledPolicy) Evaluation {
+	families := distinctPositiveFamilies(s.hits)
+	score := math.Max(0, s.positiveTotal)
+	decision := decideEvaluation(policy, score, len(families), s.hardBlockHit)
 
 	return Evaluation{
 		Decision:         decision,
 		Score:            score,
-		Hits:             state.hits,
+		Hits:             s.hits,
 		Threshold:        policy.BlockThreshold,
 		ReviewThreshold:  policy.ReviewThreshold,
 		DistinctFamilies: len(families),
@@ -589,21 +587,7 @@ func matchedRuleIDs(hits []Match) []string {
 	return ids
 }
 
-type evaluationState struct {
-	positiveTotal float64
-	hits          []Match
-	hardBlockHit  bool
-}
-
-func (s *evaluationState) collectPackHits(pack compiledPack, segments []textSegment, policy compiledPolicy) {
-	for ruleIndex := range pack.Rules {
-		s.collectRuleHits(&pack.Rules[ruleIndex], segments, policy)
-	}
-}
-
-func (s *evaluationState) collectRuleHits(rule *compiledRule, segments []textSegment, policy compiledPolicy) {
-	remaining := rule.MaxOccurrences
-
+func (s *evaluationState) collectRuleHits(rule *compiledRule, segments []textSegment, policy compiledPolicy, remaining int) {
 	for _, segment := range segments {
 		segmentLimit := remaining
 		if segmentLimit <= 0 {

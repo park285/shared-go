@@ -33,3 +33,25 @@ func checkInteractiveForTest(tb testing.TB, guard *Guard, input string) error {
 
 	return nil
 }
+
+func splitTextSegments(text string) []textSegment {
+	var segments []textSegment
+
+	walkTextSegments(text, func(segment textSegment) {
+		segments = append(segments, segment)
+	})
+
+	return segments
+}
+
+func buildEvaluationSegmentsFiltered(text string, includeAggregate func(*aggregateTail, textSegment) bool) []textSegment {
+	var raw, aggregate []textSegment
+
+	walkEvaluationSegments(text, includeAggregate, func(segment textSegment) {
+		raw = append(raw, segment)
+	}, func(segment textSegment) {
+		aggregate = append(aggregate, segment)
+	})
+
+	return append(raw, aggregate...)
+}

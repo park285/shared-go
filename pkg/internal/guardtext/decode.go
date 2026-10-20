@@ -58,6 +58,12 @@ type protectedDecodeWork struct {
 	tries        int
 	bytes        int
 	contextBytes int
+	// 영역 해석 사이의 동일 변환만 재사용하며 위치·문맥 판정은 캐시하지 않는다.
+	base64Memo map[string]string
+	// base64Memo가 있을 때만 이미 풀어 과금한 Base64 그룹 접두를 기록한다.
+	base64PrefixMemo map[string]struct{}
+	// prompt 영역 경로는 읽을 수 없는 Base64 값 내부의 짧은 창을 해석하지 않는다.
+	regionInteriors bool
 }
 
 type decodeFamily uint8

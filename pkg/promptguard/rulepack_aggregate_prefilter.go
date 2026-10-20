@@ -308,7 +308,7 @@ func (prefilter aggregateViewPrefilter) mayMatchRawNorm(
 		return matched
 	}
 
-	return prefilter.automaton.matchesString(normalizeText(string(raw)))
+	return prefilter.automaton.matchesString(tail.normalizedRawWindow(string(raw)))
 }
 
 type aggregateViewBuffer struct {

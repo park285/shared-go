@@ -2,6 +2,11 @@ package guardtext
 
 const maxShortBase64CandidateLen = minBase64CandidateLen - 1
 
+// minRegionInteriorBase64Len은 prompt 영역 경로가 읽을 수 없는 Base64 값 내부에서 해석하는 최소 창
+// 길이다(6바이트). 키·서명·인증서 내부의 3~5바이트 조각은 우연히 출력 가능해도 지시문이 되지 못하고,
+// 그 조합이 행마다 늘어 정상 입력을 작업 예산 소진으로 미완료로 만든다.
+const minRegionInteriorBase64Len = 8
+
 func decodeCandidatesWithContextForRules(
 	input string,
 	normalized string,
@@ -9,16 +14,30 @@ func decodeCandidatesWithContextForRules(
 	embeddedContextMayContribute EmbeddedContextMatcher,
 	oversizedWouldBlock func(string, string, []string) bool,
 	originalPotential bool,
+	proof ruleDecodeProof,
 ) DecodeResult {
 	needsNormalization := normalized != ""
 	if !originalPotential && !needsNormalization {
 		return DecodeResult{}
 	}
 
-	if originalPotential && !needsNormalization {
-		if result, ok := decodeSingleShortRuleContext(input, mayContribute); ok {
-			return result
+	var single DecodeResult
+
+	handled := false
+
+	if originalPotential && !needsNormalization && proof.work == nil {
+		single, handled = decodeSingleShortRuleContext(input, mayContribute)
+		if handled && single.Complete() {
+			return single
 		}
+	}
+
+	if proof.excludes(input, normalized) {
+		return DecodeResult{}
+	}
+
+	if handled {
+		return single
 	}
 
 	roots := []string{input}
@@ -35,20 +54,33 @@ func decodeCandidatesWithContextForRules(
 	}
 
 	decoder := newRuleContextDecoder(roots, mayContribute, embeddedContextMayContribute, oversizedWouldBlock)
-	for _, root := range roots {
-		if _, exists := decoder.visited[root]; exists {
+
+	return decoder.decodeRuleRoots(proof.work)
+}
+
+func (d *contextDecoder) decodeRuleRoots(work *protectedDecodeWork) DecodeResult {
+	if work != nil {
+		d.protectedWork = *work
+	}
+
+	for _, root := range d.roots {
+		if _, exists := d.visited[root]; exists {
 			continue
 		}
 
-		decoder.visited[root] = struct{}{}
-		decoder.queue = append(decoder.queue, decodeQueueEntry{text: root})
+		d.visited[root] = struct{}{}
+		d.queue = append(d.queue, decodeQueueEntry{text: root})
 	}
 
-	for decoder.pending() {
-		decoder.expandRuleNext()
+	for d.pending() {
+		d.expandRuleNext()
 	}
 
-	return decoder.result
+	if work != nil {
+		*work = d.protectedWork
+	}
+
+	return d.result
 }
 
 func (d *contextDecoder) expandRuleNext() {
@@ -93,6 +125,8 @@ func (d *contextDecoder) expandRuleNext() {
 		return
 	}
 
+	var readings []shortRuleReading
+
 	decodeShortRuleSurfaces(
 		current.text,
 		d.seenWholes,
@@ -101,8 +135,11 @@ func (d *contextDecoder) expandRuleNext() {
 		&d.protectedWork,
 		&d.scans,
 		&d.result.Status,
-		func(span encodedSpan, decoded string) { d.admitContextual(current, span, decoded) },
+		func(span encodedSpan, decoded string) {
+			readings = append(readings, shortRuleReading{span: span, decoded: decoded})
+		},
 	)
+	d.admitShortRuleReadings(current, readings)
 }
 
 func newRuleContextDecoder(

@@ -1,53 +1,54 @@
 package promptguard
 
 import (
+	"slices"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/park285/shared-go/v2/pkg/internal/guardtext"
 )
 
-func buildEvaluationSegments(text string) ([]textSegment, bool) {
-	return buildEvaluationSegmentsFiltered(text, nil)
-}
+func walkEvaluationSegments(
+	text string,
+	includeAggregate func(*aggregateTail, textSegment) bool,
+	raw func(textSegment),
+	aggregate func(textSegment),
+) {
+	tail := aggregateTail{}
 
-func buildEvaluationSegmentsFiltered(text string, includeAggregate func(*aggregateTail, textSegment) bool) ([]textSegment, bool) {
-	const maxSegments = maxSegmentBoundaries + 1
+	var first textSegment
 
-	segments := make([]textSegment, 0, min(8, maxSegments))
+	seenFirst, initialized := false, false
+
+	visit := func(segment textSegment) {
+		segment.piece = &segmentPiece{views: segment.Views}
+
+		raw(segment)
+
+		if !seenFirst {
+			first = segment
+			seenFirst = true
+
+			return
+		}
+
+		if !initialized {
+			tail.initialize(first)
+
+			initialized = true
+			first = textSegment{}
+		}
+
+		if includeAggregate == nil || includeAggregate(&tail, segment) {
+			aggregate(tail.aggregateWith(segment))
+		}
+
+		tail.advance(segment)
+	}
 
 	for part := range strings.SplitSeq(text, guardBoundaryMarker) {
-		partSegments, exceeded := splitTextSegmentsBounded(part, maxSegments-len(segments))
-		if exceeded {
-			return nil, true
-		}
-
-		segments = append(segments, partSegments...)
+		walkTextSegments(part, visit)
 	}
-
-	boundaries := len(segments) - 1
-	if boundaries <= 0 {
-		return segments, false
-	}
-
-	aggregateCapacity := boundaries
-
-	if includeAggregate != nil {
-		aggregateCapacity = min(8, boundaries)
-	}
-
-	aggregates := make([]textSegment, 0, aggregateCapacity)
-	tail := aggregateTail{}
-	tail.initialize(segments[0])
-
-	for i := 1; i < len(segments); i++ {
-		right := segments[i]
-		if includeAggregate == nil || includeAggregate(&tail, right) {
-			aggregates = append(aggregates, tail.aggregateWith(right))
-		}
-
-		tail.advance(right)
-	}
-
-	return append(segments, aggregates...), false
 }
 
 type aggregateTail struct {
@@ -55,6 +56,12 @@ type aggregateTail struct {
 	norm   rollingView
 	joined rollingView
 	chunks []aggregateTailChunk
+	// windowRawNorm은 현재 경계의 결합 원문 창을 정규화한 값이다. 사전 필터와 결합 세그먼트가 함께 쓰고
+	// 경계를 넘길 때 비운다.
+	windowRawNorm      string
+	windowRawNormReady bool
+	// literals는 현재 경계의 결합 세그먼트 view에서 찾은 필수 리터럴이다. 결합 세그먼트를 만들 때마다 비운다.
+	literals segmentLiterals
 }
 
 type aggregateTailChunk struct {
@@ -62,6 +69,63 @@ type aggregateTailChunk struct {
 	RawRunes    int
 	NormRunes   int
 	JoinedRunes int
+	// piece는 조각 전체의 view다. 조각이 tail에 남아 있는 동안 결합 경계 판정이 재사용한다.
+	piece *segmentPiece
+}
+
+// segmentPiece는 한 평가 안에서 조각 하나의 view와 그로부터 다시 만든 view를 보관한다. 조각 평가와
+// 결합 경계 판정이 같은 조각을 여러 번 보므로 가린 view와 raw 규칙용 정규화를 한 번만 만든다.
+type segmentPiece struct {
+	views        Views
+	masked       []maskedPieceViews
+	rawNorm      string
+	rawNormReady bool
+	literals     segmentLiterals
+	// aggregateLiterals는 이 조각을 오른쪽에 둔 결합 세그먼트의 필수 리터럴 캐시다. 그 결합 세그먼트를 방문하는 동안만 유효하다.
+	aggregateLiterals *segmentLiterals
+}
+
+type maskedPieceViews struct {
+	key     string
+	masked  string
+	views   Views
+	changed bool
+}
+
+// maskedViews는 규칙의 예외 문맥과 문장 경계를 가린 조각 view와 가린 범위가 있었는지를 돌려준다.
+// 가림 설정이 같은 규칙은 같은 view를 쓰고, 설정이 달라도 가린 원문이 같으면(조각에 예외 문맥이 없어
+// 문장 경계만 가린 경우) 정규화한 view를 다시 쓴다.
+func (piece *segmentPiece) maskedViews(rule *compiledRule) (Views, bool) {
+	for _, cached := range piece.masked {
+		if cached.key == rule.MaskKey {
+			return cached.views, cached.changed
+		}
+	}
+
+	masked, changed := rule.maskExclusions(piece.views.Raw)
+	views := piece.views
+
+	if changed {
+		index := slices.IndexFunc(piece.masked, func(cached maskedPieceViews) bool { return cached.changed && cached.masked == masked })
+		if index >= 0 {
+			views = piece.masked[index].views
+		} else {
+			views = normalizeViews(masked)
+		}
+	}
+
+	piece.masked = append(piece.masked, maskedPieceViews{key: rule.MaskKey, masked: masked, views: views, changed: changed})
+
+	return views, changed
+}
+
+// normalizedRaw는 raw 규칙이 원문에서 찾지 못한 근거를 다시 찾는 정규화 원문이다.
+func (piece *segmentPiece) normalizedRaw() string {
+	if !piece.rawNormReady {
+		piece.rawNorm, piece.rawNormReady = guardtext.NormalizeView(piece.views.Raw), true
+	}
+
+	return piece.rawNorm
 }
 
 func (tail *aggregateTail) initialize(segment textSegment) {
@@ -74,14 +138,28 @@ func (tail *aggregateTail) initialize(segment textSegment) {
 		RawRunes:    tail.raw.runes,
 		NormRunes:   tail.norm.runes,
 		JoinedRunes: tail.joined.runes,
+		piece:       segment.piece,
 	})
+}
+
+// normalizedRawWindow는 현재 경계의 결합 원문 창을 정규화한다. 인자는 tail 원문 창과 오른쪽 조각
+// 앞부분을 이은 값이어야 하며, 같은 경계에서는 처음 만든 값을 쓴다.
+func (tail *aggregateTail) normalizedRawWindow(raw string) string {
+	if !tail.windowRawNormReady {
+		tail.windowRawNorm, tail.windowRawNormReady = normalizeText(raw), true
+	}
+
+	return tail.windowRawNorm
 }
 
 func (tail *aggregateTail) aggregateWith(right textSegment) textSegment {
 	raw := tail.raw.withSuffix("", right.Views.Raw)
-	rawNorm := normalizeText(raw)
+	rawNorm := tail.normalizedRawWindow(raw)
 	norm := tail.norm.withSuffix(guardBoundaryMarker, right.Views.Norm)
 	joined := tail.joined.withSuffix("", right.Views.Joined)
+
+	tail.literals = segmentLiterals{}
+	right.piece.aggregateLiterals = &tail.literals
 
 	return textSegment{
 		Kind:    segmentPlain,
@@ -93,6 +171,8 @@ func (tail *aggregateTail) aggregateWith(right textSegment) textSegment {
 			Joined: joined,
 		},
 		Aggregate: true,
+		rawChunks: tail.chunks,
+		piece:     right.piece,
 	}
 }
 
@@ -173,6 +253,8 @@ func byteIndexAfterRunes(text []byte, count int) int {
 }
 
 func (tail *aggregateTail) advance(segment textSegment) {
+	tail.windowRawNorm, tail.windowRawNormReady = "", false
+
 	rawAdded, rawTrimmed := tail.raw.advance("", segment.Views.Raw)
 	normAdded, normTrimmed := tail.norm.advance(guardBoundaryMarker, segment.Views.Norm)
 	joinedAdded, joinedTrimmed := tail.joined.advance("", segment.Views.Joined)
@@ -182,6 +264,7 @@ func (tail *aggregateTail) advance(segment textSegment) {
 		RawRunes:    rawAdded,
 		NormRunes:   normAdded,
 		JoinedRunes: joinedAdded,
+		piece:       segment.piece,
 	})
 
 	trimAggregateTailChunks(tail.chunks, rawTrimmed, func(chunk *aggregateTailChunk) *int { return &chunk.RawRunes })

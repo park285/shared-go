@@ -181,22 +181,6 @@ func (d *contextDecoder) admitContextual(current decodeQueueEntry, span encodedS
 		return
 	}
 
-	candidateBytes := len(contextual)
-	if candidateBytes > maxDecodedCandidateLen || d.total+candidateBytes > maxDecodedTotalBytes {
-		d.result.Status |= DecodeByteLimit
-		return
-	}
-
-	if current.depth >= maxDecodeDepth {
-		d.result.Status |= DecodeDepthLimit
-		return
-	}
-
-	if len(d.result.Candidates) >= maxDecodeCandidates {
-		d.result.Status |= DecodeCandidateLimit
-		return
-	}
-
 	d.admit(current, contextual)
 }
 

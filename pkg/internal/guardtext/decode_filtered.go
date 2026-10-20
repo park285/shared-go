@@ -234,7 +234,14 @@ func appendProtectedBase64Prefixes(
 	work *protectedDecodeWork,
 	status *DecodeStatus,
 ) []encodedSpan {
-	for end := whole.end - 1; end-whole.start >= minimum && len(spans) <= maxDecodeScans; end-- {
+	alphabetEnd := base64AlphabetEnd(input, whole)
+
+	unreadable, ok := base64UnreadablePrefix(input[whole.start:alphabetEnd], work, status)
+	if !ok {
+		return spans
+	}
+
+	for end := min(whole.end-1, base64UnexcludedEnd(unreadable, whole.start, alphabetEnd)); end-whole.start >= minimum && len(spans) <= maxDecodeScans; end-- {
 		spans, _ = appendEmbeddedProtectedBase64Span(spans, input, encodedSpan{start: whole.start, end: end}, chargePerAttempt, strictContribution, matchContext, embeddedContextOnly, mayContribute, embeddedContextMayContribute, work, status)
 		if !decodeWorkComplete(status) {
 			return spans
@@ -256,7 +263,18 @@ func appendProtectedBase64Suffixes(
 	work *protectedDecodeWork,
 	status *DecodeStatus,
 ) []encodedSpan {
+	alphabetEnd := base64AlphabetEnd(input, whole)
+
 	for start := whole.start + 1; whole.end-start >= minimum && len(spans) <= maxDecodeScans; start++ {
+		unreadable, ok := base64UnreadablePrefix(input[start:max(start, alphabetEnd)], work, status)
+		if !ok {
+			return spans
+		}
+
+		if base64PrefixExcludes(unreadable, alphabetEnd-start) {
+			continue
+		}
+
 		spans, _ = appendEmbeddedProtectedBase64Span(spans, input, encodedSpan{start: start, end: whole.end}, chargePerAttempt, strictContribution, matchContext, embeddedContextOnly, mayContribute, embeddedContextMayContribute, work, status)
 		if !decodeWorkComplete(status) {
 			return spans
@@ -278,8 +296,15 @@ func appendProtectedBase64Interiors(
 	work *protectedDecodeWork,
 	status *DecodeStatus,
 ) []encodedSpan {
+	alphabetEnd := base64AlphabetEnd(input, whole)
+
 	for start := whole.start + 1; whole.end-start >= minimum+1 && len(spans) <= maxDecodeScans; start++ {
-		for end := whole.end - 1; end-start >= minimum && len(spans) <= maxDecodeScans; end-- {
+		unreadable, ok := base64UnreadablePrefix(input[start:max(start, min(whole.end-1, alphabetEnd))], work, status)
+		if !ok {
+			return spans
+		}
+
+		for end := min(whole.end-1, base64UnexcludedEnd(unreadable, start, alphabetEnd)); end-start >= minimum && len(spans) <= maxDecodeScans; end-- {
 			spans, _ = appendEmbeddedProtectedBase64Span(spans, input, encodedSpan{start: start, end: end}, chargePerAttempt, strictContribution, matchContext, embeddedContextOnly, mayContribute, embeddedContextMayContribute, work, status)
 			if !decodeWorkComplete(status) {
 				return spans
@@ -412,43 +437,14 @@ func embeddedContextContributes(
 	})
 }
 
-// decodeChargePolicy는 junk 판정 시 decode 예산을 소모할지 결정한다. 열거 루프는
-// 예산 소진을 종료 조건으로 삼으므로 시도마다 과금해야 하고(chargePerAttempt),
-// 선형 전체 스팬 스캔은 판정을 끝낸 junk에 과금하면 무해한 장문이 예산 고갈로
-// 오차단되므로 가독 스팬에만 과금한다(chargeReadableOnly).
+// decodeChargePolicy는 중복 변환 메모에 없는 작업의 과금 시점을 정한다.
+// 열거는 시도마다, 선형 전체 스팬은 읽을 수 있는 값에만 과금한다.
 type decodeChargePolicy uint8
 
 const (
 	chargePerAttempt decodeChargePolicy = iota
 	chargeReadableOnly
 )
-
-func decodeProtectedBase64Span(
-	input string,
-	span encodedSpan,
-	charge decodeChargePolicy,
-	work *protectedDecodeWork,
-	status *DecodeStatus,
-) (string, bool) {
-	if (span.end-span.start)%4 == 1 {
-		return "", false
-	}
-
-	if charge == chargePerAttempt && !consumeProtectedDecodeWork(work, status, span.end-span.start) {
-		return "", false
-	}
-
-	decoded, err := DecodeBase64Candidate(input[span.start:span.end])
-	if err != nil || !IsReadableText(decoded) {
-		return "", false
-	}
-
-	if charge == chargeReadableOnly && !consumeProtectedDecodeWork(work, status, span.end-span.start) {
-		return "", false
-	}
-
-	return string(decoded), true
-}
 
 func protectedHexSpans(input string, mayContribute func(string) bool, work *protectedDecodeWork, status *DecodeStatus) []encodedSpan {
 	matches := shortHexPayloadPattern.FindAllStringSubmatchIndex(input, maxProtectedDecodeTries+1)

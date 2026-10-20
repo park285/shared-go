@@ -13,6 +13,10 @@ var errMissingRuleID = errors.New("invalid rule: missing id")
 
 const maxRuleOccurrences = 64
 
+// maxSentenceBreakRunes는 문장 경계마다 쓰는 중립 rune 수의 상한이다. 경계마다 원문이 그만큼 늘어나므로
+// overlay 규칙이 검사 할당을 키우지 못하게 막는다.
+const maxSentenceBreakRunes = 64
+
 func compileRulepack(raw *rawRulepack) (compiledPack, error) {
 	if raw == nil {
 		return compiledPack{}, errors.New("rulepack is nil")
@@ -69,6 +73,7 @@ func compileRule(rule *rawRule) (compiledRule, error) {
 		Weight:         rule.Weight,
 		MatchMode:      strings.ToLower(strings.TrimSpace(rule.MatchMode)),
 		MaxOccurrences: rule.MaxOccurrences,
+		SentenceBreak:  rule.SentenceBreak,
 	}
 	if compiled.Family == "" {
 		compiled.Family = compiled.ID
@@ -82,8 +87,12 @@ func compileRule(rule *rawRule) (compiledRule, error) {
 		compiled.MaxOccurrences = 1
 	}
 
-	if err := compileRuleMatcher(&compiled, rule); err != nil {
+	if err = compileRuleMatcher(&compiled, rule); err != nil {
 		return compiledRule{}, fmt.Errorf("compile matcher: %w", err)
+	}
+
+	if err = compileRuleMasking(&compiled, rule); err != nil {
+		return compiledRule{}, fmt.Errorf("compile masking: %w", err)
 	}
 
 	if compiled.View == viewRaw && compiled.Type == ruleTypeRegex {
@@ -93,8 +102,13 @@ func compileRule(rule *rawRule) (compiledRule, error) {
 	compiled.RequiredLiteralGroups = normalizePrefilterLiteralGroups(compiled.RequiredLiteralGroups)
 	compiled.AggregatePrefilter = bestRequiredLiteralGroup(compiled.RequiredLiteralGroups)
 
-	if err := validateCompiledRule(&compiled); err != nil {
+	if err = validateCompiledRule(&compiled); err != nil {
 		return compiledRule{}, fmt.Errorf("validate rule: %w", err)
+	}
+
+	compiled.DecodePrograms, err = compileDecodePrograms(&compiled)
+	if err != nil {
+		return compiledRule{}, fmt.Errorf("compile decode matcher: %w", err)
 	}
 
 	return compiled, nil
@@ -225,6 +239,127 @@ func assignRegexMatcher(compiled *compiledRule, rule *rawRule) error {
 	compiled.RequiredLiteralBranches = requiredRegexLiteralBranches(pattern)
 
 	return nil
+}
+
+// compileRuleMasking은 예외 문맥과 문장 경계를 가릴 규칙의 예외 정규식과 최대 일치 길이를 준비한다.
+func compileRuleMasking(compiled *compiledRule, rule *rawRule) error {
+	exclusions, err := compileRuleExclusions(rule)
+	if err != nil {
+		return fmt.Errorf("compile exclusions: %w", err)
+	}
+
+	compiled.Exclude = exclusions
+	for _, exclusion := range exclusions {
+		compiled.ExcludeLiteralGroups = append(compiled.ExcludeLiteralGroups, requiredRegexLiteralGroups(exclusion))
+	}
+
+	if !compiled.masksText() || compiled.Pattern == nil {
+		return nil
+	}
+
+	compiled.MaskKey = fmt.Sprintf("%d %q", compiled.SentenceBreak, rule.Exclude)
+
+	parsed, err := syntax.Parse(compiled.Pattern.String(), syntax.Perl)
+	if err != nil {
+		return fmt.Errorf("parse pattern width: %w", err)
+	}
+
+	compiled.MaxMatchRunes = regexMaxRunes(parsed)
+
+	return nil
+}
+
+// validateRuleMasking은 가림 규칙이 결합 평가에서 쓸 수 있는 형태인지 확인한다. 결합 평가는 경계 앞뒤
+// 최대 일치 길이 안에서만 교차 근거를 찾으므로 길이 상한이 있는 정규식만 예외 문맥과 문장 경계를 쓴다.
+func validateRuleMasking(compiled *compiledRule) error {
+	if compiled.SentenceBreak < 0 || compiled.SentenceBreak > maxSentenceBreakRunes {
+		return fmt.Errorf("%s: sentence_break must be between 0 and %d", compiled.ID, maxSentenceBreakRunes)
+	}
+
+	if compiled.masksText() && (compiled.Type != ruleTypeRegex || compiled.View == viewRaw || compiled.MaxMatchRunes < 0) {
+		return fmt.Errorf("%s: exclude and sentence_break require a bounded regex rule on a normalized view", compiled.ID)
+	}
+
+	return nil
+}
+
+// compileRuleExclusions는 규칙 적중을 정상 문맥으로 돌려놓는 원문 정규식을 컴파일한다.
+// 원문의 대소문자와 문장부호로 단어 내부·식별자를 구분하므로 (?i)를 붙이지 않는다.
+func compileRuleExclusions(rule *rawRule) ([]*regexp.Regexp, error) {
+	if len(rule.Exclude) == 0 {
+		return nil, nil
+	}
+
+	exclusions := make([]*regexp.Regexp, 0, len(rule.Exclude))
+	for _, value := range rule.Exclude {
+		if strings.TrimSpace(value) == "" {
+			return nil, fmt.Errorf("empty exclusion in rule %s", rule.ID)
+		}
+
+		exclusion, err := regexp.Compile(value)
+		if err != nil {
+			return nil, fmt.Errorf("compile exclusion %s: %w", rule.ID, err)
+		}
+
+		if exclusion.MatchString("") {
+			return nil, fmt.Errorf("exclusion in rule %s matches empty text", rule.ID)
+		}
+
+		exclusions = append(exclusions, exclusion)
+	}
+
+	return exclusions, nil
+}
+
+// regexMaxRunes는 정규식이 일치할 수 있는 최대 rune 수다. 반복 상한이 없으면 -1이다.
+func regexMaxRunes(re *syntax.Regexp) int {
+	switch re.Op {
+	case syntax.OpLiteral:
+		return len(re.Rune)
+	case syntax.OpCharClass, syntax.OpAnyChar, syntax.OpAnyCharNotNL:
+		return 1
+	case syntax.OpCapture, syntax.OpQuest:
+		return regexMaxRunes(re.Sub[0])
+	case syntax.OpStar, syntax.OpPlus:
+		if regexMaxRunes(re.Sub[0]) == 0 {
+			return 0
+		}
+
+		return -1
+	case syntax.OpRepeat:
+		sub := regexMaxRunes(re.Sub[0])
+		if sub == 0 {
+			return 0
+		}
+
+		if sub < 0 || re.Max < 0 {
+			return -1
+		}
+
+		return sub * re.Max
+	case syntax.OpNoMatch, syntax.OpEmptyMatch, syntax.OpBeginLine, syntax.OpEndLine,
+		syntax.OpBeginText, syntax.OpEndText, syntax.OpWordBoundary, syntax.OpNoWordBoundary:
+		return 0
+	case syntax.OpConcat, syntax.OpAlternate:
+		total := 0
+
+		for _, sub := range re.Sub {
+			value := regexMaxRunes(sub)
+			if value < 0 {
+				return -1
+			}
+
+			if re.Op == syntax.OpConcat {
+				total += value
+			} else {
+				total = max(total, value)
+			}
+		}
+
+		return total
+	default:
+		return -1
+	}
 }
 
 func requiredRegexLiteralBranches(pattern *regexp.Regexp) [][][]string {
@@ -448,6 +583,10 @@ func validateCompiledRule(compiled *compiledRule) error {
 
 	if compiled.MaxOccurrences > maxRuleOccurrences {
 		return fmt.Errorf("%s: max_occurrences exceeds %d", compiled.ID, maxRuleOccurrences)
+	}
+
+	if err := validateRuleMasking(compiled); err != nil {
+		return err
 	}
 
 	if compiled.Type == ruleTypePhrase {

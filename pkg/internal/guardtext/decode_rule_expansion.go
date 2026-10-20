@@ -145,8 +145,8 @@ func (d *contextDecoder) ruleExpansionCrossBoundaryBase64MayContribute(input str
 }
 
 func (d *contextDecoder) consumeRuleExpansionProbe(candidateBytes int) bool {
-	return consumeProtectedDecodeWork(&d.protectedWork, &d.result.Status, candidateBytes) &&
-		consumeContextDecodeScan(&d.scans, &d.result.Status)
+	// 경계 탐색은 시도·byte 예산으로 제한하고, 실제 변환 스캔을 중복 차감하지 않는다.
+	return consumeProtectedDecodeWork(&d.protectedWork, &d.result.Status, candidateBytes)
 }
 
 func (d *contextDecoder) ruleExpansionCandidateMayContribute(input string, span encodedSpan, decoded string) bool {

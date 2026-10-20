@@ -8,7 +8,7 @@ import (
 	"slices"
 )
 
-const EngineVersion = "promptguard-engine-v3.2.3"
+const EngineVersion = "promptguard-engine-v3.2.7"
 
 type digestEntry[T any] struct {
 	Name  string `json:"name"`
@@ -35,6 +35,8 @@ type digestRule struct {
 	Weight         float64  `json:"weight"`
 	MatchMode      string   `json:"match_mode,omitempty"`
 	MaxOccurrences int      `json:"max_occurrences"`
+	Exclude        []string `json:"exclude,omitempty"`
+	SentenceBreak  int      `json:"sentence_break,omitempty"`
 }
 
 type digestDocument struct {
@@ -107,6 +109,11 @@ func rulesForDigest(rules []compiledRule) []digestRule {
 			pattern = rule.Pattern.String()
 		}
 
+		exclude := make([]string, 0, len(rule.Exclude))
+		for _, exclusion := range rule.Exclude {
+			exclude = append(exclude, exclusion.String())
+		}
+
 		result = append(result, digestRule{
 			ID:             rule.ID,
 			Family:         rule.Family,
@@ -119,6 +126,8 @@ func rulesForDigest(rules []compiledRule) []digestRule {
 			Weight:         rule.Weight,
 			MatchMode:      rule.MatchMode,
 			MaxOccurrences: rule.MaxOccurrences,
+			Exclude:        exclude,
+			SentenceBreak:  rule.SentenceBreak,
 		})
 	}
 
