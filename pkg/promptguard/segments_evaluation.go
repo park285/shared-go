@@ -16,7 +16,8 @@ func (g *Guard) evaluateTextSegments(input string) Evaluation {
 		ruleCount += len(pack.Rules)
 	}
 
-	var storage [32]segmentRuleHits
+	// 내장 규칙을 모두 담는 크기여야 평가마다 힙에 할당하지 않는다.
+	var storage [64]segmentRuleHits
 
 	rules := storage[:0]
 

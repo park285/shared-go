@@ -44,7 +44,7 @@ go get github.com/park285/shared-go/v2@latest
 | `pkg/obsmetrics` | `client_golang` 의존성 없이 Prometheus 평문 텍스트 exposition을 생성하는 메트릭 키트 (webhook/런타임 메트릭, prefix 네임스페이스 분리) |
 | `pkg/outputguard` | LLM 생성 출력 가드 (구조화된 차단 사유, 출력·보호 텍스트 크기 제한, 역할/시크릿/보호 지침 중첩 탐지, bounded TTL index cache) |
 | `pkg/panicguard` | callback panic을 복구해 구조화된 진단을 남기는 실행 경계 |
-| `pkg/promptguard` | source-aware 프롬프트 인젝션 가드 (embedded v3 한/영 baseline, optional rules-only overlay, bounded decoding, policy digest, TTL cache) |
+| `pkg/promptguard` | source-aware 프롬프트 인젝션 가드 (embedded v3 한/영/일 baseline, optional rules-only overlay, bounded decoding, policy digest, TTL cache) |
 | `pkg/reflectutil` | interface에 담긴 nilable 값을 안전하게 판별하는 reflection helper |
 | `pkg/retry` | `pkg/backoff`의 지연 값 계산을 사용해 context 취소를 존중하며 sleep·재시도·중단을 수행하는 재시도 루프(`WithRetry`) 구현체 |
 | `pkg/runtime/automaxprocs` | container CPU quota에 맞게 `GOMAXPROCS`를 설정하는 process bootstrap helper |
@@ -129,6 +129,11 @@ v3 규칙의 `exclude`는 대소문자를 구분하는 원문 정규식 목록�
 예외 문맥은 쓰지 않습니다. 가린 view는 한 요청 안에서 조각과 가림 설정마다 한 번만 만들고, 가린 원문이
 같으면 설정이 달라도 정규화한 view를 공유합니다. 예외 정규식은 필수 리터럴이 원문에 없으면 실행하지 않습니다.
 규칙의 필수 리터럴 사전 필터는 모든 규칙의 리터럴을 합친 오토마톤으로 세그먼트 view마다 한 번만 찾습니다.
+리터럴이 512개를 넘으면 오토마톤을 쓰지 않고 규칙마다 문자열을 검색해 같은 판정을 하므로 검사만 느려집니다.
+
+일본어 규칙(`injection-ja.yml`)은 지시 무시와 시스템 프롬프트 유출 두 가지만 `raw` view에서 봅니다.
+정규화의 혼동 문자 치환이 가타카나를 다른 글자로 바꾸기 때문입니다. 반각 가타카나로 비튼 입력과
+비밀값 요청·탈옥·출력 고정 같은 다른 일본어 공격은 아직 보지 않습니다.
 
 정규화는 ASCII 대문자 `I`를 `i`로 읽되, ASCII 소문자 바로 뒤의 `I`는 `l`을 흉내 낸 위장(`poIicy`,
 `reveaI`, `aII`)으로 보고 `l`로 읽습니다. 뒤에 `n`·`g`가 오는 camelCase 경계(`previousInstructions`,

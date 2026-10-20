@@ -5,7 +5,7 @@ import (
 )
 
 // requiredLiteralCapacity는 조각 하나의 리터럴 존재 집합이 담을 수 있는 필수 리터럴 수다.
-const requiredLiteralCapacity = 256
+const requiredLiteralCapacity = 512
 
 type requiredLiteralSet [requiredLiteralCapacity / 64]uint64
 

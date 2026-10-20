@@ -62,6 +62,11 @@ func TestEmbeddedRulesHaveRequiredLiteralPrefilters(t *testing.T) {
 			if len(rule.RequiredLiteralGroups) == 0 {
 				t.Errorf("rule %q has no required literal prefilter", rule.ID)
 			}
+
+			// 리터럴이 상한을 넘으면 공용 오토마톤이 모든 규칙에서 빠져 판정은 같고 검사만 느려진다.
+			if rule.requiredLiterals == nil {
+				t.Errorf("rule %q has no shared required literal filter", rule.ID)
+			}
 		}
 	}
 }
