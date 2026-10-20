@@ -21,7 +21,7 @@ type PoolMetric struct {
 }
 
 // VisitPoolMetrics는 중간 맵·슬라이스 없이 불변 Stat 스냅샷을 전달한다.
-// 호출자는 수집마다 풀별 Stat을 한 번 얻는다. nil 입력은 출력하지 않으며,
+// 호출자는 수집마다 풀별 Stat을 한 번 얻는다. 입력이 nil이면 출력하지 않으며,
 // 사용 불가한 풀을 0으로 보고해서는 안 된다.
 func VisitPoolMetrics(stat *pgxpool.Stat, emit func(PoolMetric)) {
 	if stat == nil || emit == nil {
