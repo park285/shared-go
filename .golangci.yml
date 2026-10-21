@@ -234,6 +234,10 @@ linters:
         - .Errorf(
         # shared-go logging.LogAndWrapError는 기록과 함께 "op: err"로 감싸므로 Errorf와 같이 맥락을 붙인 결과다.
         - .LogAndWrapError(
+        # 도메인 오류 생성자는 errors.New처럼 오류를 처음 만드는 지점이다. twentyq NewWebhookAdmissionError는 원인을
+        # Unwrap으로 보존하고 admission 결과를 붙이며, hololive NewAmbiguousMatchError는 후보 목록을 담는다.
+        - .NewWebhookAdmissionError(
+        - .NewAmbiguousMatchError(
         - errors.New(
         - errors.Join(
         - errors.Unwrap(
