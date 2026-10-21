@@ -5,6 +5,7 @@
 
 ## 미출시
 
+- **CI Go 캐시 키:** setup-go 캐시 키에 도구 버전 파일 `scripts/ci/go-tooling.sh`를 넣습니다. 키가 `go.sum`뿐이면 기존 캐시가 갱신되지 않아 CI가 golangci-lint를 매번 소스에서 빌드했습니다. 도구 버전이 바뀌면 새 캐시를 저장합니다. 공개 API는 바꾸지 않습니다.
 - **golangci-lint 2.15.0:** 로컬 게이트의 최소 버전을 v2.15.0으로 올립니다. errcheck 1.30이 새로 잡는 `chan error` 수신 무시를 고쳐, FIFO 비차단 open 테스트가 open 성공까지 확인합니다. 공개 API는 바꾸지 않습니다.
 - **Go 1.27.3 보안 갱신:** 모듈 Go 버전을 1.27.3으로 올려 `crypto/x509` 취약점 GO-2026-6809가 고쳐진 표준 라이브러리로 빌드·검사합니다. 공개 API는 바꾸지 않습니다.
 - **CI 경량화:** 보안 workflow의 중복 govulncheck 설치를 정본 wrapper로 합치고 Go 도구 탐색의 미사용 경로·중복 환경 조회를 제거합니다. 릴리스 게이트는 모듈·Unicode 생성 정합성·lint·할당 상한을 PostgreSQL 기동보다 먼저 검사하며, 실제 DB·전체 race·취약점 검사와 tag 증적은 유지합니다.

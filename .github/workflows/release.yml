@@ -33,7 +33,10 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache-dependency-path: go.sum
+          # 캐시 키는 이미 있으면 갱신되지 않으므로 도구 버전 파일을 넣어 도구가 바뀔 때 새 캐시를 저장한다.
+          cache-dependency-path: |
+            go.sum
+            scripts/ci/go-tooling.sh
 
       - name: Release gate
         run: bash scripts/ci/release-gate.sh
