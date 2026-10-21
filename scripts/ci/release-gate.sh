@@ -15,10 +15,18 @@ run_stage() {
   "$@"
 }
 
+run_stage env GOWORK=off go mod tidy -diff
+run_stage env GOWORK=off go run ./pkg/internal/guardtext/genconfusables.go \
+  -confusables-source ./pkg/internal/guardtext/testdata/confusables-17.0.0.txt.gz \
+  -unicode-data-baseline-source ./pkg/internal/guardtext/testdata/UnicodeData-15.0.0.txt.gz \
+  -unicode-data-source ./pkg/internal/guardtext/testdata/UnicodeData-17.0.0.txt.gz \
+  -output ./pkg/internal/guardtext/confusables_table_generated.go \
+  -check
+
 run_stage bash scripts/check-sql-ownership.sh
-run_stage bash scripts/ci/pgstore-release-gate.sh
 run_stage make lint
 run_stage make test-allocations
+run_stage bash scripts/ci/pgstore-release-gate.sh
 
 # irisdurable은 위 PostgreSQL 게이트에서 실제 DB와 함께 race로 실행했다.
 all_packages="$(GOWORK=off go list ./...)"
@@ -34,13 +42,6 @@ if ((${#race_packages[@]} > 0)); then
 fi
 
 run_stage make vulncheck
-run_stage env GOWORK=off go mod tidy -diff
-run_stage env GOWORK=off go run ./pkg/internal/guardtext/genconfusables.go \
-  -confusables-source ./pkg/internal/guardtext/testdata/confusables-17.0.0.txt.gz \
-  -unicode-data-baseline-source ./pkg/internal/guardtext/testdata/UnicodeData-15.0.0.txt.gz \
-  -unicode-data-source ./pkg/internal/guardtext/testdata/UnicodeData-17.0.0.txt.gz \
-  -output ./pkg/internal/guardtext/confusables_table_generated.go \
-  -check
 
 echo "════════════════════════════════════════"
 echo "  shared-go release full gate passed"

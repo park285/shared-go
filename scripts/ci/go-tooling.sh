@@ -5,33 +5,33 @@ GOLANGCI_LINT_VERSION="${GOLANGCI_LINT_VERSION:-v2.14.0}"
 GOVULNCHECK_VERSION="${GOVULNCHECK_VERSION:-v1.9.0}"
 
 go_bin_tool() {
-  local tool="$1" minimum="${2:-}" probe="${3:-}" pattern=""
-  local gobin gopath bin output invalid_bin=""
+  local tool="$1" minimum probe pattern
+  local paths gobin gopath bin output invalid_bin=""
   local required_major required_minor required_patch
   local -a candidates=()
 
   case "${tool}" in
     golangci-lint)
-      minimum="${minimum:-${GOLANGCI_LINT_VERSION}}"
-      probe="${probe:-version}"
+      minimum="${GOLANGCI_LINT_VERSION}"
+      probe=version
       pattern='version[[:space:]]+([0-9]+)\.([0-9]+)\.([0-9]+)($|[[:space:]])'
       ;;
     govulncheck)
-      minimum="${minimum:-${GOVULNCHECK_VERSION}}"
-      probe="${probe:--version}"
+      minimum="${GOVULNCHECK_VERSION}"
+      probe=-version
       pattern='govulncheck@v([0-9]+)\.([0-9]+)\.([0-9]+)($|[[:space:]])'
       ;;
+    *) echo "unsupported Go tool: ${tool}" >&2; return 1 ;;
   esac
-  if [[ -n "${pattern}" ]]; then
-    [[ "${minimum}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
-      echo "invalid minimum version for ${tool}: ${minimum}" >&2
-      return 1
-    }
-    IFS=. read -r required_major required_minor required_patch <<<"${minimum#v}"
-  fi
+  [[ "${minimum}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+    echo "invalid minimum version for ${tool}: ${minimum}" >&2
+    return 1
+  }
+  IFS=. read -r required_major required_minor required_patch <<<"${minimum#v}"
 
-  gobin="$(go env GOBIN)" || return
-  gopath="$(go env GOPATH)" || return
+  paths="$(go env GOBIN GOPATH)" || return
+  gobin="${paths%%$'\n'*}"
+  gopath="${paths#*$'\n'}"
   [[ -z "${gobin}" ]] || candidates+=("${gobin}/${tool}")
   [[ -z "${gopath}" ]] || candidates+=("${gopath}/bin/${tool}")
   bin="$(command -v "${tool}" || true)"
@@ -39,10 +39,6 @@ go_bin_tool() {
 
   for bin in "${candidates[@]}"; do
     [[ -x "${bin}" ]] || continue
-    if [[ -z "${pattern}" ]]; then
-      printf '%s\n' "${bin}"
-      return
-    fi
     if ! output="$("${bin}" "${probe}" 2>/dev/null)" || [[ ! "${output}" =~ ${pattern} ]]; then
       invalid_bin="${bin}"
       continue
@@ -59,18 +55,6 @@ go_bin_tool() {
     echo "cannot verify ${tool} version: ${invalid_bin}" >&2
     return 1
   fi
-}
-
-go_tool_install_path() {
-  local tool="$1" gobin gopath
-  gobin="$(go env GOBIN)"
-  if [[ -n "${gobin}" ]]; then
-    printf '%s/%s\n' "${gobin}" "${tool}"
-    return
-  fi
-  gopath="$(go env GOPATH)"
-  [[ -n "${gopath}" ]] || { echo "GOPATH is empty; cannot locate ${tool}" >&2; exit 1; }
-  printf '%s/bin/%s\n' "${gopath}" "${tool}"
 }
 
 ensure_golangci_lint() {
