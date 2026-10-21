@@ -29,10 +29,11 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          # 캐시 키는 이미 있으면 갱신되지 않으므로 도구 버전 파일을 넣어 도구가 바뀔 때 새 캐시를 저장한다.
+          # govulncheck만 빌드하는 job이 lint job의 캐시 키를 먼저 차지하지 않도록 키를 나눈다.
           cache-dependency-path: |
             go.sum
             scripts/ci/go-tooling.sh
+            .github/workflows/security.yml
 
       - name: govulncheck
         run: bash scripts/ci/go-tooling.sh govulncheck ./...

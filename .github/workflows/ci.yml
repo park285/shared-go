@@ -31,10 +31,12 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          # 캐시 키는 이미 있으면 갱신되지 않으므로 도구 버전 파일을 넣어 도구가 바뀔 때 새 캐시를 저장한다.
+          # 캐시는 같은 키를 쓰는 job 중 먼저 끝난 job의 내용이 저장되고, 키가 이미 있으면 갱신되지 않는다.
+          # golangci-lint를 빌드하는 이 job이 자기 캐시를 갖도록 workflow 파일을 키에 넣는다.
           cache-dependency-path: |
             go.sum
             scripts/ci/go-tooling.sh
+            .github/workflows/ci.yml
 
       - name: Module graph tidy drift
         run: GOWORK=off go mod tidy -diff
