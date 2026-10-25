@@ -695,3 +695,40 @@ func TestPrintBootstrapError_ReturnsOneOnWriteFailure(t *testing.T) {
 		t.Fatalf("printBootstrapError() = %d, want 1", code)
 	}
 }
+
+func TestRunReportsLoggerCloseFailureWithoutChangingExitCode(t *testing.T) {
+	t.Parallel()
+
+	var stderr bytes.Buffer
+
+	exitCode := Options[*testConfig, *testRuntime]{
+		LoadConfig: func() (*testConfig, error) { return &testConfig{}, nil },
+		NewLogger: func(*testConfig) (*slog.Logger, io.Closer, error) {
+			return slog.New(slog.DiscardHandler), failingCloser{err: errors.New("close postgres://user:canary-secret@db:5432/app log")}, nil
+		},
+		BuildRuntime: func(context.Context, *testConfig, *slog.Logger) (*testRuntime, error) {
+			return &testRuntime{}, nil
+		},
+		Stderr: &stderr,
+	}.Run()
+
+	if exitCode != 0 {
+		t.Fatalf("Run() exitCode = %d, want 0", exitCode)
+	}
+
+	if !strings.Contains(stderr.String(), "Failed to close logger") {
+		t.Fatalf("stderr = %q, want logger close failure", stderr.String())
+	}
+
+	if strings.Contains(stderr.String(), "canary-secret") {
+		t.Fatalf("stderr leaked credential: %q", stderr.String())
+	}
+}
+
+type failingCloser struct {
+	err error
+}
+
+func (c failingCloser) Close() error {
+	return c.err
+}

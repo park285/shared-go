@@ -2,6 +2,7 @@ package logging
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -156,4 +157,33 @@ func TestEnableFileLoggingWithOptionsReturnsNilCloserForConsoleOnly(t *testing.T
 	if closer != nil {
 		t.Fatalf("closer = %v, want nil for console-only config", closer)
 	}
+}
+
+func TestMultiCloserClosesEveryLaneAndJoinsEveryFailure(t *testing.T) {
+	t.Parallel()
+
+	stdoutErr := errors.New("stdout lane close failed")
+	fileErr := errors.New("log file close failed")
+	closed := 0
+	closers := multiCloser{
+		closerFunc(func() error { closed++; return stdoutErr }),
+		closerFunc(func() error { closed++; return nil }),
+		closerFunc(func() error { closed++; return fileErr }),
+	}
+
+	err := closers.Close()
+
+	if closed != len(closers) {
+		t.Fatalf("closed lanes = %d, want %d", closed, len(closers))
+	}
+
+	if !errors.Is(err, stdoutErr) || !errors.Is(err, fileErr) {
+		t.Fatalf("Close() error = %v, want every lane failure", err)
+	}
+}
+
+type closerFunc func() error
+
+func (f closerFunc) Close() error {
+	return f()
 }

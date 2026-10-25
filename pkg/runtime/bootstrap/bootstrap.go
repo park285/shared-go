@@ -53,7 +53,7 @@ func (opts Options[Config, Runtime]) Run() int {
 	}
 
 	if loggerCloser != nil {
-		defer func() { _ = loggerCloser.Close() }()
+		defer reportLoggerCloseError(stderr, loggerCloser)
 	}
 
 	if message := opts.StartupMessage; message != "" {
@@ -125,6 +125,13 @@ func printBootstrapError(stderr io.Writer, message string, err error) int {
 	}
 
 	return 1
+}
+
+// 닫힌 logger로는 자신의 닫기 실패를 기록할 수 없으므로 stderr에 남긴다. Exit code는 runtime 결과를 따른다.
+func reportLoggerCloseError(stderr io.Writer, closer io.Closer) {
+	if err := closer.Close(); err != nil {
+		printBootstrapError(stderr, "Failed to close logger", err)
+	}
 }
 
 func (opts Options[Config, Runtime]) newLogger(config Config) (*slog.Logger, io.Closer, error) {

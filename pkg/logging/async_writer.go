@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json/jsontext"
 	jsonv2 "encoding/json/v2"
+	"errors"
 	"io"
 	"log/slog"
 	"strconv"
@@ -242,18 +243,17 @@ func (w *asyncDropWriter) truncatedCount() uint64 {
 
 type multiCloser []io.Closer
 
+// Close는 앞 lane이 실패해도 모든 lane을 닫고, 실패한 lane의 오류를 모두 errors.Join으로 남긴다.
 func (c multiCloser) Close() error {
-	var firstErr error
+	var closeErr error
 
 	for _, closer := range c {
 		if closer == nil {
 			continue
 		}
 
-		if err := closer.Close(); err != nil && firstErr == nil {
-			firstErr = err
-		}
+		closeErr = errors.Join(closeErr, closer.Close())
 	}
 
-	return firstErr
+	return closeErr
 }

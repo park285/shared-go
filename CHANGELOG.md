@@ -3,8 +3,9 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
-## 미출시
+## v2.16.1 - 2026-10-25
 
+- **logger 닫기 오류 보고:** `bootstrap.Options.Run`이 종료 시 logger closer의 오류를 버리던 것을 고쳐, `Failed to close logger: <redacted error>`를 stderr에 남깁니다. exit code는 runtime 결과를 그대로 따릅니다. `logging.EnableFileLoggingWithOptions`가 돌려주는 closer는 모든 lane을 닫았지만 처음 실패한 lane의 오류만 반환하고 이후 lane(예: 로그 파일)의 닫기 오류를 버렸습니다. 이제 실패한 lane의 오류를 모두 `errors.Join`으로 반환합니다. 공개 API는 바꾸지 않습니다.
 - **의존성:** `openai-go/v3` v3.86.0·`quic-go` v0.64.1·`goldmark/v2` v2.1.8과 전이 의존성을 갱신합니다. 공개 API는 바꾸지 않습니다.
 - **CI Go 캐시 키:** setup-go 캐시 키를 job 종류마다 나눕니다. 같은 키를 쓰는 job 중 먼저 끝난 job의 캐시가 저장되고 키가 있으면 갱신되지 않아, golangci-lint를 빌드하지 않는 보안·계약 테스트 job의 캐시를 lint job이 복원해 golangci-lint와 그 모듈을 매번 내려받아 빌드했습니다. 이제 lint job과 릴리스 검증은 `go.sum`·`scripts/ci/go-tooling.sh`·`ci.yml`로 만든 키를 함께 쓰고, 나머지 job은 각자의 키를 씁니다. 공개 API는 바꾸지 않습니다.
 - **golangci-lint 2.15.0:** 로컬 게이트의 최소 버전을 v2.15.0으로 올립니다. errcheck 1.30이 새로 잡는 `chan error` 수신 무시를 고쳐, FIFO 비차단 open 테스트가 open 성공까지 확인합니다. 공개 API는 바꾸지 않습니다.
