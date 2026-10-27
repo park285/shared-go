@@ -28,6 +28,7 @@ func testPolicy(opts pgstore.Options) pgstore.Options {
 	}
 
 	fill(&opts.IrisAdmissionRetention, testIrisAdmissionRetention)
+	fill(&opts.IrisAutomaticReplayHorizon, testReplayHorizon)
 	fill(&opts.Lease, 30*time.Second)
 	fill(&opts.BackoffBase, time.Second)
 	fill(&opts.BackoffMax, time.Minute)
@@ -42,8 +43,9 @@ func testPolicy(opts pgstore.Options) pgstore.Options {
 	return opts
 }
 
-// TestOptionsEnforceIrisAdmissionBoundaries는 보존·지평이 호출자가 넘긴 Iris admission 보존을 기준으로
-// 기동 시점에 검증되는지 본다. 종단 inbox 보존은 admission 보존과 같아도 거부한다(XST-02).
+// TestOptionsEnforceIrisAdmissionBoundaries는 보존·지평이 호출자가 넘긴 Iris admission 보존과 정본 지평을
+// 기준으로 기동 시점에 검증되는지 본다. 종단 inbox 보존은 admission 보존과 같아도 거부하고(XST-02),
+// 정본 지평(144h)을 한 시간이라도 넘는 지평은 admission 보존 안이어도 거부한다(XST-03).
 func TestOptionsEnforceIrisAdmissionBoundaries(t *testing.T) {
 	t.Parallel()
 
@@ -57,7 +59,9 @@ func TestOptionsEnforceIrisAdmissionBoundaries(t *testing.T) {
 		{"retention without admission", pgstore.Options{InboxTerminalRetention: testInboxTerminalRetention}},
 		{"horizon without admission", pgstore.Options{AutomaticReplayHorizon: testReplayHorizon}},
 		{"reply retention below admission", pgstore.Options{IrisAdmissionRetention: admission, ReplyRetention: time.Hour}},
-		{"horizon equal to admission", pgstore.Options{IrisAdmissionRetention: admission, AutomaticReplayHorizon: admission}},
+		{"horizon without canonical horizon", pgstore.Options{IrisAdmissionRetention: admission, AutomaticReplayHorizon: testReplayHorizon}},
+		{"canonical horizon equal to admission", pgstore.Options{IrisAdmissionRetention: admission, IrisAutomaticReplayHorizon: admission}},
+		{"horizon past canonical horizon", pgstore.Options{IrisAdmissionRetention: admission, IrisAutomaticReplayHorizon: testReplayHorizon, AutomaticReplayHorizon: testReplayHorizon + time.Hour}},
 		{"inbox terminal at replay horizon", pgstore.Options{IrisAdmissionRetention: admission, InboxTerminalRetention: testReplayHorizon}},
 		{"inbox terminal equal to admission", pgstore.Options{IrisAdmissionRetention: admission, InboxTerminalRetention: admission}},
 		{"manual review below terminal", pgstore.Options{IrisAdmissionRetention: admission, InboxTerminalRetention: testInboxTerminalRetention, InboxManualReviewRetention: admission + time.Hour}},
@@ -73,9 +77,15 @@ func TestOptionsEnforceIrisAdmissionBoundaries(t *testing.T) {
 		}
 	}
 
-	accepted := pgstore.Options{IrisAdmissionRetention: admission, InboxTerminalRetention: admission + time.Second}
-	if _, err := pgstore.New(pool, accepted); err != nil {
-		t.Fatalf("New(inbox terminal just above admission) error = %v", err)
+	accepted := []pgstore.Options{
+		{IrisAdmissionRetention: admission, InboxTerminalRetention: admission + time.Second},
+		{IrisAdmissionRetention: admission, IrisAutomaticReplayHorizon: testReplayHorizon, AutomaticReplayHorizon: testReplayHorizon},
+	}
+
+	for _, opts := range accepted {
+		if _, err := pgstore.New(pool, opts); err != nil {
+			t.Errorf("New(%+v) error = %v", opts, err)
+		}
 	}
 }
 

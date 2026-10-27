@@ -11,8 +11,10 @@ import (
 // 반환 순서는 보장하지 않으며 같은 key의 후속 행은 앞 행이 종단이 될 때까지 반환하지 않는다.
 //
 // 문장을 보낸 뒤의 claim 오류는 *ClaimBatchError로 감싸 이미 읽은 claim과 함께 반환한다. 이때 일부 행은
-// 반환되지 않은 채 commit됐을 수 있으므로, 호출자는 반환된 claim을 처리하고 나머지를 ClaimBatchError.Token으로
-// ReleaseClaimToken에 돌려준다. 반납하지 않은 claim은 lease 만료까지 같은 ordering key를 막는다.
+// 반환되지 않은 채 commit됐을 수 있으므로, 호출자는 계속 처리할 claim의 id를 keep으로 넘겨
+// ReleaseClaimToken(ctx, ClaimBatchError.Token, keep)으로 나머지만 반납한다. 처리 중인 claim을 keep에서
+// 빠뜨리면 pending으로 돌아가 다른 poll이 다시 잡는다. 반납하지 않은 claim은 lease 만료까지 같은
+// ordering key를 막는다.
 func (s *Store) ClaimBatch(ctx context.Context, limit int) ([]InboxClaim, error) {
 	if limit <= 0 {
 		return nil, errors.New("pgstore: claim limit must be positive")
@@ -67,16 +69,17 @@ func (e *ClaimBatchError) Error() string { return e.Err.Error() }
 
 func (e *ClaimBatchError) Unwrap() error { return e.Err }
 
-// ReleaseClaimToken은 token이 아직 소유한 processing 행을 모두 pending으로 되돌리고 Claim이 올린
-// attempts를 원복한 뒤 되돌린 행 수를 반환한다. 처리를 시작하지 않은 claim의 반납이라 available_at은
-// 그대로 두며, 이미 종단이거나 다른 token으로 넘어간 행은 바꾸지 않는다. 호출자가 소유를 잃은 claim을
+// ReleaseClaimToken은 token이 아직 소유한 processing 행 가운데 keep에 없는 행을 pending으로 되돌리고
+// Claim이 올린 attempts를 원복한 뒤 되돌린 행 수를 반환한다. 인자 keep은 호출자가 계속 처리하는 claim의
+// id이며 그 행은 processing과 claim token을 그대로 유지한다. 처리를 시작하지 않은 claim의 반납이라 available_at은
+// 그대로 두며, 이미 종단이거나 다른 token으로 넘어간 행은 바꾸지 않는다. 호출자가 넘기지 못한 claim을
 // 같은 호출 안에서 반납하도록 종료 취소와 분리된 context(context.WithoutCancel과 짧은 기한)로 부른다.
-func (s *Store) ReleaseClaimToken(ctx context.Context, token string) (int64, error) {
+func (s *Store) ReleaseClaimToken(ctx context.Context, token string, keep []int64) (int64, error) {
 	if token == "" {
 		return 0, errors.New("pgstore: release claim token requires a token")
 	}
 
-	tag, err := s.db.Exec(ctx, queryReleaseClaimToken, s.opts.Scope, token)
+	tag, err := s.db.Exec(ctx, queryReleaseClaimToken, s.opts.Scope, token, keep)
 	if err != nil {
 		return 0, fmt.Errorf("pgstore: release claim token: %w", err)
 	}

@@ -1,9 +1,13 @@
 package pgstore_test
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/park285/shared-go/v2/pkg/db/pgxdb"
@@ -99,8 +103,9 @@ func deferBacklogAndCompleteOther(t *testing.T, store *pgstore.Store, claims []p
 	}
 }
 
-// TestReleaseClaimTokenReturnsUnreturnedClaims는 호출자가 처리하지 못한 claim을 token 단위로 즉시 되돌려
-// 같은 ordering key가 lease 만료까지 막히지 않고, attempts가 원복되며, 이미 종단인 행은 바꾸지 않는지 본다.
+// TestReleaseClaimTokenReturnsUnreturnedClaims는 keep으로 넘긴 claim은 processing과 원래 token을 유지하고
+// 나머지만 즉시 되돌려 같은 ordering key가 lease 만료까지 막히지 않고 attempts가 원복되는지 본다.
+// 남긴 claim의 Complete가 성공해야 같은 메시지가 다른 poll에 다시 claim되지 않는다.
 func TestReleaseClaimTokenReturnsUnreturnedClaims(t *testing.T) {
 	pool := newMigratedPool(t)
 	store := newScopedStoreWithOptions(t, pool, pgstore.Options{
@@ -121,13 +126,24 @@ func TestReleaseClaimTokenReturnsUnreturnedClaims(t *testing.T) {
 		t.Fatalf("ClaimBatch = %d claims, %v; want 3 heads", len(claims), err)
 	}
 
-	if completeErr := store.Complete(ctx, claims[0], ""); completeErr != nil {
-		t.Fatalf("complete one claim: %v", completeErr)
+	released, err := store.ReleaseClaimToken(ctx, claims[0].ClaimToken, []int64{claims[0].ID})
+	if err != nil || released != 2 {
+		t.Fatalf("ReleaseClaimToken = %d, %v; want the two claims outside keep", released, err)
 	}
 
-	released, err := store.ReleaseClaimToken(ctx, claims[0].ClaimToken)
-	if err != nil || released != 2 {
-		t.Fatalf("ReleaseClaimToken = %d, %v; want the two claims that were not completed", released, err)
+	var keptStatus, keptToken string
+
+	if scanErr := pool.QueryRow(ctx, `SELECT status, claim_token FROM iris_webhook_inbox WHERE id = $1`,
+		claims[0].ID).Scan(&keptStatus, &keptToken); scanErr != nil {
+		t.Fatalf("inspect kept row: %v", scanErr)
+	}
+
+	if keptStatus != "processing" || keptToken != claims[0].ClaimToken {
+		t.Fatalf("kept row = %s/%s; want processing with the original token", keptStatus, keptToken)
+	}
+
+	if completeErr := store.Complete(ctx, claims[0], ""); completeErr != nil {
+		t.Fatalf("complete kept claim: %v", completeErr)
 	}
 
 	var pendingUnattempted int
@@ -148,7 +164,7 @@ func TestReleaseClaimTokenReturnsUnreturnedClaims(t *testing.T) {
 		t.Fatalf("ClaimBatch after release = %d claims, %v; want the released heads and the completed key's next row", len(again), err)
 	}
 
-	if unknown, unknownErr := store.ReleaseClaimToken(ctx, "unknown-token"); unknownErr != nil || unknown != 0 {
+	if unknown, unknownErr := store.ReleaseClaimToken(ctx, "unknown-token", nil); unknownErr != nil || unknown != 0 {
 		t.Fatalf("ReleaseClaimToken(unknown) = %d, %v; want 0", unknown, unknownErr)
 	}
 }
@@ -194,5 +210,118 @@ func TestPruneInboxLargeBacklogHonorsLimitPerBranch(t *testing.T) {
 
 	if pruned, err := expireReviews.PruneInbox(ctx, 60); err != nil || pruned != 40 {
 		t.Fatalf("prune remaining manual review rows = %d, %v; want 40", pruned, err)
+	}
+}
+
+var errInjectedRead = errors.New("injected read failure")
+
+// truncatingQuerier는 claim 결과를 첫 행만 넘기고 읽기 오류를 내는 Querier다. 실제 문장은 끝까지
+// 실행돼 commit되므로 '일부만 반환되고 나머지는 commit된' 결과 미상 상태를 그대로 만든다.
+type truncatingQuerier struct {
+	pgstore.Querier
+}
+
+func (q truncatingQuerier) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+	rows, err := q.Querier.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("truncating query: %w", err)
+	}
+
+	return &truncatedRows{Rows: rows}, nil
+}
+
+type truncatedRows struct {
+	pgx.Rows
+
+	read int
+}
+
+func (r *truncatedRows) Next() bool {
+	if r.read == 1 {
+		// Close는 남은 결과를 끝까지 읽으므로 claim 문은 모든 행을 commit한 상태로 끝난다.
+		r.Close()
+
+		return false
+	}
+
+	r.read++
+
+	return r.Rows.Next()
+}
+
+func (r *truncatedRows) Err() error {
+	if r.read == 1 {
+		return errInjectedRead
+	}
+
+	return r.Rows.Err()
+}
+
+// TestClaimBatchErrorReleasesOnlyUnreturnedClaims는 claim 결과를 읽다 실패하면 ClaimBatch가 읽은 claim과
+// token을 *ClaimBatchError로 함께 넘기고, 반환된 claim을 keep으로 넘긴 반납이 반환되지 않은 commit claim만
+// 되돌리는지 본다. 반환된 claim이 pending으로 돌아가면 다음 poll이 같은 메시지를 두 번 처리한다.
+func TestClaimBatchErrorReleasesOnlyUnreturnedClaims(t *testing.T) {
+	pool := newMigratedPool(t)
+	ctx := t.Context()
+
+	const scope = "claim-batch-error"
+
+	_, err := pool.Exec(ctx, `
+		INSERT INTO iris_webhook_inbox (scope, message_id, ordering_key, payload, created_at)
+		SELECT $1, 'message-' || v, 'key-' || v, '{}'::jsonb, now() - interval '1 minute' + v * interval '1 millisecond'
+		FROM generate_series(1, 3) AS v`, scope)
+	if err != nil {
+		t.Fatalf("seed inbox: %v", err)
+	}
+
+	failing, err := pgstore.New(truncatingQuerier{Querier: pool}, testPolicy(pgstore.Options{Scope: scope}))
+	if err != nil {
+		t.Fatalf("new failing store: %v", err)
+	}
+
+	claims, err := failing.ClaimBatch(ctx, 3)
+
+	var batchErr *pgstore.ClaimBatchError
+
+	if !errors.As(err, &batchErr) || !errors.Is(err, errInjectedRead) {
+		t.Fatalf("ClaimBatch error = %v; want *ClaimBatchError wrapping the read failure", err)
+	}
+
+	if len(claims) != 1 || claims[0].ClaimToken != batchErr.Token {
+		t.Fatalf("ClaimBatch returned %d claims; want the one row read before the failure under the error token", len(claims))
+	}
+
+	var committed int
+
+	if scanErr := pool.QueryRow(ctx, `
+		SELECT count(*) FROM iris_webhook_inbox WHERE scope = $1 AND status = 'processing' AND claim_token = $2`,
+		scope, batchErr.Token).Scan(&committed); scanErr != nil {
+		t.Fatalf("inspect committed claims: %v", scanErr)
+	}
+
+	if committed != 3 {
+		t.Fatalf("committed claims = %d; want all 3 heads committed although only 1 was returned", committed)
+	}
+
+	store := newScopedStoreWithOptions(t, pool, pgstore.Options{Scope: scope})
+
+	released, err := store.ReleaseClaimToken(ctx, batchErr.Token, []int64{claims[0].ID})
+	if err != nil || released != 2 {
+		t.Fatalf("ReleaseClaimToken = %d, %v; want the 2 committed claims that were not returned", released, err)
+	}
+
+	again, err := store.ClaimBatch(ctx, 3)
+	if err != nil || len(again) != 2 {
+		t.Fatalf("ClaimBatch after release = %d claims, %v; want only the 2 released rows", len(again), err)
+	}
+
+	for _, claim := range again {
+		if claim.ID == claims[0].ID {
+			t.Fatalf("returned claim %s was claimed again; it must stay with its original owner", claim.MessageID)
+		}
+	}
+
+	if completeErr := store.Complete(ctx, claims[0], ""); completeErr != nil {
+		t.Fatalf("complete returned claim: %v", completeErr)
 	}
 }

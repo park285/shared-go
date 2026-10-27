@@ -36,10 +36,11 @@ func TestRunAgainstMemoryImplementations(t *testing.T) {
 			NewTerminalConflict:   func() error { return errTerminal409 },
 		},
 		Retention: &contracttest.RetentionFixture{
-			IrisAdmissionRetention: 168 * time.Hour,
-			ReplyOutboxRetention:   168 * time.Hour,
-			AutomaticReplayHorizon: 144 * time.Hour,
-			InboxTerminalRetention: 8 * 24 * time.Hour,
+			IrisAdmissionRetention:     168 * time.Hour,
+			IrisAutomaticReplayHorizon: 144 * time.Hour,
+			ReplyOutboxRetention:       168 * time.Hour,
+			AutomaticReplayHorizon:     144 * time.Hour,
+			InboxTerminalRetention:     8 * 24 * time.Hour,
 		},
 	})
 }

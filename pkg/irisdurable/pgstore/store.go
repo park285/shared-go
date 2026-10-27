@@ -51,6 +51,11 @@ type Options struct {
 	// IrisAdmissionRetention은 Iris reply admission 원장의 보존 기간이다. 정본은 Iris 계약 파일과
 	// iris-client-go 공개 상수이며 호출자가 넘긴다. 보존·지평 항목을 하나라도 지정하면 필수다.
 	IrisAdmissionRetention time.Duration
+	// IrisAutomaticReplayHorizon은 스택이 허용하는 자동 재발송 지평이다. 정본은 Iris 계약 파일과
+	// iris-client-go 공개 상수이며 호출자가 넘긴다. AutomaticReplayHorizon을 지정하면 필수이고
+	// IrisAdmissionRetention보다 짧아야 한다. 둘의 차이는 지평 끝 재발송에 더해지는 backoff·attempt
+	// timeout·claim 주기를 흡수하는 여유이므로 라이브러리가 이 값을 넘는 지평을 거부한다.
+	IrisAutomaticReplayHorizon time.Duration
 	// Lease는 claim 소유권의 유효 기간이다. Claim·ClaimBatch·RenewInbox·BeginAttempt가 쓴다.
 	Lease time.Duration
 	// MaxAttempts는 한 reply 행의 재시도 상한이다. 이 값에 도달하면 Retire가 종단으로 보낸다.
@@ -60,7 +65,7 @@ type Options struct {
 	BackoffBase time.Duration
 	BackoffMax  time.Duration
 	// AutomaticReplayHorizon은 저장된 clientRequestId로 자동 재발송을 허용하는 상한이다.
-	// IrisAdmissionRetention보다 짧아야 하며 BeginAttempt·Redrive·Retire·ReplyReadySnapshot이 쓴다.
+	// IrisAutomaticReplayHorizon을 넘을 수 없으며 BeginAttempt·Redrive·Retire·ReplyReadySnapshot이 쓴다.
 	AutomaticReplayHorizon time.Duration
 	// ReplyRetention은 reply outbox 행의 보존이다. IrisAdmissionRetention보다 짧을 수 없고 Stage가 쓴다.
 	ReplyRetention time.Duration
@@ -80,7 +85,7 @@ type Options struct {
 
 // validate는 지정한 정책 값이 스택 보존 계약을 어기는지 기동 시점에 검사한다.
 func (o Options) validate() error {
-	if o.IrisAdmissionRetention < 0 || o.Lease < 0 || o.MaxAttempts < 0 || o.BackoffBase < 0 || o.BackoffMax < 0 ||
+	if o.IrisAdmissionRetention < 0 || o.IrisAutomaticReplayHorizon < 0 || o.Lease < 0 || o.MaxAttempts < 0 || o.BackoffBase < 0 || o.BackoffMax < 0 ||
 		o.AutomaticReplayHorizon < 0 || o.ReplyRetention < 0 || o.InboxTerminalRetention < 0 || o.InboxManualReviewRetention < 0 {
 		return errors.New("pgstore: options must not be negative")
 	}
@@ -109,16 +114,25 @@ func (o Options) validate() error {
 func (o Options) validateRetention() error {
 	admission := o.IrisAdmissionRetention
 	if admission == 0 {
-		if o.AutomaticReplayHorizon > 0 || o.ReplyRetention > 0 || o.InboxTerminalRetention > 0 || o.InboxManualReviewRetention > 0 {
+		if o.IrisAutomaticReplayHorizon > 0 || o.AutomaticReplayHorizon > 0 || o.ReplyRetention > 0 || o.InboxTerminalRetention > 0 || o.InboxManualReviewRetention > 0 {
 			return errors.New("pgstore: IrisAdmissionRetention is required with retention or replay horizon options")
 		}
 
 		return nil
 	}
 
-	// 지평 끝에서 재발송한 요청도 Iris가 같은 clientRequestId를 아직 기억해야 중복 발화가 없다.
-	if o.AutomaticReplayHorizon >= admission {
-		return fmt.Errorf("pgstore: AutomaticReplayHorizon %s must be shorter than the Iris admission retention %s", o.AutomaticReplayHorizon, admission)
+	if o.AutomaticReplayHorizon > 0 && o.IrisAutomaticReplayHorizon == 0 {
+		return errors.New("pgstore: IrisAutomaticReplayHorizon is required with AutomaticReplayHorizon")
+	}
+
+	// 지평 끝에서 backoff·timeout만큼 늦게 나간 재발송도 Iris가 같은 clientRequestId를 아직 기억해야
+	// 중복 발화가 없다. 그래서 지평은 admission 보존이 아니라 여유를 둔 정본 지평으로 묶는다.
+	if o.IrisAutomaticReplayHorizon >= admission {
+		return fmt.Errorf("pgstore: IrisAutomaticReplayHorizon %s must be shorter than the Iris admission retention %s", o.IrisAutomaticReplayHorizon, admission)
+	}
+
+	if o.AutomaticReplayHorizon > o.IrisAutomaticReplayHorizon {
+		return fmt.Errorf("pgstore: AutomaticReplayHorizon %s exceeds the Iris automatic replay horizon %s", o.AutomaticReplayHorizon, o.IrisAutomaticReplayHorizon)
 	}
 
 	if o.ReplyRetention > 0 && o.ReplyRetention < admission {

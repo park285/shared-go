@@ -468,10 +468,11 @@ func retentionFixture(t *testing.T) *contracttest.RetentionFixture {
 	opts := testPolicy(pgstore.Options{})
 
 	return &contracttest.RetentionFixture{
-		IrisAdmissionRetention: opts.IrisAdmissionRetention,
-		ReplyOutboxRetention:   opts.ReplyRetention,
-		AutomaticReplayHorizon: opts.AutomaticReplayHorizon,
-		InboxTerminalRetention: opts.InboxTerminalRetention,
+		IrisAdmissionRetention:     opts.IrisAdmissionRetention,
+		IrisAutomaticReplayHorizon: opts.IrisAutomaticReplayHorizon,
+		ReplyOutboxRetention:       opts.ReplyRetention,
+		AutomaticReplayHorizon:     opts.AutomaticReplayHorizon,
+		InboxTerminalRetention:     opts.InboxTerminalRetention,
 	}
 }
 
