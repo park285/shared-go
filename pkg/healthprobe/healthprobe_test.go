@@ -29,7 +29,7 @@ func TestCheckURLAcceptsSuccessStatus(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if _, err := fetchURL(t.Context(), server.URL, nil, internalFetchOptions()); err != nil {
+	if _, err := fetchURL(t.Context(), server.URL, nil, internalFetchOptions(tlsOverrides{})); err != nil {
 		t.Fatalf("fetchURL(%q): %v", server.URL, err)
 	}
 }
@@ -40,7 +40,7 @@ func TestFetchURLReturnsBody(t *testing.T) {
 	}))
 	defer server.Close()
 
-	body, err := fetchURL(t.Context(), server.URL, nil, internalFetchOptions())
+	body, err := fetchURL(t.Context(), server.URL, nil, internalFetchOptions(tlsOverrides{}))
 	if err != nil {
 		t.Fatalf("fetchURL(%q): %v", server.URL, err)
 	}
@@ -62,11 +62,11 @@ func TestFetchURLWithHeadersSendsConfiguredHeaders(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if _, err := fetchURL(t.Context(), server.URL, nil, internalFetchOptions()); err == nil {
+	if _, err := fetchURL(t.Context(), server.URL, nil, internalFetchOptions(tlsOverrides{})); err == nil {
 		t.Fatal("fetchURL() error = nil, want unauthorized without API key header")
 	}
 
-	body, err := fetchURL(t.Context(), server.URL, map[string]string{"X-API-Key": testProbeSecret}, internalFetchOptions())
+	body, err := fetchURL(t.Context(), server.URL, map[string]string{"X-API-Key": testProbeSecret}, internalFetchOptions(tlsOverrides{}))
 	if err != nil {
 		t.Fatalf("fetchURL(%q): %v", server.URL, err)
 	}
@@ -84,7 +84,7 @@ func TestFetchURLRejectsServerErrorWithoutBody(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if body, err := fetchURL(t.Context(), server.URL, nil, internalFetchOptions()); err == nil || body != nil {
+	if body, err := fetchURL(t.Context(), server.URL, nil, internalFetchOptions(tlsOverrides{})); err == nil || body != nil {
 		t.Fatalf("fetchURL(%q) = (%q, %v), want nil body and error for 500", server.URL, body, err)
 	}
 }
@@ -95,15 +95,15 @@ func TestCheckURLRejectsServerError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if _, err := fetchURL(t.Context(), server.URL, nil, internalFetchOptions()); err == nil {
+	if _, err := fetchURL(t.Context(), server.URL, nil, internalFetchOptions(tlsOverrides{})); err == nil {
 		t.Fatalf("fetchURL(%q) error = nil, want error for 500", server.URL)
 	}
 }
 
 func TestCheckURLRejectsMissingCAFile(t *testing.T) {
-	t.Setenv(CACertFileEnv, filepath.Join(t.TempDir(), "missing.pem"))
+	missing := tlsOverrides{CACertFile: filepath.Join(t.TempDir(), "missing.pem")}
 
-	if _, err := fetchURL(t.Context(), "https://127.0.0.1:1/ready", nil, internalFetchOptions()); err == nil {
+	if _, err := fetchURL(t.Context(), "https://127.0.0.1:1/ready", nil, internalFetchOptions(missing)); err == nil {
 		t.Fatal("fetchURL() error = nil, want error for missing CA file")
 	}
 }
@@ -120,7 +120,7 @@ func TestCheckURLRejectsInvalidInputs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := CheckURL(tt.raw); err == nil {
+			if err := CheckURL(t.Context(), tt.raw); err == nil {
 				t.Fatalf("CheckURL(%q) error = nil, want error", tt.raw)
 			}
 		})
@@ -181,10 +181,7 @@ func TestCheckURLAcceptsHTTP3LoopbackWithServerNameOverride(t *testing.T) {
 		}
 	}()
 
-	t.Setenv(CACertFileEnv, certFile)
-	t.Setenv(clientCertFileEnv, certFile)
-	t.Setenv(clientKeyFileEnv, keyFile)
-	t.Setenv(ServerNameEnv, "healthprobe-h3.local")
+	tlsOpts := tlsOverrides{CACertFile: certFile, ClientCertFile: certFile, ClientKeyFile: keyFile, ServerName: "healthprobe-h3.local"}
 
 	address := listener.LocalAddr()
 	if address == nil {
@@ -192,7 +189,7 @@ func TestCheckURLAcceptsHTTP3LoopbackWithServerNameOverride(t *testing.T) {
 	}
 
 	url := "https://" + address.String() + "/ready"
-	if _, err := fetchURL(t.Context(), url, nil, internalFetchOptions()); err != nil {
+	if _, err := fetchURL(t.Context(), url, nil, internalFetchOptions(tlsOpts)); err != nil {
 		t.Fatalf("fetchURL(%q): %v", url, err)
 	}
 }
@@ -235,12 +232,9 @@ func TestCheckURLRejectsCrossOriginRedirectBeforePresentingClientCertificate(t *
 		http.Redirect(w, r, redirectTarget+"/ready", http.StatusFound)
 	}))
 
-	t.Setenv(CACertFileEnv, certFile)
-	t.Setenv(clientCertFileEnv, certFile)
-	t.Setenv(clientKeyFileEnv, keyFile)
-	t.Setenv(ServerNameEnv, "healthprobe-h3.local")
+	tlsOpts := tlsOverrides{CACertFile: certFile, ClientCertFile: certFile, ClientKeyFile: keyFile, ServerName: "healthprobe-h3.local"}
 
-	_, err = fetchURL(t.Context(), origin+"/ready", nil, internalFetchOptions())
+	_, err = fetchURL(t.Context(), origin+"/ready", nil, internalFetchOptions(tlsOpts))
 	if !errors.Is(err, errCredentialedRedirect) {
 		t.Fatalf("fetchURL() error = %v, want errCredentialedRedirect", err)
 	}
@@ -319,4 +313,30 @@ func writeSelfSignedCert(t *testing.T, serverName string) (string, string) {
 	}
 
 	return certFile, keyFile
+}
+
+// TestCheckURLOptionsIgnoreInternalTLSEnv는 외부 대상 검사가 내부 probe용 HEALTHCHECK_* env를 읽지 않는지 본다.
+// 환경 변수를 읽던 이전 경로는 설정된 클라이언트 인증서를 외부 호스트에 제시하거나 내부 CA로 검증해 실패했다.
+func TestCheckURLOptionsIgnoreInternalTLSEnv(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing.pem")
+	t.Setenv(caCertFileEnv, missing)
+	t.Setenv(clientCertFileEnv, missing)
+	t.Setenv(clientKeyFileEnv, missing)
+	t.Setenv(serverNameEnv, "internal.invalid")
+
+	parsed, err := parseURL("https://example.com/ready")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, closeFn, err := newClient(parsed, defaultFetchOptions())
+	if err != nil {
+		t.Fatalf("newClient(external) error = %v, want env-independent client", err)
+	}
+
+	closeFn()
+
+	if got := tlsOverridesFromEnv(); got.CACertFile != missing || got.ServerName != "internal.invalid" {
+		t.Fatalf("tlsOverridesFromEnv() = %+v, want CLI path to read the env", got)
+	}
 }

@@ -14,13 +14,6 @@ type LogContract struct {
 	NameKey string
 }
 
-var (
-	// BackgroundTask는 "background goroutine panic recovered" event와 `guard` key를 쓴다.
-	BackgroundTask = LogContract{Message: "background goroutine panic recovered", NameKey: "guard"}
-	// Goroutine은 "goroutine_panic_recovered" event와 `goroutine` key를 쓴다.
-	Goroutine = LogContract{Message: "goroutine_panic_recovered", NameKey: "goroutine"}
-)
-
 // Run은 fn의 panic을 복구해 기록한다. 정상 반환은 변경하지 않는다.
 func Run(logger *slog.Logger, contract LogContract, name string, fn func()) {
 	contract.mustBeValid()

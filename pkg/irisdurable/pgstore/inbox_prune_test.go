@@ -10,7 +10,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/park285/shared-go/v2/pkg/db/pgxdb"
-	"github.com/park285/shared-go/v2/pkg/irisdurable"
 	"github.com/park285/shared-go/v2/pkg/irisdurable/pgstore"
 )
 
@@ -55,7 +54,7 @@ func TestPruneInboxDeletesAtMostTheLimitPerCall(t *testing.T) {
 		survivingReviews int
 	}{
 		{name: "manual review kept", survivingReviews: pruneReviewRows},
-		{name: "manual review expires", retention: irisdurable.AutomaticReplayHorizon},
+		{name: "manual review expires", retention: testManualReviewRetention},
 	}
 
 	for _, planner := range planners {
@@ -195,7 +194,8 @@ func withPlanner(t *testing.T, pool *pgxpool.Pool, params map[string]string) *pg
 	return planned
 }
 
-// pruneOracle은 fixture 이름표로 pruneScope의 남은 후보를 기대 삭제 순서대로 돌려준다.
+// pruneOracle은 fixture 이름표로 pruneScope의 남은 후보를 기대 삭제 순서대로 돌려준다. 정리는
+// 완료 갈래를 먼저 비우고 남은 한도로 manual_review 갈래를 지우므로 갈래 순서가 먼저다.
 func pruneOracle(t *testing.T, pool *pgxpool.Pool, includeReview bool, cutoff time.Time) []int64 {
 	t.Helper()
 
@@ -204,7 +204,7 @@ func pruneOracle(t *testing.T, pool *pgxpool.Pool, includeReview bool, cutoff ti
 		WHERE scope = $1
 		  AND (message_id LIKE 'old-completed-%' OR ($2 AND message_id LIKE 'old-review-%'))
 		  AND terminal_at <= $3
-		ORDER BY terminal_at, id`
+		ORDER BY message_id LIKE 'old-review-%', terminal_at, id`
 
 	rows, err := pool.Query(t.Context(), query, pruneScope, includeReview, cutoff)
 	if err != nil {

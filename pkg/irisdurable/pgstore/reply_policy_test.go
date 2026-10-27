@@ -35,7 +35,7 @@ func TestBeginAttemptChecksReplayPolicyAtClaim(t *testing.T) {
 
 			defer func() { require.NoError(t, pgxdb.Rollback(t.Context(), tx)) }()
 
-			store, err := pgstore.New(tx, pgstore.Options{Scope: tc.name, MaxAttempts: 3, AutomaticReplayHorizon: time.Hour})
+			store, err := pgstore.New(tx, testPolicy(pgstore.Options{Scope: tc.name, MaxAttempts: 3, AutomaticReplayHorizon: time.Hour}))
 			require.NoError(t, err)
 
 			record := irisdurable.ReplyRecord{MessageID: "policy-message", Phase: "reply", RoomID: "policy-room", ClientRequestID: "policy-request", Payload: []byte(`{"text":"exact"}`)}
@@ -77,7 +77,7 @@ func TestBeginAttemptChecksReplayPolicyAtClaim(t *testing.T) {
 func TestBeginAttemptRechecksAfterRedriveAndProgress(t *testing.T) {
 	pool := newMigratedPool(t)
 
-	store, err := pgstore.New(pool, pgstore.Options{Scope: "claim-recheck", MaxAttempts: 1, AutomaticReplayHorizon: time.Hour})
+	store, err := pgstore.New(pool, testPolicy(pgstore.Options{Scope: "claim-recheck", MaxAttempts: 1, AutomaticReplayHorizon: time.Hour}))
 	if err != nil {
 		t.Fatal(err)
 	}

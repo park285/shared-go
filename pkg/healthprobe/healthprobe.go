@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	ServerNameEnv     = "HEALTHCHECK_SERVER_NAME"
-	CACertFileEnv     = "HEALTHCHECK_CA_CERT_FILE"
+	serverNameEnv     = "HEALTHCHECK_SERVER_NAME"
+	caCertFileEnv     = "HEALTHCHECK_CA_CERT_FILE"
 	clientCertFileEnv = "HEALTHCHECK_CLIENT_CERT_FILE"
 	clientKeyFileEnv  = "HEALTHCHECK_CLIENT_KEY_FILE"
 
@@ -39,7 +39,26 @@ var (
 	errCredentialedRedirect = errors.New("healthprobe: client certificate redirect changes origin")
 )
 
+// tlsOverrides는 내부 probe용 HTTPS 신뢰·인증서 설정이다. CLI 경로만 HEALTHCHECK_* env에서
+// 한 번 읽어 넘기며, 외부 대상 검사(CheckURL)는 시스템 CA만 쓰고 클라이언트 인증서를 제시하지 않는다.
+type tlsOverrides struct {
+	CACertFile     string
+	ClientCertFile string
+	ClientKeyFile  string
+	ServerName     string
+}
+
+func tlsOverridesFromEnv() tlsOverrides {
+	return tlsOverrides{
+		CACertFile:     os.Getenv(caCertFileEnv),
+		ClientCertFile: os.Getenv(clientCertFileEnv),
+		ClientKeyFile:  os.Getenv(clientKeyFileEnv),
+		ServerName:     os.Getenv(serverNameEnv),
+	}
+}
+
 type fetchOptions struct {
+	TLS                      tlsOverrides
 	AllowedHosts             []string
 	AllowPrivateNetworks     bool
 	MaxBodyBytes             int64
@@ -54,18 +73,20 @@ func defaultFetchOptions() fetchOptions {
 	}
 }
 
-func internalFetchOptions() fetchOptions {
+func internalFetchOptions(tls tlsOverrides) fetchOptions {
 	opts := defaultFetchOptions()
 
 	opts.AllowPrivateNetworks = true
+	opts.TLS = tls
 
 	return opts
 }
 
 // CheckURL은 https는 H3(QUIC)로, http는 HTTP/1.1로 1회 GET 후 2xx 여부를 검사한다.
-// 대상이 private·loopback 주소로 풀리면 거부한다.
-func CheckURL(rawURL string) error {
-	if _, err := fetchURL(context.Background(), rawURL, nil, defaultFetchOptions()); err != nil {
+// 대상이 private·loopback 주소로 풀리면 거부한다. 외부 대상용이라 HEALTHCHECK_* env를 읽지 않으며
+// 시스템 CA 번들로 검증하고 클라이언트 인증서를 제시하지 않는다.
+func CheckURL(ctx context.Context, rawURL string) error {
+	if _, err := fetchURL(ctx, rawURL, nil, defaultFetchOptions()); err != nil {
 		return fmt.Errorf("healthprobe: fetch URL: %w", err)
 	}
 
@@ -133,14 +154,14 @@ func newClient(parsed *url.URL, opts fetchOptions) (*http.Client, func(), error)
 	}
 
 	if parsed.Scheme == "https" {
-		clientCertFile := os.Getenv(clientCertFileEnv)
-		clientKeyFile := os.Getenv(clientKeyFileEnv)
+		clientCertFile := opts.TLS.ClientCertFile
+		clientKeyFile := opts.TLS.ClientKeyFile
 
 		h3Client, closeFn, clientErr := h3.NewClient(0, h3.ClientOptions{
-			CACertFile:     os.Getenv(CACertFileEnv),
+			CACertFile:     opts.TLS.CACertFile,
 			ClientCertFile: clientCertFile,
 			ClientKeyFile:  clientKeyFile,
-			ServerName:     os.Getenv(ServerNameEnv),
+			ServerName:     opts.TLS.ServerName,
 			DialGuard:      guard,
 		})
 		if clientErr != nil {

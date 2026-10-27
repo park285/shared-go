@@ -15,7 +15,7 @@ func privacyOutput(t *testing.T, attrs ...slog.Attr) string {
 
 	var buf bytes.Buffer
 
-	logger := slog.New(newSanitizeHandler(slog.NewTextHandler(&buf, nil)))
+	logger := slog.New(newPrivacySanitizeHandler(slog.NewTextHandler(&buf, nil)))
 	logger.LogAttrs(t.Context(), slog.LevelInfo, "privacy", attrs...)
 
 	return buf.String()
@@ -24,7 +24,7 @@ func privacyOutput(t *testing.T, attrs ...slog.Attr) string {
 func TestSanitizeHandler_PrivacyKeysMaskedAcrossKinds(t *testing.T) {
 	keys := []string{
 		"room", "room_name", "chat_id",
-		tokenUserName, "thread_id", "session_thread_id", "sender", "game_key",
+		tokenUserName, "thread_id", "session_thread_id", "sender",
 		"USER_NAME", "session.thread.id",
 	}
 
@@ -127,7 +127,7 @@ func TestSanitizeHandler_PublicContentIDsPreserved(t *testing.T) {
 func TestSanitizeHandler_OperationalIDsPreservedViaWithAttrsAndWithGroup(t *testing.T) {
 	var buf bytes.Buffer
 
-	logger := slog.New(newSanitizeHandler(slog.NewTextHandler(&buf, nil))).
+	logger := slog.New(newPrivacySanitizeHandler(slog.NewTextHandler(&buf, nil))).
 		With(slog.String(testUserID, kakaoSentinelID)).
 		WithGroup("request")
 	logger.LogAttrs(t.Context(), slog.LevelInfo, "privacy", slog.Int64("room_id", 8842), slog.String(testVideoID, testVid1))
@@ -150,7 +150,7 @@ func TestSanitizeHandler_OperationalIDsPreservedViaWithAttrsAndWithGroup(t *test
 func TestLogWarn_OperationalRoomIDPreserved(t *testing.T) {
 	var buf bytes.Buffer
 
-	logger := slog.New(newSanitizeHandler(slog.NewTextHandler(&buf, nil)))
+	logger := slog.New(newPrivacySanitizeHandler(slog.NewTextHandler(&buf, nil)))
 
 	attrs := append(ErrorAttrs(errors.New("boom")), slog.String("channel_id", "UC123"), slog.Int64("room_id", 8842))
 	Log(t.Context(), logger, slog.LevelWarn, "sync.poll.failed", "sync poll failed", attrs...)
@@ -169,7 +169,7 @@ func TestLogWarn_OperationalRoomIDPreserved(t *testing.T) {
 func TestSanitizeHandler_WithGroupNamedPrivacyKeyMasksMembers(t *testing.T) {
 	var buf bytes.Buffer
 
-	logger := slog.New(newSanitizeHandler(slog.NewTextHandler(&buf, nil))).WithGroup("sender")
+	logger := slog.New(newPrivacySanitizeHandler(slog.NewTextHandler(&buf, nil))).WithGroup("sender")
 	logger.LogAttrs(t.Context(), slog.LevelInfo, "privacy",
 		slog.String("name", kakaoSentinelID),
 		slog.Int64("id", 8842),
@@ -193,7 +193,7 @@ func TestSanitizeHandler_WithGroupNamedPrivacyKeyMasksMembers(t *testing.T) {
 func TestSanitizeHandler_WithGroupNamedPrivacyKeyMasksWithAttrs(t *testing.T) {
 	var buf bytes.Buffer
 
-	logger := slog.New(newSanitizeHandler(slog.NewTextHandler(&buf, nil))).
+	logger := slog.New(newPrivacySanitizeHandler(slog.NewTextHandler(&buf, nil))).
 		WithGroup("room").
 		With(slog.String("title", kakaoSentinelID))
 	logger.LogAttrs(t.Context(), slog.LevelInfo, "privacy", slog.String("member", kakaoSentinelID))
@@ -208,7 +208,7 @@ func TestSanitizeHandler_WithGroupNamedPrivacyKeyMasksWithAttrs(t *testing.T) {
 func TestSanitizeHandler_NestedGroupUnderPrivacyGroupMasked(t *testing.T) {
 	var buf bytes.Buffer
 
-	logger := slog.New(newSanitizeHandler(slog.NewTextHandler(&buf, nil))).
+	logger := slog.New(newPrivacySanitizeHandler(slog.NewTextHandler(&buf, nil))).
 		WithGroup("sender").
 		WithGroup("profile")
 	logger.LogAttrs(t.Context(), slog.LevelInfo, "privacy", slog.String("nickname", kakaoSentinelID))
@@ -223,7 +223,7 @@ func TestSanitizeHandler_NestedGroupUnderPrivacyGroupMasked(t *testing.T) {
 func TestSanitizeHandler_NonPrivacyGroupUnaffected(t *testing.T) {
 	var buf bytes.Buffer
 
-	logger := slog.New(newSanitizeHandler(slog.NewTextHandler(&buf, nil))).WithGroup("request")
+	logger := slog.New(newPrivacySanitizeHandler(slog.NewTextHandler(&buf, nil))).WithGroup("request")
 	logger.LogAttrs(t.Context(), slog.LevelInfo, "privacy",
 		slog.String("path", "/api/users"),
 		slog.String(testVideoID, testVid1),
@@ -302,9 +302,9 @@ func TestMaskPrivacyMap_NestedCleanMapPreservesCopyOnHit(t *testing.T) {
 	nested := map[string]any{testVideoID: testVid1, testCount: 3}
 	payload := map[string]any{testNested: nested}
 
-	masked, changed := maskPrivacyMap(payload)
+	masked, changed := testPrivacy.maskPrivacyMap(payload)
 	if changed || masked != nil {
-		t.Fatalf("maskPrivacyMap() = (%v, %t), want (nil, false)", masked, changed)
+		t.Fatalf("testPrivacy.maskPrivacyMap() = (%v, %t), want (nil, false)", masked, changed)
 	}
 }
 
@@ -313,9 +313,9 @@ func TestMaskPrivacyMap_DepthCapStopsSelfReference(t *testing.T) {
 
 	payload["self"] = payload
 
-	masked, changed := maskPrivacyMap(payload)
+	masked, changed := testPrivacy.maskPrivacyMap(payload)
 	if !changed {
-		t.Fatal("maskPrivacyMap() changed = false, want true")
+		t.Fatal("testPrivacy.maskPrivacyMap() changed = false, want true")
 	}
 
 	if got := masked[tokenUserName]; got != redactedValue {
@@ -334,9 +334,9 @@ func TestMaskPrivacyMap_DepthNinePrivacyKeyIsNotTraversed(t *testing.T) {
 		payload = map[string]any{testNested: payload}
 	}
 
-	masked, changed := maskPrivacyMap(payload)
+	masked, changed := testPrivacy.maskPrivacyMap(payload)
 	if changed || masked != nil {
-		t.Fatalf("maskPrivacyMap() = (%v, %t), want (nil, false)", masked, changed)
+		t.Fatalf("testPrivacy.maskPrivacyMap() = (%v, %t), want (nil, false)", masked, changed)
 	}
 
 	output := privacyOutput(t, slog.Any("payload", payload))
@@ -356,14 +356,14 @@ func TestSanitizeHandler_StringMapIsNotPrivacyMasked(t *testing.T) {
 func TestSanitizeAttr_PrivacyKeysRejectBlanketIDSuffix(t *testing.T) {
 	blanket := []string{"room_id", testUserID, "Room_ID", "user-id", "channel_id", testVideoID, "content_id", "request_id", "trace_id", "id", "correlation_id"}
 	for _, key := range blanket {
-		if out := sanitizeAttr(slog.String(key, kakaoSentinelID)); out.Value.String() != kakaoSentinelID {
+		if out := testPrivacy.sanitizeAttr(slog.String(key, kakaoSentinelID)); out.Value.String() != kakaoSentinelID {
 			t.Errorf("%q value = %q, want preserved (no blanket *_id masking)", key, out.Value.String())
 		}
 	}
 
-	masked := []string{"room", "chat_id", tokenUserName, "room_name", "thread_id", "session_thread_id", "sender", "game_key"}
+	masked := []string{"room", "chat_id", tokenUserName, "room_name", "thread_id", "session_thread_id", "sender"}
 	for _, key := range masked {
-		if out := sanitizeAttr(slog.String(key, kakaoSentinelID)); out.Value.String() != redactedValue {
+		if out := testPrivacy.sanitizeAttr(slog.String(key, kakaoSentinelID)); out.Value.String() != redactedValue {
 			t.Errorf("%q value = %q, want redacted privacy key", key, out.Value.String())
 		}
 	}

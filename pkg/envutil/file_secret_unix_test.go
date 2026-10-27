@@ -165,7 +165,7 @@ func TestStringOrSecretFile_ReadsSecureFile(t *testing.T) {
 	require.NoError(t, os.Unsetenv("TEST_SOSF_UNIX"))
 	t.Setenv("TEST_SOSF_UNIX_FILE", filePath)
 
-	got, err := StringOrSecretFile("TEST_SOSF_UNIX", "def")
+	got, err := StringOrSecretFile("TEST_SOSF_UNIX")
 	require.NoError(t, err)
 	require.Equal(t, "from-file", got)
 }
@@ -179,7 +179,7 @@ func TestStringOrSecretFile_FailClosedOnInsecureFile(t *testing.T) {
 	require.NoError(t, os.Unsetenv("TEST_SOSF_UNIX"))
 	t.Setenv("TEST_SOSF_UNIX_FILE", filePath)
 
-	got, err := StringOrSecretFile("TEST_SOSF_UNIX", "def")
+	got, err := StringOrSecretFile("TEST_SOSF_UNIX")
 	require.Error(t, err)
 	require.Empty(t, got)
 	require.NotContains(t, err.Error(), "topsecret")

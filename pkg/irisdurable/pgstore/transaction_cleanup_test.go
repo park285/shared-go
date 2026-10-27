@@ -111,7 +111,7 @@ func TestStagePreservesTransactionErrorsDuringCanceledCleanup(t *testing.T) {
 
 			tx := &stageCleanupTx{cancel: cancel, lockErr: tc.lockErr, commitErr: tc.commitErr, rollbackErr: tc.rollbackErr}
 
-			store, err := pgstore.New(stageCleanupPool{tx: tx}, pgstore.Options{})
+			store, err := pgstore.New(stageCleanupPool{tx: tx}, testPolicy(pgstore.Options{}))
 			require.NoError(t, err)
 
 			outcome, err := store.Stage(ctx, irisdurable.ReplyRecord{

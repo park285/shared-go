@@ -81,8 +81,8 @@ func WithLogger(logger *slog.Logger) Option {
 	}
 }
 
-// 미지정 시 sharedllm.ResolveOpenAIMaxRetries(nil)의 기본 2회가 적용되며, 소비자 자체 재시도와
-// 겹치면 총 시도가 (소비자 시도) × (1 + retries)로 곱연산된다. 음수는 0으로 절단된다.
+// WithMaxRetries는 필수 옵션이다. 지정하지 않거나 음수면 New가 오류를 반환하고 0은 재시도 없음이다.
+// 소비자 자체 재시도와 겹치면 총 시도가 (소비자 시도) × (1 + retries)로 곱연산된다.
 func WithMaxRetries(retries int) Option {
 	return func(c *config) {
 		c.maxRetries = &retries

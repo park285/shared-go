@@ -222,29 +222,6 @@ func TestLoadProfileFileRejectsOversizeBOMAndSymlink(t *testing.T) {
 	}
 }
 
-func TestDecodeSettingsRejectsUnknownDuplicateAndTrailingFields(t *testing.T) {
-	type settings struct {
-		Workers int `json:"workers"`
-	}
-
-	var decoded settings
-
-	if err := workercontract.DecodeSettings([]byte(`{"workers":2}`), &decoded); err != nil || decoded.Workers != 2 {
-		t.Fatalf("DecodeSettings(valid) = %+v, %v", decoded, err)
-	}
-
-	for _, raw := range []string{
-		`{"workers":2,"unknown":1}`,
-		`{"workers":2,"workers":3}`,
-		`{"workers":2} {}`,
-		`null`,
-	} {
-		if err := workercontract.DecodeSettings([]byte(raw), &decoded); err == nil {
-			t.Fatalf("DecodeSettings(%s) error = nil", raw)
-		}
-	}
-}
-
 func TestProfileFileCheckerDropsReplacementIdentity(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "profile.json")

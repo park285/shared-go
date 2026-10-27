@@ -4,7 +4,7 @@ Iris Stack의 Go 프로젝트들(`hololive-bot`, `chat-bot-go-kakao`, `twentyq-b
 
 본 라이브러리는 `cmd/` 실행 진입점이 없는 순수 라이브러리(Library-only) 모듈로 설계되었으며, 이를 호출하는 서비스들을 위해 일관되고 안정적인 API 사양을 유지합니다.
 
-> **호환성 정책**: 이 모듈의 호환성 보장 대상은 iris-stack 내부 소비자(`hololive-bot`, `chat-bot-go-kakao`, `twentyq-bot`)로 한정됩니다. 외부 사용을 막지는 않지만 외부 importer 호환성은 보장하지 않으며, 스택 내 소비자가 0인 exported API는 major 승격 없이 minor 릴리스에서 제거될 수 있습니다.
+> **호환성 정책**: 이 모듈의 호환성 보장 대상은 iris-stack 내부 소비자(`hololive-bot`, `chat-bot-go-kakao`, `twentyq-bot`, `iris-console`)로 한정됩니다. 외부 사용을 막지는 않지만 외부 importer 호환성은 보장하지 않으며, 스택 내 소비자가 0인 exported API는 major 승격 없이 minor 릴리스에서 제거될 수 있습니다.
 
 ## 설치 (Installation)
 
@@ -23,31 +23,28 @@ go get github.com/park285/shared-go/v2@latest
 | 패키지 경로 | 기능 및 역할 |
 |---|---|
 | `pkg/backoff` | 시도 횟수 및 상태를 기반으로 한 지수 백오프(Exponential Backoff) 계산 유틸리티 (대기 및 재시도 루프 제어는 호출부에서 직접 처리) |
-| `pkg/db/pgxdb` | `jackc/pgx/v5` pgxpool 기반 PostgreSQL 연결 풀 생성 도구 (sslmode 명시 강제, sslrootcert는 `Config.SSLRootCert`로만 지정하고 env를 읽지 않음, 풀 크기·ping 기한 등 `Options`는 호출자가 명시, 재시도는 호출자 소유) |
+| `pkg/db/pgxdb` | `jackc/pgx/v5` pgxpool 기반 PostgreSQL 연결 풀 생성 도구 (sslmode 명시 강제, sslrootcert는 `Config.SSLRootCert`로만 지정하고 env를 읽지 않음, 라이브러리 기본값 없이 시작 ping 기한(`Ping.PingTimeout`, 필수)·구조화 경로의 풀 크기·수명(`ConnMaxLifetime`·`ConnMaxIdleTime`, 필수, 지터 0은 지터 없음)을 호출자가 명시, 재시도는 호출자 소유) |
 | `pkg/dbmigrate` | embed.FS의 `manifest.txt` 순서대로 SQL 마이그레이션 파일을 실행하는 공통 처리 모듈 (pgx 실행 함수 주입 방식) |
-| `pkg/envutil` | 환경 변수 로드 및 `*_FILE` 형태의 파일 경로로 보안 토큰/시크릿 값을 주입하는 도구 (숫자·bool·duration은 잘못된 값을 오류로 돌려주는 `IntE`·`Int64E`·`FloatE`·`BoolE`·`BoolExplicit`·`DurationE`만 제공) |
-| `pkg/ginjson` | Go 1.27 `encoding/json/v2` JSON을 HTML-safe로 인코딩하는 Gin renderer와 response helper |
+| `pkg/envutil` | 환경 변수 로드 및 `*_FILE` 형태의 파일 경로로 보안 토큰/시크릿 값을 주입하는 도구 (숫자·bool·duration은 잘못된 값을 오류로 돌려주는 `IntE`·`Int64E`·`FloatE`·`BoolE`·`BoolExplicit`·`DurationE`만 제공, `StringOrSecretFile`은 `KEY`와 `KEY_FILE`이 함께 설정되면 오류) |
 | `pkg/h3` | HTTP/3 전송 프로토콜 설정 도구 (자체 CA 번들 등록, TLS 상세 사양 정의) |
 | `pkg/health` | version·uptime·component 상태 스냅샷과 /health·/ready 응답 본문 계약을 보관하는 server 측 health 모듈 |
 | `pkg/healthprobe` | 서비스 헬스체크 및 프로브(Readiness / Liveness Probe) 도구 |
 | `pkg/httputil` | HTTP 클라이언트 커넥션 풀링 및 프로파일 구성 도구, 관리 API key 인증(`X-API-Key` 헤더만 수용, `Authorization: Bearer`는 거부) |
-| `pkg/irisdurable` | Iris webhook durability 계약(admission·nonce·reply outbox 어휘, Iris admission 보존·replay 지평 typed 상수, bounded reissue ladder) |
+| `pkg/irisdurable` | Iris webhook durability 계약(admission·nonce·reply outbox 어휘, bounded reissue ladder). Iris admission 보존·replay 지평의 정본은 Iris 계약 파일과 iris-client-go 공개 상수이며 이 모듈은 사본을 두지 않음 |
 | `pkg/irisdurable/contracttest` | irisdurable 계약을 봇별 저장소 구현에 적용하는 재사용 테스트 스위트(admission 멱등성, nonce set-once, outcome_unknown 보존, bounded reissue, 보존·지평) |
-| `pkg/irisdurable/pgstore` | irisdurable 계약의 PostgreSQL 구현(ordering key FIFO inbox, nonce set-once TTL, reply outbox claim fence·redrive·retire·prune). 테이블 DDL은 소비 저장소 migration이 소유하고 `testdata/schema.sql`이 참조 스키마다 |
+| `pkg/irisdurable/pgstore` | irisdurable 계약의 PostgreSQL 구현(ordering key FIFO inbox, nonce set-once TTL, reply outbox claim fence·redrive·retire·prune). 정책 기본값이 없어 `Options`의 lease·시도 상한·백오프·보존·`IrisAdmissionRetention`을 호출자가 넘기고, 0인 값을 쓰는 연산은 오류를 반환한다. inbox 종단 보존은 Iris admission 보존보다 길어야 한다. `ClaimBatch`가 결과 미상 오류(`*ClaimBatchError`)를 내거나 후속 처리가 실패하면 소비자가 `ReleaseClaimToken`으로 claim을 즉시 반납한다. 테이블 DDL은 소비 저장소 migration이 소유하고 `testdata/schema.sql`이 참조 스키마다 |
 | `pkg/kakaoformat` | Markdown 표현을 카카오 일반 채팅용 평문과 링크로 변환하는 formatter |
-| `pkg/llm` | LLM provider 클라이언트 추상화 (`JSONGenerator`, OpenAI 호환 JSON 생성·가드, 진단 redaction). 지시는 `InvariantPrompt`/`DeveloperPrompt` 계층으로만 전달 |
-| `pkg/llm/openaipreset` | `pkg/llm`의 OpenAI 호환 JSON 생성 경로를 functional options로 구성하는 재사용 preset (지시는 `PromptLayers`로만 전달) |
-| `pkg/lockutil` | FNV-1a hash로 key를 고정 256개 shard에 배정하는 bounded keyed mutex |
-| `pkg/logging` | Slog 기반의 구조화된 로깅 모듈 (비동기 처리, 민감한 키 정보 마스킹 및 실시간 로그 로테이션 지원) |
+| `pkg/llm` | LLM provider 클라이언트 추상화 (`JSONGenerator`, OpenAI 호환 JSON 생성·가드, 필수 SDK 재시도 수 `OpenAICompatibleConfig.MaxRetries`). 지시는 `InvariantPrompt`/`DeveloperPrompt` 계층으로만 전달 |
+| `pkg/llm/openaipreset` | `pkg/llm`의 OpenAI 호환 JSON 생성 경로를 functional options로 구성하는 재사용 preset (`WithMaxRetries` 필수, 지시는 `PromptLayers`로만 전달) |
+| `pkg/logging` | Slog 기반의 구조화된 로깅 모듈 (비동기 처리, credential 마스킹과 서비스가 `Options.PrivacyKeys`로 넘긴 개인 식별자 키 마스킹, 실시간 로그 로테이션 지원) |
 | `pkg/netguard` | 외부 HTTP 대상 URL 및 dial 주소를 fail-closed로 검증하는 네트워크 가드 (private/loopback/link-local/ULA 대역 차단, `Policy.AllowedHosts` allowlist 지원) |
 | `pkg/obsmetrics` | `client_golang` 의존성 없이 Prometheus 평문 텍스트 exposition을 생성하는 메트릭 키트 (webhook/런타임 메트릭, prefix 네임스페이스 분리) |
-| `pkg/outputguard` | LLM 생성 출력 가드 (구조화된 차단 사유, 출력·보호 텍스트 크기 제한, 역할/시크릿/보호 지침 중첩 탐지, bounded TTL index cache) |
+| `pkg/outputguard` | LLM 생성 출력 가드 (구조화된 차단 사유, 출력·보호 텍스트 크기 제한, 역할/시크릿/보호 지침 중첩 탐지, 요청 소유 보호 index를 묶는 `BoundGuard`) |
 | `pkg/panicguard` | callback panic을 복구해 구조화된 진단을 남기는 실행 경계 |
 | `pkg/promptguard` | source-aware 프롬프트 인젝션 가드 (embedded v3 한/영/일 baseline, optional rules-only overlay, bounded decoding, policy digest, TTL cache) |
 | `pkg/reflectutil` | interface에 담긴 nilable 값을 안전하게 판별하는 reflection helper |
 | `pkg/retry` | `pkg/backoff`의 지연 값 계산을 사용해 context 취소를 존중하며 sleep·재시도·중단을 수행하는 재시도 루프(`WithRetry`) 구현체 |
-| `pkg/runtime/automaxprocs` | `AUTOMAXPROCS_FORCE`일 때만 container CPU quota에 맞게 `GOMAXPROCS`를 설정하고(기본은 Go runtime 판단, `AUTOMAXPROCS_DISABLE` 우선) 결정을 기록하는 helper |
-| `pkg/runtime/bootstrap` | 프로세스 시작 입력을 검증하고 runtime 구성을 적용하는 bootstrap helper. 필수 `NewLogger`로 서비스 logger를 만든 직후 그 logger로 `automaxprocs.Init`을 실행 |
+| `pkg/runtime/bootstrap` | 프로세스 시작 입력을 검증하고 runtime 구성을 적용하는 bootstrap helper. 필수 `NewLogger`로 서비스 logger를 만든다. `GOMAXPROCS`는 Go runtime의 container 인식 기본값을 따른다 |
 | `pkg/runtime/httpserver` | HTTP server 생성(수신 한계·OTel 계측)·본문 읽기 예산·시작·실행·graceful shutdown 소유권을 단일화하는 lifecycle helper. 서버 실행 정본: 종료 ctx로 수명을 닫는 프로세스는 `Run(ctx, server, timeout)`, `lifecycle.Run` 훅 안에서는 `StartServerWithPrefix`와 `Shutdown` |
 | `pkg/runtime/lifecycle` | 기동·주기 실행·종료 정리와 다중 close를 조정하는 runtime lifecycle helper |
 | `pkg/sqlutil` | embed FS의 SQL asset을 읽고 공백을 제거하며 누락·빈 query에서 panic하는 loader |
@@ -65,6 +62,18 @@ go get github.com/park285/shared-go/v2@latest
 - 설정은 struct 옵션을 기본으로 하고, 선택지가 계속 늘어나는 열린 집합일 때만 functional option을 씁니다(`llm/openaipreset`은 열린 집합이라 option을 유지합니다).
 - `*slog.Logger`를 받는 API는 nil이면 `slog.Default()`를 씁니다.
 - 반환 오류 문자열은 `<pkg>: ` 접두로 시작합니다. 콜백 오류를 그대로 돌려주는 것이 계약인 함수(`panicguard.RunE`·`logging.RunOperation`·`dbmigrate.WithAdvisoryLock`)의 콜백 오류와 `io.Reader` 계약상 그대로 전달하는 하위 reader 오류(`io.EOF` 등)는 감싸지 않습니다. 호출자가 접두를 정하는 helper(`logging.LogAndWrapError`·`httpserver.Shutdown`)는 그 접두를 씁니다.
+
+## 로그 마스킹 키
+
+보존·마스킹 키의 정본은 이 표입니다. key는 대소문자·`-`·`.`·공백을 정규화해 비교하며, 일치한 attr·group·중첩 `map[string]any`(깊이 8) 값을 `***REDACTED***`로 바꿉니다.
+
+| 구분 | 키 | 소유 |
+|---|---|---|
+| 기본 마스킹(credential) | `password`·`pwd`·`passwd`·`secret`·`client_secret`·`token`·`bot_token`·`access_token`·`refresh_token`·`api_key`·`apikey`·`private_key`·`secret_key`·`authorization`·`auth_header`·`cookie`·`webhook_url`·`database_url`·`postgres_dsn`·`connection_url`, 접미 `_token`·`_secret`·`_password`·`_pwd`·`_passwd`·`_api_key`·`_private_key`·`_secret_key`, 값이 비밀처럼 보이는 `key` | shared-go `logging` |
+| 서비스 privacy 키 | 서비스가 `logging.Options.PrivacyKeys`로 넘긴 키(예: chat `room`·`session_thread_id`, twentyq `sender`) | 각 서비스 |
+| 보존 | 위 두 행에 없는 키. `room_id`·`user_id`·`request_id`·`trace_id` 같은 상관관계 ID는 서비스가 넘기지 않는 한 보존하며 `*_id` 접미 일괄 마스킹은 하지 않음 | — |
+
+라이브러리는 업무 식별자 privacy 키를 내장하지 않습니다. `NewLogger()`와 `PrivacyKeys`를 비운 logger는 credential 규칙만 적용합니다.
 
 ## stdout 사본과 유실 계측
 

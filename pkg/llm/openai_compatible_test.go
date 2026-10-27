@@ -29,8 +29,9 @@ func TestOpenAICompatibleJSONGeneratorResponsesStructuredRequest(t *testing.T) {
 	defer server.Close()
 
 	generator, err := NewOpenAICompatibleJSONGenerator(OpenAICompatibleConfig{
-		BaseURL: server.URL,
-		APIKey:  testTestKey,
+		BaseURL:    server.URL,
+		APIKey:     testTestKey,
+		MaxRetries: 0,
 	})
 	if err != nil {
 		t.Fatalf("NewOpenAICompatibleJSONGenerator error = %v", err)
@@ -139,8 +140,9 @@ func TestOpenAICompatibleJSONGeneratorChatCompletionsStructuredOutput(t *testing
 	defer server.Close()
 
 	generator, err := NewOpenAICompatibleJSONGenerator(OpenAICompatibleConfig{
-		BaseURL: server.URL,
-		APIKey:  testTestKey,
+		BaseURL:    server.URL,
+		APIKey:     testTestKey,
+		MaxRetries: 0,
 	})
 	if err != nil {
 		t.Fatalf("NewOpenAICompatibleJSONGenerator error = %v", err)
@@ -193,7 +195,7 @@ func TestOpenAICompatibleJSONGeneratorResponsesWithoutInstructionLayers(t *testi
 	}))
 	defer server.Close()
 
-	generator, err := NewOpenAICompatibleJSONGenerator(OpenAICompatibleConfig{BaseURL: server.URL, APIKey: testTestKey})
+	generator, err := NewOpenAICompatibleJSONGenerator(OpenAICompatibleConfig{BaseURL: server.URL, APIKey: testTestKey, MaxRetries: 0})
 	if err != nil {
 		t.Fatalf("NewOpenAICompatibleJSONGenerator error = %v", err)
 	}
@@ -236,7 +238,7 @@ func TestOpenAICompatibleJSONGeneratorChatCompletionsWithoutInstructionLayers(t 
 	}))
 	defer server.Close()
 
-	generator, err := NewOpenAICompatibleJSONGenerator(OpenAICompatibleConfig{BaseURL: server.URL, APIKey: testTestKey})
+	generator, err := NewOpenAICompatibleJSONGenerator(OpenAICompatibleConfig{BaseURL: server.URL, APIKey: testTestKey, MaxRetries: 0})
 	if err != nil {
 		t.Fatalf("NewOpenAICompatibleJSONGenerator error = %v", err)
 	}
@@ -281,10 +283,8 @@ func TestOpenAICompatibleJSONGeneratorUnsupportedEndpointUsesResponsesOnly(t *te
 
 	defer server.Close()
 
-	zeroRetries := 0
-
 	generator, err := NewOpenAICompatibleJSONGenerator(OpenAICompatibleConfig{
-		BaseURL: server.URL, APIKey: testTestKey, MaxRetries: &zeroRetries,
+		BaseURL: server.URL, APIKey: testTestKey, MaxRetries: 0,
 	})
 	if err != nil {
 		t.Fatalf("NewOpenAICompatibleJSONGenerator: %v", err)
@@ -311,8 +311,9 @@ func TestOpenAICompatibleJSONGeneratorRefusalUsesResponsesOnly(t *testing.T) {
 	defer server.Close()
 
 	generator, err := NewOpenAICompatibleJSONGenerator(OpenAICompatibleConfig{
-		BaseURL: server.URL,
-		APIKey:  testTestKey,
+		BaseURL:    server.URL,
+		APIKey:     testTestKey,
+		MaxRetries: 0,
 	})
 	if err != nil {
 		t.Fatalf("NewOpenAICompatibleJSONGenerator error = %v", err)
@@ -347,8 +348,9 @@ func TestOpenAICompatibleJSONGeneratorEmptyOutputUsesResponsesOnly(t *testing.T)
 	defer server.Close()
 
 	generator, err := NewOpenAICompatibleJSONGenerator(OpenAICompatibleConfig{
-		BaseURL: server.URL,
-		APIKey:  testTestKey,
+		BaseURL:    server.URL,
+		APIKey:     testTestKey,
+		MaxRetries: 0,
 	})
 	if err != nil {
 		t.Fatalf("NewOpenAICompatibleJSONGenerator error = %v", err)
@@ -375,8 +377,9 @@ func TestOpenAICompatibleJSONGeneratorRejectsNullChatCompletion(t *testing.T) {
 	defer server.Close()
 
 	generator, err := NewOpenAICompatibleJSONGenerator(OpenAICompatibleConfig{
-		BaseURL: server.URL,
-		APIKey:  testTestKey,
+		BaseURL:    server.URL,
+		APIKey:     testTestKey,
+		MaxRetries: 0,
 	})
 	if err != nil {
 		t.Fatalf("NewOpenAICompatibleJSONGenerator error = %v", err)
@@ -406,12 +409,10 @@ func TestOpenAICompatibleJSONGeneratorServerErrorUsesResponsesOnly(t *testing.T)
 	}))
 	defer server.Close()
 
-	zeroRetries := 0
-
 	generator, err := NewOpenAICompatibleJSONGenerator(OpenAICompatibleConfig{
 		BaseURL:    server.URL,
 		APIKey:     testTestKey,
-		MaxRetries: &zeroRetries,
+		MaxRetries: 0,
 	})
 	if err != nil {
 		t.Fatalf("NewOpenAICompatibleJSONGenerator error = %v", err)
@@ -434,8 +435,9 @@ func TestOpenAICompatibleJSONGeneratorEmptyOutputDiagnostic(t *testing.T) {
 	defer server.Close()
 
 	generator, err := NewOpenAICompatibleJSONGenerator(OpenAICompatibleConfig{
-		BaseURL: server.URL,
-		APIKey:  testTestKey,
+		BaseURL:    server.URL,
+		APIKey:     testTestKey,
+		MaxRetries: 0,
 	})
 	if err != nil {
 		t.Fatalf("NewOpenAICompatibleJSONGenerator error = %v", err)
@@ -546,29 +548,6 @@ func assertStructuredResponsesFormat(t *testing.T, raw any, name string) {
 	assertJSONContains(t, format["schema"], `"type":"object"`)
 }
 
-func TestSanitizeResponsesSchemaName(t *testing.T) {
-	cases := []struct {
-		name string
-		in   string
-		want string
-	}{
-		{"점 포함 judge name", "twentyq_verify_guess.strict_identity_judge_01", "twentyq_verify_guess_strict_identity_judge_01"},
-		{"이미 유효", "twentyq_answer_question", "twentyq_answer_question"},
-		{"공백만", "   ", "schema"},
-		{"빈 문자열", "", "schema"},
-		{"여러 비허용 문자", "a.b/c d", "a_b_c_d"},
-	}
-	for _, c := range cases {
-		if got := ResponsesSchemaName(c.in); got != c.want {
-			t.Fatalf("%s: ResponsesSchemaName(%q) = %q, want %q", c.name, c.in, got, c.want)
-		}
-	}
-
-	if got := ResponsesSchemaName(strings.Repeat("a", 80)); len(got) != 64 {
-		t.Fatalf("64자 cap 실패: len=%d", len(got))
-	}
-}
-
 func TestOpenAICompatibleJSONGeneratorForwardsPromptCacheKey(t *testing.T) {
 	var payload map[string]any
 
@@ -584,7 +563,7 @@ func TestOpenAICompatibleJSONGeneratorForwardsPromptCacheKey(t *testing.T) {
 	}))
 	defer server.Close()
 
-	generator, err := NewOpenAICompatibleJSONGenerator(OpenAICompatibleConfig{BaseURL: server.URL, APIKey: testTestKey})
+	generator, err := NewOpenAICompatibleJSONGenerator(OpenAICompatibleConfig{BaseURL: server.URL, APIKey: testTestKey, MaxRetries: 0})
 	if err != nil {
 		t.Fatalf("NewOpenAICompatibleJSONGenerator error = %v", err)
 	}
@@ -616,5 +595,11 @@ func TestOpenAICompatibleJSONGeneratorForwardsPromptCacheKey(t *testing.T) {
 
 	if _, exists := payload["prompt_cache_key"]; exists {
 		t.Fatalf("payload carries prompt_cache_key without CacheKey: %#v", payload["prompt_cache_key"])
+	}
+}
+
+func TestNewOpenAICompatibleJSONGeneratorRejectsNegativeMaxRetries(t *testing.T) {
+	if _, err := NewOpenAICompatibleJSONGenerator(OpenAICompatibleConfig{APIKey: testTestKey, MaxRetries: -1}); err == nil {
+		t.Fatal("NewOpenAICompatibleJSONGenerator(MaxRetries=-1) error = nil")
 	}
 }

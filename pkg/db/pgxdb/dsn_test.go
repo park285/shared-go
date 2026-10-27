@@ -56,7 +56,7 @@ func TestParseConfigNormalizesExplicitModes(t *testing.T) {
 				assertTLSMode(t, parsed, mode)
 			}
 
-			poolCfg, err := buildConfigPool(&cfg, Options{Pool: defaultPoolConfig()})
+			poolCfg, err := buildConfigPool(&cfg, Options{Pool: testPoolConfig(), Ping: testPing()})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -312,7 +312,7 @@ func assertDSNRejectedBeforeConnect(t *testing.T, dsn string) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	pool, err := OpenPoolDSN(ctx, dsn, Options{})
+	pool, err := OpenPoolDSN(ctx, dsn, Options{Ping: testPing()})
 	if pool != nil {
 		t.Cleanup(pool.Close)
 	}
@@ -353,7 +353,7 @@ func TestDSNParseErrorsDoNotExposeCredentials(t *testing.T) {
 			cancel()
 
 			_, parseErr := ParseConfig(tc.dsn)
-			_, poolErr := OpenPoolDSN(ctx, tc.dsn, Options{})
+			_, poolErr := OpenPoolDSN(ctx, tc.dsn, Options{Ping: testPing()})
 
 			for _, err := range []error{parseErr, poolErr} {
 				if err == nil {

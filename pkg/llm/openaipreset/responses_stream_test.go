@@ -57,7 +57,7 @@ func TestResponsesStreamCompletionBoundary(t *testing.T) {
 
 			reporter := &recordingReporter{}
 
-			client, err := openaipreset.New(server.URL, "test-key", "gpt-test", openaipreset.WithUsageReporter(reporter))
+			client, err := openaipreset.New(server.URL, "test-key", "gpt-test", openaipreset.WithMaxRetries(0), openaipreset.WithUsageReporter(reporter))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -117,7 +117,7 @@ func TestResponsesStreamCancellationDiscardsPartialOutput(t *testing.T) {
 
 	defer server.Close()
 
-	client, err := openaipreset.New(server.URL, "test-key", "gpt-test")
+	client, err := openaipreset.New(server.URL, "test-key", "gpt-test", openaipreset.WithMaxRetries(0))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -178,89 +178,34 @@ func TestLibpqQuote_Escaping(t *testing.T) {
 	}
 }
 
-func TestDefaultPoolConfig_IgnoresEnvUsesStaticDefaults(t *testing.T) {
-	for _, tc := range []struct {
-		name   string
-		setMin bool
-		setMax bool
-		minVal string
-		maxVal string
-	}{
-		{name: "unset"},
-		{name: "zero and over-cap", setMin: true, setMax: true, minVal: "0", maxVal: "500"},
-		{name: "normal values", setMin: true, setMax: true, minVal: "7", maxVal: "33"},
+func TestApplyPoolConfigRequiresExplicitLifetimes(t *testing.T) {
+	for _, pool := range []PoolConfig{
+		{MaxConns: 4},
+		{MaxConns: 4, ConnMaxLifetime: time.Hour},
+		{MaxConns: 4, ConnMaxIdleTime: 30 * time.Minute},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if tc.setMin {
-				t.Setenv("DB_POOL_MIN_CONNS", tc.minVal)
-			}
-
-			if tc.setMax {
-				t.Setenv("DB_POOL_MAX_CONNS", tc.maxVal)
-			}
-
-			pc := defaultPoolConfig()
-			if pc.MinConns != 0 {
-				t.Errorf("MinConns = %d, want static 0 (env not read by library)", pc.MinConns)
-			}
-
-			if pc.MaxConns != 20 {
-				t.Errorf("MaxConns = %d, want static 20 (env not read by library)", pc.MaxConns)
-			}
-
-			if pc.ConnMaxLifetime != time.Hour {
-				t.Errorf("ConnMaxLifetime = %v, want 1h", pc.ConnMaxLifetime)
-			}
-
-			if pc.ConnMaxIdleTime != 30*time.Minute {
-				t.Errorf("ConnMaxIdleTime = %v, want 30m", pc.ConnMaxIdleTime)
-			}
-		})
+		pc := mustParse(t, "postgres://u@127.0.0.1:5432/db?sslmode=disable")
+		if err := applyPoolConfig(pc, pool); err == nil || !strings.Contains(err.Error(), "lifetime and idle time") {
+			t.Fatalf("applyPoolConfig(%+v) error = %v, want explicit lifetime requirement", pool, err)
+		}
 	}
 }
 
-func TestWithPoolDefaults_FillsDurationsWithoutChoosingMaximum(t *testing.T) {
-	t.Setenv("DB_POOL_MIN_CONNS", "7")
-	t.Setenv("DB_POOL_MAX_CONNS", "33")
+func TestApplyPoolConfigKeepsExplicitValuesAndZeroJitter(t *testing.T) {
+	pc := mustParse(t, "postgres://u@127.0.0.1:5432/db?sslmode=disable")
 
-	def := defaultPoolConfig()
-	got := withPoolDefaults(PoolConfig{})
-
-	if got.MinConns != 0 || got.MaxConns != 0 {
-		t.Errorf("conns = %d/%d, want unchanged 0/0 regardless of DB_POOL_* env", got.MinConns, got.MaxConns)
+	err := applyPoolConfig(pc, PoolConfig{MaxConns: 12, ConnMaxLifetime: 2 * time.Hour, ConnMaxIdleTime: 5 * time.Minute})
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	if got.ConnMaxLifetime != def.ConnMaxLifetime || got.ConnMaxIdleTime != def.ConnMaxIdleTime {
-		t.Errorf("lifetimes = %v/%v, want %v/%v", got.ConnMaxLifetime, got.ConnMaxIdleTime, def.ConnMaxLifetime, def.ConnMaxIdleTime)
+	if pc.MinConns != 0 || pc.MaxConns != 12 || pc.MaxConnLifetime != 2*time.Hour || pc.MaxConnIdleTime != 5*time.Minute {
+		t.Fatalf("pool = %d/%d/%v/%v, want explicit 0/12/2h/5m", pc.MinConns, pc.MaxConns, pc.MaxConnLifetime, pc.MaxConnIdleTime)
 	}
 
-	if got.ConnMaxLifetimeJitter != got.ConnMaxLifetime/5 {
-		t.Errorf("jitter = %v, want lifetime/5", got.ConnMaxLifetimeJitter)
-	}
-}
-
-func TestWithPoolDefaults_PreservesExplicitValues(t *testing.T) {
-	t.Setenv("DB_POOL_MIN_CONNS", "7")
-	t.Setenv("DB_POOL_MAX_CONNS", "33")
-
-	got := withPoolDefaults(PoolConfig{MinConns: 3, MaxConns: 12, ConnMaxLifetime: 2 * time.Hour, ConnMaxLifetimeJitter: 90 * time.Second, ConnMaxIdleTime: 5 * time.Minute})
-	if got.MinConns != 3 || got.MaxConns != 12 {
-		t.Errorf("conns = %d/%d, want explicit 3/12 (fallback must not override)", got.MinConns, got.MaxConns)
-	}
-
-	if got.ConnMaxLifetime != 2*time.Hour || got.ConnMaxLifetimeJitter != 90*time.Second || got.ConnMaxIdleTime != 5*time.Minute {
-		t.Errorf("lifetimes = %v/%v/%v, want explicit values preserved", got.ConnMaxLifetime, got.ConnMaxLifetimeJitter, got.ConnMaxIdleTime)
-	}
-}
-
-func TestWithPoolDefaults_PreservesExplicitMinConnsZero(t *testing.T) {
-	got := withPoolDefaults(PoolConfig{MinConns: 0, MaxConns: 8})
-	if got.MinConns != 0 {
-		t.Errorf("MinConns = %d, want explicit 0 preserved (operator intent, pgx no-min-idle)", got.MinConns)
-	}
-
-	if got.MaxConns != 8 {
-		t.Errorf("MaxConns = %d, want explicit 8 preserved", got.MaxConns)
+	// 지터 0은 지터 없음이며 수명에서 파생하지 않는다.
+	if pc.MaxConnLifetimeJitter != 0 {
+		t.Fatalf("MaxConnLifetimeJitter = %v, want 0", pc.MaxConnLifetimeJitter)
 	}
 }
 

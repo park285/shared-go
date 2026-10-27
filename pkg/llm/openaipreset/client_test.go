@@ -79,7 +79,7 @@ func TestGenerateJSONAsResponsesAppliesClientOptions(t *testing.T) {
 
 	reporter := &recordingReporter{}
 
-	client, err := openaipreset.New(server.URL, "test-key", "gpt-test",
+	client, err := openaipreset.New(server.URL, "test-key", "gpt-test", openaipreset.WithMaxRetries(0),
 		openaipreset.WithTemperature(0.2),
 		openaipreset.WithWebSearch(true),
 		openaipreset.WithReasoningEffort("medium"),
@@ -142,7 +142,7 @@ func TestGenerateJSONAsResponses(t *testing.T) {
 
 	defer server.Close()
 
-	client, err := openaipreset.New(server.URL, "test-key", "gpt-5.5")
+	client, err := openaipreset.New(server.URL, "test-key", "gpt-5.5", openaipreset.WithMaxRetries(0))
 	if err != nil {
 		t.Fatalf("New error = %v", err)
 	}
@@ -192,7 +192,7 @@ func TestGenerateLayeredResponsesJSONReturnsCompleteResponsesSurface(t *testing.
 
 	defer server.Close()
 
-	client, err := openaipreset.New(server.URL, "test-key", "gpt-test")
+	client, err := openaipreset.New(server.URL, "test-key", "gpt-test", openaipreset.WithMaxRetries(0))
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -227,7 +227,7 @@ func TestGenerateLayeredResponsesJSONPreservesEmptyOutputSentinel(t *testing.T) 
 
 	defer server.Close()
 
-	client, err := openaipreset.New(server.URL, "test-key", "gpt-test")
+	client, err := openaipreset.New(server.URL, "test-key", "gpt-test", openaipreset.WithMaxRetries(0))
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -259,7 +259,7 @@ func TestGenerateLayeredResponsesJSONRejectsChatTransportBeforeRequest(t *testin
 
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls.Add(1) }))
 
-	client, err := openaipreset.New(server.URL, "test-key", "gpt-test", openaipreset.WithChatCompletions())
+	client, err := openaipreset.New(server.URL, "test-key", "gpt-test", openaipreset.WithMaxRetries(0), openaipreset.WithChatCompletions())
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -284,7 +284,7 @@ func TestGenerateLayeredResponsesJSONSanitizesProviderError(t *testing.T) {
 
 	defer server.Close()
 
-	client, err := openaipreset.New(server.URL, "test-key", "gpt-test")
+	client, err := openaipreset.New(server.URL, "test-key", "gpt-test", openaipreset.WithMaxRetries(0))
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -357,7 +357,7 @@ func generateJSONAsRequestMessages(t *testing.T, prompts openaipreset.PromptLaye
 
 	defer server.Close()
 
-	client, err := openaipreset.New(server.URL, "test-key", "gpt-test")
+	client, err := openaipreset.New(server.URL, "test-key", "gpt-test", openaipreset.WithMaxRetries(0))
 	if err != nil {
 		t.Fatalf("New error = %v", err)
 	}
@@ -447,7 +447,7 @@ func TestGenerateJSONAsPromptSummaryOmitsWhitespaceOnlyLayers(t *testing.T) {
 
 			defer server.Close()
 
-			client, err := openaipreset.New(server.URL, "test-key", "gpt-test",
+			client, err := openaipreset.New(server.URL, "test-key", "gpt-test", openaipreset.WithMaxRetries(0),
 				openaipreset.WithLogger(slog.New(slog.NewJSONHandler(&logs, nil))),
 			)
 			if err != nil {
@@ -491,7 +491,7 @@ func TestGenerateJSONAsResponsesWhitespaceOnlyLayersSendUserOnly(t *testing.T) {
 
 	defer server.Close()
 
-	client, err := openaipreset.New(server.URL, "test-key", "gpt-test")
+	client, err := openaipreset.New(server.URL, "test-key", "gpt-test", openaipreset.WithMaxRetries(0))
 	if err != nil {
 		t.Fatalf("New error = %v", err)
 	}

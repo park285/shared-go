@@ -46,7 +46,7 @@ func quietLogger() *slog.Logger {
 }
 
 func quietOptions() Options {
-	return Options{Logger: quietLogger(), Pool: defaultPoolConfig(), Ping: PingConfig{PingTimeout: 5 * time.Second}}
+	return Options{Logger: quietLogger(), Pool: testPoolConfig(), Ping: testPing()}
 }
 
 func dockerAvailable() bool {
@@ -291,7 +291,7 @@ func TestIntegration_RollbackCanceledContextReusesConnection(t *testing.T) {
 				ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 				defer cancel()
 
-				pool, err := OpenPoolDSN(ctx, dsn, Options{Logger: quietLogger(), Pool: PoolConfig{MaxConns: 1}})
+				pool, err := OpenPoolDSN(ctx, dsn, Options{Logger: quietLogger(), Pool: PoolConfig{MaxConns: 1}, Ping: testPing()})
 				require.NoError(t, err)
 
 				defer pool.Close()
@@ -385,7 +385,7 @@ func TestIntegration_OpenPoolDSNPreservesOptionsAfterNormalization(t *testing.T)
 
 	for _, raw := range []string{parsed.String(), keywordDSN, multiHostDSN} {
 		for _, maxConns := range []int{0, 4} {
-			pool, err := OpenPoolDSN(t.Context(), raw, Options{Logger: quietLogger(), Pool: PoolConfig{MaxConns: maxConns}})
+			pool, err := OpenPoolDSN(t.Context(), raw, Options{Logger: quietLogger(), Pool: PoolConfig{MaxConns: maxConns}, Ping: testPing()})
 			if err != nil {
 				t.Fatal(err)
 			}

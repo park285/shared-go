@@ -18,6 +18,7 @@ func mustQuery(name string) string {
 // 획득 쿼리의 직접 행 잠금·UPDATE 조건은 유지한다.
 func inboxQuery(name, explicitRecovery string) string {
 	query := strings.NewReplacer(
+		"{{heads}}", mustQuery("queries/inbox_heads.sql"),
 		"{{eligible}}", mustQuery("queries/inbox_eligible.sql"),
 		"{{eligible_at}}", mustQuery("queries/inbox_eligible_at.sql"),
 	).Replace(mustQuery(name))
@@ -35,17 +36,19 @@ func replyQuery(name, row, maxAttempts, replayHorizon string) string {
 }
 
 var (
-	queryAdmitInbox           = mustQuery("queries/admit_inbox.sql")
-	queryClaimInbox           = inboxQuery("queries/claim_inbox.sql", "$5")
-	queryCompleteInbox        = mustQuery("queries/complete_inbox.sql")
-	queryRenewInboxLease      = mustQuery("queries/renew_inbox_lease.sql")
-	queryReleaseInbox         = mustQuery("queries/release_inbox.sql")
-	queryDeferInbox           = mustQuery("queries/defer_inbox.sql")
-	queryManualReviewInbox    = mustQuery("queries/manual_review_inbox.sql")
-	queryPruneInbox           = mustQuery("queries/prune_inbox.sql")
-	queryInboxRuntimeSnapshot = mustQuery("queries/inbox_runtime_snapshot.sql")
-	queryInboxReadySnapshot   = inboxQuery("queries/inbox_ready_snapshot.sql", "$2")
-	queryApplyInboxRecovery   = mustQuery("queries/apply_inbox_recovery.sql")
+	queryAdmitInbox             = mustQuery("queries/admit_inbox.sql")
+	queryClaimInbox             = inboxQuery("queries/claim_inbox.sql", "$5")
+	queryCompleteInbox          = mustQuery("queries/complete_inbox.sql")
+	queryRenewInboxLease        = mustQuery("queries/renew_inbox_lease.sql")
+	queryReleaseInbox           = mustQuery("queries/release_inbox.sql")
+	queryDeferInbox             = mustQuery("queries/defer_inbox.sql")
+	queryManualReviewInbox      = mustQuery("queries/manual_review_inbox.sql")
+	queryPruneInboxCompleted    = mustQuery("queries/prune_inbox_completed.sql")
+	queryPruneInboxManualReview = mustQuery("queries/prune_inbox_manual_review.sql")
+	queryReleaseClaimToken      = mustQuery("queries/release_claim_token.sql")
+	queryInboxRuntimeSnapshot   = mustQuery("queries/inbox_runtime_snapshot.sql")
+	queryInboxReadySnapshot     = inboxQuery("queries/inbox_ready_snapshot.sql", "$2")
+	queryApplyInboxRecovery     = mustQuery("queries/apply_inbox_recovery.sql")
 
 	queryInsertNonce = mustQuery("queries/insert_nonce.sql")
 	queryPruneNonce  = mustQuery("queries/prune_nonce.sql")

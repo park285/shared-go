@@ -42,7 +42,7 @@ func TestInboxReadySnapshotMatchesClaimAtScheduledAndLeaseBoundaries(t *testing.
 
 			defer func() { require.NoError(t, pgxdb.Rollback(t.Context(), tx)) }()
 
-			store, err := pgstore.New(tx, pgstore.Options{Scope: tc.name, InboxExplicitRecovery: tc.explicitRecovery})
+			store, err := pgstore.New(tx, testPolicy(pgstore.Options{Scope: tc.name, InboxExplicitRecovery: tc.explicitRecovery}))
 			require.NoError(t, err)
 
 			var now time.Time
@@ -124,7 +124,7 @@ func TestReplyReadySnapshotMatchesRedriveAndAttemptBoundaries(t *testing.T) {
 
 			defer func() { require.NoError(t, pgxdb.Rollback(t.Context(), tx)) }()
 
-			store, err := pgstore.New(tx, pgstore.Options{Scope: tc.name})
+			store, err := pgstore.New(tx, testPolicy(pgstore.Options{Scope: tc.name}))
 			require.NoError(t, err)
 
 			var now time.Time

@@ -89,12 +89,12 @@ func TestBroadValueKeyNormalizesRawKeys(t *testing.T) {
 	const highEntropy = "aB3dE7fG9hJ2kL5mN8pQ1rS4tU6vW0xYzAbCdEfGhIj"
 
 	// 값 자체의 redaction이 아니라 broad-value key 정책이 가렸음을 보이려면 같은 값이 일반 key에서는 남아야 한다.
-	if out := sanitizeAttr(slog.String("label", highEntropy)); out.Value.String() != highEntropy {
+	if out := testPrivacy.sanitizeAttr(slog.String("label", highEntropy)); out.Value.String() != highEntropy {
 		t.Fatalf("plain key value = %q, want preserved control value", out.Value.String())
 	}
 
 	for _, key := range []string{" KEY ", "Key"} {
-		if out := sanitizeAttr(slog.String(key, highEntropy)); out.Value.String() != redactedValue {
+		if out := testPrivacy.sanitizeAttr(slog.String(key, highEntropy)); out.Value.String() != redactedValue {
 			t.Fatalf("raw broad-value key %q value = %q, want redacted", key, out.Value.String())
 		}
 	}
@@ -113,7 +113,7 @@ func TestSanitizeCleanGroup_ZeroAlloc(t *testing.T) {
 	)
 
 	got := testing.AllocsPerRun(1000, func() {
-		out, changed = sanitizeAttrChanged(attr)
+		out, changed = testPrivacy.sanitizeAttrChanged(attr)
 	})
 	if got != 0 {
 		t.Fatalf("clean group sanitize allocs = %v, want 0", got)
@@ -138,7 +138,7 @@ func TestSanitizeGroupCopyOnWrite_MasksNestedValue(t *testing.T) {
 		slog.Int("status", 200),
 	)
 
-	out, changed := sanitizeAttrChanged(attr)
+	out, changed := testPrivacy.sanitizeAttrChanged(attr)
 	if !changed {
 		t.Fatal("sensitive nested group reported no change")
 	}
@@ -217,7 +217,7 @@ func BenchmarkSanitizeCleanGroup(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		out, _ = sanitizeAttrChanged(attr)
+		out, _ = testPrivacy.sanitizeAttrChanged(attr)
 	}
 
 	if !out.Equal(attr) {

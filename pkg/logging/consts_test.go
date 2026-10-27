@@ -2,6 +2,7 @@ package logging
 
 const (
 	testCount      = "count"
+	tokenUserName  = "user_name"
 	testFallback   = "fallback"
 	testInfo       = "info"
 	testNested     = "nested"

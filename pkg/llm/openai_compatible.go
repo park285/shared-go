@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"regexp"
 	"strings"
 
 	"github.com/openai/openai-go/v3"
@@ -15,6 +14,7 @@ import (
 	"github.com/openai/openai-go/v3/shared"
 
 	"github.com/park285/shared-go/v2/pkg/internal/jsonutil"
+	"github.com/park285/shared-go/v2/pkg/llm/internal/openaicfg"
 	"github.com/park285/shared-go/v2/pkg/llm/internal/openaidiag"
 )
 
@@ -23,29 +23,14 @@ var (
 	ErrOpenAIRefusalOutput = openaidiag.ErrRefusalOutput
 )
 
-// openai-go SDK가 암묵 적용하던 재시도 횟수를 같은 값으로 명시 고정한 것이다.
-// 소비자가 자체 재시도를 겹치면 총 시도는 (소비자 시도) × (1 + MaxRetries)로 곱연산된다.
-const defaultOpenAIMaxRetries = 2
-
 type OpenAICompatibleConfig struct {
 	BaseURL    string
 	APIKey     string
 	HTTPClient *http.Client
-	// nil이면 defaultOpenAIMaxRetries, 0이면 재시도 없음.
-	MaxRetries *int
-}
-
-// option.WithMaxRetries는 음수에 panic하므로 0으로 절단한다.
-func ResolveOpenAIMaxRetries(configured *int) int {
-	if configured == nil {
-		return defaultOpenAIMaxRetries
-	}
-
-	if *configured < 0 {
-		return 0
-	}
-
-	return *configured
+	// MaxRetries는 호출자가 정하는 SDK 재시도 수다. 0은 재시도 없음이고 음수는
+	// NewOpenAICompatibleJSONGenerator가 거부한다. 라이브러리 기본값은 없다.
+	// 소비자 자체 재시도와 겹치면 총 시도는 (소비자 시도) × (1 + MaxRetries)다.
+	MaxRetries int
 }
 
 type OpenAICompatibleJSONGenerator struct {
@@ -58,9 +43,13 @@ func NewOpenAICompatibleJSONGenerator(cfg OpenAICompatibleConfig) (*OpenAICompat
 		return nil, errors.New("llm: openai-compatible api key is empty")
 	}
 
+	if err := openaicfg.ValidateMaxRetries(cfg.MaxRetries); err != nil {
+		return nil, fmt.Errorf("llm: openai-compatible config: %w", err)
+	}
+
 	opts := []option.RequestOption{
 		option.WithAPIKey(apiKey),
-		option.WithMaxRetries(ResolveOpenAIMaxRetries(cfg.MaxRetries)),
+		option.WithMaxRetries(cfg.MaxRetries),
 	}
 	if baseURL := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/"); baseURL != "" {
 		opts = append(opts, option.WithBaseURL(baseURL))
@@ -107,26 +96,6 @@ func (g *OpenAICompatibleJSONGenerator) GenerateJSON(ctx context.Context, req JS
 	return resp, nil
 }
 
-const defaultResponsesSchemaName = "schema"
-
-var responsesSchemaNameInvalidChars = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
-
-// OpenAI Responses API의 text.format.name은 [a-zA-Z0-9_-](최대 64자)만 허용한다.
-// TaskName을 그대로 schema name으로 넘기면 점 등 비허용 문자가 섞여 400(invalid_value)이 난다.
-// ResponsesSchemaName은 Responses API의 schema name 제약에 맞게 task name을 정규화한다.
-func ResponsesSchemaName(name string) string {
-	cleaned := responsesSchemaNameInvalidChars.ReplaceAllString(strings.TrimSpace(name), "_")
-	if cleaned == "" {
-		return defaultResponsesSchemaName
-	}
-
-	if len(cleaned) > 64 {
-		cleaned = cleaned[:64]
-	}
-
-	return cleaned
-}
-
 func (g *OpenAICompatibleJSONGenerator) generateResponsesJSON(ctx context.Context, req JSONRequest) (JSONResponse, error) {
 	messages, err := AdaptInstructionMessages(layeredJSONMessages(req), InstructionProfileForModel(req.Model))
 	if err != nil {
@@ -138,7 +107,7 @@ func (g *OpenAICompatibleJSONGenerator) generateResponsesJSON(ctx context.Contex
 		Text: responses.ResponseTextConfigParam{
 			Format: responses.ResponseFormatTextConfigUnionParam{
 				OfJSONSchema: &responses.ResponseFormatTextJSONSchemaConfigParam{
-					Name:   ResponsesSchemaName(req.SchemaName),
+					Name:   openaicfg.ResponsesSchemaName(req.SchemaName),
 					Schema: req.Schema,
 					Strict: openai.Bool(true),
 				},

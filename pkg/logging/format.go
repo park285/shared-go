@@ -21,12 +21,17 @@ func parseLogFormat(format string) error {
 
 // newFormatHandler는 formatter handler가 생성되는 유일한 지점이다. 이 함수 밖에서
 // formatter를 직접 만들면 그 handler는 sanitize 바깥에 놓여 비정제 record를 받는다.
-func newFormatHandler(level slog.Level, w io.Writer) slog.Handler {
-	return newSanitizeHandler(slog.NewJSONHandler(w, &slog.HandlerOptions{
+// 인자 privacy는 서비스가 넘긴 업무 식별자 키이며 nil이면 credential 규칙만 적용한다.
+func newFormatHandler(level slog.Level, w io.Writer, privacy privacyKeys) slog.Handler {
+	handler := newSanitizeHandler(slog.NewJSONHandler(w, &slog.HandlerOptions{
 		Level:       level,
 		AddSource:   true,
 		ReplaceAttr: replaceBuiltinAttr,
 	}))
+
+	handler.privacy = privacy
+
+	return handler
 }
 
 func replaceBuiltinAttr(groups []string, attr slog.Attr) slog.Attr {

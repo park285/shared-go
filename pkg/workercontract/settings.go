@@ -13,6 +13,7 @@ import (
 )
 
 // DecodeWorkerSettingsSet는 모든 worker의 decoder를 빠짐없이 지정한 뒤 strict decode한다.
+// 이 함수가 settings를 읽는 유일한 공개 경로이며, 각 worker settings는 decodeWorkerSettings 규칙(정확한 키 집합, 포인터 외 null 거부)을 따른다.
 func DecodeWorkerSettingsSet(loaded LoadedProfile, destinations map[string]any) error {
 	if len(loaded.Profile.Workers) != len(destinations) {
 		return errors.New("workercontract: worker settings: decoder worker set must match profile")
@@ -26,7 +27,7 @@ func DecodeWorkerSettingsSet(loaded LoadedProfile, destinations map[string]any) 
 	}
 
 	for _, id := range ids {
-		if err := DecodeWorkerSettings(loaded, id, destinations[id]); err != nil {
+		if err := decodeWorkerSettings(loaded, id, destinations[id]); err != nil {
 			return err
 		}
 	}
@@ -34,11 +35,11 @@ func DecodeWorkerSettingsSet(loaded LoadedProfile, destinations map[string]any) 
 	return nil
 }
 
-// DecodeWorkerSettings는 workerID의 service-owned settings를 destination(struct pointer)에 해석한다.
+// decodeWorkerSettings는 workerID의 service-owned settings를 destination(struct pointer)에 해석한다.
 //
 // Settings의 모든 struct 키 집합은 json 태그 필드 집합과 정확히 같아야 한다.
 // 포인터 외의 null과 빠진 키는 거부하므로 zero value로 조용히 채워지는 설정이 없다.
-func DecodeWorkerSettings(loaded LoadedProfile, workerID string, destination any) error {
+func decodeWorkerSettings(loaded LoadedProfile, workerID string, destination any) error {
 	worker, ok := loaded.Profile.Workers[workerID]
 	if !ok {
 		return fmt.Errorf("workercontract: decode %s settings: worker is missing", workerID)
@@ -53,7 +54,7 @@ func DecodeWorkerSettings(loaded LoadedProfile, workerID string, destination any
 		return fmt.Errorf("workercontract: decode %s settings: settings destination must not be nil", workerID)
 	}
 
-	if err := DecodeSettings(worker.Settings, destination); err != nil {
+	if err := decodeSettings(worker.Settings, destination); err != nil {
 		return fmt.Errorf("workercontract: decode %s settings: %w", workerID, err)
 	}
 

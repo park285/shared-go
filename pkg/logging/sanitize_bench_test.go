@@ -54,7 +54,7 @@ func newSensitiveRecord() slog.Record {
 }
 
 func BenchmarkSanitizeHandlerClean(b *testing.B) {
-	h := newSanitizeHandler(discardHandler{})
+	h := newPrivacySanitizeHandler(discardHandler{})
 	ctx := b.Context()
 
 	b.ReportAllocs()
@@ -67,7 +67,7 @@ func BenchmarkSanitizeHandlerClean(b *testing.B) {
 }
 
 func BenchmarkSanitizeHandlerSensitive(b *testing.B) {
-	h := newSanitizeHandler(discardHandler{})
+	h := newPrivacySanitizeHandler(discardHandler{})
 	ctx := b.Context()
 
 	b.ReportAllocs()
@@ -110,7 +110,7 @@ func newGroupWithSecretRecord() slog.Record {
 }
 
 func BenchmarkSanitizeHandlerGroupNoSecret(b *testing.B) {
-	h := newSanitizeHandler(discardHandler{})
+	h := newPrivacySanitizeHandler(discardHandler{})
 	ctx := b.Context()
 
 	b.ReportAllocs()
@@ -167,7 +167,7 @@ func newWideRecord(privacy bool) slog.Record {
 }
 
 func BenchmarkSanitizeHandlerWideClean(b *testing.B) {
-	h := newSanitizeHandler(discardHandler{})
+	h := newPrivacySanitizeHandler(discardHandler{})
 	ctx := b.Context()
 
 	b.ReportAllocs()
@@ -180,7 +180,7 @@ func BenchmarkSanitizeHandlerWideClean(b *testing.B) {
 }
 
 func BenchmarkSanitizeHandlerWidePrivacy(b *testing.B) {
-	h := newSanitizeHandler(discardHandler{})
+	h := newPrivacySanitizeHandler(discardHandler{})
 	ctx := b.Context()
 
 	b.ReportAllocs()
@@ -193,7 +193,7 @@ func BenchmarkSanitizeHandlerWidePrivacy(b *testing.B) {
 }
 
 func BenchmarkSanitizeHandlerPrivacyKeys(b *testing.B) {
-	h := newSanitizeHandler(discardHandler{})
+	h := newPrivacySanitizeHandler(discardHandler{})
 	ctx := b.Context()
 
 	b.ReportAllocs()
@@ -206,7 +206,7 @@ func BenchmarkSanitizeHandlerPrivacyKeys(b *testing.B) {
 }
 
 func BenchmarkSanitizeHandlerPrivacyMap(b *testing.B) {
-	h := newSanitizeHandler(discardHandler{})
+	h := newPrivacySanitizeHandler(discardHandler{})
 	ctx := b.Context()
 
 	b.ReportAllocs()
@@ -219,7 +219,7 @@ func BenchmarkSanitizeHandlerPrivacyMap(b *testing.B) {
 }
 
 func BenchmarkSanitizeHandlerPrivacyGroup(b *testing.B) {
-	h := newSanitizeHandler(discardHandler{}).WithGroup("sender")
+	h := newPrivacySanitizeHandler(discardHandler{}).WithGroup("sender")
 	ctx := b.Context()
 
 	b.ReportAllocs()
@@ -235,7 +235,7 @@ func BenchmarkSanitizeHandlerPrivacyGroup(b *testing.B) {
 }
 
 func BenchmarkSanitizeHandlerGroupWithSecret(b *testing.B) {
-	h := newSanitizeHandler(discardHandler{})
+	h := newPrivacySanitizeHandler(discardHandler{})
 	ctx := b.Context()
 
 	b.ReportAllocs()

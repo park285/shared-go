@@ -197,7 +197,7 @@ func runCompletionPayloadCase(t *testing.T, tc completionPayloadCase) {
 
 	defer server.Close()
 
-	client, err := openaipreset.New(server.URL, "test-key", "gpt-test",
+	client, err := openaipreset.New(server.URL, "test-key", "gpt-test", openaipreset.WithMaxRetries(0),
 		openaipreset.WithUsageReporter(reporter),
 		openaipreset.WithLogger(slog.New(slog.NewJSONHandler(&logs, nil))),
 	)
@@ -410,7 +410,7 @@ func TestCompleteRejectsInvalidInstructionAdaptationBeforeNetwork(t *testing.T) 
 
 	defer server.Close()
 
-	client, err := openaipreset.New(server.URL, "test-key", "gpt-test")
+	client, err := openaipreset.New(server.URL, "test-key", "gpt-test", openaipreset.WithMaxRetries(0))
 	if err != nil {
 		t.Fatalf("New error = %v", err)
 	}
@@ -491,7 +491,7 @@ func TestCompleteRejectsRefusalAndEmptyToolEnvelope(t *testing.T) {
 
 			defer server.Close()
 
-			client, err := openaipreset.New(server.URL, "test-key", "gpt-test",
+			client, err := openaipreset.New(server.URL, "test-key", "gpt-test", openaipreset.WithMaxRetries(0),
 				openaipreset.WithUsageReporter(reporter),
 				openaipreset.WithLogger(slog.New(slog.NewJSONHandler(&logs, nil))),
 			)
@@ -571,7 +571,7 @@ func TestCompletePreservesInFlightContextErrors(t *testing.T) {
 
 			transport := &contextBlockingTransport{started: make(chan struct{})}
 
-			client, err := openaipreset.New("https://openai.invalid", "test-key", "gpt-test",
+			client, err := openaipreset.New("https://openai.invalid", "test-key", "gpt-test", openaipreset.WithMaxRetries(0),
 				openaipreset.WithHTTPClient(&http.Client{Transport: transport}),
 			)
 			if err != nil {

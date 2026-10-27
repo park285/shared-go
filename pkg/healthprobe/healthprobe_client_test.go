@@ -81,7 +81,7 @@ func TestNewClientHTTPKeepsSharedTransportWhenPrivateAllowed(t *testing.T) {
 		t.Fatalf("url.Parse() error = %v", err)
 	}
 
-	client, closeFn, err := newClient(parsed, internalFetchOptions())
+	client, closeFn, err := newClient(parsed, internalFetchOptions(tlsOverrides{}))
 	if err != nil {
 		t.Fatalf("newClient() error = %v", err)
 	}

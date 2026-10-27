@@ -327,7 +327,7 @@ func TestPruneInboxKeepsManualReviewLonger(t *testing.T) {
 
 	withRetention := newScopedStoreWithOptions(t, pool, pgstore.Options{
 		Scope:                      scope,
-		InboxManualReviewRetention: irisdurable.AutomaticReplayHorizon,
+		InboxManualReviewRetention: testManualReviewRetention,
 	})
 
 	pruned, err = withRetention.PruneInbox(ctx, 10)
@@ -346,7 +346,8 @@ func TestManualReviewRetentionMayNotUndercutTerminalRetention(t *testing.T) {
 	t.Parallel()
 
 	_, err := pgstore.New(&pgxpool.Pool{}, pgstore.Options{
-		InboxManualReviewRetention: irisdurable.AutomaticReplayHorizon - time.Hour,
+		IrisAdmissionRetention: testIrisAdmissionRetention, InboxTerminalRetention: testInboxTerminalRetention,
+		InboxManualReviewRetention: testInboxTerminalRetention - time.Hour,
 	})
 	if err == nil {
 		t.Fatal("New with a manual review retention shorter than the terminal retention must fail")
@@ -531,7 +532,7 @@ func beginStagedTx(t *testing.T, pool *pgxpool.Pool, scope string, record irisdu
 		}
 	})
 
-	store, err := pgstore.New(tx, pgstore.Options{Scope: scope})
+	store, err := pgstore.New(tx, testPolicy(pgstore.Options{Scope: scope}))
 	if err != nil {
 		t.Fatalf("new store on the transaction: %v", err)
 	}
@@ -620,6 +621,7 @@ func TestRetireReturnsTheRowsItClosed(t *testing.T) {
 
 // TestClaimPlanUsesThePartialIndexes는 claim과 runtime snapshot이 참조 스키마의 부분 인덱스를
 // 실제로 타는지 확인한다. 인덱스를 놓치면 inbox가 커질수록 claim이 순차 스캔으로 내려앉는다.
+// 이 claim은 key별 head를 head 인덱스의 재귀 건너뛰기로 꺼내므로 비용이 활성 key 수에 비례한다.
 func TestClaimPlanUsesThePartialIndexes(t *testing.T) {
 	pool := newMigratedPool(t)
 	store := newScopedStore(t, pool)
@@ -640,9 +642,9 @@ func TestClaimPlanUsesThePartialIndexes(t *testing.T) {
 
 	claimPlan := explainQuery(ctx, t, conn, "claim", pgstore.ClaimInboxQueryForTest, scope, "plan-token", float64(60), 1, false)
 
-	for _, index := range []string{"idx_iris_webhook_inbox_claim", "idx_iris_webhook_inbox_head"} {
-		if !strings.Contains(claimPlan, index) {
-			t.Fatalf("claim plan does not use %s:\n%s", index, claimPlan)
+	for _, node := range []string{"Recursive Union", "idx_iris_webhook_inbox_head"} {
+		if !strings.Contains(claimPlan, node) {
+			t.Fatalf("claim plan does not use %s:\n%s", node, claimPlan)
 		}
 	}
 

@@ -392,20 +392,9 @@ type PoolConfig struct {
 	ConnMaxIdleTime       time.Duration
 	// 0이면 pgx가 파싱한 상태 검사 주기를 유지하며 음수는 허용하지 않는다.
 	HealthCheckPeriod time.Duration
-	// PingTimeout은 시작 시 Ping이 아닌 획득 시 상태 검사를 제한한다.
-	// 0이면 pgx/DSN에서 파싱한 값을 유지한다.
-	PingTimeout time.Duration
-}
-
-// defaultPoolConfig는 구조체 경로에서 0인 수명 필드를 채울 기본값이다.
-func defaultPoolConfig() PoolConfig {
-	return PoolConfig{
-		// 유휴 상태에서 연결을 하나도 유지하지 않아도 된다.
-		MinConns:        0,
-		MaxConns:        20,
-		ConnMaxLifetime: time.Hour,
-		ConnMaxIdleTime: 30 * time.Minute,
-	}
+	// AcquirePingTimeout은 시작 Ping(Options.Ping.PingTimeout)이 아니라 획득 시 상태 검사(pgxpool
+	// Config.PingTimeout)를 제한한다. 0이면 pgx/DSN에서 파싱한 값을 유지한다.
+	AcquirePingTimeout time.Duration
 }
 
 type PingConfig struct {

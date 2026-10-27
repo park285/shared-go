@@ -51,6 +51,10 @@ func (s *Store) StageRow(ctx context.Context, record irisdurable.ReplyRecord) (S
 		return StagedReply{}, errors.New("pgstore: reply record requires a payload")
 	}
 
+	if s.opts.ReplyRetention <= 0 {
+		return StagedReply{}, errors.New("pgstore: stage reply requires Options.ReplyRetention")
+	}
+
 	var staged StagedReply
 
 	err := s.inTransaction(ctx, "stage reply", func(db Querier) error {
@@ -124,6 +128,10 @@ func (s *Store) stageRow(ctx context.Context, db Querier, record irisdurable.Rep
 // MaxAttempts 또는 AutomaticReplayHorizon 경계로 발송이 금지되면
 // irisdurable.ErrReplyNotClaimable을, 행이 없으면 ErrNotFound를 반환한다.
 func (s *Store) BeginAttempt(ctx context.Context, identity irisdurable.ReplyIdentity) (irisdurable.ReplyAttempt, error) {
+	if err := s.requirePolicy("begin reply attempt", true, true, true); err != nil {
+		return irisdurable.ReplyAttempt{}, err
+	}
+
 	token, err := newClaimToken()
 	if err != nil {
 		return irisdurable.ReplyAttempt{}, err
@@ -211,9 +219,13 @@ func (s *Store) Inspect(ctx context.Context, identity irisdurable.ReplyIdentity)
 }
 
 // BackoffFor는 attempt번째 시도 뒤 다음 시도까지의 대기 시간이다. 호출자가 ReplyOutcome.RetryAfter에
-// 그대로 넘겨 재시도 간격을 저장소 정책과 한 곳에서 맞출 수 있다.
-func (s *Store) BackoffFor(attempt int) time.Duration {
-	return time.Duration(s.backoffSeconds(attempt) * float64(time.Second))
+// 그대로 넘겨 재시도 간격을 저장소 정책과 한 곳에서 맞출 수 있다. BackoffBase·BackoffMax가 없으면 오류다.
+func (s *Store) BackoffFor(attempt int) (time.Duration, error) {
+	if s.opts.BackoffBase <= 0 {
+		return 0, errors.New("pgstore: backoff requires Options.BackoffBase and BackoffMax")
+	}
+
+	return s.backoff(attempt), nil
 }
 
 func payloadHash(payload []byte) string {

@@ -25,7 +25,7 @@ func TestAcquirePolicyValidation(t *testing.T) {
 		{name: "negative timeout", maxConns: 2, timeout: -time.Second},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			opts := Options{Pool: PoolConfig{MaxConns: tc.maxConns}, AcquirePolicy: &AcquirePolicy{ReservedConns: tc.reserve, Timeout: tc.timeout}}
+			opts := Options{Pool: PoolConfig{MaxConns: tc.maxConns, ConnMaxLifetime: time.Hour, ConnMaxIdleTime: 30 * time.Minute}, Ping: testPing(), AcquirePolicy: &AcquirePolicy{ReservedConns: tc.reserve, Timeout: tc.timeout}}
 			cfg, err := buildConfigPool(&Config{Host: "localhost", Port: 5432, SSLMode: testDisable}, opts)
 
 			if tc.valid {
@@ -39,14 +39,14 @@ func TestAcquirePolicyValidation(t *testing.T) {
 
 	// DSN 검증은 0인 덮어쓰기 필드가 아닌 유효 최대값을 사용하며 접속 시도 전에 거부한다.
 	for _, opts := range []Options{
-		{AcquirePolicy: &AcquirePolicy{ReservedConns: 1, Timeout: time.Second}},
-		{Pool: PoolConfig{MaxConns: 1}, AcquirePolicy: &AcquirePolicy{ReservedConns: 1, Timeout: time.Second}},
+		{Ping: testPing(), AcquirePolicy: &AcquirePolicy{ReservedConns: 1, Timeout: time.Second}},
+		{Ping: testPing(), Pool: PoolConfig{MaxConns: 1}, AcquirePolicy: &AcquirePolicy{ReservedConns: 1, Timeout: time.Second}},
 	} {
 		_, err := OpenPoolDSN(t.Context(), "postgres://test@127.0.0.1:1/test?sslmode=disable&pool_max_conns=1", opts)
 		requireConfigurationFailure(t, err)
 	}
 
-	_, err := buildConfigPool(&Config{Host: "localhost", Port: 5432, SSLMode: testDisable}, Options{Pool: PoolConfig{MaxConns: 1}})
+	_, err := buildConfigPool(&Config{Host: "localhost", Port: 5432, SSLMode: testDisable}, Options{Pool: PoolConfig{MaxConns: 1, ConnMaxLifetime: time.Hour, ConnMaxIdleTime: 30 * time.Minute}, Ping: testPing()})
 	require.NoError(t, err)
 }
 

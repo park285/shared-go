@@ -43,7 +43,7 @@ func parseLevel(level string) slog.Level {
 }
 
 func NewLogger() *slog.Logger {
-	return slog.New(newFormatHandler(slog.LevelInfo, os.Stdout))
+	return slog.New(newFormatHandler(slog.LevelInfo, os.Stdout, nil))
 }
 
 // Options는 파일 로깅의 선택 동작을 제어한다.
@@ -54,6 +54,10 @@ type Options struct {
 	AsyncStdout bool
 	// OTel이 true면 span context의 trace_id/span_id를 로그 attr로 상관시킨다.
 	OTel bool
+	// PrivacyKeys는 이 서비스가 개인 식별자로 다루는 attr·group·map key다(예: room, sender). 일치하는
+	// 값은 credential과 같이 가린다. 키는 대소문자·`-`·`.`·공백을 정규화한 정확 일치이며 빈 키는 오류다.
+	// 라이브러리는 privacy 키를 내장하지 않으므로 비우면 credential 규칙만 적용한다.
+	PrivacyKeys []string
 }
 
 // EnableFileLoggingWithOptions는 io.Closer를 함께 반환한다. Closer는 비동기 stdout lane의
@@ -76,9 +80,14 @@ func enableFileLoggingWithStdout(stdout io.Writer, config Config, fileName strin
 		return nil, nil, fmt.Errorf("parse log format: %w", err)
 	}
 
+	privacy, err := newPrivacyKeys(opts.PrivacyKeys)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	logDir := strings.TrimSpace(config.Dir)
 	if logDir == "" {
-		logger := slog.New(newConsoleHandler(level, stdout, opts.OTel))
+		logger := slog.New(newConsoleHandler(level, stdout, privacy, opts.OTel))
 
 		//nolint:nilnil // 콘솔 전용 구성에서 Closer가 nil인 것은 문서화된 반환 계약이다.
 		return logger, nil, nil
@@ -102,7 +111,7 @@ func enableFileLoggingWithStdout(stdout io.Writer, config Config, fileName strin
 
 	w, closers := buildLogLanes(stdout, logFile, logArchiver, opts)
 
-	handler := newFormatHandler(level, w)
+	handler := newFormatHandler(level, w, privacy)
 
 	if opts.OTel {
 		handler = newOTelHandler(handler)
@@ -201,13 +210,13 @@ func (w *bestEffortWriter) writeLossSummary() {
 	record := slog.NewRecord(time.Now(), slog.LevelWarn, "stdout lane write failed", 0)
 	record.AddAttrs(slog.Uint64("dropped", dropped), slog.Uint64("truncated", truncated))
 
-	if err := newFormatHandler(record.Level, w.summary).Handle(context.Background(), record); err != nil {
+	if err := newFormatHandler(record.Level, w.summary, nil).Handle(context.Background(), record); err != nil {
 		return
 	}
 }
 
-func newConsoleHandler(level slog.Level, w io.Writer, enableOTel bool) slog.Handler {
-	handler := newFormatHandler(level, w)
+func newConsoleHandler(level slog.Level, w io.Writer, privacy privacyKeys, enableOTel bool) slog.Handler {
+	handler := newFormatHandler(level, w, privacy)
 
 	if enableOTel {
 		handler = newOTelHandler(handler)

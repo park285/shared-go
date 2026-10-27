@@ -106,7 +106,7 @@ func TestInboxExactRetryAndUnattemptedFence(t *testing.T) {
 func TestInboxTerminalMaintenancePreservesRetentionAndClaim(t *testing.T) {
 	pool := newMigratedPool(t)
 	store := newScopedStoreWithOptions(t, pool, pgstore.Options{
-		Scope: "chat", InboxManualReviewRetention: 7 * 24 * time.Hour,
+		Scope: "chat", InboxManualReviewRetention: testInboxTerminalRetention,
 		DiscardInboxManualReviewPayload: true,
 	})
 
@@ -138,7 +138,7 @@ func TestInboxTerminalMaintenancePreservesRetentionAndClaim(t *testing.T) {
 		t.Fatalf("future cutoff bypassed retention = %d, %v", n, err)
 	}
 
-	if _, err := pool.Exec(t.Context(), "UPDATE iris_webhook_inbox SET terminal_at = now() - interval '8 days' WHERE status IN ('completed', 'manual_review')"); err != nil {
+	if _, err := pool.Exec(t.Context(), "UPDATE iris_webhook_inbox SET terminal_at = now() - interval '9 days' WHERE status IN ('completed', 'manual_review')"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -380,7 +380,7 @@ func inboxRecoveryTransaction(t *testing.T, pool *pgxpool.Pool, opts pgstore.Opt
 		}
 	})
 
-	store, err := pgstore.New(tx, opts)
+	store, err := pgstore.New(tx, testPolicy(opts))
 	require.NoError(t, err)
 
 	return store, tx

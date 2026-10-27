@@ -11,7 +11,6 @@ import (
 	"time"
 
 	sharedlogging "github.com/park285/shared-go/v2/pkg/logging"
-	"github.com/park285/shared-go/v2/pkg/runtime/automaxprocs"
 )
 
 // Run이 error를 반환하면 Options.Run은 비-0 exit code로 종료해 supervisor(systemd/Docker)의
@@ -26,9 +25,7 @@ type Options[Config any, Runtime runtime] struct {
 	Initialize             func(version string)
 	LoadConfig             func() (Config, error)
 	LoadConfigErrorMessage string
-	// NewLogger는 필수입니다. Run은 성공 직후 이 서비스 logger로 automaxprocs.Init을 실행해
-	// GOMAXPROCS 결정 로그가 서비스 로그 경로로 나가고 BuildRuntime보다 먼저 적용되게 합니다.
-	// 반환한 logger가 nil이면 slog.Default()를 씁니다.
+	// NewLogger는 필수입니다. 반환한 logger가 nil이면 slog.Default()를 씁니다.
 	NewLogger func(config Config) (*slog.Logger, io.Closer, error)
 	// LoggerLevel은 시작 로그의 log_level 필드 값입니다.
 	LoggerLevel       func(config Config) string
@@ -61,8 +58,6 @@ func (opts Options[Config, Runtime]) Run() int {
 	if loggerCloser != nil {
 		defer reportLoggerCloseError(stderr, loggerCloser)
 	}
-
-	automaxprocs.Init(logger)
 
 	if message := opts.StartupMessage; message != "" {
 		logger.Info(message, opts.startupFields(config)...)

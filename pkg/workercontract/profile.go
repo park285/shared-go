@@ -141,8 +141,8 @@ func sortedWorkerIDs(workers map[string]WorkerProfile) []string {
 	return slices.Sorted(maps.Keys(workers))
 }
 
-// DecodeSettings는 service-owned settings를 unknown field와 trailing JSON 없이 해석한다.
-func DecodeSettings(raw jsontext.Value, destination any) error {
+// decodeSettings는 service-owned settings를 unknown field와 trailing JSON 없이 해석한다.
+func decodeSettings(raw jsontext.Value, destination any) error {
 	if destination == nil {
 		return errors.New("workercontract: worker settings: nil destination")
 	}

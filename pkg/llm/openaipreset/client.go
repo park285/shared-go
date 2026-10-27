@@ -18,6 +18,7 @@ import (
 
 	"github.com/park285/shared-go/v2/pkg/httputil"
 	sharedllm "github.com/park285/shared-go/v2/pkg/llm"
+	"github.com/park285/shared-go/v2/pkg/llm/internal/openaicfg"
 	"github.com/park285/shared-go/v2/pkg/llm/internal/openaidiag"
 	"github.com/park285/shared-go/v2/pkg/logging"
 )
@@ -67,9 +68,18 @@ func New(baseURL, apiKey, model string, opts ...Option) (*Client, error) {
 		httpClient = defaultHTTPClient()
 	}
 
+	if cfg.maxRetries == nil {
+		return nil, errors.New("openaipreset: WithMaxRetries is required")
+	}
+
+	maxRetries := *cfg.maxRetries
+	if err := openaicfg.ValidateMaxRetries(maxRetries); err != nil {
+		return nil, fmt.Errorf("openaipreset: WithMaxRetries: %w", err)
+	}
+
 	requestOpts := []option.RequestOption{
 		option.WithAPIKey(strings.TrimSpace(apiKey)),
-		option.WithMaxRetries(sharedllm.ResolveOpenAIMaxRetries(cfg.maxRetries)),
+		option.WithMaxRetries(maxRetries),
 	}
 	if normalizedBaseURL := strings.TrimRight(strings.TrimSpace(baseURL), "/"); normalizedBaseURL != "" {
 		requestOpts = append(requestOpts, option.WithBaseURL(normalizedBaseURL))
@@ -81,7 +91,7 @@ func New(baseURL, apiKey, model string, opts ...Option) (*Client, error) {
 		BaseURL:    baseURL,
 		APIKey:     apiKey,
 		HTTPClient: httpClient,
-		MaxRetries: cfg.maxRetries,
+		MaxRetries: maxRetries,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("openaipreset: open AI compatible JSON generator: %w", err)
@@ -172,7 +182,7 @@ func (c *Client) GenerateLayeredResponsesJSON(ctx context.Context, task string, 
 
 	params, model, err := c.completionParams(CompletionRequest{
 		Messages: []sharedllm.Message{{Role: "system", Content: prompts.Invariant}, {Role: "developer", Content: prompts.Developer}, {Role: "user", Content: prompts.User}},
-		Model:    c.model, ResponseFormat: &ResponseFormat{Name: sharedllm.ResponsesSchemaName(task), Schema: schema, Strict: true}, InstructionProfile: &profile,
+		Model:    c.model, ResponseFormat: &ResponseFormat{Name: openaicfg.ResponsesSchemaName(task), Schema: schema, Strict: true}, InstructionProfile: &profile,
 		CacheKey: c.promptCacheKeyFor(task),
 	})
 	if err != nil {
@@ -284,7 +294,7 @@ func decodeJSONAs[T any](task, text string) (T, error) {
 type redactedCauseError struct{ cause error }
 
 func (e *redactedCauseError) Error() string {
-	return sharedllm.RedactDiagnostic(openaidiag.ErrorClass(e.cause), sharedllm.DefaultDiagnosticLimit)
+	return openaidiag.ErrorClass(e.cause)
 }
 
 func (e *redactedCauseError) Unwrap() error { return e.cause }

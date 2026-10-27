@@ -31,4 +31,4 @@ type Evaluation struct {
 	OutputBytes int          `json:"output_bytes"`
 }
 
-var ErrRestrictedGeneratedText = errors.New("generated answer contains restricted output")
+var ErrRestrictedGeneratedText = errors.New("outputguard: generated answer contains restricted output")

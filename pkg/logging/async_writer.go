@@ -231,7 +231,7 @@ func (w *asyncDropWriter) writeLossSummary() {
 
 	// Handle은 handler level을 재검사하지 않으므로 이 인자는 요약 방출 여부를 정하지 않는다.
 	//nolint:errcheck // best-effort 종료 진단, 기록 실패는 무시한다.
-	_ = newFormatHandler(record.Level, w.target).Handle(context.Background(), record)
+	_ = newFormatHandler(record.Level, w.target, nil).Handle(context.Background(), record)
 }
 
 func (w *asyncDropWriter) droppedCount() uint64 {

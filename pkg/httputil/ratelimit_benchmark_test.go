@@ -133,32 +133,21 @@ func BenchmarkClientIPForwarded(b *testing.B) {
 
 	const forwarded = "198.51.100.1, 198.51.100.2, 198.51.100.3, 10.0.0.1, 10.0.0.2, 10.0.0.3"
 
-	for _, benchmark := range []struct {
-		name string
-		mode ForwardedHeaderMode
-	}{
-		{name: "leftmost", mode: ForwardedHeaderLeftmost},
-		{name: "rightmost_non_trusted", mode: ForwardedHeaderRightmostNonTrusted},
-	} {
-		b.Run(benchmark.name, func(b *testing.B) {
-			request := &http.Request{
-				RemoteAddr: "10.1.2.3:1234",
-				Header: http.Header{
-					"X-Forwarded-For": []string{forwarded},
-				},
-			}
-			options := ClientIPOptions{
-				TrustForwarded: true,
-				TrustedProxies: trusted,
-				ForwardedMode:  benchmark.mode,
-			}
+	request := &http.Request{
+		RemoteAddr: "10.1.2.3:1234",
+		Header: http.Header{
+			"X-Forwarded-For": []string{forwarded},
+		},
+	}
+	options := ClientIPOptions{
+		TrustForwarded: true,
+		TrustedProxies: trusted,
+	}
 
-			b.ReportAllocs()
+	b.ReportAllocs()
 
-			for b.Loop() {
-				benchmarkClientIPSink = clientIP(request, options)
-			}
-		})
+	for b.Loop() {
+		benchmarkClientIPSink = clientIP(request, options)
 	}
 }
 

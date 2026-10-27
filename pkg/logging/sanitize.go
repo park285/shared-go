@@ -22,6 +22,7 @@ package logging
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -37,7 +38,6 @@ var (
 
 const (
 	redactedValue      = "***REDACTED***"
-	tokenUserName      = "user_name"
 	tokenAPIKey        = "api_key"
 	tokenAPIKeyCompact = "apikey"
 	tokenPasswd        = "passwd"
@@ -79,16 +79,27 @@ var sensitiveExactKeys = map[string]struct{}{
 	"connection_url":   {},
 }
 
-// 정확 일치만 사용한다. *_id suffix 규칙을 더하면 channel_id 같은 공개 콘텐츠 ID까지 가려진다.
-var privacyExactKeys = map[string]struct{}{
-	"room":              {},
-	"room_name":         {},
-	"chat_id":           {},
-	tokenUserName:       {},
-	"thread_id":         {},
-	"session_thread_id": {},
-	"sender":            {},
-	"game_key":          {},
+// privacyKeys는 서비스가 Options.PrivacyKeys로 넘긴 업무 식별자 키(정규화된 정확 일치)다.
+// 어떤 키가 개인 식별자인지는 서비스 어휘라 라이브러리는 privacy 키를 내장하지 않고 credential 규칙만
+// 소유한다. *_id suffix 규칙은 두지 않는다. 더하면 channel_id 같은 공개 콘텐츠 ID까지 가려진다.
+// 값이 nil이면 credential 규칙만 적용한다.
+type privacyKeys map[string]struct{}
+
+// newPrivacyKeys는 서비스가 넘긴 privacy 키를 credential 키와 같은 규칙으로 정규화한다.
+// 빈 키는 설정 실수이므로 거부한다.
+func newPrivacyKeys(keys []string) (privacyKeys, error) {
+	out := make(privacyKeys, len(keys))
+
+	for _, key := range keys {
+		normalized := normalizeSensitiveKey(key)
+		if normalized == "" {
+			return nil, errors.New("logging: privacy key must not be empty")
+		}
+
+		out[normalized] = struct{}{}
+	}
+
+	return out, nil
 }
 
 func mightContainBearer(s string) bool {
@@ -284,7 +295,7 @@ func (h *sanitizeHandler) Handle(ctx context.Context, record slog.Record) error 
 		index := 0
 
 		record.Attrs(func(attr slog.Attr) bool {
-			out, attrChanged := sanitizeAttrChanged(attr)
+			out, attrChanged := h.privacy.sanitizeAttrChanged(attr)
 			if attrChanged {
 				changed = true
 				firstChangedIndex = index
@@ -338,7 +349,7 @@ func (h *sanitizeHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 		sanitized = append(sanitized, h.sanitizeOwnedAttr(attr))
 	}
 
-	return &sanitizeHandler{inner: h.inner.WithAttrs(sanitized), inMaskedGroup: h.inMaskedGroup}
+	return &sanitizeHandler{inner: h.inner.WithAttrs(sanitized), inMaskedGroup: h.inMaskedGroup, privacy: h.privacy}
 }
 
 // 열린 group 이름이 privacy·credential key면 그 아래 attr은 key가 무엇이든 값이 그 식별자나
@@ -348,7 +359,8 @@ func (h *sanitizeHandler) WithGroup(name string) slog.Handler {
 
 	return &sanitizeHandler{
 		inner:         h.inner.WithGroup(name),
-		inMaskedGroup: h.inMaskedGroup || isMaskedNormalizedKey(normalizedName),
+		inMaskedGroup: h.inMaskedGroup || h.privacy.isMaskedNormalizedKey(normalizedName),
+		privacy:       h.privacy,
 	}
 }
 
@@ -357,11 +369,11 @@ func (h *sanitizeHandler) sanitizeOwnedAttr(attr slog.Attr) slog.Attr {
 		return slog.String(attr.Key, redactedValue)
 	}
 
-	return sanitizeAttr(attr)
+	return h.privacy.sanitizeAttr(attr)
 }
 
-func sanitizeAttr(attr slog.Attr) slog.Attr {
-	out, _ := sanitizeAttrChanged(attr)
+func (p privacyKeys) sanitizeAttr(attr slog.Attr) slog.Attr {
+	out, _ := p.sanitizeAttrChanged(attr)
 	return out
 }
 
@@ -371,19 +383,19 @@ func sanitizeAttr(attr slog.Attr) slog.Attr {
 // Resolve 변경 판정에 Value.Equal을 쓰면 안 된다: KindAny끼리의 Equal은 내부 any를
 // ==로 비교해 []int 같은 uncomparable 타입에서 panic한다. Resolve가 값을 바꾸는 건
 // LogValuer뿐이므로 Kind 검사로 보수적으로(LogValuer면 항상 changed) 판정한다.
-func sanitizeAttrChanged(attr slog.Attr) (slog.Attr, bool) {
+func (p privacyKeys) sanitizeAttrChanged(attr slog.Attr) (slog.Attr, bool) {
 	changed := attr.Value.Kind() == slog.KindLogValuer
 
 	attr.Value = attr.Value.Resolve()
 	// key 기반 판정은 값을 읽지 않으므로 모든 값 분기(KindAny·KindGroup·KindString)보다 앞이어야
 	// 한다. 뒤에 두면 마스킹 여부가 값 타입이나 무관한 map 내용에 종속된다.
 	normalizedKey := normalizeSensitiveKey(attr.Key)
-	if isMaskedNormalizedKey(normalizedKey) {
+	if p.isMaskedNormalizedKey(normalizedKey) {
 		return slog.String(attr.Key, redactedValue), true
 	}
 
 	if attr.Value.Kind() == slog.KindAny {
-		if out, masked := sanitizeAnyAttr(attr); masked {
+		if out, masked := p.sanitizeAnyAttr(attr); masked {
 			return out, true
 		}
 	}
@@ -391,7 +403,7 @@ func sanitizeAttrChanged(attr slog.Attr) (slog.Attr, bool) {
 	if attr.Value.Kind() == slog.KindGroup {
 		groupAttrs := attr.Value.Group()
 		for index, groupAttr := range groupAttrs {
-			out, childChanged := sanitizeAttrChanged(groupAttr)
+			out, childChanged := p.sanitizeAttrChanged(groupAttr)
 			if !childChanged {
 				continue
 			}
@@ -401,7 +413,7 @@ func sanitizeAttrChanged(attr slog.Attr) (slog.Attr, bool) {
 
 			sanitized[index] = out
 			for next := index + 1; next < len(groupAttrs); next++ {
-				sanitized[next] = sanitizeAttr(groupAttrs[next])
+				sanitized[next] = p.sanitizeAttr(groupAttrs[next])
 			}
 
 			attr.Value = slog.GroupValue(sanitized...)
@@ -429,10 +441,10 @@ func sanitizeAttrChanged(attr slog.Attr) (slog.Attr, bool) {
 }
 
 // 두 번째 반환값은 sanitizeAttrChanged의 changed와 달리 "이 분기가 결과를 확정했다"는 신호다.
-func sanitizeAnyAttr(attr slog.Attr) (slog.Attr, bool) {
+func (p privacyKeys) sanitizeAnyAttr(attr slog.Attr) (slog.Attr, bool) {
 	value := attr.Value.Any()
 	if raw, ok := value.(map[string]any); ok {
-		if masked, mapChanged := maskPrivacyMap(raw); mapChanged {
+		if masked, mapChanged := p.maskPrivacyMap(raw); mapChanged {
 			return slog.Any(attr.Key, masked), true
 		}
 	}
@@ -467,8 +479,8 @@ func isSensitiveNormalizedKey(normalized string) bool {
 		strings.HasSuffix(normalized, "_secret_key")
 }
 
-func isMaskedNormalizedKey(normalized string) bool {
-	return isPrivacyNormalizedKey(normalized) || isSensitiveNormalizedKey(normalized)
+func (p privacyKeys) isMaskedNormalizedKey(normalized string) bool {
+	return p.isPrivacyNormalizedKey(normalized) || isSensitiveNormalizedKey(normalized)
 }
 
 func normalizeSensitiveKey(key string) string {
@@ -489,23 +501,23 @@ func isBroadValueNormalizedKey(normalized string) bool {
 	return ok
 }
 
-func isPrivacyNormalizedKey(normalized string) bool {
-	_, ok := privacyExactKeys[normalized]
+func (p privacyKeys) isPrivacyNormalizedKey(normalized string) bool {
+	_, ok := p[normalized]
 	return ok
 }
 
 const maxPrivacyMapDepth = 8
 
 // 호출자 map을 제자리에서 바꾸면 로깅이 호출자 상태를 변조하므로 privacy·credential hit일 때만 사본을 만든다.
-func maskPrivacyMap(raw map[string]any) (map[string]any, bool) {
-	return maskPrivacyMapDepth(raw, 0)
+func (p privacyKeys) maskPrivacyMap(raw map[string]any) (map[string]any, bool) {
+	return p.maskPrivacyMapDepth(raw, 0)
 }
 
-func maskPrivacyMapDepth(raw map[string]any, depth int) (map[string]any, bool) {
+func (p privacyKeys) maskPrivacyMapDepth(raw map[string]any, depth int) (map[string]any, bool) {
 	var masked map[string]any
 
 	for key, value := range raw {
-		if shouldMaskStructuredMapValue(key, value) {
+		if p.shouldMaskStructuredMapValue(key, value) {
 			if masked == nil {
 				masked = make(map[string]any, len(raw))
 				maps.Copy(masked, raw)
@@ -522,7 +534,7 @@ func maskPrivacyMapDepth(raw map[string]any, depth int) (map[string]any, bool) {
 			continue
 		}
 
-		nestedMasked, changed := maskPrivacyMapDepth(nested, depth+1)
+		nestedMasked, changed := p.maskPrivacyMapDepth(nested, depth+1)
 		if !changed {
 			continue
 		}
@@ -538,9 +550,9 @@ func maskPrivacyMapDepth(raw map[string]any, depth int) (map[string]any, bool) {
 	return masked, masked != nil
 }
 
-func shouldMaskStructuredMapValue(key string, value any) bool {
+func (p privacyKeys) shouldMaskStructuredMapValue(key string, value any) bool {
 	normalizedKey := normalizeSensitiveKey(key)
-	if isMaskedNormalizedKey(normalizedKey) {
+	if p.isMaskedNormalizedKey(normalizedKey) {
 		return true
 	}
 

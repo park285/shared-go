@@ -8,11 +8,14 @@ import (
 	"testing"
 )
 
+// testContract는 소비자가 정의하는 LogContract 값의 예다.
+var testContract = LogContract{Message: "background goroutine panic recovered", NameKey: "guard"}
+
 func TestRunRecoversPanicAndLogsStableEvent(t *testing.T) {
 	t.Parallel()
 
 	logger, output := testLogger()
-	Run(logger, BackgroundTask, "worker-loop", func() { panic("boom") })
+	Run(logger, testContract, "worker-loop", func() { panic("boom") })
 
 	logged := output.String()
 
@@ -29,11 +32,11 @@ func TestRunRecoversPanicAndLogsStableEvent(t *testing.T) {
 	}
 }
 
-func TestRunPreservesGoroutineLogContract(t *testing.T) {
+func TestRunUsesCallerLogContract(t *testing.T) {
 	t.Parallel()
 
 	logger, output := testLogger()
-	Run(logger, Goroutine, "image-reader", func() { panic("boom") })
+	Run(logger, LogContract{Message: "goroutine_panic_recovered", NameKey: "goroutine"}, "image-reader", func() { panic("boom") })
 
 	logged := output.String()
 
@@ -49,7 +52,7 @@ func TestRunPreservesGoroutineLogContract(t *testing.T) {
 	}
 
 	if strings.Contains(logged, "guard=") {
-		t.Fatalf("panic log = %q, must not contain background guard key", logged)
+		t.Fatalf("panic log = %q, must not contain another contract key", logged)
 	}
 }
 
@@ -59,7 +62,7 @@ func TestRunDoesNotLogWithoutPanic(t *testing.T) {
 	logger, output := testLogger()
 	ran := false
 
-	Run(logger, BackgroundTask, "worker-loop", func() { ran = true })
+	Run(logger, testContract, "worker-loop", func() { ran = true })
 
 	if !ran || output.Len() != 0 {
 		t.Fatalf("Run() ran = %t, log = %q, want true and empty", ran, output.String())
@@ -70,12 +73,12 @@ func TestRunENormalReturnAndError(t *testing.T) {
 	t.Parallel()
 
 	logger, output := testLogger()
-	if err := RunE(logger, BackgroundTask, "ok", func() error { return nil }); err != nil {
+	if err := RunE(logger, testContract, "ok", func() error { return nil }); err != nil {
 		t.Fatalf("RunE(nil) error = %v, want nil", err)
 	}
 
 	wantErr := errors.New("failed")
-	if err := RunE(logger, BackgroundTask, "failed", func() error { return wantErr }); !errors.Is(err, wantErr) {
+	if err := RunE(logger, testContract, "failed", func() error { return wantErr }); !errors.Is(err, wantErr) {
 		t.Fatalf("RunE(error) error = %v, want wrapped sentinel", err)
 	}
 
@@ -88,13 +91,13 @@ func TestRunEConvertsErrorAndNonErrorPanics(t *testing.T) {
 	t.Parallel()
 
 	panickedErr := errors.New("panicked error")
-	err := RunE(nil, BackgroundTask, "error-panic", func() error { panic(panickedErr) })
+	err := RunE(nil, testContract, "error-panic", func() error { panic(panickedErr) })
 
 	if !errors.Is(err, panickedErr) {
 		t.Fatalf("RunE(error panic) error = %v, want wrapped sentinel", err)
 	}
 
-	err = RunE(nil, Goroutine, "string-panic", func() error { panic("kaboom") })
+	err = RunE(nil, testContract, "string-panic", func() error { panic("kaboom") })
 	if err == nil || err.Error() != "panicguard: string-panic: recovered panic: kaboom" {
 		t.Fatalf("RunE(string panic) error = %v, want named recovered panic", err)
 	}
@@ -103,7 +106,7 @@ func TestRunEConvertsErrorAndNonErrorPanics(t *testing.T) {
 func TestRunNilLoggerIsSafe(t *testing.T) {
 	t.Parallel()
 
-	Run(nil, BackgroundTask, "nil-logger", func() { panic("boom") })
+	Run(nil, testContract, "nil-logger", func() { panic("boom") })
 }
 
 func TestRunRejectsUnknownLogContractBeforeCallingFunction(t *testing.T) {
@@ -154,7 +157,7 @@ func TestRunEReturnsFunctionErrorUnwrapped(t *testing.T) {
 
 	wantErr := errors.New("load snapshot: timeout")
 
-	err := RunE(nil, BackgroundTask, "snapshot", func() error { return wantErr })
+	err := RunE(nil, testContract, "snapshot", func() error { return wantErr })
 	if err != wantErr { //nolint:errorlint // 호출자 오류를 감싸지 않고 그대로 돌려주는 계약을 확인한다.
 		t.Fatalf("RunE() error = %v, want the function error itself", err)
 	}

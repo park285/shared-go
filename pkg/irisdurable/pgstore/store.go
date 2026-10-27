@@ -35,13 +35,6 @@ type beginner interface {
 	Begin(ctx context.Context) (pgx.Tx, error)
 }
 
-const (
-	defaultLease       = 30 * time.Second
-	defaultMaxAttempts = 8
-	defaultBackoffBase = time.Second
-	defaultBackoffMax  = time.Minute
-)
-
 var (
 	// ErrNotFound는 주어진 식별자의 행이 없을 때 반환한다.
 	ErrNotFound = errors.New("pgstore: row not found")
@@ -49,23 +42,30 @@ var (
 	ErrClaimLost = errors.New("pgstore: claim token no longer owns the row")
 )
 
-// Options는 저장소의 정책 값이다. 0인 항목은 기본값으로 채운다.
+// Options는 저장소의 정책 값이다. 라이브러리 기본값은 없다. 0인 정책은 그 값을 쓰는 연산이 호출될 때
+// 오류를 반환하므로, nonce 전용·stage 전용 Store는 쓰지 않는 정책 없이 만들 수 있다. 0이 아닌 값은
+// New가 검증한다. 같은 테이블을 여러 Store가 다루면 각 Store에 같은 정책을 넘긴다.
 type Options struct {
 	// Scope는 한 데이터베이스가 여러 봇이나 게임을 담을 때 행을 구분한다. 빈 값도 유효한 scope다.
 	Scope string
-	// Lease는 claim 소유권의 유효 기간이다.
+	// IrisAdmissionRetention은 Iris reply admission 원장의 보존 기간이다. 정본은 Iris 계약 파일과
+	// iris-client-go 공개 상수이며 호출자가 넘긴다. 보존·지평 항목을 하나라도 지정하면 필수다.
+	IrisAdmissionRetention time.Duration
+	// Lease는 claim 소유권의 유효 기간이다. Claim·ClaimBatch·RenewInbox·BeginAttempt가 쓴다.
 	Lease time.Duration
-	// MaxAttempts는 한 행의 재시도 상한이다. 이 값에 도달하면 Retire가 종단으로 보낸다.
+	// MaxAttempts는 한 reply 행의 재시도 상한이다. 이 값에 도달하면 Retire가 종단으로 보낸다.
+	// BeginAttempt·Redrive·Retire·ReplyReadySnapshot이 쓴다.
 	MaxAttempts int
-	// BackoffBase와 BackoffMax는 재시도 간격의 지수 백오프 범위다.
+	// BackoffBase와 BackoffMax는 BackoffFor의 지수 백오프 범위다. 둘을 함께 지정한다.
 	BackoffBase time.Duration
 	BackoffMax  time.Duration
 	// AutomaticReplayHorizon은 저장된 clientRequestId로 자동 재발송을 허용하는 상한이다.
-	// irisdurable.AutomaticReplayHorizon을 넘을 수 없다.
+	// IrisAdmissionRetention보다 짧아야 하며 BeginAttempt·Redrive·Retire·ReplyReadySnapshot이 쓴다.
 	AutomaticReplayHorizon time.Duration
-	// ReplyRetention은 reply outbox 행의 보존이다. Iris admission 보존보다 짧을 수 없다.
+	// ReplyRetention은 reply outbox 행의 보존이다. IrisAdmissionRetention보다 짧을 수 없고 Stage가 쓴다.
 	ReplyRetention time.Duration
-	// InboxTerminalRetention은 inbox 종단 행의 보존이다. 자동 replay 지평보다 짧을 수 없다.
+	// InboxTerminalRetention은 inbox 종단 행의 보존이다. IrisAdmissionRetention보다 길어야 하며
+	// PruneInbox·PruneInboxBefore가 쓴다. 같으면 보존 경계에서 지운 행의 재전송이 다시 실행된다.
 	InboxTerminalRetention time.Duration
 	// InboxManualReviewRetention은 inbox manual_review 행의 보존이다. 사람이 볼 payload를 남기는
 	// 갈래라 종단 보존과 따로 잡는다. 0이면 PruneInbox가 이 갈래를 지우지 않는다.
@@ -78,67 +78,57 @@ type Options struct {
 	DiscardInboxManualReviewPayload bool
 }
 
-func (o Options) withDefaults() Options {
-	if o.Lease <= 0 {
-		o.Lease = defaultLease
-	}
-
-	if o.MaxAttempts <= 0 {
-		o.MaxAttempts = defaultMaxAttempts
-	}
-
-	if o.BackoffBase <= 0 {
-		o.BackoffBase = defaultBackoffBase
-	}
-
-	if o.BackoffMax <= 0 {
-		o.BackoffMax = defaultBackoffMax
-	}
-
-	if o.AutomaticReplayHorizon <= 0 {
-		o.AutomaticReplayHorizon = irisdurable.AutomaticReplayHorizon
-	}
-
-	if o.ReplyRetention <= 0 {
-		o.ReplyRetention = irisdurable.ReplyOutboxMinRetention
-	}
-
-	// 재전송 창은 Iris가 정하므로 이 저장소의 지평이 아니라 스택 상수를 따른다.
-	if o.InboxTerminalRetention <= 0 {
-		o.InboxTerminalRetention = irisdurable.AutomaticReplayHorizon
-	}
-
-	return o
-}
-
-// validate는 스택 보존 계약을 어기는 구성을 기동 시점에 막는다.
+// validate는 지정한 정책 값이 스택 보존 계약을 어기는지 기동 시점에 검사한다.
 func (o Options) validate() error {
+	if o.IrisAdmissionRetention < 0 || o.Lease < 0 || o.MaxAttempts < 0 || o.BackoffBase < 0 || o.BackoffMax < 0 ||
+		o.AutomaticReplayHorizon < 0 || o.ReplyRetention < 0 || o.InboxTerminalRetention < 0 || o.InboxManualReviewRetention < 0 {
+		return errors.New("pgstore: options must not be negative")
+	}
+
+	if (o.BackoffBase > 0) != (o.BackoffMax > 0) {
+		return errors.New("pgstore: BackoffBase and BackoffMax must be set together")
+	}
+
 	if o.BackoffMax < o.BackoffBase {
 		return fmt.Errorf("pgstore: BackoffMax %s is shorter than BackoffBase %s", o.BackoffMax, o.BackoffBase)
 	}
 
-	if o.AutomaticReplayHorizon > irisdurable.AutomaticReplayHorizon {
-		return fmt.Errorf("pgstore: AutomaticReplayHorizon %s exceeds the stack horizon %s", o.AutomaticReplayHorizon, irisdurable.AutomaticReplayHorizon)
-	}
-
-	if o.ReplyRetention < irisdurable.ReplyOutboxMinRetention {
-		return fmt.Errorf("pgstore: ReplyRetention %s is shorter than the Iris admission retention %s", o.ReplyRetention, irisdurable.ReplyOutboxMinRetention)
-	}
-
-	if o.AutomaticReplayHorizon+irisdurable.ReplayHorizonMargin > o.ReplyRetention {
-		return fmt.Errorf("pgstore: AutomaticReplayHorizon %s leaves less than %s before ReplyRetention %s", o.AutomaticReplayHorizon, irisdurable.ReplayHorizonMargin, o.ReplyRetention)
-	}
-
-	// 인스턴스 지평을 낮춰도 Iris 재전송 창은 그대로이므로 스택 상수와 비교한다. 호출자 값과
-	// 비교하면 지평을 낮춘 구성이 New를 통과하고도 contracttest의 Retention 절에서 떨어진다.
-	if o.InboxTerminalRetention < irisdurable.AutomaticReplayHorizon {
-		return fmt.Errorf("pgstore: InboxTerminalRetention %s is shorter than the stack replay horizon %s; a redelivered webhook would re-execute instead of dedup", o.InboxTerminalRetention, irisdurable.AutomaticReplayHorizon)
+	if err := o.validateRetention(); err != nil {
+		return err
 	}
 
 	// manual_review는 사람이 처리할 때까지 남기는 갈래이므로 종단 보존보다 짧으면 안 된다. 짧으면
 	// 아직 검토하지 않은 행이 이미 검토가 끝난 completed 행보다 먼저 사라진다.
 	if o.InboxManualReviewRetention > 0 && o.InboxManualReviewRetention < o.InboxTerminalRetention {
 		return fmt.Errorf("pgstore: InboxManualReviewRetention %s is shorter than InboxTerminalRetention %s", o.InboxManualReviewRetention, o.InboxTerminalRetention)
+	}
+
+	return nil
+}
+
+func (o Options) validateRetention() error {
+	admission := o.IrisAdmissionRetention
+	if admission == 0 {
+		if o.AutomaticReplayHorizon > 0 || o.ReplyRetention > 0 || o.InboxTerminalRetention > 0 || o.InboxManualReviewRetention > 0 {
+			return errors.New("pgstore: IrisAdmissionRetention is required with retention or replay horizon options")
+		}
+
+		return nil
+	}
+
+	// 지평 끝에서 재발송한 요청도 Iris가 같은 clientRequestId를 아직 기억해야 중복 발화가 없다.
+	if o.AutomaticReplayHorizon >= admission {
+		return fmt.Errorf("pgstore: AutomaticReplayHorizon %s must be shorter than the Iris admission retention %s", o.AutomaticReplayHorizon, admission)
+	}
+
+	if o.ReplyRetention > 0 && o.ReplyRetention < admission {
+		return fmt.Errorf("pgstore: ReplyRetention %s is shorter than the Iris admission retention %s", o.ReplyRetention, admission)
+	}
+
+	// 종단 inbox 행은 Iris가 같은 메시지를 다시 보낼 수 있는 동안 dedup 근거로 남아야 한다.
+	// 스택 계약은 봇 종단 보존이 Iris admission 보존보다 클 것을 요구한다.
+	if o.InboxTerminalRetention > 0 && o.InboxTerminalRetention <= admission {
+		return fmt.Errorf("pgstore: InboxTerminalRetention %s must exceed the Iris admission retention %s; a redelivered webhook would re-execute instead of dedup", o.InboxTerminalRetention, admission)
 	}
 
 	return nil
@@ -156,21 +146,20 @@ var (
 	_ irisdurable.ReplyOutbox = (*Store)(nil)
 )
 
-// New는 Querier와 정책으로 Store를 만든다. 정책이 스택 보존 계약을 어기면 오류를 반환한다.
+// New는 Querier와 정책으로 Store를 만든다. 지정한 정책이 스택 보존 계약을 어기면 오류를 반환한다.
 func New(db Querier, opts Options) (*Store, error) {
 	if db == nil {
 		return nil, errors.New("pgstore: querier is required")
 	}
 
-	resolved := opts.withDefaults()
-	if err := resolved.validate(); err != nil {
+	if err := opts.validate(); err != nil {
 		return nil, err
 	}
 
-	return &Store{db: db, opts: resolved}, nil
+	return &Store{db: db, opts: opts}, nil
 }
 
-// Options는 기본값이 채워진 실제 정책이다.
+// Options는 New에 넘긴 정책이다.
 func (s *Store) Options() Options {
 	return s.opts
 }
@@ -203,8 +192,23 @@ func (s *Store) inTransaction(ctx context.Context, action string, run func(Queri
 	}
 }
 
-// backoffSeconds는 attempt번째 재시도의 대기 시간을 초 단위로 돌려준다.
-func (s *Store) backoffSeconds(attempt int) float64 {
+// requirePolicy는 연산이 쓰는 정책 값이 지정됐는지 확인한다. 기본값으로 채우지 않으므로 빠진 값은
+// 호출 시점 오류로 드러난다.
+func (s *Store) requirePolicy(action string, lease, attempts, horizon bool) error {
+	switch {
+	case lease && s.opts.Lease <= 0:
+		return fmt.Errorf("pgstore: %s requires Options.Lease", action)
+	case attempts && s.opts.MaxAttempts <= 0:
+		return fmt.Errorf("pgstore: %s requires Options.MaxAttempts", action)
+	case horizon && s.opts.AutomaticReplayHorizon <= 0:
+		return fmt.Errorf("pgstore: %s requires Options.AutomaticReplayHorizon", action)
+	default:
+		return nil
+	}
+}
+
+// backoff는 attempt번째 재시도의 대기 시간이다.
+func (s *Store) backoff(attempt int) time.Duration {
 	shift := min(max(attempt-1, 0), irisdurable.RetryBackoffMaxShift)
 
 	delay := s.opts.BackoffBase << uint(shift)
@@ -212,5 +216,5 @@ func (s *Store) backoffSeconds(attempt int) float64 {
 		delay = s.opts.BackoffMax
 	}
 
-	return delay.Seconds()
+	return delay
 }

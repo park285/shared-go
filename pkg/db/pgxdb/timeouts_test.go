@@ -142,7 +142,7 @@ func newHalfOpenHealthPool(t *testing.T) (chan struct{}, *pgxpool.Pool, *blackho
 
 	dsn := requireContainer(t)
 	cfg := mustParse(t, dsn)
-	require.NoError(t, overlayPoolConfig(cfg, PoolConfig{MaxConns: 1, PingTimeout: 100 * time.Millisecond}))
+	require.NoError(t, overlayPoolConfig(cfg, PoolConfig{MaxConns: 1, AcquirePingTimeout: 100 * time.Millisecond}))
 
 	cfg.ShouldPing = func(context.Context, pgxpool.ShouldPingParams) bool { return true }
 	require.NoError(t, installAcquirePolicy(cfg, &AcquirePolicy{Timeout: time.Second}))

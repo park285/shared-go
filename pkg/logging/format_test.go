@@ -303,7 +303,7 @@ func TestFormatHandlers_MaskSensitiveKeysRegardlessOfValueKind(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var buf bytes.Buffer
 
-			slog.New(newFormatHandler(slog.LevelInfo, &buf)).Info("probe", tc.attr)
+			slog.New(newFormatHandler(slog.LevelInfo, &buf, testPrivacy)).Info("probe", tc.attr)
 
 			out := buf.String()
 			if strings.Contains(out, tc.leak) {
@@ -403,7 +403,7 @@ func TestNewLogger_LevelPinned(t *testing.T) {
 func TestJSONFormat_ShortensSourcePath(t *testing.T) {
 	var buf bytes.Buffer
 
-	slog.New(newFormatHandler(slog.LevelInfo, &buf)).Info("format_probe_source")
+	slog.New(newFormatHandler(slog.LevelInfo, &buf, nil)).Info("format_probe_source")
 
 	record := probeJSONRecord(t, "json/source", buf.String())
 	source, ok := record[slog.SourceKey].(string)
@@ -433,7 +433,7 @@ func TestJSONFormat_ShortensSourcePath(t *testing.T) {
 func TestJSONFormat_OmitsSourceForZeroPC(t *testing.T) {
 	var buf bytes.Buffer
 
-	handler := newFormatHandler(slog.LevelInfo, &buf)
+	handler := newFormatHandler(slog.LevelInfo, &buf, nil)
 
 	if err := handler.Handle(t.Context(), slog.NewRecord(time.Now(), slog.LevelInfo, "format_probe_zero_pc", 0)); err != nil {
 		t.Fatalf("handle zero-PC record: %v", err)

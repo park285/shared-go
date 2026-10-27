@@ -17,7 +17,7 @@ func policyTestPool(t *testing.T, maxConns int, policy *AcquirePolicy) *pgxpool.
 	t.Helper()
 
 	pool, err := OpenPoolDSN(t.Context(), requireContainer(t), Options{
-		Logger: quietLogger(), Pool: PoolConfig{MaxConns: maxConns}, AcquirePolicy: policy,
+		Logger: quietLogger(), Pool: PoolConfig{MaxConns: maxConns}, Ping: testPing(), AcquirePolicy: policy,
 	})
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)

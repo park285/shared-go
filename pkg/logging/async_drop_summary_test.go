@@ -90,7 +90,7 @@ func TestAsyncDropWriter_CloseSummaryKeepsJSONFormat(t *testing.T) {
 
 	w := newAsyncDropWriter(target, 1)
 
-	logger := slog.New(newFormatHandler(slog.LevelInfo, w))
+	logger := slog.New(newFormatHandler(slog.LevelInfo, w, nil))
 	logger.Info("first")
 	<-target.started
 

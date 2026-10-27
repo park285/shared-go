@@ -25,6 +25,10 @@ func (s *Store) Redrive(ctx context.Context, limit int) ([]RedriveCandidate, err
 		return nil, errors.New("pgstore: redrive limit must be positive")
 	}
 
+	if err := s.requirePolicy("redrive replies", false, true, true); err != nil {
+		return nil, err
+	}
+
 	rows, err := s.db.Query(ctx, queryListRedrivableReplies, s.opts.Scope, s.opts.MaxAttempts, s.opts.AutomaticReplayHorizon.Seconds(), limit)
 	if err != nil {
 		return nil, fmt.Errorf("pgstore: list redrivable replies: %w", err)
@@ -80,6 +84,10 @@ func (s *Store) Retire(ctx context.Context, limit int) ([]RetiredReply, error) {
 
 	if limit <= 0 {
 		return nil, errors.New("pgstore: retire limit must be positive")
+	}
+
+	if err := s.requirePolicy("retire replies", false, true, true); err != nil {
+		return nil, err
 	}
 
 	rows, err := s.db.Query(ctx, queryRetireExhaustedReplies, s.opts.Scope, s.opts.MaxAttempts, s.opts.AutomaticReplayHorizon.Seconds(), limit)
@@ -155,6 +163,10 @@ func (s *Store) CountRepliesByStatus(ctx context.Context) (map[irisdurable.Reply
 // ReplyReadySnapshot은 배치 제한 없이 Redrive 적격 상태를 측정한다.
 // 경과 시간은 과거 선행 행 해제가 아닌 예약·임대 만료 시각을 기준으로 한다.
 func (s *Store) ReplyReadySnapshot(ctx context.Context) (ReadySnapshot, error) {
+	if err := s.requirePolicy("reply ready snapshot", false, true, true); err != nil {
+		return ReadySnapshot{}, err
+	}
+
 	return s.readySnapshot(ctx, "reply ready snapshot", queryReplyReadySnapshot,
 		s.opts.Scope, s.opts.MaxAttempts, s.opts.AutomaticReplayHorizon.Seconds(),
 	)

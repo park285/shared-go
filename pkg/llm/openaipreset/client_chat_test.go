@@ -28,7 +28,7 @@ func TestGenerateJSONAsChatCompletions(t *testing.T) {
 
 	defer server.Close()
 
-	client, err := openaipreset.New(server.URL, "test-key", "gpt-test", openaipreset.WithChatCompletions())
+	client, err := openaipreset.New(server.URL, "test-key", "gpt-test", openaipreset.WithMaxRetries(0), openaipreset.WithChatCompletions())
 	if err != nil {
 		t.Fatalf("New error = %v", err)
 	}
@@ -56,7 +56,7 @@ func TestGenerateJSONAsResponsesErrorDoesNotUseChat(t *testing.T) {
 
 	defer server.Close()
 
-	client, err := openaipreset.New(server.URL, "test-key", "gpt-test")
+	client, err := openaipreset.New(server.URL, "test-key", "gpt-test", openaipreset.WithMaxRetries(0))
 	if err != nil {
 		t.Fatalf("New error = %v", err)
 	}
@@ -88,7 +88,7 @@ func TestGenerateJSONAsGrokResponses(t *testing.T) {
 
 	defer server.Close()
 
-	client, err := openaipreset.New(server.URL, "test-key", " grok-4.5 ")
+	client, err := openaipreset.New(server.URL, "test-key", " grok-4.5 ", openaipreset.WithMaxRetries(0))
 	if err != nil {
 		t.Fatalf("New error = %v", err)
 	}
@@ -129,7 +129,7 @@ func TestGenerateJSONAsDecodeErrorOmitsProviderOutput(t *testing.T) {
 
 	defer server.Close()
 
-	client, err := openaipreset.New(server.URL, "test-key", "gpt-test")
+	client, err := openaipreset.New(server.URL, "test-key", "gpt-test", openaipreset.WithMaxRetries(0))
 	if err != nil {
 		t.Fatalf("New error = %v", err)
 	}
@@ -145,13 +145,13 @@ func TestGenerateJSONAsDecodeErrorOmitsProviderOutput(t *testing.T) {
 }
 
 func TestNewRejectsEmptyModel(t *testing.T) {
-	if _, err := openaipreset.New("https://example.invalid", "test-key", "   "); err == nil {
+	if _, err := openaipreset.New("https://example.invalid", "test-key", "   ", openaipreset.WithMaxRetries(0)); err == nil {
 		t.Fatal("New empty model error = nil, want error")
 	}
 }
 
 func TestNewRejectsEmptyAPIKey(t *testing.T) {
-	if _, err := openaipreset.New("https://example.invalid", "  ", "gpt-test"); err == nil {
+	if _, err := openaipreset.New("https://example.invalid", "  ", "gpt-test", openaipreset.WithMaxRetries(0)); err == nil {
 		t.Fatal("New empty api key error = nil, want error")
 	}
 }
@@ -165,7 +165,7 @@ func TestWithHTTPClientInjected(t *testing.T) {
 	used := false
 	injected := &http.Client{Transport: &flagTransport{used: &used, base: http.DefaultTransport}}
 
-	client, err := openaipreset.New(server.URL, "test-key", "gpt-test",
+	client, err := openaipreset.New(server.URL, "test-key", "gpt-test", openaipreset.WithMaxRetries(0),
 		openaipreset.WithHTTPClient(injected),
 	)
 	if err != nil {

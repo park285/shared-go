@@ -12,29 +12,13 @@ import (
 	"github.com/park285/shared-go/v2/pkg/llm/openaipreset"
 )
 
-func TestResolveOpenAIMaxRetries(t *testing.T) {
+func TestNewRequiresExplicitMaxRetries(t *testing.T) {
 	t.Parallel()
 
-	zero, negative, explicit := 0, -3, 5
-	tests := []struct {
-		name       string
-		configured *int
-		want       int
-	}{
-		{name: "unset pins sdk default", configured: nil, want: 2},
-		{name: "zero disables retries", configured: &zero, want: 0},
-		{name: "negative clamps instead of panicking", configured: &negative, want: 0},
-		{name: "explicit value honored", configured: &explicit, want: 5},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			if got := sharedllm.ResolveOpenAIMaxRetries(tt.configured); got != tt.want {
-				t.Fatalf("ResolveOpenAIMaxRetries() = %d, want %d", got, tt.want)
-			}
-		})
+	for _, opts := range [][]openaipreset.Option{nil, {openaipreset.WithMaxRetries(-1)}} {
+		if _, err := openaipreset.New("https://example.invalid", "test-key", "gpt-test", opts...); err == nil {
+			t.Fatalf("New(%d options) error = nil, want explicit max retries error", len(opts))
+		}
 	}
 }
 
@@ -46,7 +30,6 @@ func TestClientRetryAttemptsAreOwnedByOption(t *testing.T) {
 		opts         []openaipreset.Option
 		wantRequests int64
 	}{
-		{name: "default preserves sdk behavior", wantRequests: 1 + int64(sharedllm.ResolveOpenAIMaxRetries(nil))},
 		{name: "zero leaves retry to the consumer", opts: []openaipreset.Option{openaipreset.WithMaxRetries(0)}, wantRequests: 1},
 		{name: "explicit budget is honored", opts: []openaipreset.Option{openaipreset.WithMaxRetries(1)}, wantRequests: 2},
 	}
@@ -93,7 +76,7 @@ func TestGenerateJSONAsDecodeErrorPreservesCauseClass(t *testing.T) {
 
 	defer server.Close()
 
-	client, err := openaipreset.New(server.URL, "test-key", "gpt-test")
+	client, err := openaipreset.New(server.URL, "test-key", "gpt-test", openaipreset.WithMaxRetries(0))
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}

@@ -24,7 +24,7 @@ func retireAndCommit(t *testing.T, pool *pgxpool.Pool, opts pgstore.Options) (re
 	}
 	defer pgxdb.RollbackDeferred(t.Context(), tx, &resultErr)
 
-	store, err := pgstore.New(tx, opts)
+	store, err := pgstore.New(tx, testPolicy(opts))
 	if err != nil {
 		return nil, fmt.Errorf("create transaction store: %w", err)
 	}

@@ -152,7 +152,7 @@ func strictParseCause(err error) error {
 }
 
 func List(key string) ([]string, error) {
-	raw, err := StringOrSecretFile(key, "")
+	raw, err := StringOrSecretFile(key)
 	if err != nil {
 		return nil, fmt.Errorf("envutil: read list env %s: %w", key, err)
 	}
@@ -185,7 +185,7 @@ func List(key string) ([]string, error) {
 }
 
 func Map(key string) (map[string]string, error) {
-	raw, err := StringOrSecretFile(key, "")
+	raw, err := StringOrSecretFile(key)
 	if err != nil {
 		return nil, fmt.Errorf("envutil: read map env %s: %w", key, err)
 	}

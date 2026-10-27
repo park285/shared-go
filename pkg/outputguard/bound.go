@@ -17,7 +17,7 @@ func (g *Guard) Bind(protectedTexts []string) (*BoundGuard, error) {
 
 	index, err := newProtectedIndex(protected)
 	if err != nil {
-		return nil, fmt.Errorf("protected index: %w", err)
+		return nil, fmt.Errorf("outputguard: protected index: %w", err)
 	}
 
 	return &BoundGuard{index: index}, nil

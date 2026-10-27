@@ -23,18 +23,18 @@ func TestPoolOptionsRejectInvalidValuesBeforeConnect(t *testing.T) {
 		name string
 		opts Options
 	}{
-		{"negative minimum", Options{Pool: PoolConfig{MaxConns: 1, MinConns: -1}}},
-		{"negative maximum", Options{Pool: PoolConfig{MaxConns: -1}}},
-		{"negative lifetime", Options{Pool: PoolConfig{MaxConns: 1, ConnMaxLifetime: -1}}},
-		{"negative jitter", Options{Pool: PoolConfig{MaxConns: 1, ConnMaxLifetimeJitter: -1}}},
-		{"negative idle", Options{Pool: PoolConfig{MaxConns: 1, ConnMaxIdleTime: -1}}},
-		{"negative health period", Options{Pool: PoolConfig{MaxConns: 1, HealthCheckPeriod: -1}}},
-		{"negative acquire ping", Options{Pool: PoolConfig{MaxConns: 1, PingTimeout: -1}}},
+		{"negative minimum", Options{Ping: testPing(), Pool: PoolConfig{MaxConns: 1, MinConns: -1}}},
+		{"negative maximum", Options{Ping: testPing(), Pool: PoolConfig{MaxConns: -1}}},
+		{"negative lifetime", Options{Ping: testPing(), Pool: PoolConfig{MaxConns: 1, ConnMaxLifetime: -1}}},
+		{"negative jitter", Options{Ping: testPing(), Pool: PoolConfig{MaxConns: 1, ConnMaxLifetimeJitter: -1}}},
+		{"negative idle", Options{Ping: testPing(), Pool: PoolConfig{MaxConns: 1, ConnMaxIdleTime: -1}}},
+		{"negative health period", Options{Ping: testPing(), Pool: PoolConfig{MaxConns: 1, HealthCheckPeriod: -1}}},
+		{"negative acquire ping", Options{Ping: testPing(), Pool: PoolConfig{MaxConns: 1, AcquirePingTimeout: -1}}},
 		{"negative startup ping", Options{Pool: PoolConfig{MaxConns: 1}, Ping: PingConfig{PingTimeout: -1}}},
-		{"negative cancel delay", Options{Pool: PoolConfig{MaxConns: 1}, CancelRequest: &CancelRequestConfig{CancelRequestDelay: -1, DeadlineDelay: time.Second}}},
-		{"zero cancel deadline", Options{Pool: PoolConfig{MaxConns: 1}, CancelRequest: &CancelRequestConfig{}}},
-		{"equal cancel delays", Options{Pool: PoolConfig{MaxConns: 1}, CancelRequest: &CancelRequestConfig{CancelRequestDelay: time.Second, DeadlineDelay: time.Second}}},
-		{"inverted cancel delays", Options{Pool: PoolConfig{MaxConns: 1}, CancelRequest: &CancelRequestConfig{CancelRequestDelay: time.Second, DeadlineDelay: time.Millisecond}}},
+		{"negative cancel delay", Options{Ping: testPing(), Pool: PoolConfig{MaxConns: 1}, CancelRequest: &CancelRequestConfig{CancelRequestDelay: -1, DeadlineDelay: time.Second}}},
+		{"zero cancel deadline", Options{Ping: testPing(), Pool: PoolConfig{MaxConns: 1}, CancelRequest: &CancelRequestConfig{}}},
+		{"equal cancel delays", Options{Ping: testPing(), Pool: PoolConfig{MaxConns: 1}, CancelRequest: &CancelRequestConfig{CancelRequestDelay: time.Second, DeadlineDelay: time.Second}}},
+		{"inverted cancel delays", Options{Ping: testPing(), Pool: PoolConfig{MaxConns: 1}, CancelRequest: &CancelRequestConfig{CancelRequestDelay: time.Second, DeadlineDelay: time.Millisecond}}},
 	}
 
 	for _, tc := range cases {
@@ -47,10 +47,10 @@ func TestPoolOptionsRejectInvalidValuesBeforeConnect(t *testing.T) {
 		})
 	}
 
-	_, err := OpenPool(t.Context(), cfg, Options{})
+	_, err := OpenPool(t.Context(), cfg, Options{Ping: testPing()})
 	requireConfigurationFailure(t, err)
 
-	parsed, err := buildConfigPool(&cfg, Options{Pool: PoolConfig{MaxConns: 2}})
+	parsed, err := buildConfigPool(&cfg, Options{Pool: PoolConfig{MaxConns: 2, ConnMaxLifetime: time.Hour, ConnMaxIdleTime: 30 * time.Minute}, Ping: testPing()})
 	require.NoError(t, err)
 	require.Zero(t, parsed.MinConns)
 	require.EqualValues(t, 2, parsed.MaxConns)
@@ -63,7 +63,7 @@ func TestPoolDSNRejectsExplicitInvalidValuesBeforeOverlay(t *testing.T) {
 		"pool_health_check_period=0s", "pool_health_check_period=-1s", "pool_ping_timeout=-1s",
 	} {
 		t.Run(param, func(t *testing.T) {
-			_, err := OpenPoolDSN(t.Context(), "postgres://test@127.0.0.1:1/test?sslmode=disable&"+param, Options{Pool: defaultPoolConfig()})
+			_, err := OpenPoolDSN(t.Context(), "postgres://test@127.0.0.1:1/test?sslmode=disable&"+param, Options{Pool: testPoolConfig(), Ping: testPing()})
 			requireConfigurationFailure(t, err)
 		})
 	}
@@ -109,10 +109,9 @@ func TestAcquirePingAndStartupPingRemainIndependent(t *testing.T) {
 	require.NoError(t, overlayPoolConfig(cfg, PoolConfig{}))
 	require.Equal(t, 2*time.Second, cfg.PingTimeout)
 
-	opts := Options{Pool: PoolConfig{MaxConns: 2, PingTimeout: 250 * time.Millisecond}, Ping: PingConfig{PingTimeout: 3 * time.Second}}
+	opts := Options{Pool: PoolConfig{MaxConns: 2, AcquirePingTimeout: 250 * time.Millisecond, ConnMaxLifetime: time.Hour, ConnMaxIdleTime: 30 * time.Minute}, Ping: PingConfig{PingTimeout: 3 * time.Second}}
 	require.NoError(t, overlayPoolConfig(cfg, opts.Pool))
 	require.Equal(t, 250*time.Millisecond, cfg.PingTimeout)
-	require.Equal(t, 3*time.Second, opts.pingTimeout())
 
 	structured := Config{Host: "127.0.0.1", Port: 1, SSLMode: testDisable}
 	built, err := buildConfigPool(&structured, opts)

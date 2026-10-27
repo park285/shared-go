@@ -44,14 +44,6 @@ func (o Options) withDefaults() Options {
 	return o
 }
 
-func (o Options) pingTimeout() time.Duration {
-	if o.Ping.PingTimeout > 0 {
-		return o.Ping.PingTimeout
-	}
-
-	return 5 * time.Second
-}
-
 func OpenPool(ctx context.Context, cfg Config, opts Options) (*pgxpool.Pool, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -140,7 +132,7 @@ func buildConfigPool(cfg *Config, opts Options) (*pgxpool.Config, error) {
 	}
 
 	poolCfg.ConnConfig.Password = cfg.Password
-	if err := applyPoolConfig(poolCfg, withPoolDefaults(opts.Pool)); err != nil {
+	if err := applyPoolConfig(poolCfg, opts.Pool); err != nil {
 		return nil, fmt.Errorf("apply pool config: %w", err)
 	}
 
@@ -154,14 +146,14 @@ func buildConfigPool(cfg *Config, opts Options) (*pgxpool.Config, error) {
 }
 
 func newPoolAndPing(ctx context.Context, poolCfg *pgxpool.Config, opts Options) (*pgxpool.Pool, error) {
-	boundInitialConnectTimeout(poolCfg, opts.pingTimeout())
+	boundInitialConnectTimeout(poolCfg, opts.Ping.PingTimeout)
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
 		return nil, fmt.Errorf("pgxdb: create pool: %w", err)
 	}
 
-	pingCtx, cancel := context.WithTimeout(ctx, opts.pingTimeout())
+	pingCtx, cancel := context.WithTimeout(ctx, opts.Ping.PingTimeout)
 	defer cancel()
 
 	if err := pool.Ping(pingCtx); err != nil {
@@ -209,6 +201,11 @@ func applyPoolConfig(poolCfg *pgxpool.Config, pool PoolConfig) error {
 		return errors.New("pgxdb: structured pool requires positive max conns")
 	}
 
+	// 구조화 경로에는 DSN 값이 없으므로 수명을 호출자가 정한다. 지터 0은 지터 없음이다.
+	if pool.ConnMaxLifetime <= 0 || pool.ConnMaxIdleTime <= 0 {
+		return errors.New("pgxdb: structured pool requires positive conn max lifetime and idle time")
+	}
+
 	minConns, maxConns, err := connCountsInt32(pool)
 	if err != nil {
 		return fmt.Errorf("validate conn counts: %w", err)
@@ -230,8 +227,8 @@ func applyHealthCheckPeriod(poolCfg *pgxpool.Config, pool PoolConfig) {
 		poolCfg.HealthCheckPeriod = pool.HealthCheckPeriod
 	}
 
-	if pool.PingTimeout > 0 {
-		poolCfg.PingTimeout = pool.PingTimeout
+	if pool.AcquirePingTimeout > 0 {
+		poolCfg.PingTimeout = pool.AcquirePingTimeout
 	}
 }
 
@@ -304,24 +301,6 @@ func connCountsInt32(pool PoolConfig) (int32, int32, error) {
 	return int32(minConns), int32(maxConns), nil
 }
 
-func withPoolDefaults(pool PoolConfig) PoolConfig {
-	def := defaultPoolConfig()
-
-	if pool.ConnMaxLifetime == 0 {
-		pool.ConnMaxLifetime = def.ConnMaxLifetime
-	}
-
-	if pool.ConnMaxLifetimeJitter == 0 {
-		pool.ConnMaxLifetimeJitter = pool.ConnMaxLifetime / 5
-	}
-
-	if pool.ConnMaxIdleTime == 0 {
-		pool.ConnMaxIdleTime = def.ConnMaxIdleTime
-	}
-
-	return pool
-}
-
 func (o Options) validate() error {
 	if err := validateConnCounts(o.Pool); err != nil {
 		return err
@@ -331,8 +310,8 @@ func (o Options) validate() error {
 		return err
 	}
 
-	if o.Ping.PingTimeout < 0 {
-		return errors.New("pgxdb: startup ping timeout must not be negative")
+	if o.Ping.PingTimeout <= 0 {
+		return errors.New("pgxdb: startup ping timeout must be positive")
 	}
 
 	if c := o.CancelRequest; c != nil && (c.CancelRequestDelay < 0 || c.DeadlineDelay <= 0 || c.DeadlineDelay <= c.CancelRequestDelay) {
@@ -347,7 +326,7 @@ func (o Options) validate() error {
 }
 
 func validatePoolDurations(pool PoolConfig) error {
-	if pool.ConnMaxLifetime < 0 || pool.ConnMaxLifetimeJitter < 0 || pool.ConnMaxIdleTime < 0 || pool.HealthCheckPeriod < 0 || pool.PingTimeout < 0 {
+	if pool.ConnMaxLifetime < 0 || pool.ConnMaxLifetimeJitter < 0 || pool.ConnMaxIdleTime < 0 || pool.HealthCheckPeriod < 0 || pool.AcquirePingTimeout < 0 {
 		return errors.New("pgxdb: pool durations must not be negative")
 	}
 
@@ -367,7 +346,7 @@ func validateParsedPoolConfig(cfg *pgxpool.Config) error {
 		ConnMaxLifetime:       cfg.MaxConnLifetime,
 		ConnMaxLifetimeJitter: cfg.MaxConnLifetimeJitter,
 		ConnMaxIdleTime:       cfg.MaxConnIdleTime,
-		PingTimeout:           cfg.PingTimeout,
+		AcquirePingTimeout:    cfg.PingTimeout,
 	})
 }
 

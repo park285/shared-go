@@ -82,7 +82,7 @@ func TestSG04DefaultAPIBlocksLoopback_02aae1e0(t *testing.T) {
 		t.Fatalf("fetchURL(loopback, default options) error = %v, want errPrivateNetwork (secure-by-default)", err)
 	}
 
-	if err := CheckURL(server.URL); !errors.Is(err, errPrivateNetwork) {
+	if err := CheckURL(t.Context(), server.URL); !errors.Is(err, errPrivateNetwork) {
 		t.Fatalf("CheckURL(loopback) error = %v, want errPrivateNetwork (secure-by-default)", err)
 	}
 
@@ -99,7 +99,7 @@ func TestSG04InternalAPIAllowsLoopback_02aae1e0(t *testing.T) {
 	}))
 	defer server.Close()
 
-	body, err := fetchURL(t.Context(), server.URL, nil, internalFetchOptions())
+	body, err := fetchURL(t.Context(), server.URL, nil, internalFetchOptions(tlsOverrides{}))
 	if err != nil {
 		t.Fatalf("fetchURL(loopback, internal options) error = %v, want nil", err)
 	}
@@ -108,11 +108,11 @@ func TestSG04InternalAPIAllowsLoopback_02aae1e0(t *testing.T) {
 		t.Fatalf("fetchURL body = %q, want ok", body)
 	}
 
-	if _, err := fetchURL(t.Context(), server.URL, nil, internalFetchOptions()); err != nil {
+	if _, err := fetchURL(t.Context(), server.URL, nil, internalFetchOptions(tlsOverrides{})); err != nil {
 		t.Fatalf("fetchURL(loopback, internal options) error = %v, want nil", err)
 	}
 
-	if _, err := fetchURL(t.Context(), server.URL, map[string]string{"X-K": "v"}, internalFetchOptions()); err != nil {
+	if _, err := fetchURL(t.Context(), server.URL, map[string]string{"X-K": "v"}, internalFetchOptions(tlsOverrides{})); err != nil {
 		t.Fatalf("fetchURL(loopback, headers, internal options) error = %v, want nil", err)
 	}
 }
@@ -259,7 +259,7 @@ func TestSG04HealthprobeDoesNotForwardHeadersOnCrossHostRedirect_cfe49bff(t *tes
 		"Authorization": "Bearer super-secret-token",
 		"X-API-Key":     testProbeSecret,
 	}
-	if _, err := fetchURL(t.Context(), redirector.URL, headers, internalFetchOptions()); err != nil {
+	if _, err := fetchURL(t.Context(), redirector.URL, headers, internalFetchOptions(tlsOverrides{})); err != nil {
 		t.Fatalf("fetchURL(redirect) error = %v, want nil", err)
 	}
 
@@ -292,7 +292,7 @@ func TestSG04HealthprobeKeepsHeadersOnSameHostRedirect_cfe49bff(t *testing.T) {
 	defer server.Close()
 
 	headers := map[string]string{"X-API-Key": testProbeSecret}
-	if _, err := fetchURL(t.Context(), server.URL+"/start", headers, internalFetchOptions()); err != nil {
+	if _, err := fetchURL(t.Context(), server.URL+"/start", headers, internalFetchOptions(tlsOverrides{})); err != nil {
 		t.Fatalf("fetchURL(same-host redirect) error = %v, want nil", err)
 	}
 

@@ -12,10 +12,10 @@ import (
 )
 
 // ErrJobTimeout은 dequeue 이후 job budget이 소진된 원인이다.
-var ErrJobTimeout = errors.New("managed worker job timeout")
+var ErrJobTimeout = errors.New("workerpool: managed worker job timeout")
 
 // ErrPoolShutdown은 pool shutdown으로 in-flight job이 취소된 원인이다.
-var ErrPoolShutdown = errors.New("managed worker pool shutdown")
+var ErrPoolShutdown = errors.New("workerpool: managed worker pool shutdown")
 
 // JobOutcome은 managed job이 종료된 이유를 나타낸다.
 type JobOutcome string
@@ -166,23 +166,23 @@ type ManagedPool struct {
 // NewManagedPool은 explicit config를 검증한 뒤 ManagedPool을 시작한다.
 func NewManagedPool(config ManagedConfig) (*ManagedPool, error) {
 	if config.Workers < 1 || config.Workers > 4096 {
-		return nil, errors.New("managed worker pool: workers must be in 1..4096")
+		return nil, errors.New("workerpool: managed worker pool: workers must be in 1..4096")
 	}
 
 	if config.QueueSize < 1 || config.QueueSize > 1_048_576 {
-		return nil, errors.New("managed worker pool: queue size must be in 1..1048576")
+		return nil, errors.New("workerpool: managed worker pool: queue size must be in 1..1048576")
 	}
 
 	if config.FinalizeTimeout <= 0 {
-		return nil, errors.New("managed worker pool: finalize timeout must be positive")
+		return nil, errors.New("workerpool: managed worker pool: finalize timeout must be positive")
 	}
 
 	if config.FinalizeConcurrency < 1 || config.FinalizeConcurrency > 4096 {
-		return nil, errors.New("managed worker pool: finalize concurrency must be in 1..4096")
+		return nil, errors.New("workerpool: managed worker pool: finalize concurrency must be in 1..4096")
 	}
 
 	if config.FinalizeQueueSize < config.FinalizeConcurrency || config.FinalizeQueueSize > 1_048_576 {
-		return nil, errors.New("managed worker pool: finalize queue size must be in finalize concurrency..1048576")
+		return nil, errors.New("workerpool: managed worker pool: finalize queue size must be in finalize concurrency..1048576")
 	}
 
 	if config.Logger == nil {

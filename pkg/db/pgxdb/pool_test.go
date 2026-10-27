@@ -20,21 +20,16 @@ func mustParse(t *testing.T, dsn string) *pgxpool.Config {
 	return cfg
 }
 
-func TestOptionsPingTimeout(t *testing.T) {
-	tests := []struct {
-		name string
-		opts Options
-		want time.Duration
-	}{
-		{"zero value", Options{}, 5 * time.Second},
-		{"explicit", Options{Ping: PingConfig{PingTimeout: 250 * time.Millisecond}}, 250 * time.Millisecond},
+func TestOptionsRequireStartupPingTimeout(t *testing.T) {
+	for _, timeout := range []time.Duration{0, -time.Second} {
+		opts := Options{Pool: testPoolConfig(), Ping: PingConfig{PingTimeout: timeout}}
+		if err := opts.validate(); err == nil || !strings.Contains(err.Error(), "startup ping timeout must be positive") {
+			t.Fatalf("validate(PingTimeout=%v) error = %v, want positive requirement", timeout, err)
+		}
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.opts.pingTimeout(); got != tt.want {
-				t.Errorf("pingTimeout() = %v, want %v", got, tt.want)
-			}
-		})
+
+	if err := (Options{Pool: testPoolConfig(), Ping: testPing()}).validate(); err != nil {
+		t.Fatalf("validate(explicit) error = %v", err)
 	}
 }
 
@@ -146,7 +141,7 @@ func TestBuildConfigPool_AppliesQueryExecModeThroughDSNOnly(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := Config{Host: "127.0.0.1", Port: 5432, User: "u", Name: "db", SSLMode: testDisable, QueryExecMode: tt.mode}
 
-			poolCfg, err := buildConfigPool(&cfg, Options{Pool: defaultPoolConfig()})
+			poolCfg, err := buildConfigPool(&cfg, Options{Pool: testPoolConfig(), Ping: testPing()})
 			if err != nil {
 				t.Fatalf("buildConfigPool error = %v", err)
 			}
@@ -164,7 +159,7 @@ func TestBuildConfigPool_AppliesQueryExecModeThroughDSNOnly(t *testing.T) {
 
 func TestBuildConfigPool_RejectsInvalidQueryExecMode(t *testing.T) {
 	cfg := Config{Host: "127.0.0.1", Port: 5432, User: "u", Name: "db", SSLMode: testDisable, QueryExecMode: "nope"}
-	if _, err := buildConfigPool(&cfg, Options{}.withDefaults()); err == nil {
+	if _, err := buildConfigPool(&cfg, Options{Pool: testPoolConfig(), Ping: testPing()}); err == nil {
 		t.Fatal("buildConfigPool with invalid query exec mode: expected error, got nil")
 	}
 }
@@ -172,7 +167,7 @@ func TestBuildConfigPool_RejectsInvalidQueryExecMode(t *testing.T) {
 func TestApplyPoolConfig_HealthCheckPeriod(t *testing.T) {
 	t.Run("explicit value applied", func(t *testing.T) {
 		pc := mustParse(t, "postgres://u@127.0.0.1:5432/db?sslmode=disable")
-		if err := applyPoolConfig(pc, withPoolDefaults(PoolConfig{MaxConns: 4, HealthCheckPeriod: 15 * time.Second})); err != nil {
+		if err := applyPoolConfig(pc, PoolConfig{MaxConns: 4, ConnMaxLifetime: time.Hour, ConnMaxIdleTime: 30 * time.Minute, HealthCheckPeriod: 15 * time.Second}); err != nil {
 			t.Fatalf("applyPoolConfig error = %v", err)
 		}
 
@@ -190,7 +185,7 @@ func TestApplyPoolConfig_HealthCheckPeriod(t *testing.T) {
 			t.Fatalf("precondition: parsed HealthCheckPeriod = %v, want positive pgx default", parsed)
 		}
 
-		if err := applyPoolConfig(pc, withPoolDefaults(PoolConfig{MaxConns: 4})); err != nil {
+		if err := applyPoolConfig(pc, PoolConfig{MaxConns: 4, ConnMaxLifetime: time.Hour, ConnMaxIdleTime: 30 * time.Minute}); err != nil {
 			t.Fatalf("applyPoolConfig error = %v", err)
 		}
 
@@ -297,7 +292,7 @@ func TestOpenPoolDSNNormalizesLeadingWhitespaceBeforeValidationAndParse(t *testi
 }
 
 func TestOpenPoolDSN_RejectsMissingSSLModeBeforeConnect(t *testing.T) {
-	_, err := OpenPoolDSN(t.Context(), "postgres://user@127.0.0.1:1/app", Options{})
+	_, err := OpenPoolDSN(t.Context(), "postgres://user@127.0.0.1:1/app", Options{Ping: testPing()})
 	if err == nil || !strings.Contains(err.Error(), "sslmode") {
 		t.Fatalf("OpenPoolDSN missing sslmode error = %v, want explicit sslmode error", err)
 	}

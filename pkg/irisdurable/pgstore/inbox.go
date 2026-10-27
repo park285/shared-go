@@ -78,6 +78,10 @@ func admissionFailure(err error) workercontract.AdmissionResult {
 //
 // 같은 ordering key에 더 오래된 미종단 행이 있으면 그 행이 먼저 끝나야 하므로 FIFO가 유지된다.
 func (s *Store) Claim(ctx context.Context) (claim InboxClaim, ok bool, err error) {
+	if policyErr := s.requirePolicy("claim inbox", true, false, false); policyErr != nil {
+		return InboxClaim{}, false, policyErr
+	}
+
 	token, err := newClaimToken()
 	if err != nil {
 		return InboxClaim{}, false, err
@@ -115,6 +119,10 @@ func (s *Store) Complete(ctx context.Context, claim InboxClaim, reason string) e
 // RenewInbox는 처리 중인 행의 lease를 Options.Lease만큼 연장한다. 처리 시간이 lease보다 긴
 // 호출자가 heartbeat로 소유권을 유지하는 경로다. 이미 lease를 잃었으면 ErrClaimLost다.
 func (s *Store) RenewInbox(ctx context.Context, claim InboxClaim) error {
+	if err := s.requirePolicy("renew inbox lease", true, false, false); err != nil {
+		return err
+	}
+
 	return s.execFenced(ctx, "renew inbox lease", queryRenewInboxLease, s.opts.Scope, claim.ID, claim.ClaimToken, s.opts.Lease.Seconds())
 }
 
@@ -155,19 +163,7 @@ func (s *Store) ManualReviewInbox(ctx context.Context, claim InboxClaim, reason 
 // completed는 Options.InboxTerminalRetention을, manual_review는
 // Options.InboxManualReviewRetention을 따른다. 후자가 0이면 사람이 처리할 때까지 남긴다.
 func (s *Store) PruneInbox(ctx context.Context, limit int) (int64, error) {
-	if limit <= 0 {
-		return 0, errors.New("pgstore: prune limit must be positive")
-	}
-
-	tag, err := s.db.Exec(ctx, queryPruneInbox,
-		s.opts.Scope, s.opts.InboxTerminalRetention.Seconds(), s.opts.InboxManualReviewRetention.Seconds(), limit,
-		nil,
-	)
-	if err != nil {
-		return 0, fmt.Errorf("pgstore: prune inbox: %w", err)
-	}
-
-	return tag.RowsAffected(), nil
+	return s.pruneInbox(ctx, "prune inbox", nil, limit)
 }
 
 // InboxRuntimeSnapshot은 inbox의 상태별 적재와 밀린 정도다.

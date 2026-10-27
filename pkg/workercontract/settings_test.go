@@ -23,8 +23,8 @@ func TestDecodeWorkerSettingsRequiresExactTaggedKeys(t *testing.T) {
 	var settings sampleWorkerSettings
 
 	loaded := profileWithSettings("inbox", `{"poll_interval_ms":250,"max_attempts":3,"Untagged":true}`)
-	if err := DecodeWorkerSettings(loaded, "inbox", &settings); err != nil {
-		t.Fatalf("DecodeWorkerSettings() error = %v", err)
+	if err := decodeWorkerSettings(loaded, "inbox", &settings); err != nil {
+		t.Fatalf("decodeWorkerSettings() error = %v", err)
 	}
 
 	if settings.PollIntervalMS != 250 || settings.MaxAttempts != 3 || !settings.Untagged || settings.hidden != 0 {
@@ -40,7 +40,7 @@ func TestDecodeWorkerSettingsRequiresExactTaggedKeys(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			var out sampleWorkerSettings
 
-			err := DecodeWorkerSettings(profileWithSettings("inbox", raw), "inbox", &out)
+			err := decodeWorkerSettings(profileWithSettings("inbox", raw), "inbox", &out)
 			if err == nil {
 				t.Fatal("invalid settings accepted")
 			}
@@ -102,19 +102,19 @@ func TestDecodeWorkerSettingsRejectsMissingWorkerAndBadDestination(t *testing.T)
 
 	var settings struct{}
 
-	if err := DecodeWorkerSettings(loaded, "outbox", &settings); err == nil {
+	if err := decodeWorkerSettings(loaded, "outbox", &settings); err == nil {
 		t.Fatalf("missing worker error = %v", err)
 	}
 
 	var byValue struct{}
 
-	if err := DecodeWorkerSettings(loaded, "inbox", byValue); err == nil {
+	if err := decodeWorkerSettings(loaded, "inbox", byValue); err == nil {
 		t.Fatalf("value destination error = %v", err)
 	}
 
 	var embedded struct{ sampleWorkerSettings }
 
-	if err := DecodeWorkerSettings(loaded, "inbox", &embedded); err == nil {
+	if err := decodeWorkerSettings(loaded, "inbox", &embedded); err == nil {
 		t.Fatalf("embedded destination error = %v", err)
 	}
 }
@@ -150,7 +150,7 @@ func TestDecodeWorkerSettingsRejectsNullNonPointerFields(t *testing.T) {
 		}{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := DecodeWorkerSettings(profileWithSettings("inbox", `{"value": null}`), "inbox", tc.destination)
+			err := decodeWorkerSettings(profileWithSettings("inbox", `{"value": null}`), "inbox", tc.destination)
 			if err == nil {
 				t.Fatalf("null field error = %v", err)
 			}
@@ -203,7 +203,7 @@ func TestDecodeWorkerSettingsValidatesNestedStructures(t *testing.T) {
 		{"null map value", `{"items":{"first":null}}`, &mapSettings{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := DecodeWorkerSettings(profileWithSettings("inbox", tc.raw), "inbox", tc.destination)
+			err := decodeWorkerSettings(profileWithSettings("inbox", tc.raw), "inbox", tc.destination)
 			if err == nil {
 				t.Fatal("invalid nested settings accepted")
 			}
@@ -219,7 +219,7 @@ func TestDecodeWorkerSettingsValidatesNestedStructures(t *testing.T) {
 
 	raw := `{"inner":{"a":1,"b":false},"items":[{"a":2,"b":true}],"array":[{"a":3,"b":false}],"named":{"first":{"a":4,"b":true}}}`
 
-	if err := DecodeWorkerSettings(profileWithSettings("inbox", raw), "inbox", &out); err != nil {
+	if err := decodeWorkerSettings(profileWithSettings("inbox", raw), "inbox", &out); err != nil {
 		t.Fatal(err)
 	}
 
@@ -246,7 +246,7 @@ func TestDecodeWorkerSettingsPreservesIntentionalPointerNull(t *testing.T) {
 
 	raw := `{"primary_timeout_ms":null,"inner":{"value":1,"next":null},"items":[null,{"value":2,"next":null}],"named":{"empty":null}}`
 
-	if err := DecodeWorkerSettings(profileWithSettings("draw", raw), "draw", &out); err != nil {
+	if err := decodeWorkerSettings(profileWithSettings("draw", raw), "draw", &out); err != nil {
 		t.Fatal(err)
 	}
 
@@ -259,7 +259,7 @@ func TestDecodeWorkerSettingsPreservesIntentionalPointerNull(t *testing.T) {
 		PrimaryTimeoutMS *int64 `json:"primary_timeout_ms"`
 	}
 
-	if err := DecodeWorkerSettings(profileWithSettings("draw", `{"primary_timeout_ms":0}`), "draw", &timeout); err != nil {
+	if err := decodeWorkerSettings(profileWithSettings("draw", `{"primary_timeout_ms":0}`), "draw", &timeout); err != nil {
 		t.Fatal(err)
 	}
 
@@ -272,8 +272,31 @@ func TestDecodeWorkerSettingsRejectsNilDestination(t *testing.T) {
 	var typedNil *sampleWorkerSettings
 
 	for _, destination := range []any{nil, typedNil} {
-		if err := DecodeWorkerSettings(profileWithSettings("inbox", `{}`), "inbox", destination); err == nil {
-			t.Fatalf("DecodeWorkerSettings(%T) accepted a nil destination", destination)
+		if err := decodeWorkerSettings(profileWithSettings("inbox", `{}`), "inbox", destination); err == nil {
+			t.Fatalf("decodeWorkerSettings(%T) accepted a nil destination", destination)
+		}
+	}
+}
+
+func TestDecodeSettingsRejectsUnknownDuplicateAndTrailingFields(t *testing.T) {
+	type settings struct {
+		Workers int `json:"workers"`
+	}
+
+	var decoded settings
+
+	if err := decodeSettings([]byte(`{"workers":2}`), &decoded); err != nil || decoded.Workers != 2 {
+		t.Fatalf("decodeSettings(valid) = %+v, %v", decoded, err)
+	}
+
+	for _, raw := range []string{
+		`{"workers":2,"unknown":1}`,
+		`{"workers":2,"workers":3}`,
+		`{"workers":2} {}`,
+		`null`,
+	} {
+		if err := decodeSettings([]byte(raw), &decoded); err == nil {
+			t.Fatalf("decodeSettings(%s) error = nil", raw)
 		}
 	}
 }

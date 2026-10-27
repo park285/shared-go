@@ -2,26 +2,9 @@ package irisdurable_test
 
 import (
 	"testing"
-	"time"
 
 	"github.com/park285/shared-go/v2/pkg/irisdurable"
 )
-
-func TestReplayHorizonKeepsMarginInsideIrisRetention(t *testing.T) {
-	t.Parallel()
-
-	if irisdurable.AutomaticReplayHorizon != 144*time.Hour {
-		t.Fatalf("AutomaticReplayHorizon = %s; want 144h", irisdurable.AutomaticReplayHorizon)
-	}
-
-	if irisdurable.AutomaticReplayHorizon+irisdurable.ReplayHorizonMargin != irisdurable.IrisReplyAdmissionRetention {
-		t.Fatal("automatic replay horizon plus margin must equal Iris admission retention")
-	}
-
-	if irisdurable.ReplyOutboxMinRetention < irisdurable.IrisReplyAdmissionRetention {
-		t.Fatal("reply outbox retention must cover Iris admission retention")
-	}
-}
 
 func TestReplyStatusVocabulary(t *testing.T) {
 	t.Parallel()

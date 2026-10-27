@@ -4,8 +4,10 @@
 // 기록 헬퍼(Debug·Info·Warn·Error·Log·LogAndWrapError·RunOperation)는 logger가 nil이면
 // 기록 시점의 slog.Default()에 기록한다.
 //
-// room_id·user_id는 상관관계 식별자로 보존한다. 나머지 개인정보 키는 slog 속성과
-// 중첩 map[string]any에서 깊이 8까지 마스킹하며 map[string]string·[]any 내부 맵·구조체는 제외한다.
+// credential 키 규칙은 이 패키지가 소유하고, 개인 식별자 키(예: room, sender)는 서비스가
+// Options.PrivacyKeys로 넘긴다. 내장 privacy 키는 없으므로 room_id·user_id처럼 넘기지 않은 키는
+// 보존된다. 마스킹은 slog 속성·group과 중첩 map[string]any에서 깊이 8까지 적용하며
+// map[string]string·[]any 내부 맵·구조체는 제외한다. 보존·마스킹 키 표는 README가 소유한다.
 //
 // # 사용 예
 //

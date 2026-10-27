@@ -10,7 +10,7 @@ import (
 )
 
 func TestLoggingAllocationCeilings(t *testing.T) {
-	logger := slog.New(newFormatHandler(slog.LevelInfo, io.Discard))
+	logger := slog.New(newFormatHandler(slog.LevelInfo, io.Discard, nil))
 	ctx := WithRequestID(WithRuntime(t.Context(), "bot"), "req-1")
 
 	tests := []struct {

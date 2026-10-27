@@ -18,21 +18,12 @@ const (
 	defaultFixedWindowEntryTTL      = 2 * time.Minute
 )
 
-// ForwardedHeaderMode는 trusted proxy에서 전달된 client IP 선택 방식을 지정한다.
-type ForwardedHeaderMode int
-
-const (
-	// ForwardedHeaderLeftmost는 X-Forwarded-For의 첫 유효 IP를 선택한다.
-	ForwardedHeaderLeftmost ForwardedHeaderMode = iota
-	// ForwardedHeaderRightmostNonTrusted는 오른쪽에서 첫 비신뢰 hop을 선택한다.
-	ForwardedHeaderRightmostNonTrusted
-)
-
-// ClientIPOptions는 forwarded header 신뢰 경계를 지정한다.
+// ClientIPOptions는 forwarded header 신뢰 경계를 지정한다. 신뢰 proxy에서 온 요청은
+// X-Forwarded-For의 오른쪽에서 첫 비신뢰 hop을 client IP로 고른다. 왼쪽 값은 클라이언트가
+// 임의로 정할 수 있어 identity로 쓰지 않는다. X-Real-IP도 신뢰 proxy 주소면 버린다.
 type ClientIPOptions struct {
 	TrustForwarded bool
 	TrustedProxies []netip.Prefix
-	ForwardedMode  ForwardedHeaderMode
 }
 
 // IdentityFunc는 요청에서 rate-limit identity를 만든다.
@@ -314,27 +305,12 @@ func (l *FixedWindowRateLimiter) removeEntry(entry *fixedWindowEntry) {
 }
 
 func forwardedClientIP(r *http.Request, opts ClientIPOptions) string {
-	xff := r.Header.Get("X-Forwarded-For")
-	if xff != "" {
-		if opts.ForwardedMode == ForwardedHeaderRightmostNonTrusted {
-			return rightmostNonTrustedForwardedFor(xff, opts.TrustedProxies)
-		}
-
-		return firstForwardedFor(xff)
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		return rightmostNonTrustedForwardedFor(xff, opts.TrustedProxies)
 	}
 
-	parseRealIP := parseIPCandidate
-
-	if opts.ForwardedMode == ForwardedHeaderRightmostNonTrusted {
-		parseRealIP = parsePlainIPCandidate
-	}
-
-	realIP, ok := parseRealIP(r.Header.Get("X-Real-IP"))
-	if !ok {
-		return ""
-	}
-
-	if opts.ForwardedMode == ForwardedHeaderRightmostNonTrusted && isTrustedProxy(realIP, opts.TrustedProxies) {
+	realIP, ok := parsePlainIPCandidate(r.Header.Get("X-Real-IP"))
+	if !ok || isTrustedProxy(realIP, opts.TrustedProxies) {
 		return ""
 	}
 
@@ -350,21 +326,6 @@ func isTrustedProxy(addr netip.Addr, trustedProxies []netip.Prefix) bool {
 	}
 
 	return false
-}
-
-func firstForwardedFor(headerValue string) string {
-	raw := strings.TrimSpace(headerValue)
-	if raw == "" {
-		return ""
-	}
-
-	for part := range strings.SplitSeq(raw, ",") {
-		if addr, ok := parseIPCandidate(part); ok {
-			return addr.String()
-		}
-	}
-
-	return ""
 }
 
 func rightmostNonTrustedForwardedFor(headerValue string, trustedProxies []netip.Prefix) string {

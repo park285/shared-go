@@ -22,10 +22,11 @@
 // # 풀 설정
 //
 // OpenPool은 MaxConns > 0, MinConns >= 0을 요구하며 음수 옵션은 기본값 적용 전에
-// 거부한다. 공개 기본 Options는 없으며 호출자가 풀 크기와 ping 기한을 Options에 명시한다.
-// 구조체의 수명이 0이면 최대 수명 1시간·유휴 시간 30분을, 지터가 0이면 수명/5를 쓴다.
-// HealthCheckPeriod와 Pool.PingTimeout이 0이면 pgx 파싱값을 유지하며 검사 주기는 양수여야 한다.
-// Pool.PingTimeout은 시작 Ping과 별개로 획득 시 상태 검사를 제한한다.
+// 거부한다. 라이브러리 기본값은 없으며 호출자가 풀 크기·수명과 ping 기한을 Options에 명시한다.
+// 두 경로 모두 Ping.PingTimeout > 0이 필수다. 구조체 경로는 ConnMaxLifetime·ConnMaxIdleTime > 0이
+// 필수이고 ConnMaxLifetimeJitter 0은 지터 없음이다.
+// HealthCheckPeriod와 Pool.AcquirePingTimeout이 0이면 pgx 파싱값을 유지하며 검사 주기는 양수여야 한다.
+// Pool.AcquirePingTimeout은 시작 Ping과 별개로 획득 시 상태 검사를 제한한다.
 // 검사 종료 후에도 실패한 연결 정리가 최대 15초간 슬롯을 점유할 수 있으므로
 // 전체 획득 기한에는 AcquirePolicy를 사용한다. Ping 기한만으로 교체·풀 종료는 제한되지 않는다.
 // RuntimeParams는 호출자 맵을 보관하지 않고 세션 매개변수를 덮어쓴다.
@@ -75,7 +76,7 @@
 //
 // OpenPool·OpenPoolDSN은 재시도하지 않는다: 연결·ping 실패는 그대로 반환하므로 compose 기동
 // 레이스 등의 재시도 정책은 호출자가 소유한다. 연결 시 ping 타임아웃은
-// Options.Ping.PingTimeout으로 정하며 미설정 시 5초다.
+// 필수인 Options.Ping.PingTimeout으로 정한다.
 // MinConns > 0이면 백그라운드 연결 생성·실패 정리를 제한하도록 ConnectTimeout을
 // 시작 예산 이하로 낮춘다. 이 제한은 재접속을 포함한 풀 수명 전체에 유지된다.
 // 서버 취소 유예는 두 Ping 예산과 별개이며 중단된 작업이 해당 기한까지 이어질 수 있다.

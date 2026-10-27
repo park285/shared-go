@@ -63,38 +63,6 @@ func TestRunClosesLoggerResource(t *testing.T) {
 	}
 }
 
-// AUTOMAXPROCS_* env를 바꾸므로 병렬로 돌리지 않는다.
-func TestRun_InitializesAutomaxprocsWithServiceLoggerBeforeBuild(t *testing.T) {
-	t.Setenv("AUTOMAXPROCS_DISABLE", "")
-	t.Setenv("AUTOMAXPROCS_FORCE", "")
-
-	const decision = "automaxprocs skipped"
-
-	var logs bytes.Buffer
-
-	logsAtBuild := ""
-	exitCode := Options[*testConfig, *testRuntime]{
-		LoadConfig: func() (*testConfig, error) { return &testConfig{}, nil },
-		NewLogger: func(*testConfig) (*slog.Logger, io.Closer, error) {
-			return testLoggerWithoutCloser(newUnsanitizedTestLogger(&logs))
-		},
-		BuildRuntime: func(context.Context, *testConfig, *slog.Logger) (*testRuntime, error) {
-			logsAtBuild = logs.String()
-
-			return &testRuntime{}, nil
-		},
-		Stderr: &bytes.Buffer{},
-	}.Run()
-
-	if exitCode != 0 {
-		t.Fatalf("Run() exitCode = %d, want 0", exitCode)
-	}
-
-	if !strings.Contains(logsAtBuild, decision) {
-		t.Fatalf("service logger before BuildRuntime = %q, want automaxprocs decision %q", logsAtBuild, decision)
-	}
-}
-
 func newUnsanitizedTestLogger(buf *bytes.Buffer) *slog.Logger {
 	return slog.New(slog.NewTextHandler(buf, nil))
 }

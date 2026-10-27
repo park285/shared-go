@@ -102,7 +102,7 @@ func (m *WebhookMetrics) Expose(w io.Writer) bool {
 		{n("unauthorized_total"), "Total number of webhook requests rejected due to token mismatch.", m.unauthorized.Load()},
 		{n("bad_request_total"), "Total number of webhook requests rejected due to invalid JSON.", m.badRequest.Load()},
 		{n("duplicates_total"), "Total number of duplicate webhook requests short-circuited by deduplication.", m.duplicates.Load()},
-		{n("enqueue_failures_total"), "Total number of webhook requests that could not be queued.", m.enqueueFailures.Load()},
+		{n("enqueue_failures_total"), "Total number of webhook requests rejected because durable admission failed.", m.enqueueFailures.Load()},
 		{n("accepted_total"), "Total number of webhook requests accepted for asynchronous processing.", m.accepted.Load()},
 	}
 	for _, c := range counters {
@@ -116,7 +116,7 @@ func (m *WebhookMetrics) Expose(w io.Writer) bool {
 		help string
 		hist *Histogram
 	}{
-		{n("handler_duration_seconds"), "Webhook message handler execution duration in seconds.", m.handlerDuration},
+		{n("handler_duration_seconds"), "Webhook durable admission duration in seconds.", m.handlerDuration},
 		{n("decode_latency_seconds"), "Webhook request JSON decode latency in seconds.", m.decodeLatency},
 	}
 	for _, h := range histograms {

@@ -17,7 +17,7 @@ func TestIntegrationServerCancellationPreservesSQLStateAndConnection(t *testing.
 	defer cancel()
 
 	pool, err := OpenPoolDSN(ctx, dsn+"&application_name=dsn-name", Options{
-		Logger: quietLogger(), Pool: PoolConfig{MaxConns: 1, PingTimeout: time.Second},
+		Logger: quietLogger(), Pool: PoolConfig{MaxConns: 1, AcquirePingTimeout: time.Second}, Ping: testPing(),
 		RuntimeParams: map[string]string{"application_name": "shared-cancel-test", "statement_timeout": "10s"},
 		CancelRequest: &CancelRequestConfig{DeadlineDelay: time.Second},
 	})

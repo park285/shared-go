@@ -129,11 +129,17 @@ func TestLoadDotenvFileMissingOptional(t *testing.T) {
 	}
 }
 
-func TestServiceDotenvPath(t *testing.T) {
+func TestLoadDotenvRejectsPartialServiceOptions(t *testing.T) {
 	t.Parallel()
 
-	if got := serviceDotenvPath(testServiceTwentyq); got != "/run/twentyq/twentyq.env" {
-		t.Fatalf("serviceDotenvPath() = %q, want /run/twentyq/twentyq.env", got)
+	for _, opts := range []DotenvOptions{
+		{EnvFileKey: testTwentyqEnvFile},
+		{EnvFileKey: testTwentyqEnvFile, RequireStaticSecretsKey: testRequireStaticSecrets},
+		{DefaultPath: testTwentyqDefaultPath},
+	} {
+		if err := LoadDotenv(opts); err == nil || !strings.Contains(err.Error(), "must be set together") {
+			t.Fatalf("LoadDotenv(%+v) error = %v, want partial service options error", opts, err)
+		}
 	}
 }
 
@@ -240,7 +246,7 @@ func TestLoadDotenv(t *testing.T) {
 		},
 		{
 			name: "service explicit env file",
-			opts: DotenvOptions{ServiceName: testServiceTwentyq},
+			opts: twentyqServiceOptions(DotenvOptions{}),
 			setup: func(t *testing.T, dir string) {
 				t.Helper()
 
@@ -249,18 +255,18 @@ func TestLoadDotenv(t *testing.T) {
 					t.Fatalf("write service dotenv: %v", err)
 				}
 
-				t.Setenv("TWENTYQ_ENV_FILE", path)
+				t.Setenv(testTwentyqEnvFile, path)
 			},
 			wantKey: "SERVICE_KEY",
 			wantVal: "ok",
 		},
 		{
 			name: "service required missing",
-			opts: DotenvOptions{ServiceName: testServiceTwentyq},
+			opts: twentyqServiceOptions(DotenvOptions{}),
 			setup: func(t *testing.T, dir string) {
 				t.Helper()
 
-				t.Setenv("TWENTYQ_ENV_FILE", filepath.Join(dir, "missing.env"))
+				t.Setenv(testTwentyqEnvFile, filepath.Join(dir, "missing.env"))
 				t.Setenv(testRequireStaticSecrets, "true")
 			},
 			wantErr: "stat dotenv file failed",
@@ -335,13 +341,13 @@ func TestLoadDotenvLocalEnableFlag(t *testing.T) {
 		{
 			// service env file이 처리되는 경로에서도 LocalEnableKey 값을 먼저 판정해야 한다.
 			name: "unacceptable value fails before service env file",
-			opts: DotenvOptions{ServiceName: testServiceTwentyq, LocalEnableKey: testChatbotgoLoadDotenv},
+			opts: twentyqServiceOptions(DotenvOptions{LocalEnableKey: testChatbotgoLoadDotenv}),
 			setup: func(t *testing.T, dir string) {
 				t.Helper()
 
 				path := filepath.Join(dir, "twentyq.env")
 				writeDotenvFile(t, path, "LOCAL_FLAG_SERVICE_INVALID=loaded\n", 0o600)
-				t.Setenv("TWENTYQ_ENV_FILE", path)
+				t.Setenv(testTwentyqEnvFile, path)
 				t.Setenv(testChatbotgoLoadDotenv, "enabled")
 			},
 			wantKey:   "LOCAL_FLAG_SERVICE_INVALID",
@@ -351,13 +357,13 @@ func TestLoadDotenvLocalEnableFlag(t *testing.T) {
 		{
 			// 받아들일 수 있는 false는 service env file 적용을 막지 않는다.
 			name: "accepted false keeps service env file",
-			opts: DotenvOptions{ServiceName: testServiceTwentyq, LocalEnableKey: testChatbotgoLoadDotenv},
+			opts: twentyqServiceOptions(DotenvOptions{LocalEnableKey: testChatbotgoLoadDotenv}),
 			setup: func(t *testing.T, dir string) {
 				t.Helper()
 
 				path := filepath.Join(dir, "twentyq.env")
 				writeDotenvFile(t, path, "LOCAL_FLAG_SERVICE_OFF=loaded\n", 0o600)
-				t.Setenv("TWENTYQ_ENV_FILE", path)
+				t.Setenv(testTwentyqEnvFile, path)
 				t.Setenv(testChatbotgoLoadDotenv, "off")
 			},
 			wantKey: "LOCAL_FLAG_SERVICE_OFF",
@@ -378,7 +384,7 @@ func TestLoadDotenvStaticSecretsGuard(t *testing.T) {
 	tests := []loadDotenvCase{
 		{
 			name: "unacceptable value fails before local dotenv",
-			opts: DotenvOptions{ServiceName: testServiceTwentyq, LocalPaths: []string{testDotenvFileName}},
+			opts: twentyqServiceOptions(DotenvOptions{LocalPaths: []string{testDotenvFileName}}),
 			setup: func(t *testing.T, dir string) {
 				t.Helper()
 
@@ -391,13 +397,13 @@ func TestLoadDotenvStaticSecretsGuard(t *testing.T) {
 		},
 		{
 			name: "unacceptable value fails before explicit env file",
-			opts: DotenvOptions{ServiceName: testServiceTwentyq},
+			opts: twentyqServiceOptions(DotenvOptions{}),
 			setup: func(t *testing.T, dir string) {
 				t.Helper()
 
 				path := filepath.Join(dir, "twentyq.env")
 				writeDotenvFile(t, path, "SERVICE_FLAG_FILE=loaded\n", 0o644)
-				t.Setenv("TWENTYQ_ENV_FILE", path)
+				t.Setenv(testTwentyqEnvFile, path)
 				t.Setenv(testRequireStaticSecrets, "ture")
 			},
 			wantKey:   "SERVICE_FLAG_FILE",
@@ -406,13 +412,13 @@ func TestLoadDotenvStaticSecretsGuard(t *testing.T) {
 		},
 		{
 			name: "accepted true enforces strict env file",
-			opts: DotenvOptions{ServiceName: testServiceTwentyq},
+			opts: twentyqServiceOptions(DotenvOptions{}),
 			setup: func(t *testing.T, dir string) {
 				t.Helper()
 
 				path := filepath.Join(dir, "twentyq.env")
 				writeDotenvFile(t, path, "SERVICE_FLAG_STRICT=loaded\n", 0o644)
-				t.Setenv("TWENTYQ_ENV_FILE", path)
+				t.Setenv(testTwentyqEnvFile, path)
 				t.Setenv(testRequireStaticSecrets, "YES")
 			},
 			wantKey: "SERVICE_FLAG_STRICT",

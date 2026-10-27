@@ -58,7 +58,7 @@ func TestSanitizeHandler_ReuseMatchesFullSanitization(t *testing.T) {
 			t.Parallel()
 
 			sink := &recordSink{}
-			if err := newSanitizeHandler(sink).Handle(t.Context(), tt.build()); err != nil {
+			if err := newPrivacySanitizeHandler(sink).Handle(t.Context(), tt.build()); err != nil {
 				t.Fatalf("Handle() error = %v", err)
 			}
 
@@ -79,7 +79,7 @@ func (secretValuer) LogValue() slog.Value { return slog.StringValue("Bearer abc1
 func fullySanitized(record slog.Record) slog.Record {
 	out := slog.NewRecord(record.Time, record.Level, redactSecrets(record.Message), record.PC)
 	record.Attrs(func(attr slog.Attr) bool {
-		out.AddAttrs(sanitizeAttr(attr))
+		out.AddAttrs(testPrivacy.sanitizeAttr(attr))
 
 		return true
 	})

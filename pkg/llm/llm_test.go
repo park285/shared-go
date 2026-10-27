@@ -188,39 +188,6 @@ func TestRunJSONSkipsUsageOnGeneratorError(t *testing.T) {
 	}
 }
 
-func TestRedactDiagnosticMasksSecretsAndBoundsOutput(t *testing.T) {
-	raw := "OPENAI_API_KEY=sk-live-openai-secret" +
-		" CODEX_ACCESS_TOKEN=codex-live-secret" +
-		" CODEX_API_KEY=codex-api-secret" +
-		" Authorization: Bearer bearer-live-secret " +
-		strings.Repeat("x", 180)
-
-	got := RedactDiagnostic(raw, 180)
-
-	for _, secret := range []string{
-		"sk-live-openai-secret",
-		"codex-live-secret",
-		"codex-api-secret",
-		"bearer-live-secret",
-	} {
-		if strings.Contains(got, secret) {
-			t.Fatalf("RedactDiagnostic leaked %q in %q", secret, got)
-		}
-	}
-
-	if strings.Count(got, "***REDACTED***") < 4 {
-		t.Fatalf("RedactDiagnostic redaction count = %d, want at least 4 in %q", strings.Count(got, "***REDACTED***"), got)
-	}
-
-	if len(got) > 180+len(truncatedMarker) {
-		t.Fatalf("RedactDiagnostic length = %d, want bounded by %d", len(got), 180+len(truncatedMarker))
-	}
-
-	if !strings.HasSuffix(got, truncatedMarker) {
-		t.Fatalf("RedactDiagnostic suffix = %q, want %q", got, truncatedMarker)
-	}
-}
-
 func TestNoopUsageReporterDoesNothing(t *testing.T) {
 	NoopUsageReporter{}.RecordUsage(t.Context(), "openai", testGptTest, Usage{TotalTokens: 1})
 }

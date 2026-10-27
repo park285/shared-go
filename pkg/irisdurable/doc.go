@@ -1,8 +1,9 @@
 // Package irisdurable은 Iris webhook 수신·응답 경로의 durability 계약을 스택 공통으로 정의한다.
 //
 // chat-bot-go-kakao, twentyq-bot, hololive-bot의 PostgreSQL inbox·reply outbox·reissue 구현이
-// 공유해야 하는 어휘(admission 결과, reply 상태), typed 상수(Iris admission 보존, 자동 replay
-// 지평), bounded reissue ladder를 이 패키지가 소유한다. 저장소 구현과 도메인 큐는 각 봇에 남고,
+// 공유해야 하는 어휘(admission 결과, reply 상태)와 bounded reissue ladder를 이 패키지가 소유한다.
+// Iris admission 보존·자동 replay 지평의 정본은 Iris 계약 파일과 iris-client-go 공개 상수이며, 소비자가
+// 그 값을 저장소 정책과 계약 스위트에 넘긴다. 저장소 구현과 도메인 큐는 각 봇에 남고,
 // 하위 패키지 contracttest가 각 구현이 이 계약을 지키는지 검증한다.
 //
 // iris-client-go의 webhook.MessageAdmitter·webhook.SetOnceNonceStore seam은 그대로 두고, 이
