@@ -6,6 +6,7 @@ import (
 	"encoding/json/jsontext"
 	jsonv2 "encoding/json/v2"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"strconv"
@@ -255,5 +256,9 @@ func (c multiCloser) Close() error {
 		closeErr = errors.Join(closeErr, closer.Close())
 	}
 
-	return closeErr
+	if closeErr != nil {
+		return fmt.Errorf("logging: close log lanes: %w", closeErr)
+	}
+
+	return nil
 }

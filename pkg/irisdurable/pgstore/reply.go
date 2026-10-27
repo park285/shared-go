@@ -157,21 +157,8 @@ func (s *Store) BeginAttempt(ctx context.Context, identity irisdurable.ReplyIden
 	return irisdurable.ReplyAttempt{}, fmt.Errorf("pgstore: begin reply attempt %s/%s/%d: %w", identity.MessageID, identity.Phase, identity.Ordinal, irisdurable.ErrReplyNotClaimable)
 }
 
-// RenewReply는 시도 중인 행의 lease를 Options.Lease만큼 연장한다. Iris 호출이 lease보다 오래
-// 걸릴 수 있는 호출자가 heartbeat로 소유권을 유지하는 경로이고, RenewInbox와 대칭이다. 이미
-// lease를 잃었거나 다른 시도가 행을 가져갔으면 ErrClaimLost를 반환한다.
-func (s *Store) RenewReply(ctx context.Context, attempt irisdurable.ReplyAttempt) error {
-	if attempt.ClaimToken == "" {
-		return errors.New("pgstore: renew requires a claim token")
-	}
-
-	return s.execFenced(ctx, "renew reply lease", queryRenewReplyLease,
-		s.opts.Scope, attempt.MessageID, attempt.Phase, attempt.Ordinal, attempt.ClaimToken, s.opts.Lease.Seconds(),
-	)
-}
-
-// Settle이 받아들이는 결과 상태다. 시도 결과가 아닌 pending·submitting과, 이유가 필요해
-// ManualReviewReply가 따로 기록하는 manual_review는 제외한다.
+// Settle이 받아들이는 결과 상태다. 시도 결과가 아닌 pending·submitting과, 사람이 판정할 사유가
+// 필요한 manual_review는 Settle 결과로 받지 않는다.
 var settleableStatuses = map[irisdurable.ReplyStatus]bool{
 	irisdurable.ReplyStatusAccepted:             true,
 	irisdurable.ReplyStatusRetryablePreDispatch: true,
@@ -198,22 +185,6 @@ func (s *Store) Settle(ctx context.Context, attempt irisdurable.ReplyAttempt, ou
 	return s.execFenced(ctx, "settle reply", querySettleReply,
 		s.opts.Scope, attempt.MessageID, attempt.Phase, attempt.Ordinal, attempt.ClaimToken,
 		string(outcome.Status), outcome.ClientRequestID, outcome.IrisRequestID, retryAfter, outcome.Progressed,
-	)
-}
-
-// ManualReviewReply는 자동으로 판정할 수 없는 응답을 사람이 볼 안전 경계 상태로 보낸다.
-// 운영자가 replay 또는 discard를 고를 수 있도록 payload는 남긴다.
-func (s *Store) ManualReviewReply(ctx context.Context, attempt irisdurable.ReplyAttempt, reason string) error {
-	if attempt.ClaimToken == "" {
-		return errors.New("pgstore: manual review requires a claim token")
-	}
-
-	if reason == "" {
-		return errors.New("pgstore: manual review requires a reason")
-	}
-
-	return s.execFenced(ctx, "manual review reply", queryManualReviewReply,
-		s.opts.Scope, attempt.MessageID, attempt.Phase, attempt.Ordinal, attempt.ClaimToken, reason,
 	)
 }
 

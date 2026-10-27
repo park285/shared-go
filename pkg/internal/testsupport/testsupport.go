@@ -2,6 +2,8 @@ package testsupport
 
 import (
 	"io"
+	"log"
+	"log/slog"
 	"os"
 	"testing"
 )
@@ -58,5 +60,22 @@ func UnsetEnvOnCleanup(tb testing.TB, key string) {
 		if err := os.Unsetenv(key); err != nil {
 			tb.Errorf("Unsetenv(%q) error = %v", key, err)
 		}
+	})
+}
+
+// UseDefaultLogger는 테스트 동안 slog.Default()를 handler로 바꾸고 cleanup에서 되돌린다.
+// 표준 log 출력도 slog.SetDefault가 handler로 돌리므로 그 출력과 flag까지 복원해야 이후 테스트 출력이
+// 이 handler로 새지 않는다. 전역 상태를 바꾸므로 t.Parallel 테스트에서 부르지 않는다.
+func UseDefaultLogger(tb testing.TB, handler slog.Handler) {
+	tb.Helper()
+
+	previous := slog.Default()
+	previousOutput, previousFlags := log.Writer(), log.Flags()
+
+	slog.SetDefault(slog.New(handler))
+	tb.Cleanup(func() {
+		slog.SetDefault(previous)
+		log.SetOutput(previousOutput)
+		log.SetFlags(previousFlags)
 	})
 }

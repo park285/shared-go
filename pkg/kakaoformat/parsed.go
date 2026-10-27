@@ -144,10 +144,14 @@ func (d *plainDocument) block(node ast.Node, level int) string {
 func prefixLines(input, prefix string) string {
 	var output strings.Builder
 
-	for index, line := range strings.Split(input, "\n") {
-		if index > 0 {
+	first := true
+
+	for line := range strings.SplitSeq(input, "\n") {
+		if !first {
 			output.WriteByte('\n')
 		}
+
+		first = false
 
 		if line != "" {
 			output.WriteString(prefix)

@@ -22,24 +22,24 @@ import (
 const (
 	ServerNameEnv     = "HEALTHCHECK_SERVER_NAME"
 	CACertFileEnv     = "HEALTHCHECK_CA_CERT_FILE"
-	ClientCertFileEnv = "HEALTHCHECK_CLIENT_CERT_FILE"
-	ClientKeyFileEnv  = "HEALTHCHECK_CLIENT_KEY_FILE"
+	clientCertFileEnv = "HEALTHCHECK_CLIENT_CERT_FILE"
+	clientKeyFileEnv  = "HEALTHCHECK_CLIENT_KEY_FILE"
 
 	requestTimeout = 5 * time.Second
 
-	DefaultMaxBodyBytes int64 = 64 << 10
+	defaultMaxBodyBytes int64 = 64 << 10
 	maxRedirects              = 5
 )
 
 var (
-	ErrBodyTooLarge         = errors.New("healthprobe: response body exceeds limit")
-	ErrHostNotAllowed       = errors.New("healthprobe: host not in allowlist")
-	ErrPrivateNetwork       = errors.New("healthprobe: target resolves to a private or loopback address")
-	ErrTooManyRedirects     = errors.New("healthprobe: too many redirects")
-	ErrCredentialedRedirect = errors.New("healthprobe: client certificate redirect changes origin")
+	errBodyTooLarge         = errors.New("healthprobe: response body exceeds limit")
+	errHostNotAllowed       = errors.New("healthprobe: host not in allowlist")
+	errPrivateNetwork       = errors.New("healthprobe: target resolves to a private or loopback address")
+	errTooManyRedirects     = errors.New("healthprobe: too many redirects")
+	errCredentialedRedirect = errors.New("healthprobe: client certificate redirect changes origin")
 )
 
-type FetchOptions struct {
+type fetchOptions struct {
 	AllowedHosts             []string
 	AllowPrivateNetworks     bool
 	MaxBodyBytes             int64
@@ -47,14 +47,14 @@ type FetchOptions struct {
 	ForwardHeadersOnRedirect bool
 }
 
-func defaultFetchOptions() FetchOptions {
-	return FetchOptions{
-		MaxBodyBytes:    DefaultMaxBodyBytes,
+func defaultFetchOptions() fetchOptions {
+	return fetchOptions{
+		MaxBodyBytes:    defaultMaxBodyBytes,
 		FollowRedirects: true,
 	}
 }
 
-func internalFetchOptions() FetchOptions {
+func internalFetchOptions() fetchOptions {
 	opts := defaultFetchOptions()
 
 	opts.AllowPrivateNetworks = true
@@ -62,51 +62,17 @@ func internalFetchOptions() FetchOptions {
 	return opts
 }
 
-// https는 H3(QUIC)로, http는 HTTP/1.1로 1회 GET 후 2xx 여부를 검사한다.
+// CheckURL은 https는 H3(QUIC)로, http는 HTTP/1.1로 1회 GET 후 2xx 여부를 검사한다.
+// 대상이 private·loopback 주소로 풀리면 거부한다.
 func CheckURL(rawURL string) error {
-	if _, err := FetchURL(rawURL); err != nil {
-		return fmt.Errorf("fetch URL: %w", err)
+	if _, err := fetchURL(context.Background(), rawURL, nil, defaultFetchOptions()); err != nil {
+		return fmt.Errorf("healthprobe: fetch URL: %w", err)
 	}
 
 	return nil
 }
 
-func FetchURL(rawURL string) ([]byte, error) {
-	out, err := fetchURL(context.Background(), rawURL, nil, defaultFetchOptions())
-	if err != nil {
-		return out, fmt.Errorf("fetch URL: %w", err)
-	}
-
-	return out, nil
-}
-
-func CheckURLInternal(rawURL string) error {
-	if _, err := FetchURLInternal(rawURL); err != nil {
-		return fmt.Errorf("fetch internal URL: %w", err)
-	}
-
-	return nil
-}
-
-func FetchURLInternal(rawURL string) ([]byte, error) {
-	out, err := fetchURL(context.Background(), rawURL, nil, internalFetchOptions())
-	if err != nil {
-		return out, fmt.Errorf("fetch URL: %w", err)
-	}
-
-	return out, nil
-}
-
-func FetchURLWithHeadersInternal(rawURL string, headers map[string]string) ([]byte, error) {
-	out, err := fetchURL(context.Background(), rawURL, headers, internalFetchOptions())
-	if err != nil {
-		return out, fmt.Errorf("fetch URL: %w", err)
-	}
-
-	return out, nil
-}
-
-func fetchURL(parent context.Context, rawURL string, headers map[string]string, opts FetchOptions) ([]byte, error) {
+func fetchURL(parent context.Context, rawURL string, headers map[string]string, opts fetchOptions) ([]byte, error) {
 	parsed, err := parseURL(rawURL)
 	if err != nil {
 		return nil, fmt.Errorf("validate url: %w", err)
@@ -159,7 +125,7 @@ func fetchURL(parent context.Context, rawURL string, headers map[string]string, 
 	return body, nil
 }
 
-func newClient(parsed *url.URL, opts FetchOptions) (*http.Client, func(), error) {
+func newClient(parsed *url.URL, opts fetchOptions) (*http.Client, func(), error) {
 	var guard func(net.IP) error
 
 	if !opts.AllowPrivateNetworks {
@@ -167,8 +133,8 @@ func newClient(parsed *url.URL, opts FetchOptions) (*http.Client, func(), error)
 	}
 
 	if parsed.Scheme == "https" {
-		clientCertFile := os.Getenv(ClientCertFileEnv)
-		clientKeyFile := os.Getenv(ClientKeyFileEnv)
+		clientCertFile := os.Getenv(clientCertFileEnv)
+		clientKeyFile := os.Getenv(clientKeyFileEnv)
 
 		h3Client, closeFn, clientErr := h3.NewClient(0, h3.ClientOptions{
 			CACertFile:     os.Getenv(CACertFileEnv),
@@ -211,7 +177,7 @@ func newClient(parsed *url.URL, opts FetchOptions) (*http.Client, func(), error)
 
 func dialGuard(ip net.IP) error {
 	if netguard.IsBlockedIP(ip) {
-		return fmt.Errorf("%w: %w: dialed %s", ErrPrivateNetwork, netguard.ErrBlockedIP, ip)
+		return fmt.Errorf("%w: %w: dialed %s", errPrivateNetwork, netguard.ErrBlockedIP, ip)
 	}
 
 	return nil
@@ -225,12 +191,12 @@ func guardedHTTPTransport(guard func(net.IP) error) *http.Transport {
 	dialer.Control = func(_, address string, _ syscall.RawConn) error {
 		host, _, err := net.SplitHostPort(address)
 		if err != nil {
-			return fmt.Errorf("%w: parse dial addr %q: %w", ErrPrivateNetwork, address, err)
+			return fmt.Errorf("%w: parse dial addr %q: %w", errPrivateNetwork, address, err)
 		}
 
 		ip := net.ParseIP(host)
 		if ip == nil {
-			return fmt.Errorf("%w: unresolved dial addr %q", ErrPrivateNetwork, address)
+			return fmt.Errorf("%w: unresolved dial addr %q", errPrivateNetwork, address)
 		}
 
 		return guard(ip)
@@ -246,7 +212,7 @@ func guardedHTTPTransport(guard func(net.IP) error) *http.Transport {
 	}
 }
 
-func redirectPolicy(opts FetchOptions, credentialOrigin *url.URL) func(req *http.Request, via []*http.Request) error {
+func redirectPolicy(opts fetchOptions, credentialOrigin *url.URL) func(req *http.Request, via []*http.Request) error {
 	policy := netguard.RedirectPolicy(netguard.RedirectConfig{
 		Policy:         networkPolicy(opts),
 		MaxRedirects:   maxRedirects - 1,
@@ -256,7 +222,7 @@ func redirectPolicy(opts FetchOptions, credentialOrigin *url.URL) func(req *http
 
 	return func(req *http.Request, via []*http.Request) error {
 		if credentialOrigin != nil && !sameOrigin(credentialOrigin, req.URL) {
-			return ErrCredentialedRedirect
+			return errCredentialedRedirect
 		}
 
 		return mapPolicyError(policy(req, via))
@@ -288,12 +254,12 @@ func effectivePort(target *url.URL) string {
 // body의 close 소유권은 httputil.ReadAllAndClose에 있다. 호출부는 따로 닫지 않는다.
 func readCappedBody(body io.ReadCloser, maxBytes int64) ([]byte, error) {
 	if maxBytes <= 0 {
-		maxBytes = DefaultMaxBodyBytes
+		maxBytes = defaultMaxBodyBytes
 	}
 
 	data, err := httputil.ReadAllAndClose(body, maxBytes)
 	if errors.Is(err, httputil.ErrResponseBodyTooLarge) {
-		return nil, ErrBodyTooLarge
+		return nil, errBodyTooLarge
 	}
 
 	if err != nil {
@@ -303,7 +269,7 @@ func readCappedBody(body io.ReadCloser, maxBytes int64) ([]byte, error) {
 	return data, nil
 }
 
-func authorizeTarget(ctx context.Context, parsed *url.URL, opts FetchOptions) error {
+func authorizeTarget(ctx context.Context, parsed *url.URL, opts fetchOptions) error {
 	if err := mapPolicyError(networkPolicy(opts).ValidateTarget(ctx, parsed)); err != nil {
 		return fmt.Errorf("map policy error: %w", err)
 	}
@@ -311,7 +277,7 @@ func authorizeTarget(ctx context.Context, parsed *url.URL, opts FetchOptions) er
 	return nil
 }
 
-func networkPolicy(opts FetchOptions) netguard.Policy {
+func networkPolicy(opts fetchOptions) netguard.Policy {
 	policy := netguard.Policy{
 		Resolver:     healthprobeResolver{},
 		Timeout:      requestTimeout,
@@ -331,11 +297,11 @@ func networkPolicy(opts FetchOptions) netguard.Policy {
 func mapPolicyError(err error) error {
 	switch {
 	case errors.Is(err, netguard.ErrBlockedIP):
-		return fmt.Errorf("%w: %w", ErrPrivateNetwork, err)
+		return fmt.Errorf("%w: %w", errPrivateNetwork, err)
 	case errors.Is(err, netguard.ErrHostNotAllowed):
-		return fmt.Errorf("%w: %w", ErrHostNotAllowed, err)
+		return fmt.Errorf("%w: %w", errHostNotAllowed, err)
 	case errors.Is(err, netguard.ErrTooManyRedirects):
-		return fmt.Errorf("%w: %w", ErrTooManyRedirects, err)
+		return fmt.Errorf("%w: %w", errTooManyRedirects, err)
 	default:
 		return err
 	}
@@ -348,7 +314,7 @@ type healthprobeResolver struct{}
 func (healthprobeResolver) LookupIP(ctx context.Context, _, host string) ([]net.IP, error) {
 	addrs, err := lookupIPAddr(ctx, host)
 	if err != nil {
-		return nil, fmt.Errorf("lookup IP addr: %w", err)
+		return nil, fmt.Errorf("healthprobe: lookup IP addr: %w", err)
 	}
 
 	ips := make([]net.IP, 0, len(addrs))
@@ -357,10 +323,6 @@ func (healthprobeResolver) LookupIP(ctx context.Context, _, host string) ([]net.
 	}
 
 	return ips, nil
-}
-
-func isPrivateIP(ip net.IP) bool {
-	return netguard.IsBlockedIP(ip)
 }
 
 func parseURL(raw string) (*url.URL, error) {

@@ -151,16 +151,6 @@ func (s *Store) ManualReviewInbox(ctx context.Context, claim InboxClaim, reason 
 		s.opts.Scope, claim.ID, claim.ClaimToken, reason, s.opts.DiscardInboxManualReviewPayload)
 }
 
-// ReclaimInbox는 lease가 끊긴 행을 다시 처리 가능하게 되돌리고 그 수를 반환한다.
-func (s *Store) ReclaimInbox(ctx context.Context) (int64, error) {
-	tag, err := s.db.Exec(ctx, queryReclaimInbox, s.opts.Scope)
-	if err != nil {
-		return 0, fmt.Errorf("pgstore: reclaim inbox: %w", err)
-	}
-
-	return tag.RowsAffected(), nil
-}
-
 // PruneInbox는 보존이 지난 종단 행을 지우고 지운 수를 반환한다. 두 갈래의 보존은 따로이고,
 // completed는 Options.InboxTerminalRetention을, manual_review는
 // Options.InboxManualReviewRetention을 따른다. 후자가 0이면 사람이 처리할 때까지 남긴다.

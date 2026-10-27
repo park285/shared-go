@@ -36,14 +36,6 @@ type CancelRequestConfig struct {
 	DeadlineDelay      time.Duration
 }
 
-func DefaultOptions() Options {
-	return Options{
-		Logger: slog.Default(),
-		Pool:   DefaultPoolConfig(),
-		Ping:   DefaultPingConfig(),
-	}
-}
-
 func (o Options) withDefaults() Options {
 	if o.Logger == nil {
 		o.Logger = slog.Default()
@@ -62,14 +54,14 @@ func (o Options) pingTimeout() time.Duration {
 
 func OpenPool(ctx context.Context, cfg Config, opts Options) (*pgxpool.Pool, error) {
 	if err := cfg.Validate(); err != nil {
-		return nil, fmt.Errorf("validate: %w", err)
+		return nil, err
 	}
 
 	opts = opts.withDefaults()
 
 	out, err := connectConfig(ctx, cfg, opts)
 	if err != nil {
-		return nil, fmt.Errorf("connect config: %w", err)
+		return nil, fmt.Errorf("pgxdb: connect config: %w", err)
 	}
 
 	return out, nil
@@ -97,7 +89,7 @@ func OpenPoolDSN(ctx context.Context, rawDSN string, opts Options) (*pgxpool.Poo
 	}
 
 	if overlayErr := overlayPoolConfig(poolCfg, opts.Pool); overlayErr != nil {
-		return nil, fmt.Errorf("overlay pool config: %w", overlayErr)
+		return nil, fmt.Errorf("pgxdb: overlay pool config: %w", overlayErr)
 	}
 
 	applyConnectionOptions(poolCfg, opts)
@@ -108,7 +100,7 @@ func OpenPoolDSN(ctx context.Context, rawDSN string, opts Options) (*pgxpool.Poo
 
 	out, err := newPoolAndPing(ctx, poolCfg, opts)
 	if err != nil {
-		return nil, fmt.Errorf("pool and ping: %w", err)
+		return nil, fmt.Errorf("pgxdb: pool and ping: %w", err)
 	}
 
 	return out, nil
@@ -137,7 +129,7 @@ func buildConfigPool(cfg *Config, opts Options) (*pgxpool.Config, error) {
 		return nil, errors.New("pgxdb: structured pool requires positive max conns")
 	}
 
-	safeDSN, err := cfg.SafeDSN()
+	safeDSN, err := cfg.safeDSN()
 	if err != nil {
 		return nil, fmt.Errorf("safe DSN: %w", err)
 	}
@@ -292,7 +284,7 @@ func overlayLifetime(poolCfg *pgxpool.Config, pool PoolConfig) {
 
 func validateConnCounts(pool PoolConfig) error {
 	if _, _, err := connCountsInt32(pool); err != nil {
-		return fmt.Errorf("conn counts int32: %w", err)
+		return err
 	}
 
 	return nil
@@ -313,7 +305,7 @@ func connCountsInt32(pool PoolConfig) (int32, int32, error) {
 }
 
 func withPoolDefaults(pool PoolConfig) PoolConfig {
-	def := DefaultPoolConfig()
+	def := defaultPoolConfig()
 
 	if pool.ConnMaxLifetime == 0 {
 		pool.ConnMaxLifetime = def.ConnMaxLifetime

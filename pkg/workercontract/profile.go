@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"regexp"
 	"slices"
 	"time"
@@ -99,29 +100,12 @@ type Profile struct {
 }
 
 // Identity는 binary가 컴파일 시점에 소유하는 service, role, worker set이다.
+// 목록은 소비 서비스가 자기 worker ID 상수 옆에서 정의한다. LoadProfileFile은 WorkerIDs를 복제해 비교하므로
+// 호출자의 슬라이스를 바꾸지 않는다.
 type Identity struct {
 	Service   string
 	Role      string
 	WorkerIDs []string
-}
-
-var knownWorkerSets = map[string][]string{
-	"iris/runtime":               {"reply_delivery", "webhook_delivery"},
-	"chatbotgo/bot":              {"command", "compaction", "draw", "summary", "webhook_inbox"},
-	"twentyq/bot":                {"pending_queue", "reply_outbox", "webhook_inbox"},
-	"hololive/api":               {"bot_reply_outbox", "bot_webhook_inbox", "source_observation"},
-	"hololive/alarm-worker":      {"alarm_dispatch", "notification_delivery", "youtube_delivery"},
-	"hololive/youtube-collector": {"collection"},
-}
-
-// KnownIdentity는 v1 registry에 고정된 binary identity를 반환한다.
-func KnownIdentity(service, role string) (Identity, error) {
-	workerIDs, ok := knownWorkerSets[service+"/"+role]
-	if !ok {
-		return Identity{}, fmt.Errorf("worker profile identity: unsupported service/role %q/%q", service, role)
-	}
-
-	return Identity{Service: service, Role: role, WorkerIDs: slices.Clone(workerIDs)}, nil
 }
 
 // LoadedProfile은 검증된 profile과 exact-byte identity다.
@@ -131,9 +115,6 @@ type LoadedProfile struct {
 	path       string
 	sourcePath string
 }
-
-// Path는 실행 설정을 읽은 파일 경로를 반환한다. 별도 source 경로는 drift 관측에만 쓰인다.
-func (p LoadedProfile) Path() string { return p.path }
 
 // IdentitySummary는 preflight에서 설정 원문과 파일 경로 없이 공개하는 loaded identity다.
 type IdentitySummary struct {
@@ -157,33 +138,26 @@ func (p LoadedProfile) IdentitySummary() IdentitySummary {
 }
 
 func sortedWorkerIDs(workers map[string]WorkerProfile) []string {
-	ids := make([]string, 0, len(workers))
-	for id := range workers {
-		ids = append(ids, id)
-	}
-
-	slices.Sort(ids)
-
-	return ids
+	return slices.Sorted(maps.Keys(workers))
 }
 
 // DecodeSettings는 service-owned settings를 unknown field와 trailing JSON 없이 해석한다.
 func DecodeSettings(raw jsontext.Value, destination any) error {
 	if destination == nil {
-		return errors.New("worker settings: nil destination")
+		return errors.New("workercontract: worker settings: nil destination")
 	}
 
 	if err := validateJSONDocument(raw); err != nil {
-		return fmt.Errorf("worker settings: %w", err)
+		return fmt.Errorf("workercontract: worker settings: %w", err)
 	}
 
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 || trimmed[0] != '{' {
-		return errors.New("worker settings: object required")
+		return errors.New("workercontract: worker settings: object required")
 	}
 
 	if err := jsonv2.Unmarshal(raw, destination, jsonv2.RejectUnknownMembers(true)); err != nil {
-		return fmt.Errorf("worker settings: %w", err)
+		return fmt.Errorf("workercontract: worker settings: %w", err)
 	}
 
 	return nil

@@ -14,7 +14,7 @@ import (
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/openai/openai-go/v3/shared"
 
-	"github.com/park285/shared-go/v2/pkg/jsonutil"
+	"github.com/park285/shared-go/v2/pkg/internal/jsonutil"
 	"github.com/park285/shared-go/v2/pkg/llm/internal/openaidiag"
 )
 
@@ -25,20 +25,20 @@ var (
 
 // openai-go SDK가 암묵 적용하던 재시도 횟수를 같은 값으로 명시 고정한 것이다.
 // 소비자가 자체 재시도를 겹치면 총 시도는 (소비자 시도) × (1 + MaxRetries)로 곱연산된다.
-const DefaultOpenAIMaxRetries = 2
+const defaultOpenAIMaxRetries = 2
 
 type OpenAICompatibleConfig struct {
 	BaseURL    string
 	APIKey     string
 	HTTPClient *http.Client
-	// nil이면 DefaultOpenAIMaxRetries, 0이면 재시도 없음.
+	// nil이면 defaultOpenAIMaxRetries, 0이면 재시도 없음.
 	MaxRetries *int
 }
 
 // option.WithMaxRetries는 음수에 panic하므로 0으로 절단한다.
 func ResolveOpenAIMaxRetries(configured *int) int {
 	if configured == nil {
-		return DefaultOpenAIMaxRetries
+		return defaultOpenAIMaxRetries
 	}
 
 	if *configured < 0 {
@@ -82,18 +82,18 @@ func (g *OpenAICompatibleJSONGenerator) GenerateJSON(ctx context.Context, req JS
 		return JSONResponse{}, ErrNilContext
 	}
 
-	if err := ValidateJSONRequest(req); err != nil {
-		return JSONResponse{}, fmt.Errorf("validate JSON request: %w", err)
+	if err := validateJSONRequest(req); err != nil {
+		return JSONResponse{}, err
 	}
 
 	if err := ctx.Err(); err != nil {
-		return JSONResponse{}, err
+		return JSONResponse{}, fmt.Errorf("llm: context done: %w", err)
 	}
 
 	if req.ChatCompletions {
 		resp, err := g.generateChatCompletionsJSON(ctx, req)
 		if safeErr := safeOpenAICompatibleError(err); safeErr != nil {
-			return resp, fmt.Errorf("safe open AI compatible error: %w", safeErr)
+			return resp, fmt.Errorf("llm: safe open AI compatible error: %w", safeErr)
 		}
 
 		return resp, nil
@@ -101,7 +101,7 @@ func (g *OpenAICompatibleJSONGenerator) GenerateJSON(ctx context.Context, req JS
 
 	resp, err := g.generateResponsesJSON(ctx, req)
 	if safeErr := safeOpenAICompatibleError(err); safeErr != nil {
-		return JSONResponse{}, fmt.Errorf("safe open AI compatible error: %w", safeErr)
+		return JSONResponse{}, fmt.Errorf("llm: safe open AI compatible error: %w", safeErr)
 	}
 
 	return resp, nil

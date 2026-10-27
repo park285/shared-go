@@ -147,20 +147,13 @@ func TestSanitizeHandler_OperationalIDsPreservedViaWithAttrsAndWithGroup(t *test
 	}
 }
 
-func TestLogWarnWithErrorAttrs_OperationalRoomIDPreserved(t *testing.T) {
+func TestLogWarn_OperationalRoomIDPreserved(t *testing.T) {
 	var buf bytes.Buffer
 
 	logger := slog.New(newSanitizeHandler(slog.NewTextHandler(&buf, nil)))
 
-	LogWarnWithErrorAttrs(
-		t.Context(),
-		logger,
-		"sync.poll.failed",
-		"sync poll failed",
-		errors.New("boom"),
-		slog.String("channel_id", "UC123"),
-		slog.Int64("room_id", 8842),
-	)
+	attrs := append(ErrorAttrs(errors.New("boom")), slog.String("channel_id", "UC123"), slog.Int64("room_id", 8842))
+	Log(t.Context(), logger, slog.LevelWarn, "sync.poll.failed", "sync poll failed", attrs...)
 
 	output := buf.String()
 
@@ -360,26 +353,18 @@ func TestSanitizeHandler_StringMapIsNotPrivacyMasked(t *testing.T) {
 	}
 }
 
-func TestIsPrivacyKey_RejectsBlanketIDSuffix(t *testing.T) {
+func TestSanitizeAttr_PrivacyKeysRejectBlanketIDSuffix(t *testing.T) {
 	blanket := []string{"room_id", testUserID, "Room_ID", "user-id", "channel_id", testVideoID, "content_id", "request_id", "trace_id", "id", "correlation_id"}
 	for _, key := range blanket {
-		if isPrivacyKey(key) {
-			t.Errorf("isPrivacyKey(%q) = true, want false (no blanket *_id masking)", key)
+		if out := sanitizeAttr(slog.String(key, kakaoSentinelID)); out.Value.String() != kakaoSentinelID {
+			t.Errorf("%q value = %q, want preserved (no blanket *_id masking)", key, out.Value.String())
 		}
 	}
 
 	masked := []string{"room", "chat_id", tokenUserName, "room_name", "thread_id", "session_thread_id", "sender", "game_key"}
 	for _, key := range masked {
-		if !isPrivacyKey(key) {
-			t.Errorf("isPrivacyKey(%q) = false, want true", key)
+		if out := sanitizeAttr(slog.String(key, kakaoSentinelID)); out.Value.String() != redactedValue {
+			t.Errorf("%q value = %q, want redacted privacy key", key, out.Value.String())
 		}
-	}
-}
-
-func TestIsPrivacyKey_ZeroAllocClean(t *testing.T) {
-	if got := testing.AllocsPerRun(1000, func() {
-		_ = isPrivacyKey("clean_key")
-	}); got != 0 {
-		t.Fatalf("isPrivacyKey(\"clean_key\") allocs = %v, want 0", got)
 	}
 }

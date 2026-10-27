@@ -13,34 +13,39 @@ func validProfilePath() string {
 	return filepath.Join("testdata", "stack-worker-contract", "v1", "valid-profile-chatbotgo.json")
 }
 
+// chatbotIdentity는 valid-profile-chatbotgo.json fixture와 짝인 identity다. Worker 목록은 소비 서비스가 소유한다.
+func chatbotIdentity() Identity {
+	return Identity{
+		Service:   "chatbotgo",
+		Role:      "bot",
+		WorkerIDs: []string{"command", "compaction", "draw", "summary", "webhook_inbox"},
+	}
+}
+
 func TestLoadProfileFromEnvRejectsMissingAndPaddedPath(t *testing.T) {
 	t.Setenv(ProfileFileEnv, "")
 
-	if _, err := LoadProfileFromEnv("chatbotgo", "bot"); err == nil {
+	if _, err := LoadProfileFromEnv(chatbotIdentity()); err == nil {
 		t.Fatal("empty profile path was accepted")
 	}
 
 	t.Setenv(ProfileFileEnv, " "+validProfilePath()+" ")
 
-	if _, err := LoadProfileFromEnv("chatbotgo", "bot"); err == nil {
+	if _, err := LoadProfileFromEnv(chatbotIdentity()); err == nil {
 		t.Fatal("padded profile path was accepted")
 	}
 }
 
-func TestLoadProfileFromEnvLoadsFixtureForKnownIdentity(t *testing.T) {
+func TestLoadProfileFromEnvLoadsFixtureForCallerIdentity(t *testing.T) {
 	t.Setenv(ProfileFileEnv, validProfilePath())
 
-	loaded, err := LoadProfileFromEnv("chatbotgo", "bot")
+	loaded, err := LoadProfileFromEnv(chatbotIdentity())
 	if err != nil {
 		t.Fatalf("LoadProfileFromEnv() error = %v", err)
 	}
 
 	if loaded.Hash == "" || loaded.Profile.Service != "chatbotgo" || loaded.Profile.Role != "bot" {
 		t.Fatalf("loaded profile = service %q role %q hash %q", loaded.Profile.Service, loaded.Profile.Role, loaded.Hash)
-	}
-
-	if _, err := LoadProfileFromEnv("chatbotgo", "no-such-role"); err == nil {
-		t.Fatal("unknown role was accepted")
 	}
 }
 
@@ -53,9 +58,9 @@ func TestReleaseProfileObservesDesiredSourceWithoutLoadingIt(t *testing.T) {
 	t.Setenv(ProfileFileEnv, validProfilePath())
 	t.Setenv(ProfileSourceFileEnv, source)
 
-	loaded, err := LoadProfileFromEnv("chatbotgo", "bot")
+	loaded, err := LoadProfileFromEnv(chatbotIdentity())
 	require.NoError(t, err)
-	require.Equal(t, validProfilePath(), loaded.Path())
+	require.Equal(t, validProfilePath(), loaded.path)
 	require.Equal(t, "chatbotgo", loaded.Profile.Service)
 
 	now := time.Unix(100, 0)
@@ -67,7 +72,7 @@ func TestReleaseProfileObservesDesiredSourceWithoutLoadingIt(t *testing.T) {
 	// 원본이 다음 버전 형식으로 바뀌어도 이전 release 설정만으로 기동한다.
 	require.NoError(t, os.WriteFile(source, []byte("a different, undecodable desired profile"), 0o600))
 
-	reloaded, err := LoadProfileFromEnv("chatbotgo", "bot")
+	reloaded, err := LoadProfileFromEnv(chatbotIdentity())
 	require.NoError(t, err)
 	require.Equal(t, loaded.Hash, reloaded.Hash)
 
@@ -95,7 +100,7 @@ func TestProfileSourceCannotReplaceInvalidRelease(t *testing.T) {
 	t.Setenv(ProfileFileEnv, effective)
 	t.Setenv(ProfileSourceFileEnv, validProfilePath())
 
-	if _, err := LoadProfileFromEnv("chatbotgo", "bot"); err == nil {
+	if _, err := LoadProfileFromEnv(chatbotIdentity()); err == nil {
 		t.Fatal("valid desired source replaced an invalid release")
 	}
 }
@@ -106,7 +111,7 @@ func TestProfileSourceRejectsEmptyOrPaddedPath(t *testing.T) {
 	for _, path := range []string{"", " ", " " + validProfilePath(), validProfilePath() + "\n"} {
 		t.Setenv(ProfileSourceFileEnv, path)
 
-		if _, err := LoadProfileFromEnv("chatbotgo", "bot"); err == nil {
+		if _, err := LoadProfileFromEnv(chatbotIdentity()); err == nil {
 			t.Fatal("invalid desired source path was accepted")
 		}
 	}

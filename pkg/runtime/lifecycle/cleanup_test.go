@@ -11,7 +11,7 @@ func TestCleanupCloser_Close_CallsCleanup(t *testing.T) {
 
 	var called atomic.Bool
 
-	c := NewCleanupCloser(func() { called.Store(true) })
+	c := newCleanupCloser(func() { called.Store(true) })
 	c.Close()
 
 	if !called.Load() {
@@ -22,14 +22,14 @@ func TestCleanupCloser_Close_CallsCleanup(t *testing.T) {
 func TestCleanupCloser_Close_NilCleanup(t *testing.T) {
 	t.Parallel()
 
-	c := NewCleanupCloser(nil)
+	c := newCleanupCloser(nil)
 	c.Close()
 }
 
 func TestCleanupCloser_Close_NilReceiver(t *testing.T) {
 	t.Parallel()
 
-	var c *CleanupCloser
+	var c *cleanupCloser
 
 	c.Close()
 }
@@ -39,7 +39,7 @@ func TestCleanupCloser_Close_Idempotent(t *testing.T) {
 
 	var count atomic.Int32
 
-	c := NewCleanupCloser(func() { count.Add(1) })
+	c := newCleanupCloser(func() { count.Add(1) })
 	c.Close()
 	c.Close()
 	c.Close()
@@ -54,7 +54,7 @@ func TestCleanupCloser_Close_ConcurrentRunsOnce(t *testing.T) {
 
 	var count atomic.Int32
 
-	c := NewCleanupCloser(func() { count.Add(1) })
+	c := newCleanupCloser(func() { count.Add(1) })
 
 	var wg sync.WaitGroup
 

@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func Event(event string) slog.Attr {
+func eventAttr(event string) slog.Attr {
 	return slog.String("event", event)
 }
 
@@ -18,11 +18,11 @@ func componentAttr(component string) slog.Attr {
 	return slog.String("component", component)
 }
 
-func Operation(name string) slog.Attr {
+func operationAttr(name string) slog.Attr {
 	return slog.String("operation", name)
 }
 
-func RequestID(id string) slog.Attr {
+func requestIDAttr(id string) slog.Attr {
 	return slog.String("request_id", id)
 }
 

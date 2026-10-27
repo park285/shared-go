@@ -217,22 +217,6 @@ func wrapsBase64Line(previous, line string) bool {
 	return end > 0
 }
 
-func EncodingSyntaxNeedsNormalization(text string) bool {
-	requiresCompatibilityCheck := false
-
-	for _, value := range text {
-		if unicode.Is(unicode.Cf, value) || unicode.Is(unicode.Cc, value) {
-			return true
-		}
-
-		if value >= utf8.RuneSelf && (value < 0xAC00 || value > 0xD7A3) {
-			requiresCompatibilityCheck = true
-		}
-	}
-
-	return requiresCompatibilityCheck && norm.NFKC.QuickSpanString(text) != len(text)
-}
-
 func normalizeFastASCIIText(text string, trimEdges bool) (string, bool) {
 	needsRewrite := false
 	lastSpace := false
@@ -441,32 +425,6 @@ func StripFormatAndCombining(text string) string {
 		}
 
 		builder.WriteRune(r)
-	}
-
-	return builder.String()
-}
-
-func CollapseWhitespace(text string) string {
-	var builder strings.Builder
-
-	builder.Grow(len(text))
-
-	lastSpace := false
-
-	for _, r := range text {
-		if unicode.IsSpace(r) || unicode.Is(unicode.Z, r) {
-			if !lastSpace {
-				builder.WriteByte(' ')
-
-				lastSpace = true
-			}
-
-			continue
-		}
-
-		builder.WriteRune(r)
-
-		lastSpace = false
 	}
 
 	return builder.String()

@@ -2,7 +2,6 @@ package dbmigrate
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"strings"
 	"testing"
@@ -540,37 +539,6 @@ func TestWithAdvisoryLockEvictPanicDoesNotReplaceFnPanic(t *testing.T) {
 
 	if session.evictCalls != 1 {
 		t.Fatalf("evict calls = %d, want 1", session.evictCalls)
-	}
-}
-
-func TestSQLLockSessionEvictsConnectionAfterUnlockFailure(t *testing.T) {
-	t.Parallel()
-
-	db := sql.OpenDB(&fakeSQLConnector{})
-
-	defer func() { _ = db.Close() }()
-
-	conn, err := db.Conn(t.Context())
-	if err != nil {
-		t.Fatalf("db.Conn() error = %v", err)
-	}
-
-	// eviction 검증이 목적이라 Close는 이미 닫힌 연결에 대해 실패하는 것이 정상이다.
-	defer conn.Close() //nolint:errcheck // 축출된 연결이므로 close 실패가 기대 동작이다.
-
-	session := SQLLockSession(conn)
-	evicter, ok := session.(UnlockFailureEvicter)
-
-	if !ok {
-		t.Fatal("SQLLockSession() does not implement UnlockFailureEvicter")
-	}
-
-	if err := evicter.EvictAfterUnlockFailure(); err != nil {
-		t.Fatalf("EvictAfterUnlockFailure() error = %v", err)
-	}
-
-	if err := conn.PingContext(t.Context()); !errors.Is(err, sql.ErrConnDone) {
-		t.Fatalf("PingContext() error = %v, want sql.ErrConnDone after eviction", err)
 	}
 }
 

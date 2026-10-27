@@ -144,10 +144,10 @@ func TestApplyWithSessionConfiguresBeforeMigrations(t *testing.T) {
 
 	var calls []recordedExec
 
-	err := Apply(t.Context(), fsys, recordingExec(&calls, ""), WithSession(SessionConfig{
+	err := Apply(t.Context(), fsys, recordingExec(&calls, ""), ApplyOptions{Session: SessionConfig{
 		LockTimeout:      10 * time.Second,
 		StatementTimeout: 4 * time.Minute,
-	}))
+	}})
 	if err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}

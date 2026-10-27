@@ -76,7 +76,7 @@ func TestGuardAllowsPromptBundleWithManyBenignBase64Values(t *testing.T) {
 	require.NoError(t, err)
 
 	if evaluation.Decision != DecisionAllow || evaluation.DecodeIncomplete {
-		_, status := guard.decodedTextSegments(input)
+		_, status := guard.decodedTextSegmentsWithRaw(input, Evaluation{}, nil)
 		t.Fatalf("evaluation = %#v, decode status = %d, want complete allow", evaluation, status)
 	}
 }

@@ -93,7 +93,7 @@ func TestMetricsOmitStaleQueueValuesAndRecover(t *testing.T) {
 
 			for _, family := range families {
 				for _, sample := range family.Samples {
-					if sample.Labels["worker"] == "webhook_inbox" {
+					if sample.Labels["worker"] == webhookInboxWorker {
 						values[family.Name] = sample.Value
 					}
 				}

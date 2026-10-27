@@ -20,8 +20,8 @@ func TestRateLimitKeyHashPreservesFullDigestPrefix(t *testing.T) {
 	sum := sha256.Sum256([]byte(value))
 	want := hex.EncodeToString(sum[:])[:16]
 
-	if got := RateLimitKeyHash(value); got != want {
-		t.Fatalf("RateLimitKeyHash() = %q, want %q", got, want)
+	if got := rateLimitKeyHash(value); got != want {
+		t.Fatalf("rateLimitKeyHash() = %q, want %q", got, want)
 	}
 }
 
@@ -46,44 +46,6 @@ func TestParseTrustedProxies(t *testing.T) {
 	}
 }
 
-func TestParseTrustedProxyCSV(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name    string
-		raw     string
-		wantLen int
-		wantErr bool
-	}{
-		{name: "empty", raw: "", wantLen: 0},
-		{name: "cidrs", raw: "10.0.0.0/8, ,192.168.0.0/16", wantLen: 2},
-		{name: "invalid", raw: "not-a-cidr", wantErr: true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			got, err := ParseTrustedProxyCSV(tt.raw)
-			if tt.wantErr {
-				if err == nil {
-					t.Fatal("ParseTrustedProxyCSV() error = nil, want error")
-				}
-
-				return
-			}
-
-			if err != nil {
-				t.Fatalf("ParseTrustedProxyCSV() error = %v", err)
-			}
-
-			if len(got) != tt.wantLen {
-				t.Fatalf("ParseTrustedProxyCSV() len = %d, want %d", len(got), tt.wantLen)
-			}
-		})
-	}
-}
-
 func TestClientIPTrustedForwardedModes(t *testing.T) {
 	t.Parallel()
 
@@ -91,8 +53,8 @@ func TestClientIPTrustedForwardedModes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			if got := ClientIP(tt.req(), tt.opts); got != tt.want {
-				t.Fatalf("ClientIP() = %q, want %q", got, tt.want)
+			if got := clientIP(tt.req(), tt.opts); got != tt.want {
+				t.Fatalf("clientIP() = %q, want %q", got, tt.want)
 			}
 		})
 	}
@@ -415,7 +377,6 @@ func TestFixedWindowRateLimitMiddleware(t *testing.T) {
 		Identity: func(r *http.Request) string {
 			return RateLimitIdentity(r, APIKeyFromRequest(r), ClientIPOptions{})
 		},
-		Reject: WriteRateLimitExceededJSON,
 		Skip: func(r *http.Request) bool {
 			return r.Method == http.MethodOptions
 		},

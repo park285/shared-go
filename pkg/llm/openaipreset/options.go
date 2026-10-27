@@ -72,15 +72,16 @@ func WithUsageReporter(reporter sharedllm.UsageReporter) Option {
 	}
 }
 
+// WithLogger는 llm.request.started·succeeded·failed 로그를 받을 logger를 정한다. 지정하지 않거나 nil이면
+// 기록 시점의 slog.Default()에 기록한다. 생성 시점에 고정하지 않으므로 client를 만든 뒤 slog.SetDefault로
+// 바꾼 서비스 logger를 따른다. 로그 속성은 provider·model·prompt_len·소요 시간뿐이며 prompt 본문은 담지 않는다.
 func WithLogger(logger *slog.Logger) Option {
 	return func(c *config) {
-		if logger != nil {
-			c.logger = logger
-		}
+		c.logger = logger
 	}
 }
 
-// 미지정 시 sharedllm.DefaultOpenAIMaxRetries(2)가 적용되며, 소비자 자체 재시도와
+// 미지정 시 sharedllm.ResolveOpenAIMaxRetries(nil)의 기본 2회가 적용되며, 소비자 자체 재시도와
 // 겹치면 총 시도가 (소비자 시도) × (1 + retries)로 곱연산된다. 음수는 0으로 절단된다.
 func WithMaxRetries(retries int) Option {
 	return func(c *config) {

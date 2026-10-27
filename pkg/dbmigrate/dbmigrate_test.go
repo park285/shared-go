@@ -2,8 +2,6 @@ package dbmigrate
 
 import (
 	"context"
-	"database/sql"
-	"database/sql/driver"
 	"errors"
 	"io/fs"
 	"slices"
@@ -146,7 +144,7 @@ func TestManifest(t *testing.T) {
 	}
 }
 
-func TestApplyOrderingAndWithOnly(t *testing.T) {
+func TestApplyOrderingAndOnly(t *testing.T) {
 	t.Parallel()
 
 	fsys := fstest.MapFS{
@@ -161,7 +159,7 @@ func TestApplyOrderingAndWithOnly(t *testing.T) {
 	err := Apply(t.Context(), fsys, func(_ context.Context, query string, _ ...any) error {
 		got = append(got, query)
 		return nil
-	}, WithOnly("third.sql", testFirstSQL))
+	}, ApplyOptions{Only: []string{"third.sql", testFirstSQL}})
 	if err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}
@@ -172,7 +170,7 @@ func TestApplyOrderingAndWithOnly(t *testing.T) {
 	}
 }
 
-func TestApplyWithOnlyRejectsUnknownName(t *testing.T) {
+func TestApplyOnlyRejectsUnknownName(t *testing.T) {
 	t.Parallel()
 
 	fsys := fstest.MapFS{
@@ -182,14 +180,15 @@ func TestApplyWithOnlyRejectsUnknownName(t *testing.T) {
 	}
 
 	db := newFakeLedgerDB()
-	err := Apply(t.Context(), fsys, db.Exec,
-		WithOnly(testFirstSQL, "nope.sql"),
-		WithSession(SessionConfig{LockTimeout: time.Second, StatementTimeout: time.Second}),
-		WithLedger(Ledger{}, db),
-	)
+	err := Apply(t.Context(), fsys, db.Exec, ApplyOptions{
+		Only:          []string{testFirstSQL, "nope.sql"},
+		Session:       SessionConfig{LockTimeout: time.Second, StatementTimeout: time.Second},
+		Ledger:        &Ledger{},
+		LedgerQuerier: db,
+	})
 
 	if err == nil || !strings.Contains(err.Error(), "nope.sql") {
-		t.Fatalf("Apply() error = %v, want unknown WithOnly name", err)
+		t.Fatalf("Apply() error = %v, want unknown Only name", err)
 	}
 
 	if !strings.Contains(err.Error(), "not in manifest") {
@@ -197,15 +196,15 @@ func TestApplyWithOnlyRejectsUnknownName(t *testing.T) {
 	}
 
 	if len(db.execs) != 0 {
-		t.Fatalf("execs = %v, want none before WithOnly validation (session/ledger must not run)", db.execs)
+		t.Fatalf("execs = %v, want none before Only validation (session/ledger must not run)", db.execs)
 	}
 
 	if len(db.events) != 0 {
-		t.Fatalf("events = %v, want none before WithOnly validation", db.events)
+		t.Fatalf("events = %v, want none before Only validation", db.events)
 	}
 }
 
-func TestApplyWithOnlyUnknownNamesAreSortedDeterministically(t *testing.T) {
+func TestApplyOnlyUnknownNamesAreSortedDeterministically(t *testing.T) {
 	t.Parallel()
 
 	fsys := fstest.MapFS{
@@ -216,7 +215,7 @@ func TestApplyWithOnlyUnknownNamesAreSortedDeterministically(t *testing.T) {
 	for range 10 {
 		err := Apply(t.Context(), fsys, func(context.Context, string, ...any) error {
 			return nil
-		}, WithOnly("zz.sql", testFirstSQL, "aa.sql", "mm.sql"))
+		}, ApplyOptions{Only: []string{"zz.sql", testFirstSQL, "aa.sql", "mm.sql"}})
 		if err == nil || !strings.Contains(err.Error(), "not in manifest: aa.sql, mm.sql, zz.sql") {
 			t.Fatalf("Apply() error = %v, want sorted missing names \"aa.sql, mm.sql, zz.sql\"", err)
 		}
@@ -241,11 +240,11 @@ func TestApplyIdempotentCoreHasNoHiddenState(t *testing.T) {
 		return nil
 	}
 
-	if err := Apply(t.Context(), fsys, exec); err != nil {
+	if err := Apply(t.Context(), fsys, exec, ApplyOptions{}); err != nil {
 		t.Fatalf("first Apply() error = %v", err)
 	}
 
-	if err := Apply(t.Context(), fsys, exec); err != nil {
+	if err := Apply(t.Context(), fsys, exec, ApplyOptions{}); err != nil {
 		t.Fatalf("second Apply() error = %v", err)
 	}
 
@@ -300,58 +299,12 @@ func TestApplyErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			err := Apply(t.Context(), tt.fsys, tt.exec)
+			err := Apply(t.Context(), tt.fsys, tt.exec, ApplyOptions{})
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Fatalf("Apply() error = %v, want substring %q", err, tt.wantErr)
 			}
 		})
 	}
-}
-
-func TestSQLExec(t *testing.T) {
-	t.Parallel()
-
-	db := sql.OpenDB(&fakeSQLConnector{})
-
-	defer func() { _ = db.Close() }()
-
-	if err := SQLExec(db)(t.Context(), "select 1 where $1 = $1", 1); err != nil {
-		t.Fatalf("SQLExec() error = %v", err)
-	}
-}
-
-type fakeSQLConnector struct{}
-
-func (c *fakeSQLConnector) Connect(context.Context) (driver.Conn, error) {
-	return &fakeSQLConn{}, nil
-}
-
-func (c *fakeSQLConnector) Driver() driver.Driver {
-	return fakeSQLDriver{}
-}
-
-type fakeSQLDriver struct{}
-
-func (d fakeSQLDriver) Open(string) (driver.Conn, error) {
-	return &fakeSQLConn{}, nil
-}
-
-type fakeSQLConn struct{}
-
-func (c *fakeSQLConn) Prepare(string) (driver.Stmt, error) {
-	return nil, errors.New("prepare not supported")
-}
-
-func (c *fakeSQLConn) Close() error {
-	return nil
-}
-
-func (c *fakeSQLConn) Begin() (driver.Tx, error) {
-	return nil, errors.New("begin not supported")
-}
-
-func (c *fakeSQLConn) ExecContext(context.Context, string, []driver.NamedValue) (driver.Result, error) {
-	return driver.RowsAffected(1), nil
 }
 
 func TestApplyRunsEachMigrationFileWithoutArguments(t *testing.T) {
@@ -365,7 +318,7 @@ func TestApplyRunsEachMigrationFileWithoutArguments(t *testing.T) {
 
 	var calls []recordedExec
 
-	if err := Apply(t.Context(), fsys, recordingExec(&calls, "")); err != nil {
+	if err := Apply(t.Context(), fsys, recordingExec(&calls, ""), ApplyOptions{}); err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}
 
@@ -388,7 +341,7 @@ func TestApplyRunsEachMigrationFileWithoutArguments(t *testing.T) {
 	}
 }
 
-func TestApplyWithOnlyRejectsEmptySelection(t *testing.T) {
+func TestApplyOnlyRejectsEmptySelection(t *testing.T) {
 	t.Parallel()
 
 	fsys := fstest.MapFS{
@@ -399,29 +352,30 @@ func TestApplyWithOnlyRejectsEmptySelection(t *testing.T) {
 
 	db := newFakeLedgerDB()
 
-	err := Apply(t.Context(), fsys, db.Exec,
-		WithOnly(),
-		WithSession(SessionConfig{LockTimeout: time.Second, StatementTimeout: time.Second}),
-		WithLedger(Ledger{}, db),
-	)
+	err := Apply(t.Context(), fsys, db.Exec, ApplyOptions{
+		Only:          []string{},
+		Session:       SessionConfig{LockTimeout: time.Second, StatementTimeout: time.Second},
+		Ledger:        &Ledger{},
+		LedgerQuerier: db,
+	})
 	if err == nil {
-		t.Fatal("Apply() error = nil, want error for empty WithOnly selection")
+		t.Fatal("Apply() error = nil, want error for empty Only selection")
 	}
 
-	if !strings.Contains(err.Error(), "WithOnly") {
-		t.Fatalf("Apply() error = %v, want error naming WithOnly", err)
+	if !strings.Contains(err.Error(), "Only requires at least one migration name") {
+		t.Fatalf("Apply() error = %v, want error naming Only", err)
 	}
 
 	if len(db.execs) != 0 {
-		t.Fatalf("execs = %v, want none: empty WithOnly must fail before session/ledger side effects", db.execs)
+		t.Fatalf("execs = %v, want none: empty Only must fail before session/ledger side effects", db.execs)
 	}
 
 	if len(db.events) != 0 {
-		t.Fatalf("events = %v, want none before WithOnly validation", db.events)
+		t.Fatalf("events = %v, want none before Only validation", db.events)
 	}
 }
 
-func TestApplyWithOnlyEmptyVariadicSliceRejected(t *testing.T) {
+func TestApplyRejectsLedgerQuerierWithoutLedger(t *testing.T) {
 	t.Parallel()
 
 	fsys := fstest.MapFS{
@@ -429,20 +383,34 @@ func TestApplyWithOnlyEmptyVariadicSliceRejected(t *testing.T) {
 		testFirstSQL: {Data: []byte("select 1")},
 	}
 
-	var (
-		selected []string
-		got      []string
-	)
+	db := newFakeLedgerDB()
 
-	err := Apply(t.Context(), fsys, func(_ context.Context, query string, _ ...any) error {
-		got = append(got, query)
-		return nil
-	}, WithOnly(selected...))
-	if err == nil {
-		t.Fatal("Apply() error = nil, want error for empty WithOnly selection")
+	err := Apply(t.Context(), fsys, db.Exec, ApplyOptions{LedgerQuerier: db, Session: SessionConfig{LockTimeout: time.Second}})
+	if err == nil || !strings.Contains(err.Error(), "LedgerQuerier requires Ledger") {
+		t.Fatalf("Apply() error = %v, want LedgerQuerier without Ledger rejected", err)
 	}
 
-	if len(got) != 0 {
-		t.Fatalf("executed SQL = %v, want none", got)
+	if len(db.execs) != 0 {
+		t.Fatalf("execs = %v, want no session or migration statement without the intended ledger", db.execs)
+	}
+}
+
+func TestApplyRejectsLedgerWithoutQuerier(t *testing.T) {
+	t.Parallel()
+
+	fsys := fstest.MapFS{
+		ManifestName: {Data: []byte("001 first.sql\n")},
+		testFirstSQL: {Data: []byte("select 1")},
+	}
+
+	db := newFakeLedgerDB()
+
+	err := Apply(t.Context(), fsys, db.Exec, ApplyOptions{Ledger: &Ledger{}, Session: SessionConfig{LockTimeout: time.Second}})
+	if err == nil || !strings.Contains(err.Error(), "ledger querier is required") {
+		t.Fatalf("Apply() error = %v, want missing ledger querier rejected", err)
+	}
+
+	if len(db.execs) != 0 {
+		t.Fatalf("execs = %v, want no session or migration statement without a ledger querier", db.execs)
 	}
 }

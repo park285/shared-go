@@ -136,11 +136,6 @@ func newProtectedIndex(protectedTexts []string) (*protectedIndex, error) {
 	return buildProtectedIndexWithPatterns(prepared, patterns), nil
 }
 
-func buildProtectedIndex(protectedTexts []string) *protectedIndex {
-	prepared := prepareProtectedTexts(protectedTexts)
-	return buildProtectedIndexWithPatterns(prepared, protectedExactPatterns(prepared))
-}
-
 func buildProtectedIndexWithPatterns(protectedTexts []preparedProtectedText, exactPatterns []string) *protectedIndex {
 	index := &protectedIndex{
 		entries:          make([]protectedEntry, 0, len(protectedTexts)),

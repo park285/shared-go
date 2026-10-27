@@ -36,12 +36,8 @@ func TestConfigValidate(t *testing.T) {
 
 func TestConfigDSN_RequiresSSLMode(t *testing.T) {
 	cfg := &Config{Host: testLocalhost, Port: 5432, User: "u", Password: "p", Name: "db"}
-	if _, err := cfg.DSN(); err == nil {
-		t.Fatal("DSN() with empty sslmode: expected error, got nil")
-	}
-
-	if _, err := cfg.SafeDSN(); err == nil {
-		t.Fatal("SafeDSN() with empty sslmode: expected error, got nil")
+	if _, err := cfg.safeDSN(); err == nil {
+		t.Fatal("safeDSN() with empty sslmode: expected error, got nil")
 	}
 }
 
@@ -87,53 +83,44 @@ func TestNormalizeDSNRequiresExplicitSSLMode(t *testing.T) {
 func TestConfigDSN_TCP(t *testing.T) {
 	cfg := &Config{Host: "db.example", Port: 6432, User: "svc", Password: "test-dsn-placeholder", Name: "app", SSLMode: testVerifyFull} //nolint:gosec // 테스트 자리표시자 문자열이며 실제 자격 증명이 아니다.
 
-	dsn, err := cfg.DSN()
-	if err != nil {
-		t.Fatalf("DSN() error = %v", err)
-	}
+	dsn := cfg.buildDSN(cfg.Password)
 
 	for _, want := range []string{"host='db.example'", "port=6432", "user='svc'", "password='test-dsn-placeholder'", "dbname='app'", "sslmode='verify-full'"} {
 		if !strings.Contains(dsn, want) {
-			t.Errorf("DSN() = %q, missing %q", dsn, want)
+			t.Errorf("buildDSN() = %q, missing %q", dsn, want)
 		}
 	}
 
 	if strings.Contains(dsn, "sslrootcert") {
-		t.Errorf("DSN() = %q, should omit sslrootcert when unset", dsn)
+		t.Errorf("buildDSN() = %q, should omit sslrootcert when unset", dsn)
 	}
 }
 
 func TestConfigDSN_Socket(t *testing.T) {
 	cfg := &Config{SocketPath: "/var/run/postgresql", User: "u", Name: "db", SSLMode: testDisable}
 
-	dsn, err := cfg.DSN()
-	if err != nil {
-		t.Fatalf("DSN() error = %v", err)
-	}
+	dsn := cfg.buildDSN(cfg.Password)
 
 	if !strings.Contains(dsn, "host='/var/run/postgresql'") {
-		t.Errorf("DSN() = %q, missing socket host", dsn)
+		t.Errorf("buildDSN() = %q, missing socket host", dsn)
 	}
 
 	if strings.Contains(dsn, "port=") {
-		t.Errorf("DSN() = %q, should omit port for socket mode", dsn)
+		t.Errorf("buildDSN() = %q, should omit port for socket mode", dsn)
 	}
 }
 
 func TestConfigDSN_RootCertAndQueryExecMode(t *testing.T) {
 	cfg := &Config{Host: "h", SSLMode: testVerifyFull, SSLRootCert: "/etc/ssl/ca.pem", QueryExecMode: "SIMPLE_PROTOCOL"}
 
-	dsn, err := cfg.DSN()
-	if err != nil {
-		t.Fatalf("DSN() error = %v", err)
-	}
+	dsn := cfg.buildDSN(cfg.Password)
 
 	if !strings.Contains(dsn, "sslrootcert='/etc/ssl/ca.pem'") {
-		t.Errorf("DSN() = %q, missing sslrootcert", dsn)
+		t.Errorf("buildDSN() = %q, missing sslrootcert", dsn)
 	}
 
 	if !strings.Contains(dsn, "default_query_exec_mode='simple_protocol'") {
-		t.Errorf("DSN() = %q, missing normalized query exec mode", dsn)
+		t.Errorf("buildDSN() = %q, missing normalized query exec mode", dsn)
 	}
 }
 
@@ -143,63 +130,51 @@ func TestConfigDSN_IgnoresPostgresSSLRootCertEnv(t *testing.T) {
 
 	cfg := &Config{Host: "h", SSLMode: testVerifyFull}
 
-	dsn, err := cfg.DSN()
-	if err != nil {
-		t.Fatalf("DSN() error = %v", err)
-	}
+	dsn := cfg.buildDSN(cfg.Password)
 
 	if strings.Contains(dsn, "sslrootcert") {
-		t.Errorf("DSN() = %q, want sslrootcert omitted when Config.SSLRootCert is empty", dsn)
+		t.Errorf("buildDSN() = %q, want sslrootcert omitted when Config.SSLRootCert is empty", dsn)
 	}
 
 	cfg.SSLRootCert = " /etc/ssl/field-ca.pem "
 
-	dsn, err = cfg.DSN()
-	if err != nil {
-		t.Fatalf("DSN() error = %v", err)
-	}
+	dsn = cfg.buildDSN(cfg.Password)
 
 	if !strings.Contains(dsn, "sslrootcert='/etc/ssl/field-ca.pem'") || strings.Contains(dsn, "/env/ca.pem") {
-		t.Errorf("DSN() = %q, want only the trimmed Config.SSLRootCert", dsn)
+		t.Errorf("buildDSN() = %q, want only the trimmed Config.SSLRootCert", dsn)
 	}
 }
 
 func TestSafeDSN_MasksPassword(t *testing.T) {
 	cfg := &Config{Host: "h", SSLMode: testDisable, User: "u", Password: "test-redaction-placeholder", Name: "db"}
 
-	safe, err := cfg.SafeDSN()
+	safe, err := cfg.safeDSN()
 	if err != nil {
-		t.Fatalf("SafeDSN() error = %v", err)
+		t.Fatalf("safeDSN() error = %v", err)
 	}
 
 	if strings.Contains(safe, "test-redaction-placeholder") {
-		t.Errorf("SafeDSN() = %q, leaks password", safe)
+		t.Errorf("safeDSN() = %q, leaks password", safe)
 	}
 
 	if !strings.Contains(safe, "password='***'") {
-		t.Errorf("SafeDSN() = %q, missing masked password", safe)
+		t.Errorf("safeDSN() = %q, missing masked password", safe)
 	}
 
-	full, err := cfg.DSN()
-	if err != nil {
-		t.Fatalf("DSN() error = %v", err)
-	}
+	full := cfg.buildDSN(cfg.Password)
 
 	if !strings.Contains(full, "password='test-redaction-placeholder'") {
-		t.Errorf("DSN() = %q, missing real password", full)
+		t.Errorf("buildDSN() = %q, missing real password", full)
 	}
 }
 
 func TestLibpqQuote_Escaping(t *testing.T) {
 	cfg := &Config{Host: "h", SSLMode: testDisable, Password: `pa'ss\word`}
 
-	dsn, err := cfg.DSN()
-	if err != nil {
-		t.Fatalf("DSN() error = %v", err)
-	}
+	dsn := cfg.buildDSN(cfg.Password)
 
 	if !strings.Contains(dsn, `password='pa\'ss\\word'`) {
-		t.Errorf("DSN() = %q, quote/backslash not escaped", dsn)
+		t.Errorf("buildDSN() = %q, quote/backslash not escaped", dsn)
 	}
 }
 
@@ -224,7 +199,7 @@ func TestDefaultPoolConfig_IgnoresEnvUsesStaticDefaults(t *testing.T) {
 				t.Setenv("DB_POOL_MAX_CONNS", tc.maxVal)
 			}
 
-			pc := DefaultPoolConfig()
+			pc := defaultPoolConfig()
 			if pc.MinConns != 0 {
 				t.Errorf("MinConns = %d, want static 0 (env not read by library)", pc.MinConns)
 			}
@@ -248,7 +223,7 @@ func TestWithPoolDefaults_FillsDurationsWithoutChoosingMaximum(t *testing.T) {
 	t.Setenv("DB_POOL_MIN_CONNS", "7")
 	t.Setenv("DB_POOL_MAX_CONNS", "33")
 
-	def := DefaultPoolConfig()
+	def := defaultPoolConfig()
 	got := withPoolDefaults(PoolConfig{})
 
 	if got.MinConns != 0 || got.MaxConns != 0 {

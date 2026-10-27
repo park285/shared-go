@@ -90,8 +90,9 @@ func TestRunOperationLogsFailureWithErrorAttrs(t *testing.T) {
 	err := RunOperation(t.Context(), logger, OperationOptions{Name: testSync}, func(context.Context) error {
 		return wantErr
 	})
-	if !errors.Is(err, wantErr) {
-		t.Fatalf("RunOperation error = %v, want %v", err, wantErr)
+	// fn의 오류는 호출자 소유이므로 감싸지 않고 그대로 돌려준다.
+	if !errors.Is(err, wantErr) || err.Error() != wantErr.Error() {
+		t.Fatalf("RunOperation error = %v, want unwrapped %v", err, wantErr)
 	}
 
 	records := operationLogRecords(t, &buf)
@@ -270,7 +271,7 @@ func TestOperationContextAddsFallbackJobIDAndRuntimeFromNilContext(t *testing.T)
 
 func TestOperationContextWithJobIDPreservesExistingAndCreatesNew(t *testing.T) {
 	t.Run("preserves existing JobID", func(t *testing.T) {
-		ctx := WithJobID(t.Context(), "existing-job")
+		ctx := withJobID(t.Context(), "existing-job")
 		gotCtx := operationContextWithJobID(ctx, OperationOptions{IDPrefix: "new-job"})
 
 		if got := jobIDFromContext(gotCtx); got != "existing-job" {

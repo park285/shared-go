@@ -199,7 +199,7 @@ func requireSameJSON(t *testing.T, got, want []byte, label string) {
 }
 
 // TestCompleteRequiresTheMessageIdAndALiveLease는 종단 전이의 fence를 확인한다. 토큰만 대조하면
-// lease가 만료된 뒤 ReclaimInbox 전의 창에서 complete이 성공하고, 같은 순간 reclaim이 행을
+// lease가 만료된 뒤 재claim·복구 전의 창에서 complete이 성공하고, 같은 순간 그 경로가 행을
 // 되돌리면 같은 메시지가 두 번 처리된다.
 func TestCompleteRequiresTheMessageIdAndALiveLease(t *testing.T) {
 	pool := newMigratedPool(t)

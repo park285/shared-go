@@ -42,12 +42,9 @@ func TestParseConfigNormalizesExplicitModes(t *testing.T) {
 			inputMode := " " + strings.ToUpper(mode) + " "
 			cfg := Config{Host: "db.example", Port: 5432, User: "app", Password: `dummy'password\tail`, Name: "app", SSLMode: inputMode}
 
-			dsn, err := cfg.DSN()
-			if err != nil {
-				t.Fatal(err)
-			}
+			dsn := cfg.buildDSN(cfg.Password)
 
-			safeDSN, err := cfg.SafeDSN()
+			safeDSN, err := cfg.safeDSN()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -59,7 +56,7 @@ func TestParseConfigNormalizesExplicitModes(t *testing.T) {
 				assertTLSMode(t, parsed, mode)
 			}
 
-			poolCfg, err := buildConfigPool(&cfg, DefaultOptions())
+			poolCfg, err := buildConfigPool(&cfg, Options{Pool: defaultPoolConfig()})
 			if err != nil {
 				t.Fatal(err)
 			}

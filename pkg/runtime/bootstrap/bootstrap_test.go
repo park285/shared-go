@@ -9,13 +9,10 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	sharedlogging "github.com/park285/shared-go/v2/pkg/logging"
 )
 
 type testConfig struct {
-	Logging sharedlogging.Config
-	Port    int
+	Port int
 }
 
 type testRuntime struct {
@@ -63,6 +60,38 @@ func TestRunClosesLoggerResource(t *testing.T) {
 
 	if !closer.closed {
 		t.Fatal("logger closer was not closed")
+	}
+}
+
+// AUTOMAXPROCS_* env를 바꾸므로 병렬로 돌리지 않는다.
+func TestRun_InitializesAutomaxprocsWithServiceLoggerBeforeBuild(t *testing.T) {
+	t.Setenv("AUTOMAXPROCS_DISABLE", "")
+	t.Setenv("AUTOMAXPROCS_FORCE", "")
+
+	const decision = "automaxprocs skipped"
+
+	var logs bytes.Buffer
+
+	logsAtBuild := ""
+	exitCode := Options[*testConfig, *testRuntime]{
+		LoadConfig: func() (*testConfig, error) { return &testConfig{}, nil },
+		NewLogger: func(*testConfig) (*slog.Logger, io.Closer, error) {
+			return testLoggerWithoutCloser(newUnsanitizedTestLogger(&logs))
+		},
+		BuildRuntime: func(context.Context, *testConfig, *slog.Logger) (*testRuntime, error) {
+			logsAtBuild = logs.String()
+
+			return &testRuntime{}, nil
+		},
+		Stderr: &bytes.Buffer{},
+	}.Run()
+
+	if exitCode != 0 {
+		t.Fatalf("Run() exitCode = %d, want 0", exitCode)
+	}
+
+	if !strings.Contains(logsAtBuild, decision) {
+		t.Fatalf("service logger before BuildRuntime = %q, want automaxprocs decision %q", logsAtBuild, decision)
 	}
 }
 
@@ -530,7 +559,7 @@ func TestRun_DefaultLoadConfigErrorMessage(t *testing.T) {
 	}
 }
 
-func TestRun_NilInitializeUsesDefault(t *testing.T) {
+func TestRun_NilInitializeIsOptional(t *testing.T) {
 	t.Parallel()
 
 	rt := &testRuntime{}
@@ -551,51 +580,32 @@ func TestRun_NilInitializeUsesDefault(t *testing.T) {
 	}
 }
 
-func TestNewLogger_DefaultPathWithLoggerConfig(t *testing.T) {
+func TestRun_ReturnsExitCodeOneWhenNewLoggerMissing(t *testing.T) {
 	t.Parallel()
 
-	cfg := &testConfig{}
+	var stderr bytes.Buffer
 
-	logger, closer, err := Options[*testConfig, *testRuntime]{
-		LoggerConfig: func(_ *testConfig) sharedlogging.Config {
-			return sharedlogging.Config{}
+	buildCalled := false
+	exitCode := Options[*testConfig, *testRuntime]{
+		LoadConfig: func() (*testConfig, error) { return &testConfig{}, nil },
+		BuildRuntime: func(context.Context, *testConfig, *slog.Logger) (*testRuntime, error) {
+			buildCalled = true
+
+			return &testRuntime{}, nil
 		},
-		LoggerLevel: func(_ *testConfig) string {
-			return "debug"
-		},
-		LoggerFileName: "test.log",
-	}.newLogger(cfg)
-	if err != nil {
-		t.Fatalf("newLogger() error = %v", err)
+		Stderr: &stderr,
+	}.Run()
+
+	if exitCode != 1 {
+		t.Fatalf("Run() exitCode = %d, want 1", exitCode)
 	}
 
-	if logger == nil {
-		t.Fatal("newLogger() returned nil logger")
+	if buildCalled {
+		t.Fatal("BuildRuntime() should not be called without NewLogger")
 	}
 
-	if closer != nil {
-		t.Cleanup(func() { _ = closer.Close() })
-	}
-}
-
-func TestNewLogger_DefaultPathAllNil(t *testing.T) {
-	t.Parallel()
-
-	cfg := &testConfig{}
-
-	logger, closer, err := Options[*testConfig, *testRuntime]{
-		LoggerFileName: "test.log",
-	}.newLogger(cfg)
-	if err != nil {
-		t.Fatalf("newLogger() error = %v", err)
-	}
-
-	if logger == nil {
-		t.Fatal("newLogger() returned nil logger")
-	}
-
-	if closer != nil {
-		t.Cleanup(func() { _ = closer.Close() })
+	if got := stderr.String(); !strings.Contains(got, "Failed to initialize logger: bootstrap: NewLogger is required") {
+		t.Fatalf("stderr = %q, want missing NewLogger failure", got)
 	}
 }
 
@@ -731,4 +741,32 @@ type failingCloser struct {
 
 func (c failingCloser) Close() error {
 	return c.err
+}
+
+func TestRun_NilLoggerFromHookUsesDefault(t *testing.T) {
+	t.Parallel()
+
+	var builtLogger *slog.Logger
+
+	exitCode := Options[*testConfig, *testRuntime]{
+		LoadConfig: func() (*testConfig, error) { return &testConfig{}, nil },
+		NewLogger: func(*testConfig) (*slog.Logger, io.Closer, error) {
+			return testLoggerWithoutCloser(nil)
+		},
+		StartupMessage: "Test runtime starting...",
+		BuildRuntime: func(_ context.Context, _ *testConfig, logger *slog.Logger) (*testRuntime, error) {
+			builtLogger = logger
+
+			return &testRuntime{}, nil
+		},
+		Stderr: &bytes.Buffer{},
+	}.Run()
+
+	if exitCode != 0 {
+		t.Fatalf("Run() exitCode = %d, want 0", exitCode)
+	}
+
+	if builtLogger != slog.Default() {
+		t.Fatal("BuildRuntime() logger is not slog.Default() when NewLogger returns nil logger")
+	}
 }

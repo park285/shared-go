@@ -14,21 +14,17 @@ import (
 	"github.com/park285/shared-go/v2/pkg/workercontract"
 )
 
-func knownIdentity(t *testing.T, service, role string) workercontract.Identity {
-	t.Helper()
+// Fixture들이 공유하는 durable webhook inbox worker ID다.
+const webhookInboxWorker = "webhook_inbox"
 
-	identity, err := workercontract.KnownIdentity(service, role)
-	if err != nil {
-		t.Fatalf("KnownIdentity(%q, %q) error = %v", service, role, err)
+// chatbotIdentity는 valid-profile-chatbotgo.json fixture와 짝인 identity다. Worker 목록은 소비 서비스가
+// 소유하므로 테스트는 fixture에 맞춘 리터럴을 직접 두고, 불일치는 fixture 로드가 검출한다.
+func chatbotIdentity() workercontract.Identity {
+	return workercontract.Identity{
+		Service:   "chatbotgo",
+		Role:      "bot",
+		WorkerIDs: []string{"command", "compaction", "draw", "summary", webhookInboxWorker},
 	}
-
-	return identity
-}
-
-func chatbotIdentity(t *testing.T) workercontract.Identity {
-	t.Helper()
-
-	return knownIdentity(t, "chatbotgo", "bot")
 }
 
 func validProfilePath() string {
@@ -69,7 +65,7 @@ func TestLoadProfileFileValidatesExactBytesAndIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	loaded, err := workercontract.LoadProfileFile(path, chatbotIdentity(t))
+	loaded, err := workercontract.LoadProfileFile(path, chatbotIdentity())
 	if err != nil {
 		t.Fatalf("LoadProfileFile() error = %v", err)
 	}
@@ -87,12 +83,10 @@ func TestLoadProfileFileValidatesExactBytesAndIdentity(t *testing.T) {
 func TestLoadTwentyQProfileRequiresThreeWorkers(t *testing.T) {
 	t.Parallel()
 
-	identity := knownIdentity(t, "twentyq", "bot")
-	wantIDs := []string{"pending_queue", "reply_outbox", "webhook_inbox"}
-
-	if !slices.Equal(identity.WorkerIDs, wantIDs) {
-		t.Fatalf("TwentyQ WorkerIDs = %v, want %v", identity.WorkerIDs, wantIDs)
-	}
+	wantIDs := []string{"pending_queue", "reply_outbox", webhookInboxWorker}
+	// 정렬되지 않은 호출자 슬라이스를 넘겨 LoadProfileFile이 identity를 바꾸지 않는지도 함께 본다.
+	callerIDs := []string{webhookInboxWorker, "pending_queue", "reply_outbox"}
+	identity := workercontract.Identity{Service: "twentyq", Role: "bot", WorkerIDs: callerIDs}
 
 	raw, err := os.ReadFile(validProfilePath())
 	if err != nil {
@@ -148,6 +142,10 @@ func TestLoadTwentyQProfileRequiresThreeWorkers(t *testing.T) {
 			} else if err != nil || len(loaded.Profile.Workers) != 3 {
 				t.Fatalf("LoadProfileFile() = %+v, %v; want three-worker profile", loaded.Profile, err)
 			}
+
+			if !slices.Equal(identity.WorkerIDs, []string{webhookInboxWorker, "pending_queue", "reply_outbox"}) {
+				t.Fatalf("identity.WorkerIDs = %v, want caller order preserved", identity.WorkerIDs)
+			}
 		})
 	}
 }
@@ -160,7 +158,7 @@ func TestLoadProfileFileRejectsEveryNegativeFixture(t *testing.T) {
 
 	for _, path := range paths {
 		t.Run(filepath.Base(path), func(t *testing.T) {
-			if _, err := workercontract.LoadProfileFile(path, chatbotIdentity(t)); err == nil {
+			if _, err := workercontract.LoadProfileFile(path, chatbotIdentity()); err == nil {
 				t.Fatal("invalid common profile accepted")
 			}
 		})
@@ -183,9 +181,9 @@ func TestLoadProfileFileRejectsNullEnabled(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	loaded, loadErr := workercontract.LoadProfileFile(path, chatbotIdentity(t))
+	loaded, loadErr := workercontract.LoadProfileFile(path, chatbotIdentity())
 	if loadErr == nil {
-		t.Fatalf("LoadProfileFile() error = nil, webhook_inbox enabled = %v", loaded.Profile.Workers["webhook_inbox"].Executor.Enabled)
+		t.Fatalf("LoadProfileFile() error = nil, webhook_inbox enabled = %v", loaded.Profile.Workers[webhookInboxWorker].Executor.Enabled)
 	}
 }
 
@@ -218,7 +216,7 @@ func TestLoadProfileFileRejectsOversizeBOMAndSymlink(t *testing.T) {
 	}
 
 	for _, path := range []string{oversize, bom, symlink, dir} {
-		if _, loadErr := workercontract.LoadProfileFile(path, chatbotIdentity(t)); loadErr == nil {
+		if _, loadErr := workercontract.LoadProfileFile(path, chatbotIdentity()); loadErr == nil {
 			t.Fatalf("LoadProfileFile(%q) error = nil", path)
 		}
 	}
@@ -260,7 +258,7 @@ func TestProfileFileCheckerDropsReplacementIdentity(t *testing.T) {
 		t.Fatal(writeErr)
 	}
 
-	loaded, err := workercontract.LoadProfileFile(path, chatbotIdentity(t))
+	loaded, err := workercontract.LoadProfileFile(path, chatbotIdentity())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -304,7 +302,7 @@ func TestProfileCheckerReportsRegularContentChanges(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			loaded, err := workercontract.LoadProfileFile(path, chatbotIdentity(t))
+			loaded, err := workercontract.LoadProfileFile(path, chatbotIdentity())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -320,7 +318,7 @@ func TestProfileCheckerReportsRegularContentChanges(t *testing.T) {
 				t.Fatalf("regular content replacement classified as file type: %+v", status)
 			}
 
-			if _, err := workercontract.LoadProfileFile(path, chatbotIdentity(t)); err == nil {
+			if _, err := workercontract.LoadProfileFile(path, chatbotIdentity()); err == nil {
 				t.Fatal("invalid replacement accepted at startup")
 			}
 		})

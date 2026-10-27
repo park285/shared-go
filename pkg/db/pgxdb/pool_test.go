@@ -26,7 +26,6 @@ func TestOptionsPingTimeout(t *testing.T) {
 		opts Options
 		want time.Duration
 	}{
-		{"default options", DefaultOptions(), 5 * time.Second},
 		{"zero value", Options{}, 5 * time.Second},
 		{"explicit", Options{Ping: PingConfig{PingTimeout: 250 * time.Millisecond}}, 250 * time.Millisecond},
 	}
@@ -147,7 +146,7 @@ func TestBuildConfigPool_AppliesQueryExecModeThroughDSNOnly(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := Config{Host: "127.0.0.1", Port: 5432, User: "u", Name: "db", SSLMode: testDisable, QueryExecMode: tt.mode}
 
-			poolCfg, err := buildConfigPool(&cfg, DefaultOptions())
+			poolCfg, err := buildConfigPool(&cfg, Options{Pool: defaultPoolConfig()})
 			if err != nil {
 				t.Fatalf("buildConfigPool error = %v", err)
 			}

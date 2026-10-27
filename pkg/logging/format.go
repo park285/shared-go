@@ -8,14 +8,14 @@ import (
 	"strings"
 )
 
-const FormatJSON = "json"
+const formatJSON = "json"
 
 func parseLogFormat(format string) error {
 	switch format {
-	case "", FormatJSON:
+	case "", formatJSON:
 		return nil
 	default:
-		return fmt.Errorf("invalid log format %q: only %q is supported", format, FormatJSON)
+		return fmt.Errorf("invalid log format %q: only %q is supported", format, formatJSON)
 	}
 }
 

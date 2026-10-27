@@ -51,7 +51,7 @@ func (r *compiledRule) matchSegment(segment textSegment, policy compiledPolicy, 
 	}
 
 	var (
-		views   Views
+		views   guardtext.Views
 		changed bool
 	)
 
@@ -69,7 +69,7 @@ func (r *compiledRule) matchSegment(segment textSegment, policy compiledPolicy, 
 }
 
 // maskViews는 가린 원문으로 세그먼트 view를 다시 만든다. 가린 범위가 없으면 원래 view를 돌려준다.
-func (r *compiledRule) maskViews(views Views) (Views, bool) {
+func (r *compiledRule) maskViews(views guardtext.Views) (guardtext.Views, bool) {
 	masked, changed := r.maskExclusions(views.Raw)
 	if !changed {
 		return views, false

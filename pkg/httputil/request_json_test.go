@@ -50,7 +50,7 @@ func TestDecodeJSONRequestContentType(t *testing.T) {
 			req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/", strings.NewReader(`{"name":"ok"}`))
 
 			if tt.contentType != "" {
-				req.Header.Set(HeaderContentType, tt.contentType)
+				req.Header.Set(headerContentType, tt.contentType)
 			}
 
 			var got decodeJSONRequestSample

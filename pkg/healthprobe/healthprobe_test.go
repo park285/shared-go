@@ -29,8 +29,8 @@ func TestCheckURLAcceptsSuccessStatus(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if err := CheckURLInternal(server.URL); err != nil {
-		t.Fatalf("CheckURLInternal(%q): %v", server.URL, err)
+	if _, err := fetchURL(t.Context(), server.URL, nil, internalFetchOptions()); err != nil {
+		t.Fatalf("fetchURL(%q): %v", server.URL, err)
 	}
 }
 
@@ -40,13 +40,13 @@ func TestFetchURLReturnsBody(t *testing.T) {
 	}))
 	defer server.Close()
 
-	body, err := FetchURLInternal(server.URL)
+	body, err := fetchURL(t.Context(), server.URL, nil, internalFetchOptions())
 	if err != nil {
-		t.Fatalf("FetchURLInternal(%q): %v", server.URL, err)
+		t.Fatalf("fetchURL(%q): %v", server.URL, err)
 	}
 
 	if string(body) != `{"mode":"active-active"}` {
-		t.Fatalf("FetchURLInternal body = %q, want active-active json", body)
+		t.Fatalf("fetchURL body = %q, want active-active json", body)
 	}
 }
 
@@ -62,17 +62,17 @@ func TestFetchURLWithHeadersSendsConfiguredHeaders(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if _, err := FetchURLInternal(server.URL); err == nil {
-		t.Fatal("FetchURLInternal() error = nil, want unauthorized without API key header")
+	if _, err := fetchURL(t.Context(), server.URL, nil, internalFetchOptions()); err == nil {
+		t.Fatal("fetchURL() error = nil, want unauthorized without API key header")
 	}
 
-	body, err := FetchURLWithHeadersInternal(server.URL, map[string]string{"X-API-Key": testProbeSecret})
+	body, err := fetchURL(t.Context(), server.URL, map[string]string{"X-API-Key": testProbeSecret}, internalFetchOptions())
 	if err != nil {
-		t.Fatalf("FetchURLWithHeadersInternal(%q): %v", server.URL, err)
+		t.Fatalf("fetchURL(%q): %v", server.URL, err)
 	}
 
 	if string(body) != "ok" {
-		t.Fatalf("FetchURLWithHeadersInternal body = %q, want ok", body)
+		t.Fatalf("fetchURL body = %q, want ok", body)
 	}
 }
 
@@ -84,8 +84,8 @@ func TestFetchURLRejectsServerErrorWithoutBody(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if body, err := FetchURLInternal(server.URL); err == nil || body != nil {
-		t.Fatalf("FetchURLInternal(%q) = (%q, %v), want nil body and error for 500", server.URL, body, err)
+	if body, err := fetchURL(t.Context(), server.URL, nil, internalFetchOptions()); err == nil || body != nil {
+		t.Fatalf("fetchURL(%q) = (%q, %v), want nil body and error for 500", server.URL, body, err)
 	}
 }
 
@@ -95,16 +95,16 @@ func TestCheckURLRejectsServerError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if err := CheckURLInternal(server.URL); err == nil {
-		t.Fatalf("CheckURLInternal(%q) error = nil, want error for 500", server.URL)
+	if _, err := fetchURL(t.Context(), server.URL, nil, internalFetchOptions()); err == nil {
+		t.Fatalf("fetchURL(%q) error = nil, want error for 500", server.URL)
 	}
 }
 
 func TestCheckURLRejectsMissingCAFile(t *testing.T) {
 	t.Setenv(CACertFileEnv, filepath.Join(t.TempDir(), "missing.pem"))
 
-	if err := CheckURLInternal("https://127.0.0.1:1/ready"); err == nil {
-		t.Fatal("CheckURLInternal() error = nil, want error for missing CA file")
+	if _, err := fetchURL(t.Context(), "https://127.0.0.1:1/ready", nil, internalFetchOptions()); err == nil {
+		t.Fatal("fetchURL() error = nil, want error for missing CA file")
 	}
 }
 
@@ -182,8 +182,8 @@ func TestCheckURLAcceptsHTTP3LoopbackWithServerNameOverride(t *testing.T) {
 	}()
 
 	t.Setenv(CACertFileEnv, certFile)
-	t.Setenv(ClientCertFileEnv, certFile)
-	t.Setenv(ClientKeyFileEnv, keyFile)
+	t.Setenv(clientCertFileEnv, certFile)
+	t.Setenv(clientKeyFileEnv, keyFile)
 	t.Setenv(ServerNameEnv, "healthprobe-h3.local")
 
 	address := listener.LocalAddr()
@@ -192,8 +192,8 @@ func TestCheckURLAcceptsHTTP3LoopbackWithServerNameOverride(t *testing.T) {
 	}
 
 	url := "https://" + address.String() + "/ready"
-	if err := CheckURLInternal(url); err != nil {
-		t.Fatalf("CheckURLInternal(%q): %v", url, err)
+	if _, err := fetchURL(t.Context(), url, nil, internalFetchOptions()); err != nil {
+		t.Fatalf("fetchURL(%q): %v", url, err)
 	}
 }
 
@@ -236,13 +236,13 @@ func TestCheckURLRejectsCrossOriginRedirectBeforePresentingClientCertificate(t *
 	}))
 
 	t.Setenv(CACertFileEnv, certFile)
-	t.Setenv(ClientCertFileEnv, certFile)
-	t.Setenv(ClientKeyFileEnv, keyFile)
+	t.Setenv(clientCertFileEnv, certFile)
+	t.Setenv(clientKeyFileEnv, keyFile)
 	t.Setenv(ServerNameEnv, "healthprobe-h3.local")
 
-	err = CheckURLInternal(origin + "/ready")
-	if !errors.Is(err, ErrCredentialedRedirect) {
-		t.Fatalf("CheckURLInternal() error = %v, want ErrCredentialedRedirect", err)
+	_, err = fetchURL(t.Context(), origin+"/ready", nil, internalFetchOptions())
+	if !errors.Is(err, errCredentialedRedirect) {
+		t.Fatalf("fetchURL() error = %v, want errCredentialedRedirect", err)
 	}
 
 	if got := redirectedRequests.Load(); got != 0 {

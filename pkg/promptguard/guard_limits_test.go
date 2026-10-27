@@ -12,7 +12,7 @@ import (
 func newOversizeTestGuard(t *testing.T, handler slog.Handler) *Guard {
 	t.Helper()
 
-	pack, err := compileRulepack(&rawRulepack{
+	pack := compileTestPack(t, &rawRulepack{
 		Version: 3,
 		Policy: rawPolicy{
 			BlockThreshold:   1.0,
@@ -23,14 +23,12 @@ func newOversizeTestGuard(t *testing.T, handler slog.Handler) *Guard {
 			{ID: "exfil", Family: "prompt_exfil", Type: ruleTypeRegex, Action: "block", View: "joined", Segments: []string{testSegmentPlain}, Pattern: "시스템", Weight: 1.0},
 		},
 	})
-	if err != nil {
-		t.Fatalf("compileRulepack() error = %v", err)
-	}
 
 	guard := &Guard{
 		cfg:           Config{Enabled: true},
+		logger:        slog.New(slog.DiscardHandler),
 		packs:         []compiledPack{pack},
-		cache:         NewTTLCache[string, Evaluation](10, time.Minute),
+		cache:         newTTLCache[string, Evaluation](10, time.Minute, time.Now),
 		maxInputBytes: 16,
 	}
 
@@ -152,7 +150,7 @@ func TestSG01GuardOversizeLogDoesNotIncludePayload_cb5f8136(t *testing.T) {
 func TestCheckUnderCapRunsRuleMatchingAndCaches(t *testing.T) {
 	t.Parallel()
 
-	pack, err := compileRulepack(&rawRulepack{
+	pack := compileTestPack(t, &rawRulepack{
 		Version: 3,
 		Policy: rawPolicy{
 			BlockThreshold:   1.0,
@@ -163,14 +161,12 @@ func TestCheckUnderCapRunsRuleMatchingAndCaches(t *testing.T) {
 			{ID: "policy", Family: "policy_bypass", Type: ruleTypeRegex, Action: hitActionScore, View: "joined", Segments: []string{testSegmentPlain}, Pattern: "정책[\\s\\S]{0,12}무시", Weight: 0.7},
 		},
 	})
-	if err != nil {
-		t.Fatalf("compileRulepack() error = %v", err)
-	}
 
 	guard := &Guard{
 		cfg:           Config{Enabled: true},
+		logger:        slog.New(slog.DiscardHandler),
 		packs:         []compiledPack{pack},
-		cache:         NewTTLCache[string, Evaluation](10, time.Minute),
+		cache:         newTTLCache[string, Evaluation](10, time.Minute, time.Now),
 		maxInputBytes: 8 << 20,
 	}
 
@@ -200,7 +196,7 @@ func TestNewGuardDefaultsMaxInputBytes(t *testing.T) {
 func TestCacheKeyIsFixedLengthDigest(t *testing.T) {
 	t.Parallel()
 
-	pack, err := compileRulepack(&rawRulepack{
+	pack := compileTestPack(t, &rawRulepack{
 		Version: 3,
 		Policy: rawPolicy{
 			BlockThreshold:   1.0,
@@ -211,14 +207,12 @@ func TestCacheKeyIsFixedLengthDigest(t *testing.T) {
 			{ID: "policy", Family: "policy_bypass", Type: ruleTypeRegex, Action: hitActionScore, View: "joined", Segments: []string{testSegmentPlain}, Pattern: "정책[\\s\\S]{0,12}무시", Weight: 0.7},
 		},
 	})
-	if err != nil {
-		t.Fatalf("compileRulepack() error = %v", err)
-	}
 
 	guard := &Guard{
 		cfg:           Config{Enabled: true},
+		logger:        slog.New(slog.DiscardHandler),
 		packs:         []compiledPack{pack},
-		cache:         NewTTLCache[string, Evaluation](10, time.Minute),
+		cache:         newTTLCache[string, Evaluation](10, time.Minute, time.Now),
 		maxInputBytes: 8 << 20,
 	}
 

@@ -56,7 +56,7 @@ type Guard struct {
 	cfg                 Config
 	logger              *slog.Logger
 	packs               []compiledPack
-	cache               *TTLCache[string, Evaluation]
+	cache               *ttlCache[string, Evaluation]
 	group               singleflight.Group
 	onEvaluation        func(EvaluationEvent)
 	maxInputBytes       int
@@ -75,6 +75,7 @@ type evaluationState struct {
 	hardBlockHit  bool
 }
 
+// NewGuard는 cfg로 guard를 만든다. 인자 logger가 nil이면 slog.Default()를 쓰므로 만든 Guard의 logger는 nil이 아니다.
 func NewGuard(cfg Config, logger *slog.Logger) (*Guard, error) {
 	if logger == nil {
 		logger = slog.Default()
@@ -98,7 +99,7 @@ func NewGuard(cfg Config, logger *slog.Logger) (*Guard, error) {
 
 	set, err := loadConfiguredRulepacks(cfg, logger)
 	if err != nil {
-		return nil, fmt.Errorf("load rulepacks: %w", err)
+		return nil, fmt.Errorf("promptguard: load rulepacks: %w", err)
 	}
 
 	attachRequiredLiteralFilter(set.Packs)
@@ -107,7 +108,7 @@ func NewGuard(cfg Config, logger *slog.Logger) (*Guard, error) {
 		cfg:                 cfg,
 		logger:              logger,
 		packs:               set.Packs,
-		cache:               NewTTLCache[string, Evaluation](cfg.CacheMaxSize, cfg.CacheTTL),
+		cache:               newTTLCache[string, Evaluation](cfg.CacheMaxSize, cfg.CacheTTL, time.Now),
 		onEvaluation:        cfg.OnEvaluation,
 		maxInputBytes:       cfg.MaxInputBytes,
 		policyDigest:        set.Digest,
@@ -245,18 +246,16 @@ func detectFailureCause(err error) fallbackCause {
 
 // fallbackEvaluation은 guard 평가가 실패했을 때의 conservative fallback이다.
 func (g *Guard) fallbackEvaluation(policy compiledPolicy, source Source, cause fallbackCause) Evaluation {
-	if g != nil && g.logger != nil {
-		attrs := []any{
-			slog.String("reason", ruleEvaluationFallback),
-			slog.String("cause", string(cause)),
-		}
-
-		if source != "" {
-			attrs = append(attrs, slog.String("source", string(source)))
-		}
-
-		g.logger.Error("guard_evaluation_fallback", attrs...)
+	attrs := []any{
+		slog.String("reason", ruleEvaluationFallback),
+		slog.String("cause", string(cause)),
 	}
+
+	if source != "" {
+		attrs = append(attrs, slog.String("source", string(source)))
+	}
+
+	g.logger.Error("guard_evaluation_fallback", attrs...)
 
 	return Evaluation{
 		Decision:         DecisionBlock,
@@ -272,19 +271,17 @@ func (g *Guard) fallbackEvaluation(policy compiledPolicy, source Source, cause f
 }
 
 func (g *Guard) inputOversizeEvaluation(policy compiledPolicy, source Source, size int) Evaluation {
-	if g != nil && g.logger != nil {
-		attrs := []any{
-			slog.String("reason", ruleInputOversize),
-			slog.Int("size", size),
-			slog.Int("max", g.maxInputBytes),
-		}
-
-		if source != "" {
-			attrs = append(attrs, slog.String("source", string(source)))
-		}
-
-		g.logger.Error("guard_input_oversize_blocked", attrs...)
+	attrs := []any{
+		slog.String("reason", ruleInputOversize),
+		slog.Int("size", size),
+		slog.Int("max", g.maxInputBytes),
 	}
+
+	if source != "" {
+		attrs = append(attrs, slog.String("source", string(source)))
+	}
+
+	g.logger.Error("guard_input_oversize_blocked", attrs...)
 
 	return Evaluation{
 		Decision:        DecisionBlock,
@@ -417,7 +414,7 @@ func (g *Guard) observeEvaluation(evaluation Evaluation, cacheHit bool, inputByt
 		return
 	}
 
-	if evaluation.Decision == DecisionReview && g.logger != nil {
+	if evaluation.Decision == DecisionReview {
 		g.logReviewEvaluation(evaluation, cacheHit)
 	}
 

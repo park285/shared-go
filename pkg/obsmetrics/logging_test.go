@@ -130,8 +130,14 @@ func (w *failLoggingMetricWrite) Write(p []byte) (int, error) {
 func TestWriteLoggingMetricsStopsOnExpositionFailure(t *testing.T) {
 	t.Parallel()
 
-	// 카운터별 HELP·TYPE·샘플 쓰기 중 어느 위치에서 실패해도 출력을 중단해야 한다.
-	for failAt := 1; failAt <= 9; failAt++ {
+	// 카운터별 header·샘플 쓰기 중 어느 위치에서 실패해도 출력을 중단해야 한다.
+	// 쓰기 횟수는 exposition 구현에 따라 달라지므로 실패 없는 전체 출력에서 먼저 센다.
+	complete := &failLoggingMetricWrite{}
+	if !WriteLoggingMetrics(complete) {
+		t.Fatal("WriteLoggingMetrics() = false without write failure")
+	}
+
+	for failAt := 1; failAt <= complete.calls; failAt++ {
 		writer := &failLoggingMetricWrite{failAt: failAt}
 		if WriteLoggingMetrics(writer) {
 			t.Errorf("write %d failure was hidden", failAt)

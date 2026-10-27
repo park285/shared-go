@@ -1,12 +1,12 @@
 package lifecycle
 
 type Managed struct {
-	CleanupCloser
+	cleanupCloser
 }
 
 func NewManaged(cleanup func()) Managed {
 	return Managed{
-		CleanupCloser: NewCleanupCloser(cleanup),
+		cleanupCloser: newCleanupCloser(cleanup),
 	}
 }
 
@@ -15,5 +15,5 @@ func (m *Managed) Close() {
 		return
 	}
 
-	m.CleanupCloser.Close()
+	m.cleanupCloser.Close()
 }

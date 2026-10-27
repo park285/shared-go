@@ -11,10 +11,10 @@ import (
 )
 
 const (
-	// ContentTypeJSON은 JSON 응답 Content-Type 값이다.
-	ContentTypeJSON = "application/json"
-	// HeaderContentType은 HTTP Content-Type 헤더 이름이다.
-	HeaderContentType = "Content-Type"
+	// JSON 응답의 Content-Type 값이다.
+	contentTypeJSON = "application/json"
+	// HTTP Content-Type 헤더 이름이다.
+	headerContentType = "Content-Type"
 	// HeaderAPIKey는 관리 API key 인증 헤더 이름이다.
 	HeaderAPIKey = "X-API-Key" //nolint:gosec // 헤더 이름 상수이며 credential 값이 아니다.
 )
@@ -53,14 +53,14 @@ func WriteJSON(w http.ResponseWriter, status int, v any) error {
 	var body bytes.Buffer
 
 	if err := jsonv2.MarshalWrite(&body, v); err != nil {
-		return fmt.Errorf("marshal write: %w", err)
+		return fmt.Errorf("httputil: marshal write: %w", err)
 	}
 
-	w.Header().Set(HeaderContentType, ContentTypeJSON)
+	w.Header().Set(headerContentType, contentTypeJSON)
 	w.WriteHeader(status)
 
 	if _, err := w.Write(body.Bytes()); err != nil {
-		return fmt.Errorf("write JSON body: %w", err)
+		return fmt.Errorf("httputil: write JSON body: %w", err)
 	}
 
 	return nil
@@ -72,7 +72,7 @@ func WriteErrorJSON(w http.ResponseWriter, status int, code, message string) err
 		Error:   strings.TrimSpace(code),
 		Message: strings.TrimSpace(message),
 	}); err != nil {
-		return fmt.Errorf("write JSON: %w", err)
+		return fmt.Errorf("httputil: write JSON: %w", err)
 	}
 
 	return nil

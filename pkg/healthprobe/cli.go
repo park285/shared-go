@@ -26,12 +26,6 @@ func RunMain(args []string, stdout, stderr io.Writer) int {
 
 type cliFetchFunc func(context.Context, string, map[string]string) ([]byte, error)
 
-func runMain(args []string, stdout, stderr io.Writer, checkURL func(string) error) int {
-	return runCLI(args, stdout, stderr, func(_ context.Context, rawURL string, _ map[string]string) ([]byte, error) {
-		return nil, checkURL(rawURL)
-	})
-}
-
 func runCLI(args []string, stdout, stderr io.Writer, fetch cliFetchFunc) int {
 	if len(args) == 2 && args[1] == "--smoke" {
 		return runSmoke(stdout, stderr)

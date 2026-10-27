@@ -17,28 +17,6 @@ const maxRuleOccurrences = 64
 // overlay 규칙이 검사 할당을 키우지 못하게 막는다.
 const maxSentenceBreakRunes = 64
 
-func compileRulepack(raw *rawRulepack) (compiledPack, error) {
-	if raw == nil {
-		return compiledPack{}, errors.New("rulepack is nil")
-	}
-
-	if raw.Version != 3 {
-		return compiledPack{}, errors.New("rulepack version must be 3")
-	}
-
-	rules, err := compileRules(raw)
-	if err != nil {
-		return compiledPack{}, fmt.Errorf("compile rules: %w", err)
-	}
-
-	return compiledPack{
-		Version: raw.Version,
-		Kind:    strings.ToLower(strings.TrimSpace(raw.Kind)),
-		Policy:  compilePolicy(raw),
-		Rules:   rules,
-	}, nil
-}
-
 func compileRules(raw *rawRulepack) ([]compiledRule, error) {
 	rules := make([]compiledRule, 0, len(raw.Rules))
 	for i := range raw.Rules {

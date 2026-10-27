@@ -85,24 +85,18 @@ func TestLog_CapturesWrapperCaller(t *testing.T) {
 	}
 }
 
-func TestContextAttrs_EmptyZeroAlloc(t *testing.T) {
-	got := testing.AllocsPerRun(1000, func() {
-		if attrs := ContextAttrs(t.Context()); attrs != nil {
-			panic("empty context attrs must be nil")
-		}
-	})
-	if got != 0 {
-		t.Fatalf("ContextAttrs(empty) allocs = %v, want 0", got)
-	}
-}
-
 func TestBroadValueKeyNormalizesRawKeys(t *testing.T) {
-	if !isBroadValueKey(" KEY ") {
-		t.Fatal("raw broad-value key was not normalized")
+	const highEntropy = "aB3dE7fG9hJ2kL5mN8pQ1rS4tU6vW0xYzAbCdEfGhIj"
+
+	// 값 자체의 redaction이 아니라 broad-value key 정책이 가렸음을 보이려면 같은 값이 일반 key에서는 남아야 한다.
+	if out := sanitizeAttr(slog.String("label", highEntropy)); out.Value.String() != highEntropy {
+		t.Fatalf("plain key value = %q, want preserved control value", out.Value.String())
 	}
 
-	if isBroadValueKey("api_key") {
-		t.Fatal("sensitive exact key must not be classified as a broad-value key")
+	for _, key := range []string{" KEY ", "Key"} {
+		if out := sanitizeAttr(slog.String(key, highEntropy)); out.Value.String() != redactedValue {
+			t.Fatalf("raw broad-value key %q value = %q, want redacted", key, out.Value.String())
+		}
 	}
 }
 
@@ -179,9 +173,6 @@ func TestErrorHelpers_CaptureCallerSource(t *testing.T) {
 			if err := LogAndWrapError(ctx, logger, "op", context.DeadlineExceeded); err == nil {
 				t.Fatal("LogAndWrapError() = nil, want error")
 			}
-		},
-		"LogWarnWithErrorAttrs": func(ctx context.Context, logger *slog.Logger) {
-			LogWarnWithErrorAttrs(ctx, logger, "event", "message", context.DeadlineExceeded)
 		},
 	}
 

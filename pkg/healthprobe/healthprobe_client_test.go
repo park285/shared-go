@@ -33,7 +33,7 @@ func TestNewClientHTTPCloseFnClosesIdleConnections(t *testing.T) {
 		t.Fatalf("url.Parse() error = %v", err)
 	}
 
-	client, closeFn, err := newClient(parsed, FetchOptions{})
+	client, closeFn, err := newClient(parsed, fetchOptions{})
 	if err != nil {
 		t.Fatalf("newClient() error = %v", err)
 	}

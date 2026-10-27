@@ -4,6 +4,7 @@ import (
 	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"slices"
 	"sync"
@@ -76,72 +77,46 @@ func NewRegistry(loaded LoadedProfile, checker *ProfileFileChecker) *Registry {
 	}
 }
 
-// WorkerProfile은 service validator가 strict settings를 해석할 worker entry를 반환한다.
-func (r *Registry) WorkerProfile(workerID string) (WorkerProfile, bool) {
-	if r == nil {
-		return WorkerProfile{}, false
-	}
-
-	worker, ok := r.loaded.Profile.Workers[workerID]
-
-	return worker, ok
-}
-
-// Counters는 등록된 worker의 instrumentation owner를 반환한다.
-func (r *Registry) Counters(workerID string) (*Counters, bool) {
-	if r == nil {
-		return nil, false
-	}
-
-	r.mu.RLock()
-
-	defer r.mu.RUnlock()
-
-	registration, ok := r.registrations[workerID]
-
-	return registration.Counters, ok
-}
-
 // Register는 worker adapter 하나를 중복 없이 등록한다.
 func (r *Registry) Register(registration Registration) error {
 	if r == nil {
-		return errors.New("worker registry: nil registry")
+		return errors.New("workercontract: worker registry: nil registry")
 	}
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if r.sealed {
-		return errors.New("worker registry: already sealed")
+		return errors.New("workercontract: worker registry: already sealed")
 	}
 
 	profileWorker, ok := r.loaded.Profile.Workers[registration.WorkerID]
 	if !ok {
-		return fmt.Errorf("worker registry: unknown worker %q", registration.WorkerID)
+		return fmt.Errorf("workercontract: worker registry: unknown worker %q", registration.WorkerID)
 	}
 
 	if _, exists := r.registrations[registration.WorkerID]; exists {
-		return fmt.Errorf("worker registry: duplicate worker %q", registration.WorkerID)
+		return fmt.Errorf("workercontract: worker registry: duplicate worker %q", registration.WorkerID)
 	}
 
 	if !registration.SettingsValidated {
-		return fmt.Errorf("worker registry: %s settings were not strictly validated", registration.WorkerID)
+		return fmt.Errorf("workercontract: worker registry: %s settings were not strictly validated", registration.WorkerID)
 	}
 
 	if err := validateRegistrationMetadata(registration); err != nil {
-		return fmt.Errorf("worker registry: %s: %w", registration.WorkerID, err)
+		return fmt.Errorf("workercontract: worker registry: %s: %w", registration.WorkerID, err)
 	}
 
 	if profileWorker.Executor.Enabled && registration.ExecutorSnapshot == nil {
-		return fmt.Errorf("worker registry: %s: executor snapshot source required", registration.WorkerID)
+		return fmt.Errorf("workercontract: worker registry: %s: executor snapshot source required", registration.WorkerID)
 	}
 
 	if registration.QueueSnapshot == nil && (registration.QueueBackend != QueueMemory || profileWorker.Executor.Enabled) {
-		return fmt.Errorf("worker registry: %s: queue snapshot source required", registration.WorkerID)
+		return fmt.Errorf("workercontract: worker registry: %s: queue snapshot source required", registration.WorkerID)
 	}
 
 	if profileWorker.Executor.AttemptTimeout.Mode == DurationModePerJob && !registration.PerJobDeadlineValidated {
-		return fmt.Errorf("worker registry: %s: per-job deadline storage is not validated", registration.WorkerID)
+		return fmt.Errorf("workercontract: worker registry: %s: per-job deadline storage is not validated", registration.WorkerID)
 	}
 
 	if registration.Counters == nil && registration.TotalsSnapshot == nil {
@@ -178,7 +153,7 @@ func validateRegistrationMetadata(registration Registration) error {
 // Seal은 exact worker set과 single-runtime identity를 검증한다.
 func (r *Registry) Seal() error {
 	if r == nil {
-		return errors.New("worker registry: nil registry")
+		return errors.New("workercontract: worker registry: nil registry")
 	}
 
 	r.mu.Lock()
@@ -189,15 +164,11 @@ func (r *Registry) Seal() error {
 	}
 
 	if len(r.loaded.Profile.Workers) == 0 {
-		return errors.New("worker registry: profile must contain workers")
+		return errors.New("workercontract: worker registry: profile must contain workers")
 	}
 
-	expected := make([]string, 0, len(r.loaded.Profile.Workers))
+	expected := slices.Sorted(maps.Keys(r.loaded.Profile.Workers))
 	actual := make([]string, 0, len(r.registrations))
-
-	for workerID := range r.loaded.Profile.Workers {
-		expected = append(expected, workerID)
-	}
 
 	for workerID, registration := range r.registrations {
 		actual = append(actual, workerID)
@@ -205,15 +176,14 @@ func (r *Registry) Seal() error {
 		if r.runtime == "" {
 			r.runtime = registration.Runtime
 		} else if r.runtime != registration.Runtime {
-			return errors.New("worker registry: one process cannot register multiple runtimes")
+			return errors.New("workercontract: worker registry: one process cannot register multiple runtimes")
 		}
 	}
 
-	slices.Sort(expected)
 	slices.Sort(actual)
 
 	if !slices.Equal(expected, actual) {
-		return fmt.Errorf("worker registry: got workers %v, want %v", actual, expected)
+		return fmt.Errorf("workercontract: worker registry: got workers %v, want %v", actual, expected)
 	}
 
 	r.sealed = true
@@ -224,7 +194,7 @@ func (r *Registry) Seal() error {
 // Diagnostics는 queue I/O 없이 current registry envelope를 만든다.
 func (r *Registry) Diagnostics(observedAt time.Time) (DiagnosticsEnvelope, error) {
 	if r == nil {
-		return DiagnosticsEnvelope{}, errors.New("worker registry: nil registry")
+		return DiagnosticsEnvelope{}, errors.New("workercontract: worker registry: nil registry")
 	}
 
 	r.mu.RLock()
@@ -232,7 +202,7 @@ func (r *Registry) Diagnostics(observedAt time.Time) (DiagnosticsEnvelope, error
 	defer r.mu.RUnlock()
 
 	if !r.sealed {
-		return DiagnosticsEnvelope{}, errors.New("worker registry: not sealed")
+		return DiagnosticsEnvelope{}, errors.New("workercontract: worker registry: not sealed")
 	}
 
 	fileStatus := r.fileChecker.Status()

@@ -6,10 +6,13 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/park285/shared-go/v2/pkg/runtime/lifecycle"
 )
 
 // DefaultShutdownTimeout 은 shutdownTimeout 이 0 이하일 때 적용하는 보수적 기본 종료 예산입니다.
-const DefaultShutdownTimeout = 30 * time.Second
+// Process 종료 예산과 같은 값이라 lifecycle 패키지의 상수를 그대로 씁니다.
+const DefaultShutdownTimeout = lifecycle.DefaultShutdownTimeout
 
 const maxForceCloseReserve = time.Second
 
@@ -29,13 +32,13 @@ func Run(ctx context.Context, server Server, shutdownTimeout time.Duration) erro
 	select {
 	case err := <-errCh:
 		if listenErr := normalizeListenError(err, "http server listen failed"); listenErr != nil {
-			return fmt.Errorf("normalize listen error: %w", listenErr)
+			return fmt.Errorf("httpserver: normalize listen error: %w", listenErr)
 		}
 
 		return nil
 	case <-ctx.Done():
 		if err := shutdownAndWait(ctx, server, errCh, shutdownTimeout); err != nil {
-			return fmt.Errorf("shutdown and wait: %w", err)
+			return fmt.Errorf("httpserver: shutdown and wait: %w", err)
 		}
 
 		return nil

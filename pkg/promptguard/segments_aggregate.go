@@ -76,7 +76,7 @@ type aggregateTailChunk struct {
 // segmentPiece는 한 평가 안에서 조각 하나의 view와 그로부터 다시 만든 view를 보관한다. 조각 평가와
 // 결합 경계 판정이 같은 조각을 여러 번 보므로 가린 view와 raw 규칙용 정규화를 한 번만 만든다.
 type segmentPiece struct {
-	views        Views
+	views        guardtext.Views
 	masked       []maskedPieceViews
 	rawNorm      string
 	rawNormReady bool
@@ -88,14 +88,14 @@ type segmentPiece struct {
 type maskedPieceViews struct {
 	key     string
 	masked  string
-	views   Views
+	views   guardtext.Views
 	changed bool
 }
 
 // maskedViews는 규칙의 예외 문맥과 문장 경계를 가린 조각 view와 가린 범위가 있었는지를 돌려준다.
 // 가림 설정이 같은 규칙은 같은 view를 쓰고, 설정이 달라도 가린 원문이 같으면(조각에 예외 문맥이 없어
 // 문장 경계만 가린 경우) 정규화한 view를 다시 쓴다.
-func (piece *segmentPiece) maskedViews(rule *compiledRule) (Views, bool) {
+func (piece *segmentPiece) maskedViews(rule *compiledRule) (guardtext.Views, bool) {
 	for _, cached := range piece.masked {
 		if cached.key == rule.MaskKey {
 			return cached.views, cached.changed
@@ -165,7 +165,7 @@ func (tail *aggregateTail) aggregateWith(right textSegment) textSegment {
 		Kind:    segmentPlain,
 		Kinds:   tail.kindsWith(right.Kind),
 		rawNorm: rawNorm,
-		Views: Views{
+		Views: guardtext.Views{
 			Raw:    raw,
 			Norm:   norm,
 			Joined: joined,

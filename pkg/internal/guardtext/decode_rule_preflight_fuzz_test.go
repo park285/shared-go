@@ -19,7 +19,7 @@ func FuzzRuleDecodePreflightMatchesReference(f *testing.F) {
 		}
 
 		wantPotential := hasPotentialDecodeSurface(input) || hasPlausibleShortRuleDecodeSurface(input)
-		wantNormalization := EncodingSyntaxNeedsNormalization(input)
+		wantNormalization := encodingSyntaxNeedsNormalizationReference(input)
 		gotPotential, gotNormalization := ruleDecodePreflight(input)
 
 		if gotPotential != wantPotential || gotNormalization != wantNormalization {

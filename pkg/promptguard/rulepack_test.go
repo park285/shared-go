@@ -3,6 +3,7 @@ package promptguard
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -50,12 +51,12 @@ func TestReadRulepackFileRejectsPathOutsideBaseDir(t *testing.T) {
 	}
 }
 
-func TestCompileRulepackErrors(t *testing.T) {
+func TestCompileRulesRejectsUnknownRuleType(t *testing.T) {
 	t.Parallel()
 
-	_, err := compileRulepack(&rawRulepack{Rules: []rawRule{{ID: "x", Type: "unknown", Weight: 1}}})
-	if err == nil {
-		t.Fatal("expected error for unknown rule type")
+	_, err := compileRules(&rawRulepack{Version: 3, Rules: []rawRule{{ID: "x", Type: "unknown", Weight: 1}}})
+	if err == nil || !strings.Contains(err.Error(), `unknown rule type "unknown"`) {
+		t.Fatalf("compileRules() error = %v, want unknown rule type", err)
 	}
 }
 

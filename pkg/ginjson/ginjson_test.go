@@ -1,4 +1,4 @@
-package ginjson_test
+package ginjson
 
 import (
 	"bytes"
@@ -10,8 +10,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"github.com/park285/shared-go/v2/pkg/ginjson"
 )
 
 func init() {
@@ -25,7 +23,7 @@ func TestRespond(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 
-	ginjson.Respond(c, http.StatusOK, map[string]string{"key": "value"})
+	Respond(c, http.StatusOK, map[string]string{"key": "value"})
 
 	if w.Code != http.StatusOK {
 		t.Errorf("상태코드 불일치: got %d, want %d", w.Code, http.StatusOK)
@@ -53,7 +51,7 @@ func TestJSON_Render(t *testing.T) {
 	t.Parallel()
 
 	w := httptest.NewRecorder()
-	r := ginjson.JSON{Data: map[string]int{"count": 42}}
+	r := jsonRender{Data: map[string]int{"count": 42}}
 
 	err := r.Render(w)
 	if err != nil {
@@ -97,7 +95,7 @@ func TestJSONRenderUsesV2HTMLBoundary(t *testing.T) {
 			t.Parallel()
 
 			w := httptest.NewRecorder()
-			if err := (ginjson.JSON{Data: tc.data}).Render(w); err != nil {
+			if err := (jsonRender{Data: tc.data}).Render(w); err != nil {
 				t.Fatalf("Render 오류: %v", err)
 			}
 
@@ -117,7 +115,7 @@ func TestJSONRenderRejectsInvalidUTF8(t *testing.T) {
 	t.Parallel()
 
 	w := httptest.NewRecorder()
-	if err := (ginjson.JSON{Data: map[string]string{"k": "ok\xff\xfebad"}}).Render(w); err == nil {
+	if err := (jsonRender{Data: map[string]string{"k": "ok\xff\xfebad"}}).Render(w); err == nil {
 		t.Fatal("Render 오류 = nil, want invalid UTF-8 failure")
 	}
 
@@ -158,7 +156,7 @@ func TestJSON_WriteContentType(t *testing.T) {
 				w.Header().Set("Content-Type", tc.preset)
 			}
 
-			r := ginjson.JSON{Data: nil}
+			r := jsonRender{Data: nil}
 			r.WriteContentType(w)
 
 			got := w.Header().Get("Content-Type")
@@ -207,7 +205,7 @@ func TestRespond_DifferentStatusCodes(t *testing.T) {
 			w := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(w)
 
-			ginjson.Respond(c, tc.statusCode, tc.data)
+			Respond(c, tc.statusCode, tc.data)
 
 			if w.Code != tc.statusCode {
 				t.Errorf("상태코드 불일치: got %d, want %d", w.Code, tc.statusCode)

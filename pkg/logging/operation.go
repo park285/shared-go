@@ -2,7 +2,6 @@ package logging
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -22,6 +21,7 @@ type OperationOptions struct {
 	Attrs []slog.Attr
 }
 
+// RunOperation은 fn 실행을 시작·성공·실패 로그로 감싼다. 콜백 fn의 오류는 호출자 소유이므로 감싸지 않고 그대로 반환한다.
 func RunOperation(ctx context.Context, logger *slog.Logger, opts OperationOptions, fn func(context.Context) error) error {
 	ctx = operationContext(ctx, opts)
 
@@ -44,7 +44,7 @@ func RunOperation(ctx context.Context, logger *slog.Logger, opts OperationOption
 		attrs = append(attrs, ErrorAttrs(err)...)
 		logWith(ctx, logger, slog.LevelError, eventOrDefault(opts.FailureEvent, name+".failed"), "operation failed", callerSkipViaHelper, attrs, nil)
 
-		return fmt.Errorf("fn: %w", err)
+		return err
 	}
 
 	logWith(ctx, logger, opts.Level, eventOrDefault(opts.SuccessEvent, name+".succeeded"), "operation succeeded", callerSkipViaHelper, attrs, nil)
@@ -72,7 +72,7 @@ func operationContextWithJobID(ctx context.Context, opts OperationOptions) conte
 		prefix = operationName(opts.Name)
 	}
 
-	return WithJobID(ctx, newID(prefix))
+	return withJobID(ctx, newID(prefix))
 }
 
 func operationContextWithRuntime(ctx context.Context, opts OperationOptions) context.Context {
@@ -99,7 +99,7 @@ func operationName(name string) string {
 func operationAttrs(name string, attrs []slog.Attr) []slog.Attr {
 	baseAttrs := make([]slog.Attr, 0, 1+len(attrs))
 
-	baseAttrs = append(baseAttrs, Operation(name))
+	baseAttrs = append(baseAttrs, operationAttr(name))
 
 	return append(baseAttrs, attrs...)
 }

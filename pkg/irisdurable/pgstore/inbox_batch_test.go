@@ -21,7 +21,9 @@ const (
 	inboxRecoveryScope   = "recovery"
 )
 
-func TestInboxBatchKeepsFIFOAndRequiresBoundedRecovery(t *testing.T) {
+// 명시 복구 모드에서는 만료 claim이 준비 상태나 ClaimBatch로 다시 나오지 않고, 만료된 소유자는
+// 종단 전이를 하지 못한다. 복구 판정은 ApplyInboxRecovery 테스트가 따로 검증한다.
+func TestInboxBatchKeepsFIFOAndRequiresExplicitRecovery(t *testing.T) {
 	pool := newMigratedPool(t)
 	store := newScopedStoreWithOptions(t, pool, pgstore.Options{
 		Scope: "chat", InboxExplicitRecovery: true, DiscardInboxManualReviewPayload: true,
@@ -39,21 +41,6 @@ func TestInboxBatchKeepsFIFOAndRequiresBoundedRecovery(t *testing.T) {
 
 	if rows, err := store.ClaimBatch(t.Context(), 8); err != nil || len(rows) != 0 {
 		t.Fatalf("claim reclaimed without recovery: %+v, %v", rows, err)
-	}
-
-	result, err := store.RecoverInboxBefore(t.Context(), time.Now(), 1, 1)
-	if err != nil || result.ManualReview != 1 || result.Retried != 0 {
-		t.Fatalf("bounded recovery = %+v, %v", result, err)
-	}
-
-	var processing, scrubbed int
-
-	if err := pool.QueryRow(t.Context(), "SELECT count(*) FILTER (WHERE status = 'processing'), count(*) FILTER (WHERE status = 'manual_review' AND payload = '{}'::jsonb) FROM iris_webhook_inbox").Scan(&processing, &scrubbed); err != nil {
-		t.Fatal(err)
-	}
-
-	if processing != 1 || scrubbed != 1 {
-		t.Fatalf("processing=%d scrubbed=%d", processing, scrubbed)
 	}
 
 	for _, claim := range claims {
@@ -134,16 +121,17 @@ func TestInboxTerminalMaintenancePreservesRetentionAndClaim(t *testing.T) {
 		t.Fatalf("claim: %v %v", ok, err)
 	}
 
-	if _, err := pool.Exec(t.Context(), "UPDATE iris_webhook_inbox SET created_at = now() - interval '1 day'"); err != nil {
-		t.Fatal(err)
+	completed, ok, err := store.Claim(t.Context())
+	if err != nil || !ok {
+		t.Fatalf("second claim: %v %v", ok, err)
 	}
 
-	if n, err := store.CompletePendingInboxBefore(t.Context(), time.Now(), 1, "inbox age exceeded"); err != nil || n != 1 {
-		t.Fatalf("stale sweep = %d, %v", n, err)
+	if err := store.Complete(t.Context(), completed, ""); err != nil {
+		t.Fatalf("complete: %v", err)
 	}
 
 	if err := store.ManualReviewInbox(t.Context(), claim, "permanent failure"); err != nil {
-		t.Fatalf("sweep stole active claim: %v", err)
+		t.Fatalf("manual review: %v", err)
 	}
 
 	if n, err := store.PruneInboxBefore(t.Context(), time.Now().Add(time.Hour), 10); err != nil || n != 0 {

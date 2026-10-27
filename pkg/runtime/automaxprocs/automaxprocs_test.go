@@ -1,36 +1,13 @@
 package automaxprocs
 
 import (
+	"bytes"
 	"log/slog"
+	"strings"
 	"testing"
+
+	"github.com/park285/shared-go/v2/pkg/internal/testsupport"
 )
-
-func TestShouldRunAutomaxprocsUsesNativeRuntimeByDefault(t *testing.T) {
-	t.Setenv(DisableEnv, "")
-	t.Setenv(ForceEnv, "")
-
-	if shouldRunAutomaxprocs() {
-		t.Fatal("shouldRunAutomaxprocs() = true, want false without AUTOMAXPROCS_FORCE")
-	}
-}
-
-func TestShouldRunAutomaxprocsHonorsForceEnv(t *testing.T) {
-	t.Setenv(DisableEnv, "")
-	t.Setenv(ForceEnv, "1")
-
-	if !shouldRunAutomaxprocs() {
-		t.Fatal("shouldRunAutomaxprocs() = false, want true with AUTOMAXPROCS_FORCE=1")
-	}
-}
-
-func TestShouldRunAutomaxprocsDisableOverridesForce(t *testing.T) {
-	t.Setenv(DisableEnv, "1")
-	t.Setenv(ForceEnv, "1")
-
-	if shouldRunAutomaxprocs() {
-		t.Fatal("shouldRunAutomaxprocs() = true, want false when AUTOMAXPROCS_DISABLE=1")
-	}
-}
 
 func TestAutomaxprocsDecision(t *testing.T) {
 	tests := []struct {
@@ -47,8 +24,8 @@ func TestAutomaxprocsDecision(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv(DisableEnv, tt.disable)
-			t.Setenv(ForceEnv, tt.force)
+			t.Setenv(disableEnv, tt.disable)
+			t.Setenv(forceEnv, tt.force)
 
 			got := decideAutomaxprocs()
 			if got.run != tt.wantRun || got.reason != tt.wantReason {
@@ -58,37 +35,52 @@ func TestAutomaxprocsDecision(t *testing.T) {
 	}
 }
 
-func TestLogInfo_NilLogger(_ *testing.T) {
-	logInfo(nil, "should not panic")
+func TestInit_LogsDecisionToLogger(t *testing.T) {
+	tests := []struct {
+		name    string
+		disable string
+		want    string
+	}{
+		{name: "native default", want: "automaxprocs skipped"},
+		{name: "disabled", disable: "1", want: "automaxprocs disabled by env"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(disableEnv, tt.disable)
+			t.Setenv(forceEnv, "")
+
+			var logs bytes.Buffer
+
+			Init(slog.New(slog.NewTextHandler(&logs, nil)))
+
+			if !strings.Contains(logs.String(), tt.want) {
+				t.Fatalf("Init() logs = %q, want %q", logs.String(), tt.want)
+			}
+		})
+	}
 }
 
-func TestLogInfo_WithLogger(_ *testing.T) {
-	logger := slog.New(slog.DiscardHandler)
-	logInfo(logger, "test message", "key", "value")
-}
+// 전역 slog default를 바꾸므로 병렬로 돌리지 않는다.
+func TestInit_NilLoggerUsesDefault(t *testing.T) {
+	t.Setenv(disableEnv, "1")
+	t.Setenv(forceEnv, "")
 
-func TestInit_DisabledByEnv(t *testing.T) {
-	t.Setenv(DisableEnv, "1")
-	t.Setenv(ForceEnv, "")
-	Init(slog.New(slog.DiscardHandler))
-}
+	var logs bytes.Buffer
 
-func TestInit_NilLogger(t *testing.T) {
-	t.Setenv(DisableEnv, "1")
-	t.Setenv(ForceEnv, "")
+	testsupport.UseDefaultLogger(t, slog.NewTextHandler(&logs, nil))
+
 	Init(nil)
+
+	if !strings.Contains(logs.String(), "automaxprocs disabled by env") {
+		t.Fatalf("default logger output = %q, want disabled decision", logs.String())
+	}
 }
 
 func TestInit_Forced(t *testing.T) {
-	t.Setenv(DisableEnv, "")
-	t.Setenv(ForceEnv, "1")
+	t.Setenv(disableEnv, "")
+	t.Setenv(forceEnv, "1")
 	Init(slog.New(slog.DiscardHandler))
-}
-
-func TestInit_ForcedNilLogger(t *testing.T) {
-	t.Setenv(DisableEnv, "")
-	t.Setenv(ForceEnv, "1")
-	Init(nil)
 }
 
 func TestIsTruthy(t *testing.T) {

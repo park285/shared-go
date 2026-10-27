@@ -6,8 +6,9 @@ import (
 	"maps"
 	"slices"
 	"strconv"
-	"strings"
 	"time"
+
+	"github.com/park285/shared-go/v2/pkg/internal/promtext"
 )
 
 // MetricType은 Prometheus family type을 고정한다.
@@ -65,7 +66,7 @@ var metricDescriptors = []metricDescriptor{
 func (r *Registry) Metrics(observedAt time.Time) ([]MetricFamily, error) {
 	envelope, err := r.Diagnostics(observedAt)
 	if err != nil {
-		return nil, fmt.Errorf("diagnostics: %w", err)
+		return nil, err
 	}
 
 	families, byName := newMetricFamilies()
@@ -104,14 +105,7 @@ func addProfileMetricSamples(byName map[string]*MetricFamily, envelope Diagnosti
 }
 
 func (r *Registry) addWorkerMetricSamples(byName map[string]*MetricFamily, envelope DiagnosticsEnvelope) {
-	workerIDs := make([]string, 0, len(envelope.Workers))
-	for workerID := range envelope.Workers {
-		workerIDs = append(workerIDs, workerID)
-	}
-
-	slices.Sort(workerIDs)
-
-	for _, workerID := range workerIDs {
+	for _, workerID := range slices.Sorted(maps.Keys(envelope.Workers)) {
 		r.addSingleWorkerMetricSamples(byName, envelope, workerID)
 	}
 }
@@ -213,13 +207,14 @@ func addDiscardSamples(families map[string]*MetricFamily, labels map[string]stri
 	}
 }
 
+// addSample은 labels의 소유권을 가져간다. 호출자는 이후 그 map을 변경하지 않아야 한다.
 func addSample(families map[string]*MetricFamily, family string, labels map[string]string, value float64) {
 	metricFamily, ok := families[family]
 	if !ok || metricFamily == nil {
 		panic("workercontract: unregistered metric family " + family)
 	}
 
-	metricFamily.Samples = append(metricFamily.Samples, MetricSample{Labels: cloneLabels(labels), Value: value})
+	metricFamily.Samples = append(metricFamily.Samples, MetricSample{Labels: labels, Value: value})
 }
 
 func cloneLabels(labels map[string]string) map[string]string {
@@ -239,63 +234,19 @@ func boolFloat(value bool) float64 {
 
 func millisecondsToSeconds(value int64) float64 { return float64(value) / 1000 }
 
-// WritePrometheus는 descriptor와 sample을 deterministic text exposition으로 쓴다.
+// WritePrometheus는 descriptor와 sample을 deterministic text exposition으로 쓴다. Label은 name 오름차순으로 쓴다.
 func WritePrometheus(writer io.Writer, families []MetricFamily) error {
 	for _, family := range families {
-		if _, err := fmt.Fprintf(writer, "# HELP %s %s\n# TYPE %s %s\n", family.Name, sanitizeHelp(family.Help), family.Name, family.Type); err != nil {
-			return fmt.Errorf("fprintf: %w", err)
+		if err := promtext.WriteHeader(writer, family.Name, family.Help, string(family.Type)); err != nil {
+			return fmt.Errorf("workercontract: write %s: %w", family.Name, err)
 		}
 
 		for _, sample := range family.Samples {
-			if _, err := fmt.Fprintf(writer, "%s%s %s\n", family.Name, formatMetricLabels(sample.Labels), strconv.FormatFloat(sample.Value, 'g', -1, 64)); err != nil {
-				return fmt.Errorf("fprintf: %w", err)
+			if err := promtext.WriteSample(writer, family.Name, promtext.SortedLabels(sample.Labels), promtext.FormatFloat(sample.Value)); err != nil {
+				return fmt.Errorf("workercontract: write %s: %w", family.Name, err)
 			}
 		}
 	}
 
 	return nil
-}
-
-func formatMetricLabels(labels map[string]string) string {
-	if len(labels) == 0 {
-		return ""
-	}
-
-	names := make([]string, 0, len(labels))
-	for name := range labels {
-		names = append(names, name)
-	}
-
-	slices.Sort(names)
-
-	var builder strings.Builder
-
-	builder.WriteByte('{')
-
-	for index, name := range names {
-		if index > 0 {
-			builder.WriteByte(',')
-		}
-
-		builder.WriteString(name)
-		builder.WriteString("=\"")
-		builder.WriteString(escapeLabel(labels[name]))
-		builder.WriteByte('"')
-	}
-
-	builder.WriteByte('}')
-
-	return builder.String()
-}
-
-func escapeLabel(value string) string {
-	value = strings.ReplaceAll(value, `\`, `\\`)
-	value = strings.ReplaceAll(value, "\n", `\n`)
-
-	return strings.ReplaceAll(value, `"`, `\"`)
-}
-
-func sanitizeHelp(help string) string {
-	help = strings.ReplaceAll(help, `\`, `\\`)
-	return strings.ReplaceAll(help, "\n", `\n`)
 }

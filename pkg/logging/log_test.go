@@ -2,8 +2,11 @@ package logging
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"testing"
+
+	"github.com/park285/shared-go/v2/pkg/internal/testsupport"
 )
 
 type capturedLogRecord struct {
@@ -89,14 +92,32 @@ func TestLevelWrappersDelegateToLogLevel(t *testing.T) {
 	}
 }
 
-func TestLogWithNilLoggerNoops(t *testing.T) {
-	defer func() {
-		if r := recover(); r != nil {
-			t.Fatalf("Log panicked with nil logger: %v", r)
-		}
-	}()
+// 전역 slog default를 바꾸므로 병렬로 돌리지 않는다.
+func TestNilLoggerUsesDefaultLogger(t *testing.T) {
+	handler := newCaptureLogHandler(true)
+	testsupport.UseDefaultLogger(t, handler)
 
-	Log(t.Context(), nil, slog.LevelInfo, "event", "message")
+	Log(t.Context(), nil, slog.LevelInfo, "direct.event", "message")
+
+	if err := LogAndWrapError(t.Context(), nil, "sync.poll", errors.New("boom")); err == nil {
+		t.Fatal("LogAndWrapError() = nil, want wrapped error")
+	}
+
+	opErr := RunOperation(t.Context(), nil, OperationOptions{Name: "nil.op", SkipStartLog: true}, func(context.Context) error {
+		return nil
+	})
+	if opErr != nil {
+		t.Fatalf("RunOperation() error = %v", opErr)
+	}
+
+	wantEvents := []string{"direct.event", "sync.poll.failed", "nil.op.succeeded"}
+	if len(handler.records) != len(wantEvents) {
+		t.Fatalf("default logger records = %d, want %d", len(handler.records), len(wantEvents))
+	}
+
+	for i, want := range wantEvents {
+		requireCapturedAttr(t, handler.records[i], "event", want)
+	}
 }
 
 func TestLogWithNilContextFallsBackToBackground(t *testing.T) {
@@ -190,7 +211,7 @@ func TestLogAddsEventAttrOnlyWhenPresent(t *testing.T) {
 func TestLogMergesContextAttrsAndAttrs(t *testing.T) {
 	handler := newCaptureLogHandler(true)
 	logger := slog.New(handler)
-	ctx := WithJobID(t.Context(), "job-1")
+	ctx := withJobID(t.Context(), "job-1")
 
 	Log(ctx, logger, slog.LevelInfo, "sync.started", "message", slog.String("extra", "value"))
 

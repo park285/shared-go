@@ -18,7 +18,7 @@ func TestProfileFIFOIsRejectedWithoutWaitingForWriter(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	identity := chatbotIdentity(t)
+	identity := chatbotIdentity()
 
 	finished := make(chan error, 1)
 
@@ -53,7 +53,7 @@ func TestProfileCheckerRejectsReplacementSymlink(t *testing.T) {
 		}
 	}
 
-	loaded, err := workercontract.LoadProfileFile(path, chatbotIdentity(t))
+	loaded, err := workercontract.LoadProfileFile(path, chatbotIdentity())
 	if err != nil {
 		t.Fatal(err)
 	}

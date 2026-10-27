@@ -542,10 +542,6 @@ func mappingDocument(root *yaml.Node) *yaml.Node {
 }
 
 func logRulepackSet(logger *slog.Logger, set compiledRulepackSet) {
-	if logger == nil {
-		return
-	}
-
 	logger.Info(
 		"rulepack_set_loaded",
 		slog.Int("version", set.Version),

@@ -301,7 +301,7 @@ func (h *sanitizeHandler) Handle(ctx context.Context, record slog.Record) error 
 
 	if !changed && !h.inMaskedGroup {
 		if err := h.inner.Handle(ctx, record); err != nil {
-			return fmt.Errorf("handle: %w", err)
+			return fmt.Errorf("logging: handle: %w", err)
 		}
 
 		return nil
@@ -326,7 +326,7 @@ func (h *sanitizeHandler) Handle(ctx context.Context, record slog.Record) error 
 	})
 
 	if err := h.inner.Handle(ctx, newRecord); err != nil {
-		return fmt.Errorf("handle: %w", err)
+		return fmt.Errorf("logging: handle: %w", err)
 	}
 
 	return nil
@@ -484,17 +484,9 @@ var broadValueKeys = map[string]struct{}{
 	"key": {},
 }
 
-func isBroadValueKey(key string) bool {
-	return isBroadValueNormalizedKey(normalizeSensitiveKey(key))
-}
-
 func isBroadValueNormalizedKey(normalized string) bool {
 	_, ok := broadValueKeys[normalized]
 	return ok
-}
-
-func isPrivacyKey(key string) bool {
-	return isPrivacyNormalizedKey(normalizeSensitiveKey(key))
 }
 
 func isPrivacyNormalizedKey(normalized string) bool {

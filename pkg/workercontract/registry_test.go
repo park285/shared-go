@@ -18,27 +18,27 @@ import (
 func buildChatbotRegistry(t *testing.T, webhookQueue func() workercontract.QueueSnapshot) *workercontract.Registry {
 	t.Helper()
 
-	loaded, err := workercontract.LoadProfileFile(validProfilePath(), chatbotIdentity(t))
+	loaded, err := workercontract.LoadProfileFile(validProfilePath(), chatbotIdentity())
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	registry := workercontract.NewRegistry(loaded, workercontract.NewProfileFileChecker(loaded, time.Unix(100, 0)))
 
-	for _, workerID := range chatbotIdentity(t).WorkerIDs {
+	for _, workerID := range chatbotIdentity().WorkerIDs {
 		backend := workercontract.QueueMemory
 		scope := workercontract.QueueScopeProcess
 		queue := func() workercontract.QueueSnapshot {
 			return workercontract.CurrentQueueSnapshot(0, 0, time.Now())
 		}
 
-		if workerID == "webhook_inbox" {
+		if workerID == webhookInboxWorker {
 			backend = workercontract.QueuePostgres
 			scope = workercontract.QueueScopeShared
 			queue = webhookQueue
 		}
 
-		profile, _ := registry.WorkerProfile(workerID)
+		profile := loaded.Profile.Workers[workerID]
 		registration := workercontract.Registration{
 			WorkerID:                workerID,
 			Runtime:                 workercontract.RuntimeGo,
@@ -66,7 +66,7 @@ func buildChatbotRegistry(t *testing.T, webhookQueue func() workercontract.Queue
 }
 
 func TestRegistrySealsOnlyExactWorkerSet(t *testing.T) {
-	loaded, err := workercontract.LoadProfileFile(validProfilePath(), chatbotIdentity(t))
+	loaded, err := workercontract.LoadProfileFile(validProfilePath(), chatbotIdentity())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,8 +89,8 @@ func TestDiagnosticsEnvelopeCanonicalFixtureRoundTrip(t *testing.T) {
 
 	require.NoError(t, jsonv2.Unmarshal(raw, &envelope, jsonv2.RejectUnknownMembers(true)))
 	require.False(t, envelope.Complete)
-	require.Equal(t, workercontract.QueueSnapshotUnavailable, envelope.Workers["webhook_inbox"].Queue.SnapshotStatus)
-	require.Nil(t, envelope.Workers["webhook_inbox"].Queue.Depth)
+	require.Equal(t, workercontract.QueueSnapshotUnavailable, envelope.Workers[webhookInboxWorker].Queue.SnapshotStatus)
+	require.Nil(t, envelope.Workers[webhookInboxWorker].Queue.Depth)
 	require.Nil(t, envelope.Workers["draw"].Executor.RunningWorkers)
 	require.Nil(t, envelope.Workers["draw"].Executor.InFlight)
 	require.Nil(t, envelope.Workers["draw"].Executor.OldestInFlightAgeMS)
@@ -122,7 +122,7 @@ func TestDiagnosticsHandlerReturnsValid503EnvelopeOnSnapshotFailure(t *testing.T
 		t.Fatal(err)
 	}
 
-	queue := envelope.Workers["webhook_inbox"].Queue
+	queue := envelope.Workers[webhookInboxWorker].Queue
 	if envelope.Complete || queue.Depth != nil || queue.OldestQueuedAgeMS != nil || queue.ErrorCode == nil {
 		t.Fatalf("envelope = %+v", envelope)
 	}
@@ -153,7 +153,7 @@ func TestRegistryQueueSnapshotStalenessBoundaryAndRecovery(t *testing.T) {
 			envelope, err := registry.Diagnostics(sampledAt.Add(tc.age))
 			require.NoError(t, err)
 
-			queue := envelope.Workers["webhook_inbox"].Queue
+			queue := envelope.Workers[webhookInboxWorker].Queue
 			require.Equal(t, !tc.stale, envelope.Complete)
 			require.Equal(t, new(sampledAt.UnixMilli()), queue.LastSuccessAtEpochMS)
 
@@ -180,7 +180,7 @@ func TestRegistryQueueSnapshotStalenessBoundaryAndRecovery(t *testing.T) {
 	envelope, err := registry.Diagnostics(refreshedAt)
 	require.NoError(t, err)
 
-	queue := envelope.Workers["webhook_inbox"].Queue
+	queue := envelope.Workers[webhookInboxWorker].Queue
 	require.True(t, envelope.Complete)
 	require.Equal(t, workercontract.QueueSnapshotCurrent, queue.SnapshotStatus)
 	require.Equal(t, new(refreshedAt.UnixMilli()), queue.LastSuccessAtEpochMS)
@@ -206,10 +206,10 @@ func TestDiagnosticsHandlerReturnsValid503EnvelopeOnStaleSnapshot(t *testing.T) 
 	require.Equal(t, "chatbotgo", envelope.Service)
 	require.Equal(t, "bot", envelope.Role)
 	require.Greater(t, envelope.ObservedAtEpochMS, sampledAt.UnixMilli())
-	require.Len(t, envelope.Workers, len(chatbotIdentity(t).WorkerIDs))
+	require.Len(t, envelope.Workers, len(chatbotIdentity().WorkerIDs))
 	require.False(t, envelope.Complete)
 
-	queue := envelope.Workers["webhook_inbox"].Queue
+	queue := envelope.Workers[webhookInboxWorker].Queue
 	require.Equal(t, workercontract.QueueSnapshotUnavailable, queue.SnapshotStatus)
 	require.Nil(t, queue.Depth)
 	require.Nil(t, queue.OldestQueuedAgeMS)
@@ -217,7 +217,7 @@ func TestDiagnosticsHandlerReturnsValid503EnvelopeOnStaleSnapshot(t *testing.T) 
 	require.Equal(t, new(sampledAt.UnixMilli()), queue.LastSuccessAtEpochMS)
 
 	for workerID, worker := range envelope.Workers {
-		if workerID != "webhook_inbox" && worker.Queue.SnapshotStatus != workercontract.QueueSnapshotCurrent {
+		if workerID != webhookInboxWorker && worker.Queue.SnapshotStatus != workercontract.QueueSnapshotCurrent {
 			t.Fatalf("healthy worker %s was affected: %+v", workerID, worker.Queue)
 		}
 	}
@@ -244,7 +244,7 @@ func TestRegistryQueueSnapshotMissingMetadataAndUnavailableReasons(t *testing.T)
 				t.Fatal(err)
 			}
 
-			queue := envelope.Workers["webhook_inbox"].Queue
+			queue := envelope.Workers[webhookInboxWorker].Queue
 			if envelope.Complete || queue.SnapshotStatus != workercontract.QueueSnapshotUnavailable || queue.Depth != nil || queue.OldestQueuedAgeMS != nil ||
 				queue.ErrorCode == nil || *queue.ErrorCode != tc.wantCode {
 				t.Fatalf("unavailable queue = %+v", queue)
@@ -271,7 +271,7 @@ func TestInvalidExecutorKeepsOtherDiagnosticsAndRecovers(t *testing.T) {
 		{"oldest in flight", workercontract.ExecutorSnapshot{OldestInFlightAgeMS: -1}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			loaded, err := workercontract.LoadProfileFile(validProfilePath(), chatbotIdentity(t))
+			loaded, err := workercontract.LoadProfileFile(validProfilePath(), chatbotIdentity())
 			require.NoError(t, err)
 
 			now := time.Now()

@@ -29,7 +29,7 @@ type profileFileError struct {
 	code ProfileFileErrorCode
 }
 
-func (e profileFileError) Error() string { return "worker profile: " + string(e.code) }
+func (e profileFileError) Error() string { return "workercontract: worker profile: " + string(e.code) }
 
 // LoadProfileFile은 regular file의 exact bytes를 strict profile로 해석한다.
 func LoadProfileFile(path string, identity Identity) (LoadedProfile, error) {
@@ -39,16 +39,16 @@ func LoadProfileFile(path string, identity Identity) (LoadedProfile, error) {
 
 	raw, err := readRegularProfile(path)
 	if err != nil {
-		return LoadedProfile{}, fmt.Errorf("read regular profile: %w", err)
+		return LoadedProfile{}, fmt.Errorf("workercontract: read regular profile: %w", err)
 	}
 
 	if len(raw) == 0 || len(raw) > MaxProfileBytes || bytes.HasPrefix(raw, []byte{0xef, 0xbb, 0xbf}) {
-		return LoadedProfile{}, errors.New("worker profile: invalid file content")
+		return LoadedProfile{}, errors.New("workercontract: worker profile: invalid file content")
 	}
 
 	profile, err := decodeProfile(raw, identity)
 	if err != nil {
-		return LoadedProfile{}, fmt.Errorf("worker profile: %w", err)
+		return LoadedProfile{}, fmt.Errorf("workercontract: worker profile: %w", err)
 	}
 
 	digest := sha256.Sum256(raw)

@@ -386,7 +386,7 @@ func TestCheckStatusBoundsErrorBodyDrain(t *testing.T) {
 	body := &countingBody{reader: endlessReader{}}
 	err := CheckStatus(&http.Response{StatusCode: http.StatusInternalServerError, Body: body})
 
-	if !IsStatus(err, http.StatusInternalServerError) {
+	if apiErr, ok := errors.AsType[*APIError](err); !ok || apiErr.StatusCode != http.StatusInternalServerError {
 		t.Fatalf("CheckStatus() error = %v, want status 500 APIError", err)
 	}
 

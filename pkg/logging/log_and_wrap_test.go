@@ -54,7 +54,7 @@ func TestLogAndWrapError_NilErrorReturnsNil(t *testing.T) {
 func TestLogAndWrapError_WrapsErrorWithOpPrefix(t *testing.T) {
 	cause := &logAndWrapTypedError{message: "typed failure"}
 
-	err := LogAndWrapError(t.Context(), nil, "sync.poll", cause)
+	err := LogAndWrapError(t.Context(), slog.New(slog.DiscardHandler), "sync.poll", cause)
 	if err == nil {
 		t.Fatal("LogAndWrapError returned nil, want wrapped error")
 	}
@@ -162,7 +162,7 @@ func TestLogAndWrap_IncludesErrorCodeAndRetryable(t *testing.T) {
 func TestLogAndWrap_PropagatesContextAttrs(t *testing.T) {
 	handler := newCaptureLogHandler(true)
 	logger := slog.New(handler)
-	ctx := WithJobID(t.Context(), "j1")
+	ctx := withJobID(t.Context(), "j1")
 
 	ctx = WithRequestID(ctx, "r1")
 
@@ -202,19 +202,6 @@ func TestLogAndWrapError_MergesExtraAttrs(t *testing.T) {
 	requireCapturedAttr(t, record, "error_message", "boom")
 	requireCapturedAttr(t, record, "component", "worker")
 	requireCapturedAttr(t, record, "job_id", "job-1")
-}
-
-func TestLogAndWrapError_NilLoggerSafe(t *testing.T) {
-	cause := errors.New("boom")
-
-	err := LogAndWrapError(t.Context(), nil, "sync.poll", cause)
-	if err == nil {
-		t.Fatal("LogAndWrapError returned nil, want wrapped error")
-	}
-
-	if !errors.Is(err, cause) {
-		t.Fatal("wrapped error does not match cause with errors.Is")
-	}
 }
 
 func TestLogAndWrapError_NilCtxFallsBackToBackground(t *testing.T) {

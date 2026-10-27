@@ -3,7 +3,6 @@ package dbmigrate
 import (
 	"bufio"
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -19,56 +18,39 @@ const (
 // Execer는 migration SQL 실행 함수다.
 type Execer func(context.Context, string, ...any) error
 
-// SQLExecer는 database/sql 계열 ExecContext 최소 인터페이스다.
-type SQLExecer interface {
-	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
-}
-
-// Option은 migration 적용 동작을 조정한다.
-type Option func(*options)
-
-type options struct {
-	only          map[string]bool
-	ledger        *Ledger
-	ledgerQuerier RowQuerier
-	session       *SessionConfig
-}
-
-// SQLExec는 database/sql 계열 handle을 Execer로 감싼다.
-func SQLExec(db SQLExecer) Execer {
-	return func(ctx context.Context, query string, args ...any) error {
-		if _, err := db.ExecContext(ctx, query, args...); err != nil {
-			return fmt.Errorf("exec context: %w", err)
-		}
-
-		return nil
-	}
-}
-
-// WithOnly는 지정한 migration 파일명만 manifest 순서대로 적용한다.
-// 이름을 하나도 넘기지 않으면 Apply는 아무것도 적용하지 않는 대신 오류를 반환한다.
-// Manifest에 없는 이름은 Apply가 세션 설정·ledger 생성 전에 거부하지만, Apply를
-// WithAdvisoryLock 안에서 호출하는 문서화된 패턴에서는 이 검출이 lock 획득 뒤에
-// 일어난다. Lock 전 fail-fast가 필요하면 호출자가 Manifest()로 사전 검증하라.
-func WithOnly(names ...string) Option {
-	return func(o *options) {
-		o.only = make(map[string]bool, len(names))
-		for _, name := range names {
-			o.only[name] = true
-		}
-	}
+// ApplyOptions는 Apply의 선택 동작이다. 영값은 manifest 전체를 ledger·세션 설정 없이 적용한다.
+type ApplyOptions struct {
+	// Only가 nil이 아니면 그 이름의 migration만 manifest 순서대로 적용한다. nil이 아닌 빈 slice는
+	// 아무것도 적용하지 않는 대신 오류다. 운영 적용은 쓰지 않고, 다운스트림 upgrade 경로 테스트가
+	// 중간 스키마 상태를 재현할 때 쓰는 선택 적용 계약이다.
+	// Manifest에 없는 이름은 세션 설정·ledger 생성 전에 거부하지만, Apply를 WithAdvisoryLock 안에서
+	// 호출하는 문서화된 패턴에서는 이 검출이 lock 획득 뒤에 일어난다. Lock 전 fail-fast가 필요하면
+	// 호출자가 Manifest()로 사전 검증하라.
+	Only []string
+	// Ledger가 nil이 아니면 적용 완료 ledger를 써서 이미 기록된 migration을 건너뛰고, 실행한
+	// migration을 기록한다. 실행과 기록은 별도 Execer 호출이라 원자적이지 않고 ledger는
+	// at-least-once이므로 migration SQL은 idempotent해야 한다. Ledger 단독은 동시 실행을 막지 못한다:
+	// 여러 마이그레이터가 같은 migration을 동시에 미적용으로 보고 함께 실행할 수 있다. 다중
+	// 레플리카에서 single-flight가 필요하면 Apply를 WithAdvisoryLock으로 감싸라.
+	Ledger *Ledger
+	// LedgerQuerier는 Ledger 조회에 쓰는 단일 row 조회기다. Ledger를 쓸 때 필수이고, Ledger 없이
+	// 지정하면 ledger를 의도한 설정이 조용히 무시되지 않도록 오류다.
+	LedgerQuerier RowQuerier
+	// Session은 migration 적용 전에 거는 세션 timeout이다. 영값이면 아무것도 설정하지 않는다.
+	// 0보다 큰 값을 쓰면 exec는 마이그레이션 전용 pinned connection이어야 한다(SessionConfig 참고).
+	Session SessionConfig
 }
 
 // Manifest는 manifest.txt를 파싱해 적용 순서대로 SQL 파일명을 반환한다.
 func Manifest(fsys fs.FS) (names []string, err error) {
 	file, err := fsys.Open(ManifestName)
 	if err != nil {
-		return nil, fmt.Errorf("open manifest: %w", err)
+		return nil, fmt.Errorf("dbmigrate: open manifest: %w", err)
 	}
 
 	defer func() {
 		if closeErr := file.Close(); closeErr != nil && err == nil {
-			err = fmt.Errorf("close manifest: %w", closeErr)
+			err = fmt.Errorf("dbmigrate: close manifest: %w", closeErr)
 		}
 	}()
 
@@ -89,19 +71,19 @@ func Manifest(fsys fs.FS) (names []string, err error) {
 
 		order, name, parseErr := parseManifestLine(lineNo, line)
 		if parseErr != nil {
-			return nil, fmt.Errorf("parse manifest line: %w", parseErr)
+			return nil, fmt.Errorf("dbmigrate: parse manifest line: %w", parseErr)
 		}
 
 		if prev, ok := seenOrders[order]; ok {
-			return nil, fmt.Errorf("manifest line %d: duplicate order %q (first seen at line %d)", lineNo, order, prev)
+			return nil, fmt.Errorf("dbmigrate: manifest line %d: duplicate order %q (first seen at line %d)", lineNo, order, prev)
 		}
 
 		if prev, ok := seenNames[name]; ok {
-			return nil, fmt.Errorf("manifest line %d: duplicate filename %q (first seen at line %d)", lineNo, name, prev)
+			return nil, fmt.Errorf("dbmigrate: manifest line %d: duplicate filename %q (first seen at line %d)", lineNo, name, prev)
 		}
 
 		if lastOrder != "" && !orderAscends(lastOrder, order) {
-			return nil, fmt.Errorf("manifest line %d: order %q must be greater than previous order %q", lineNo, order, lastOrder)
+			return nil, fmt.Errorf("dbmigrate: manifest line %d: order %q must be greater than previous order %q", lineNo, order, lastOrder)
 		}
 
 		seenOrders[order] = lineNo
@@ -112,11 +94,11 @@ func Manifest(fsys fs.FS) (names []string, err error) {
 	}
 
 	if scanErr := scanner.Err(); scanErr != nil {
-		return nil, fmt.Errorf("scan manifest: %w", scanErr)
+		return nil, fmt.Errorf("dbmigrate: scan manifest: %w", scanErr)
 	}
 
 	if len(names) == 0 {
-		return nil, fmt.Errorf("manifest %q has no entries", ManifestName)
+		return nil, fmt.Errorf("dbmigrate: manifest %q has no entries", ManifestName)
 	}
 
 	return names, nil
@@ -168,129 +150,117 @@ func isDecimalOrder(value string) bool {
 }
 
 // Apply는 manifest 순서대로 SQL 파일을 읽어 exec로 실행한다.
-func Apply(ctx context.Context, fsys fs.FS, exec Execer, opts ...Option) error {
+func Apply(ctx context.Context, fsys fs.FS, exec Execer, opts ApplyOptions) error {
 	if exec == nil {
 		return errors.New("dbmigrate: exec is required")
 	}
 
-	cfg := applyOptions(opts)
+	// 옵션 조합은 세션 설정·ledger 생성 같은 부작용 전에 검증한다.
+	if err := opts.validateLedger(); err != nil {
+		return err
+	}
 
 	entries, err := Manifest(fsys)
 	if err != nil {
-		return fmt.Errorf("dbmigrate: %w", err)
+		return err
 	}
 
-	if err := cfg.validateOnly(entries); err != nil {
-		return fmt.Errorf("validate only: %w", err)
+	// nil 집합은 전체 적용이다. Only를 지정했으면 부작용 전에 목록부터 검증한다.
+	var only map[string]bool
+
+	if opts.Only != nil {
+		if only, err = selectOnly(opts.Only, entries); err != nil {
+			return fmt.Errorf("dbmigrate: validate only: %w", err)
+		}
 	}
 
-	if err := cfg.configureSession(ctx, exec); err != nil {
-		return fmt.Errorf("configure session: %w", err)
+	if err := opts.Session.Configure(ctx, exec); err != nil {
+		return fmt.Errorf("dbmigrate: configure session: %w", err)
 	}
 
-	if err := cfg.prepareLedger(ctx, exec); err != nil {
-		return fmt.Errorf("prepare ledger: %w", err)
+	if err := opts.prepareLedger(ctx, exec); err != nil {
+		return fmt.Errorf("dbmigrate: prepare ledger: %w", err)
 	}
 
 	for _, name := range entries {
-		shouldApply, shouldApplyErr := cfg.shouldApply(ctx, name)
+		if only != nil && !only[name] {
+			continue
+		}
+
+		shouldApply, shouldApplyErr := opts.shouldApply(ctx, name)
 		if shouldApplyErr != nil {
-			return fmt.Errorf("should apply: %w", shouldApplyErr)
+			return fmt.Errorf("dbmigrate: should apply: %w", shouldApplyErr)
 		}
 
 		if !shouldApply {
 			continue
 		}
 
-		if err := cfg.applyEntry(ctx, fsys, exec, name); err != nil {
-			return fmt.Errorf("apply entry: %w", err)
+		if err := opts.applyEntry(ctx, fsys, exec, name); err != nil {
+			return fmt.Errorf("dbmigrate: apply entry: %w", err)
 		}
 	}
 
 	return nil
 }
 
-func applyOptions(opts []Option) options {
-	var cfg options
-
-	for _, opt := range opts {
-		if opt != nil {
-			opt(&cfg)
-		}
+// selectOnly는 nil이 아닌 Only 목록을 검증해 조회용 집합으로 바꾼다.
+func selectOnly(names, entries []string) (map[string]bool, error) {
+	if len(names) == 0 {
+		return nil, errors.New("dbmigrate: Only requires at least one migration name")
 	}
 
-	return cfg
-}
-
-func (o options) validateOnly(entries []string) error {
-	if o.only == nil {
-		return nil
-	}
-
-	if len(o.only) == 0 {
-		return errors.New("dbmigrate: WithOnly requires at least one migration name")
-	}
-
-	present := make(map[string]bool, len(entries))
-	for _, name := range entries {
-		present[name] = true
+	only := make(map[string]bool, len(names))
+	for _, name := range names {
+		only[name] = true
 	}
 
 	var missing []string
 
-	for name := range o.only {
-		if !present[name] {
+	for name := range only {
+		if !slices.Contains(entries, name) {
 			missing = append(missing, name)
 		}
 	}
 
 	if len(missing) == 0 {
-		return nil
+		return only, nil
 	}
 
 	slices.Sort(missing)
 
-	return fmt.Errorf("dbmigrate: WithOnly names not in manifest: %s", strings.Join(missing, ", "))
+	return nil, fmt.Errorf("dbmigrate: Only names not in manifest: %s", strings.Join(missing, ", "))
 }
 
-func (o options) configureSession(ctx context.Context, exec Execer) error {
-	if o.session == nil {
-		return nil
-	}
-
-	if err := o.session.Configure(ctx, exec); err != nil {
-		return fmt.Errorf("configure: %w", err)
-	}
-
-	return nil
-}
-
-func (o options) prepareLedger(ctx context.Context, exec Execer) error {
-	if o.ledger == nil {
-		return nil
-	}
-
-	if o.ledgerQuerier == nil {
+func (o ApplyOptions) validateLedger() error {
+	switch {
+	case o.Ledger == nil && o.LedgerQuerier != nil:
+		return errors.New("dbmigrate: LedgerQuerier requires Ledger")
+	case o.Ledger != nil && o.LedgerQuerier == nil:
 		return errors.New("dbmigrate: ledger querier is required")
+	default:
+		return nil
+	}
+}
+
+func (o ApplyOptions) prepareLedger(ctx context.Context, exec Execer) error {
+	if o.Ledger == nil {
+		return nil
 	}
 
-	if err := o.ledger.Ensure(ctx, exec); err != nil {
+	if err := o.Ledger.Ensure(ctx, exec); err != nil {
 		return fmt.Errorf("ensure: %w", err)
 	}
 
 	return nil
 }
 
-func (o options) shouldApply(ctx context.Context, name string) (bool, error) {
-	if o.only != nil && !o.only[name] {
-		return false, nil
-	}
-
-	if o.ledger == nil {
+func (o ApplyOptions) shouldApply(ctx context.Context, name string) (bool, error) {
+	if o.Ledger == nil {
 		return true, nil
 	}
 
-	applied, err := o.ledger.Applied(ctx, o.ledgerQuerier, name)
+	applied, err := o.Ledger.Applied(ctx, o.LedgerQuerier, name)
 	if err != nil {
 		return false, fmt.Errorf("applied: %w", err)
 	}
@@ -298,7 +268,7 @@ func (o options) shouldApply(ctx context.Context, name string) (bool, error) {
 	return !applied, nil
 }
 
-func (o options) applyEntry(ctx context.Context, fsys fs.FS, exec Execer, name string) error {
+func (o ApplyOptions) applyEntry(ctx context.Context, fsys fs.FS, exec Execer, name string) error {
 	sqlBytes, err := fs.ReadFile(fsys, name)
 	if err != nil {
 		return fmt.Errorf("dbmigrate: read %s: %w", name, err)
@@ -308,12 +278,12 @@ func (o options) applyEntry(ctx context.Context, fsys fs.FS, exec Execer, name s
 		return fmt.Errorf("dbmigrate: exec %s: %w", name, err)
 	}
 
-	if o.ledger != nil {
-		if err := o.ledger.Record(ctx, exec, name); err != nil {
-			return fmt.Errorf("record: %w", err)
-		}
-
+	if o.Ledger == nil {
 		return nil
+	}
+
+	if err := o.Ledger.Record(ctx, exec, name); err != nil {
+		return fmt.Errorf("record: %w", err)
 	}
 
 	return nil

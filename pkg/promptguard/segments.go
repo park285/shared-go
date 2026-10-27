@@ -3,6 +3,8 @@ package promptguard
 import (
 	"strings"
 	"unicode/utf8"
+
+	"github.com/park285/shared-go/v2/pkg/internal/guardtext"
 )
 
 type segmentKind string
@@ -20,7 +22,7 @@ type textSegment struct {
 	Kind      segmentKind
 	Kinds     segmentKindSet
 	Aggregate bool
-	Views     Views
+	Views     guardtext.Views
 	rawNorm   string
 	// rawChunks는 결합 세그먼트 원문 앞쪽(tail) 조각들의 rune 수다. 방문 중에만 유효하다.
 	rawChunks []aggregateTailChunk

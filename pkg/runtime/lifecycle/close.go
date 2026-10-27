@@ -13,6 +13,10 @@ type CloseStep struct {
 }
 
 func RunCloseSteps(ctx context.Context, logger *slog.Logger, steps []CloseStep) error {
+	if logger == nil {
+		logger = slog.Default()
+	}
+
 	errs := make([]error, 0, len(steps))
 
 	for i, step := range steps {
@@ -24,14 +28,12 @@ func RunCloseSteps(ctx context.Context, logger *slog.Logger, steps []CloseStep) 
 		if err := runCloseStep(ctx, step.Close); err != nil {
 			errs = append(errs, fmt.Errorf("close %s: %w", name, err))
 
-			if logger != nil {
-				logger.Error("close step failed", slog.String("step", name), slog.Any("error", err))
-			}
+			logger.Error("close step failed", slog.String("step", name), slog.Any("error", err))
 		}
 	}
 
 	if err := errors.Join(errs...); err != nil {
-		return fmt.Errorf("run close steps: %w", err)
+		return fmt.Errorf("lifecycle: run close steps: %w", err)
 	}
 
 	return nil

@@ -1,7 +1,9 @@
 package bootstrap
 
 import (
+	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -24,21 +26,25 @@ type Options[Config any, Runtime runtime] struct {
 	Initialize             func(version string)
 	LoadConfig             func() (Config, error)
 	LoadConfigErrorMessage string
-	NewLogger              func(config Config) (*slog.Logger, io.Closer, error)
-	LoggerConfig           func(config Config) sharedlogging.Config
-	LoggerFileName         string
-	LoggerLevel            func(config Config) string
-	StartupMessage         string
-	StartupFields          func(config Config) []any
-	BuildTimeout           time.Duration
-	BuildRuntime           func(ctx context.Context, config Config, logger *slog.Logger) (Runtime, error)
-	BuildErrorMessage      string
-	RunErrorMessage        string
-	Stderr                 io.Writer
+	// NewLogger는 필수입니다. Run은 성공 직후 이 서비스 logger로 automaxprocs.Init을 실행해
+	// GOMAXPROCS 결정 로그가 서비스 로그 경로로 나가고 BuildRuntime보다 먼저 적용되게 합니다.
+	// 반환한 logger가 nil이면 slog.Default()를 씁니다.
+	NewLogger func(config Config) (*slog.Logger, io.Closer, error)
+	// LoggerLevel은 시작 로그의 log_level 필드 값입니다.
+	LoggerLevel       func(config Config) string
+	StartupMessage    string
+	StartupFields     func(config Config) []any
+	BuildTimeout      time.Duration
+	BuildRuntime      func(ctx context.Context, config Config, logger *slog.Logger) (Runtime, error)
+	BuildErrorMessage string
+	RunErrorMessage   string
+	Stderr            io.Writer
 }
 
 func (opts Options[Config, Runtime]) Run() int {
-	initializeRuntime(opts.Initialize, opts.Version)
+	if opts.Initialize != nil {
+		opts.Initialize(opts.Version)
+	}
 
 	stderr := runtimeStderr(opts.Stderr)
 
@@ -55,6 +61,8 @@ func (opts Options[Config, Runtime]) Run() int {
 	if loggerCloser != nil {
 		defer reportLoggerCloseError(stderr, loggerCloser)
 	}
+
+	automaxprocs.Init(logger)
 
 	if message := opts.StartupMessage; message != "" {
 		logger.Info(message, opts.startupFields(config)...)
@@ -94,16 +102,6 @@ func buildContext(timeout time.Duration) (context.Context, context.CancelFunc) {
 	return context.Background(), func() {}
 }
 
-func initializeRuntime(initialize func(version string), version string) {
-	if initialize == nil {
-		initialize = func(_ string) {
-			automaxprocs.Init(nil)
-		}
-	}
-
-	initialize(version)
-}
-
 func runtimeStderr(stderr io.Writer) io.Writer {
 	if stderr == nil {
 		return os.Stderr
@@ -135,35 +133,16 @@ func reportLoggerCloseError(stderr io.Writer, closer io.Closer) {
 }
 
 func (opts Options[Config, Runtime]) newLogger(config Config) (*slog.Logger, io.Closer, error) {
-	if opts.NewLogger != nil {
-		out, closer, err := opts.NewLogger(config)
-		if err != nil {
-			return nil, nil, fmt.Errorf("logger hook: %w", err)
-		}
-
-		return out, closer, nil
+	if opts.NewLogger == nil {
+		return nil, nil, errors.New("bootstrap: NewLogger is required")
 	}
 
-	logConfig := sharedlogging.Config{}
-
-	if opts.LoggerConfig != nil {
-		logConfig = opts.LoggerConfig(config)
-	}
-
-	level := ""
-
-	if opts.LoggerLevel != nil {
-		level = opts.LoggerLevel(config)
-	}
-
-	logConfig.Level = level
-
-	out, closer, err := sharedlogging.EnableFileLoggingWithOptions(logConfig, opts.LoggerFileName, sharedlogging.Options{})
+	out, closer, err := opts.NewLogger(config)
 	if err != nil {
-		return nil, nil, fmt.Errorf("enable file logging: %w", err)
+		return nil, nil, fmt.Errorf("logger hook: %w", err)
 	}
 
-	return out, closer, nil
+	return cmp.Or(out, slog.Default()), closer, nil
 }
 
 func (opts Options[Config, Runtime]) startupFields(config Config) []any {

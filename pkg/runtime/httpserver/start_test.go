@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"strings"
 	"testing"
 	"time"
 )
@@ -34,11 +33,11 @@ func (s *fakeServer) Shutdown(context.Context) error {
 	return s.shutdownErr
 }
 
-func TestStart_NormalStartup(t *testing.T) {
+func TestStartServerWithPrefix_NormalStartup(t *testing.T) {
 	server := newFakeServer(http.ErrServerClosed, nil)
 	errCh := make(chan error, 1)
 
-	Start(server, slog.New(slog.DiscardHandler), errCh)
+	StartServerWithPrefix(server, "test server", slog.New(slog.DiscardHandler), errCh)
 	waitForListen(t, server)
 
 	select {
@@ -48,12 +47,12 @@ func TestStart_NormalStartup(t *testing.T) {
 	}
 }
 
-func TestStart_ListenError(t *testing.T) {
+func TestStartServerWithPrefix_ListenError(t *testing.T) {
 	wantErr := errors.New("listen failed")
 	server := newFakeServer(wantErr, nil)
 	errCh := make(chan error, 1)
 
-	Start(server, slog.New(slog.DiscardHandler), errCh)
+	StartServerWithPrefix(server, "test server", slog.New(slog.DiscardHandler), errCh)
 
 	select {
 	case err := <-errCh:
@@ -61,20 +60,20 @@ func TestStart_ListenError(t *testing.T) {
 			t.Fatalf("errCh error = %v, want wrapped %v", err, wantErr)
 		}
 
-		if !strings.Contains(err.Error(), "http server listen") {
-			t.Fatalf("errCh error = %q, want listen context", err)
+		if got, want := err.Error(), "httpserver: listen: test server: listen failed"; got != want {
+			t.Fatalf("errCh error = %q, want %q", got, want)
 		}
 	case <-time.After(250 * time.Millisecond):
-		t.Fatal("Start() did not send listen error")
+		t.Fatal("StartServerWithPrefix() did not send listen error")
 	}
 }
 
-func TestStart_NilLogger(t *testing.T) {
+func TestStartServerWithPrefix_NilLogger(t *testing.T) {
 	wantErr := errors.New("listen failed")
 	server := newFakeServer(wantErr, nil)
 	errCh := make(chan error, 1)
 
-	Start(server, nil, errCh)
+	StartServerWithPrefix(server, "test server", nil, errCh)
 
 	select {
 	case err := <-errCh:
@@ -82,14 +81,14 @@ func TestStart_NilLogger(t *testing.T) {
 			t.Fatalf("errCh error = %v, want wrapped %v", err, wantErr)
 		}
 	case <-time.After(250 * time.Millisecond):
-		t.Fatal("Start() did not send listen error")
+		t.Fatal("StartServerWithPrefix() did not send listen error")
 	}
 }
 
-func TestStart_NilErrCh(t *testing.T) {
+func TestStartServerWithPrefix_NilErrCh(t *testing.T) {
 	server := newFakeServer(errors.New("listen failed"), nil)
 
-	Start(server, slog.New(slog.DiscardHandler), nil)
+	StartServerWithPrefix(server, "test server", slog.New(slog.DiscardHandler), nil)
 	waitForListen(t, server)
 }
 

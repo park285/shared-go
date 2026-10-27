@@ -12,8 +12,6 @@ func TestSQLAssetsAreLoaded(t *testing.T) {
 		queryEnsureLedgerTemplate,
 		queryLedgerAppliedTemplate,
 		queryRecordLedgerTemplate,
-		queryTryAdvisoryLock,
-		queryAdvisoryUnlock,
 		querySetLockTimeout,
 		querySetStatementTimeout,
 	}

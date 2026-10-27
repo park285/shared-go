@@ -468,44 +468,6 @@ func TestRetireLeavesInFlightAttemptAlone(t *testing.T) {
 	}
 }
 
-// TestRenewReplyHoldsTheAttemptLease는 전송이 lease보다 길어질 수 있는 호출자가 소유권을
-// 유지하는 경로를 확인한다.
-func TestRenewReplyHoldsTheAttemptLease(t *testing.T) {
-	pool := newMigratedPool(t)
-	store := newScopedStore(t, pool)
-	fixture := &replyFixture{Store: store}
-	ctx := t.Context()
-
-	record := fixture.NewRecord(t, []byte(`{"type":"text","text":"renew"}`))
-	if _, err := store.Stage(ctx, record); err != nil {
-		t.Fatalf("stage: %v", err)
-	}
-
-	attempt, err := store.BeginAttempt(ctx, record.ReplyIdentity)
-	if err != nil {
-		t.Fatalf("begin attempt: %v", err)
-	}
-
-	before := replyLeaseUntil(t, pool, record.ReplyIdentity, store.Options().Scope)
-
-	if renewErr := store.RenewReply(ctx, attempt); renewErr != nil {
-		t.Fatalf("renew: %v", renewErr)
-	}
-
-	if after := replyLeaseUntil(t, pool, record.ReplyIdentity, store.Options().Scope); !after.After(before) {
-		t.Fatalf("lease_until %s did not move past %s", after, before)
-	}
-
-	stale := irisdurable.ReplyAttempt{
-		ReplyIdentity: attempt.ReplyIdentity,
-		ClaimToken:    attempt.ClaimToken + "-stale",
-	}
-
-	if renewErr := store.RenewReply(ctx, stale); !errors.Is(renewErr, pgstore.ErrClaimLost) {
-		t.Fatalf("renew with a foreign token = %v; want ErrClaimLost", renewErr)
-	}
-}
-
 type replyFixture struct {
 	*pgstore.Store
 }
@@ -530,21 +492,6 @@ func leaseUntil(t *testing.T, pool *pgxpool.Pool, id int64) time.Time {
 
 	if err := pool.QueryRow(t.Context(), "SELECT lease_until FROM iris_webhook_inbox WHERE id = $1", id).Scan(&lease); err != nil {
 		t.Fatalf("read lease_until of %d: %v", id, err)
-	}
-
-	return lease
-}
-
-func replyLeaseUntil(t *testing.T, pool *pgxpool.Pool, identity irisdurable.ReplyIdentity, scope string) time.Time {
-	t.Helper()
-
-	var lease time.Time
-
-	const query = `SELECT lease_until FROM iris_reply_outbox
-WHERE scope = $1 AND message_id = $2 AND phase = $3 AND ordinal = $4`
-
-	if err := pool.QueryRow(t.Context(), query, scope, identity.MessageID, identity.Phase, identity.Ordinal).Scan(&lease); err != nil {
-		t.Fatalf("read lease_until of %s/%s/%d: %v", identity.MessageID, identity.Phase, identity.Ordinal, err)
 	}
 
 	return lease

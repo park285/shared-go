@@ -1,7 +1,7 @@
 // Package lifecycle는 runtime 서비스의 기동·주기 실행·종료 정리를 위한 작은 helper 모음입니다.
 //
 // Run은 signal 구독과 shutdown timeout을 엮은 프로세스 lifecycle을, RunTickerLoop는 context
-// 취소를 존중하는 ticker 루프를, CleanupCloser·Managed는 once 가드된 정리를, CloseStep·
+// 취소를 존중하는 ticker 루프를, Managed는 once 가드된 정리를, CloseStep·
 // RunCloseSteps는 순서 있는 종료 정리를 제공합니다.
 //
 // # Run의 종료 순서 계약

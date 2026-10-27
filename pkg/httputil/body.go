@@ -43,12 +43,7 @@ func ReadAllLimited(r io.Reader, maxBytes int64) ([]byte, error) {
 // ReadAllAndClose는 어떤 경로로 끝나든 body를 닫는다. 상한 초과는 ErrResponseBodyTooLarge이며
 // 남은 스트림은 DefaultDrainLimit까지만 버리고 포기한다. Read 실패와 close 실패는 errors.Join으로 함께 남긴다.
 func ReadAllAndClose(rc io.ReadCloser, maxBytes int64) ([]byte, error) {
-	data, err := ReadAllAndCloseWithDrainLimit(rc, maxBytes, DefaultDrainLimit)
-	if err != nil {
-		return nil, fmt.Errorf("read all and close with default drain limit: %w", err)
-	}
-
-	return data, nil
+	return ReadAllAndCloseWithDrainLimit(rc, maxBytes, DefaultDrainLimit)
 }
 
 // ReadAllAndCloseWithDrainLimit는 어떤 경로로 끝나든 body를 닫는다. 읽기 실패 뒤 남은 스트림은
@@ -60,7 +55,7 @@ func ReadAllAndCloseWithDrainLimit(rc io.ReadCloser, maxBytes, maxDrainBytes int
 
 	data, readErr := ReadAllAndDrain(rc, maxBytes, maxDrainBytes)
 	if err := errors.Join(readErr, rc.Close()); err != nil {
-		return nil, fmt.Errorf("read all and close: %w", err)
+		return nil, fmt.Errorf("httputil: read all and close: %w", err)
 	}
 
 	return data, nil
@@ -78,7 +73,7 @@ func ReadAllAndDrain(r io.Reader, maxBytes, maxDrainBytes int64) ([]byte, error)
 		return data, nil
 	}
 
-	return nil, fmt.Errorf("read all and drain: %w", errors.Join(readErr, drain(r, maxDrainBytes)))
+	return nil, errors.Join(readErr, drain(r, maxDrainBytes))
 }
 
 // 상한을 넘는 스트림은 초과를 error로 보고하지 않고 close로 포기하므로 connection 재사용만 잃는다.
@@ -89,7 +84,7 @@ func DrainAndClose(rc io.ReadCloser, maxDrainBytes int64) error {
 	}
 
 	if err := errors.Join(drain(rc, maxDrainBytes), rc.Close()); err != nil {
-		return fmt.Errorf("drain and close: %w", err)
+		return fmt.Errorf("httputil: drain and close: %w", err)
 	}
 
 	return nil

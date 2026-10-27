@@ -148,7 +148,7 @@ func TestEnableFileLogging_AsyncSummaryKeepsJSONFormat(t *testing.T) {
 
 	config := Config{
 		Level:      testInfo,
-		Format:     FormatJSON,
+		Format:     formatJSON,
 		Dir:        t.TempDir(),
 		MaxSizeMB:  5,
 		MaxBackups: 5,

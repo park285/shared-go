@@ -1,7 +1,6 @@
 package obsmetrics
 
 import (
-	"fmt"
 	"io"
 	"os"
 	"runtime"
@@ -9,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/park285/shared-go/v2/pkg/internal/promtext"
 )
 
 // runtime.ReadMemStats는 stop-the-world라 scrape가 겹치면 그만큼 전체 정지가 반복된다.
@@ -72,24 +73,16 @@ func WriteRuntimeMetrics(w io.Writer) bool {
 func writeGCDurationSummary(w io.Writer, ms runtime.MemStats) bool {
 	name := "go_gc_duration_seconds"
 
-	if _, err := fmt.Fprintf(w, "# HELP %s A summary of the wall-time pause (stop-the-world) duration in garbage collection cycles.\n", name); err != nil {
-		return false
-	}
-
-	if _, err := fmt.Fprintf(w, "# TYPE %s summary\n", name); err != nil {
+	if !writeMetricHeader(w, name, "A summary of the wall-time pause (stop-the-world) duration in garbage collection cycles.", "summary") {
 		return false
 	}
 
 	pauseSeconds := float64(ms.PauseTotalNs) / 1e9
-	if _, err := fmt.Fprintf(w, "%s_sum %s\n", name, strconv.FormatFloat(pauseSeconds, 'g', -1, 64)); err != nil {
+	if !writeMetricSample(w, name+"_sum", nil, promtext.FormatFloat(pauseSeconds)) {
 		return false
 	}
 
-	if _, err := fmt.Fprintf(w, "%s_count %s\n", name, strconv.FormatUint(uint64(ms.NumGC), 10)); err != nil {
-		return false
-	}
-
-	return true
+	return writeMetricSample(w, name+"_count", nil, strconv.FormatUint(uint64(ms.NumGC), 10))
 }
 
 // /proc/self/statm 두 번째 필드는 RSS 페이지 수다. Linux 외 환경에서는 metric을 생략한다.

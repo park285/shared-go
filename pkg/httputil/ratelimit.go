@@ -92,7 +92,7 @@ func ParseTrustedProxies(values []string) ([]netip.Prefix, error) {
 		if strings.Contains(value, "/") {
 			prefix, err := netip.ParsePrefix(value)
 			if err != nil {
-				return nil, fmt.Errorf("parse prefix: %w", err)
+				return nil, fmt.Errorf("httputil: parse prefix: %w", err)
 			}
 
 			result = append(result, prefix.Masked())
@@ -102,7 +102,7 @@ func ParseTrustedProxies(values []string) ([]netip.Prefix, error) {
 
 		addr, err := netip.ParseAddr(value)
 		if err != nil {
-			return nil, fmt.Errorf("parse addr: %w", err)
+			return nil, fmt.Errorf("httputil: parse addr: %w", err)
 		}
 
 		bits := 32
@@ -117,22 +117,9 @@ func ParseTrustedProxies(values []string) ([]netip.Prefix, error) {
 	return result, nil
 }
 
-// ParseTrustedProxyCSV는 comma-separated trusted proxy CIDR/IP 목록을 변환한다.
-func ParseTrustedProxyCSV(raw string) ([]netip.Prefix, error) {
-	if strings.TrimSpace(raw) == "" {
-		return nil, nil
-	}
-
-	out, err := ParseTrustedProxies(strings.Split(raw, ","))
-	if err != nil {
-		return out, fmt.Errorf("parse trusted proxies: %w", err)
-	}
-
-	return out, nil
-}
-
-// ClientIP는 trusted proxy 경계 안에서만 forwarded header를 반영한 client IP를 반환한다.
-func ClientIP(r *http.Request, opts ClientIPOptions) string {
+// clientIP는 trusted proxy 경계 안에서만 forwarded header를 반영한 client IP를 반환한다.
+// 신뢰 경계를 한 진입점에 묶기 위해 외부에는 RateLimitIdentity만 공개한다.
+func clientIP(r *http.Request, opts ClientIPOptions) string {
 	if r == nil {
 		return ""
 	}
@@ -148,29 +135,29 @@ func ClientIP(r *http.Request, opts ClientIPOptions) string {
 		}
 	}
 
-	return remoteIP
+	return remoteIP.String()
 }
 
 // RateLimitIdentity는 API key가 있으면 key hash, 아니면 client IP 기반 identity를 반환한다.
 func RateLimitIdentity(r *http.Request, apiKey string, opts ClientIPOptions) string {
 	if key := strings.TrimSpace(apiKey); key != "" {
-		return "key:" + RateLimitKeyHash(key)
+		return "key:" + rateLimitKeyHash(key)
 	}
 
 	if r == nil {
 		return "ip:unknown"
 	}
 
-	clientIP := ClientIP(r, opts)
-	if clientIP == "" {
+	ip := clientIP(r, opts)
+	if ip == "" {
 		return "ip:unknown"
 	}
 
-	return "ip:" + clientIP
+	return "ip:" + ip
 }
 
-// RateLimitKeyHash는 rate-limit key/log용 짧은 SHA-256 해시를 반환한다.
-func RateLimitKeyHash(value string) string {
+// rateLimitKeyHash는 rate-limit key/log용 짧은 SHA-256 해시를 반환한다.
+func rateLimitKeyHash(value string) string {
 	sum := sha256.Sum256([]byte(value))
 
 	return hex.EncodeToString(sum[:8])
@@ -287,13 +274,6 @@ func FixedWindowRateLimitMiddleware(cfg RateLimitMiddlewareConfig) func(http.Han
 	}
 }
 
-// WriteRateLimitExceededJSON은 twentyq형 429 JSON 응답을 쓴다.
-func WriteRateLimitExceededJSON(w http.ResponseWriter, _ *http.Request, _ string) {
-	if err := WriteErrorJSON(w, http.StatusTooManyRequests, "RATE_LIMIT_EXCEEDED", "Too many requests"); err != nil {
-		return
-	}
-}
-
 func (l *FixedWindowRateLimiter) pruneExpired(now time.Time) {
 	if l.entryTTL <= 0 {
 		return
@@ -358,19 +338,11 @@ func forwardedClientIP(r *http.Request, opts ClientIPOptions) string {
 		return ""
 	}
 
-	return realIP
+	return realIP.String()
 }
 
-func isTrustedProxy(ip string, trustedProxies []netip.Prefix) bool {
-	if len(trustedProxies) == 0 {
-		return false
-	}
-
-	addr, err := netip.ParseAddr(ip)
-	if err != nil {
-		return false
-	}
-
+// zone이 붙은 IPv6 주소는 netip.Prefix.Contains가 포함하지 않으므로 신뢰 proxy로 보지 않는다.
+func isTrustedProxy(addr netip.Addr, trustedProxies []netip.Prefix) bool {
 	for _, prefix := range trustedProxies {
 		if prefix.Contains(addr) {
 			return true
@@ -387,8 +359,8 @@ func firstForwardedFor(headerValue string) string {
 	}
 
 	for part := range strings.SplitSeq(raw, ",") {
-		if ip, ok := parseIPCandidate(part); ok {
-			return ip
+		if addr, ok := parseIPCandidate(part); ok {
+			return addr.String()
 		}
 	}
 
@@ -406,7 +378,7 @@ func rightmostNonTrustedForwardedFor(headerValue string, trustedProxies []netip.
 
 		candidate, ok := parsePlainIPCandidate(hop)
 		if ok && !isTrustedProxy(candidate, trustedProxies) {
-			return candidate
+			return candidate.String()
 		}
 
 		if !found {
@@ -417,24 +389,30 @@ func rightmostNonTrustedForwardedFor(headerValue string, trustedProxies []netip.
 	}
 }
 
-func parsePlainIPCandidate(value string) (string, bool) {
+// parsePlainIPCandidate는 net.ParseIP 문법만 받는다. 이전 구현의 net.IP.String()이 IPv4 매핑 주소를
+// 점 표기로 쓰던 것과 같은 문자열이 나오도록 4바이트 표현으로 줄인 뒤 netip로 옮긴다.
+func parsePlainIPCandidate(value string) (netip.Addr, bool) {
 	raw := strings.TrimSpace(value)
 	if raw == "" {
-		return "", false
+		return netip.Addr{}, false
 	}
 
 	ip := net.ParseIP(raw)
 	if ip == nil {
-		return "", false
+		return netip.Addr{}, false
 	}
 
-	return ip.String(), true
+	if ip4 := ip.To4(); ip4 != nil {
+		ip = ip4
+	}
+
+	return netip.AddrFromSlice(ip)
 }
 
-func parseIPCandidate(value string) (string, bool) {
+func parseIPCandidate(value string) (netip.Addr, bool) {
 	raw := strings.TrimSpace(strings.Trim(value, `"`))
 	if raw == "" {
-		return "", false
+		return netip.Addr{}, false
 	}
 
 	if host, _, err := net.SplitHostPort(raw); err == nil {
@@ -446,10 +424,10 @@ func parseIPCandidate(value string) (string, bool) {
 
 	addr, err := netip.ParseAddr(raw)
 	if err != nil {
-		return "", false
+		return netip.Addr{}, false
 	}
 
-	return addr.String(), true
+	return addr, true
 }
 
 func defaultRateLimitReject(w http.ResponseWriter, _ *http.Request, _ string) {

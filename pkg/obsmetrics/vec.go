@@ -9,30 +9,27 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	"github.com/park285/shared-go/v2/pkg/internal/promtext"
 )
 
 // Labels는 Prometheus label name/value 집합입니다. 렌더링 시 label name 기준으로 정렬됩니다.
 type Labels map[string]string
 
-type labelPair struct {
-	name  string
-	value string
-}
-
 type seriesEntry[T any] struct {
 	key    string
-	labels []labelPair
+	labels []promtext.Label
 	value  T
 }
 
 const (
 	// DefaultMaxMetricSeries는 기존 생성자로 만든 벡터가 보유할 시계열 수를 제한한다.
 	DefaultMaxMetricSeries = 1024
-	// DefaultMaxMetricLabels는 시계열 하나의 라벨 수를 제한한다.
-	DefaultMaxMetricLabels = 16
-	// DefaultMaxMetricLabelNameBytes와 DefaultMaxMetricLabelValueBytes는 외부 라벨 정규화 시 할당을 제한한다.
-	DefaultMaxMetricLabelNameBytes  = 128
-	DefaultMaxMetricLabelValueBytes = 256
+	// 시계열 하나의 라벨 수 상한이다.
+	defaultMaxMetricLabels = 16
+	// 외부 라벨 정규화 시 할당을 제한하는 라벨 이름·값 바이트 상한이다.
+	defaultMaxMetricLabelNameBytes  = 128
+	defaultMaxMetricLabelValueBytes = 256
 )
 
 const (
@@ -64,15 +61,15 @@ func newSeriesLimiter(options VecOptions) seriesLimiter {
 	}
 
 	if options.MaxLabels <= 0 {
-		options.MaxLabels = DefaultMaxMetricLabels
+		options.MaxLabels = defaultMaxMetricLabels
 	}
 
 	if options.MaxLabelNameBytes <= 0 {
-		options.MaxLabelNameBytes = DefaultMaxMetricLabelNameBytes
+		options.MaxLabelNameBytes = defaultMaxMetricLabelNameBytes
 	}
 
 	if options.MaxLabelValueBytes <= 0 {
-		options.MaxLabelValueBytes = DefaultMaxMetricLabelValueBytes
+		options.MaxLabelValueBytes = defaultMaxMetricLabelValueBytes
 	}
 
 	return seriesLimiter{
@@ -83,7 +80,7 @@ func newSeriesLimiter(options VecOptions) seriesLimiter {
 	}
 }
 
-func (l *seriesLimiter) canonicalize(labels Labels) (string, []labelPair, bool) {
+func (l *seriesLimiter) canonicalize(labels Labels) (string, []promtext.Label, bool) {
 	if len(labels) > l.maxLabels {
 		l.dropped.Add(1)
 
@@ -122,10 +119,6 @@ func (l *seriesLimiter) release() {
 	l.count.Add(-1)
 }
 
-func (l *seriesLimiter) seriesCount() int {
-	return int(l.count.Load())
-}
-
 func (l *seriesLimiter) droppedSeries() uint64 {
 	return l.dropped.Load()
 }
@@ -135,7 +128,7 @@ type seriesStore struct {
 	limiter seriesLimiter
 }
 
-func (s *seriesStore) loadOrCreate[T any](key string, labels []labelPair, create func() T) (T, bool) {
+func (s *seriesStore) loadOrCreate[T any](key string, labels []promtext.Label, create func() T) (T, bool) {
 	var zero T
 
 	if actual, ok := s.series.Load(key); ok {
@@ -196,20 +189,21 @@ type CounterVec struct {
 	help string
 }
 
-// Counter는 원자적으로 증가하는 단일 counter series입니다.
-type Counter struct {
+// counter는 원자적으로 증가하는 단일 counter series입니다.
+type counter struct {
 	value atomic.Uint64
 }
 
+// NewCounterVec는 기본 자원 상한(VecOptions 0값)으로 counter 벡터를 만듭니다.
 func NewCounterVec(name, help string) *CounterVec {
-	return NewCounterVecWithOptions(name, help, VecOptions{})
+	return newCounterVecWithOptions(name, help, VecOptions{})
 }
 
-func NewCounterVecWithOptions(name, help string, options VecOptions) *CounterVec {
+func newCounterVecWithOptions(name, help string, options VecOptions) *CounterVec {
 	return &CounterVec{name: name, help: help, limiter: newSeriesLimiter(options)}
 }
 
-func (v *CounterVec) With(labels Labels) *Counter {
+func (v *CounterVec) with(labels Labels) *counter {
 	if v == nil {
 		return nil
 	}
@@ -219,12 +213,12 @@ func (v *CounterVec) With(labels Labels) *Counter {
 		return nil
 	}
 
-	counter, ok := v.loadOrCreate(key, labelPairs, func() *Counter { return &Counter{} })
+	series, ok := v.loadOrCreate(key, labelPairs, func() *counter { return &counter{} })
 	if !ok {
 		return nil
 	}
 
-	return counter
+	return series
 }
 
 func (v *CounterVec) Inc(labels Labels) {
@@ -232,26 +226,10 @@ func (v *CounterVec) Inc(labels Labels) {
 }
 
 func (v *CounterVec) Add(labels Labels, delta uint64) {
-	counter := v.With(labels)
-	if counter != nil {
-		counter.Add(delta)
+	series := v.with(labels)
+	if series != nil {
+		series.Add(delta)
 	}
-}
-
-func (v *CounterVec) SeriesCount() int {
-	if v == nil {
-		return 0
-	}
-
-	return v.limiter.seriesCount()
-}
-
-func (v *CounterVec) DroppedSeries() uint64 {
-	if v == nil {
-		return 0
-	}
-
-	return v.limiter.droppedSeries()
 }
 
 func (v *CounterVec) WriteExposition(w io.Writer) bool {
@@ -263,7 +241,7 @@ func (v *CounterVec) WriteExposition(w io.Writer) bool {
 		return false
 	}
 
-	for _, entry := range v.collect[*Counter]() {
+	for _, entry := range v.collect[*counter]() {
 		if !writeMetricSample(w, v.name, entry.labels, strconv.FormatUint(entry.value.Value(), 10)) {
 			return false
 		}
@@ -272,17 +250,13 @@ func (v *CounterVec) WriteExposition(w io.Writer) bool {
 	return writeDroppedSeries(w, v.name, v.limiter.droppedSeries())
 }
 
-func (c *Counter) Inc() {
-	c.Add(1)
-}
-
-func (c *Counter) Add(delta uint64) {
+func (c *counter) Add(delta uint64) {
 	if c != nil {
 		c.value.Add(delta)
 	}
 }
 
-func (c *Counter) Value() uint64 {
+func (c *counter) Value() uint64 {
 	if c == nil {
 		return 0
 	}
@@ -301,10 +275,6 @@ type GaugeVec struct {
 // Gauge는 원자적으로 설정되는 단일 gauge series입니다.
 type Gauge struct {
 	bits atomic.Uint64
-}
-
-func NewGaugeVec(name, help string) *GaugeVec {
-	return NewGaugeVecWithOptions(name, help, VecOptions{})
 }
 
 func NewGaugeVecWithOptions(name, help string, options VecOptions) *GaugeVec {
@@ -336,22 +306,6 @@ func (v *GaugeVec) Set(labels Labels, value float64) {
 	}
 }
 
-func (v *GaugeVec) SeriesCount() int {
-	if v == nil {
-		return 0
-	}
-
-	return v.limiter.seriesCount()
-}
-
-func (v *GaugeVec) DroppedSeries() uint64 {
-	if v == nil {
-		return 0
-	}
-
-	return v.limiter.droppedSeries()
-}
-
 func (v *GaugeVec) WriteExposition(w io.Writer) bool {
 	if v == nil {
 		return true
@@ -362,7 +316,7 @@ func (v *GaugeVec) WriteExposition(w io.Writer) bool {
 	}
 
 	for _, entry := range v.collect[*Gauge]() {
-		if !writeMetricSample(w, v.name, entry.labels, strconv.FormatFloat(entry.value.Value(), 'g', -1, 64)) {
+		if !writeMetricSample(w, v.name, entry.labels, promtext.FormatFloat(entry.value.Value())) {
 			return false
 		}
 	}
@@ -431,22 +385,6 @@ func (v *HistogramVec) Observe(labels Labels, value float64) {
 	}
 }
 
-func (v *HistogramVec) SeriesCount() int {
-	if v == nil {
-		return 0
-	}
-
-	return v.limiter.seriesCount()
-}
-
-func (v *HistogramVec) DroppedSeries() uint64 {
-	if v == nil {
-		return 0
-	}
-
-	return v.limiter.droppedSeries()
-}
-
 func (v *HistogramVec) WriteExposition(w io.Writer) bool {
 	if v == nil {
 		return true
@@ -463,18 +401,18 @@ func (v *HistogramVec) WriteExposition(w io.Writer) bool {
 		}
 
 		for i, ub := range snap.UpperBounds {
-			bucketLabels := appendLabel(entry.labels, labelPair{name: "le", value: strconv.FormatFloat(ub, 'g', -1, 64)})
+			bucketLabels := appendLabel(entry.labels, promtext.Label{Name: "le", Value: promtext.FormatFloat(ub)})
 			if !writeMetricSample(w, v.name+"_bucket", bucketLabels, strconv.FormatUint(snap.Cumulative[i], 10)) {
 				return false
 			}
 		}
 
-		infLabels := appendLabel(entry.labels, labelPair{name: "le", value: "+Inf"})
+		infLabels := appendLabel(entry.labels, promtext.Label{Name: "le", Value: "+Inf"})
 		if !writeMetricSample(w, v.name+"_bucket", infLabels, strconv.FormatUint(snap.Total, 10)) {
 			return false
 		}
 
-		if !writeMetricSample(w, v.name+"_sum", entry.labels, strconv.FormatFloat(snap.Sum, 'g', -1, 64)) {
+		if !writeMetricSample(w, v.name+"_sum", entry.labels, promtext.FormatFloat(snap.Sum)) {
 			return false
 		}
 
@@ -499,8 +437,8 @@ func writeDroppedSeries(w io.Writer, name string, dropped uint64) bool {
 
 // 길이 접두사는 name/value에 구분자가 섞여도 키가 겹치지 않게 하는 장치다. 형식을 바꾸면
 // 프로세스 재시작 없이도 기존 series와 새 series가 갈라지므로 유지해야 한다.
-func canonicalLabels(labels Labels) (string, []labelPair) {
-	pairs := labelsFromMap(labels)
+func canonicalLabels(labels Labels) (string, []promtext.Label) {
+	pairs := promtext.SortedLabels(labels)
 	if len(pairs) == 0 {
 		return "", nil
 	}
@@ -508,7 +446,7 @@ func canonicalLabels(labels Labels) (string, []labelPair) {
 	size := 0
 
 	for _, pair := range pairs {
-		size += len(pair.name) + len(pair.value) + canonicalLabelPairOverhead
+		size += len(pair.Name) + len(pair.Value) + canonicalLabelPairOverhead
 	}
 
 	var key strings.Builder
@@ -518,32 +456,15 @@ func canonicalLabels(labels Labels) (string, []labelPair) {
 	var lenBuf [20]byte
 
 	for _, pair := range pairs {
-		key.Write(strconv.AppendInt(lenBuf[:0], int64(len(pair.name)), 10))
+		key.Write(strconv.AppendInt(lenBuf[:0], int64(len(pair.Name)), 10))
 		key.WriteByte(':')
-		key.WriteString(pair.name)
+		key.WriteString(pair.Name)
 		key.WriteByte('=')
-		key.Write(strconv.AppendInt(lenBuf[:0], int64(len(pair.value)), 10))
+		key.Write(strconv.AppendInt(lenBuf[:0], int64(len(pair.Value)), 10))
 		key.WriteByte(':')
-		key.WriteString(pair.value)
+		key.WriteString(pair.Value)
 		key.WriteByte(';')
 	}
 
 	return key.String(), pairs
-}
-
-func labelsFromMap(labels Labels) []labelPair {
-	if len(labels) == 0 {
-		return nil
-	}
-
-	pairs := make([]labelPair, 0, len(labels))
-	for name, value := range labels {
-		pairs = append(pairs, labelPair{name: name, value: value})
-	}
-
-	slices.SortFunc(pairs, func(left, right labelPair) int {
-		return cmp.Compare(left.name, right.name)
-	})
-
-	return pairs
 }

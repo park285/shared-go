@@ -11,8 +11,8 @@ import (
 	"strings"
 )
 
-// DefaultMaxRequestBodyBytes는 JSON 요청 본문의 기본 최대 크기다.
-const DefaultMaxRequestBodyBytes int64 = 64 << 10
+// defaultMaxRequestBodyBytes는 JSON 요청 본문의 기본 최대 크기다.
+const defaultMaxRequestBodyBytes int64 = 64 << 10
 
 var (
 	// ErrRequestBodyRequired는 필수 JSON 요청 본문이 없을 때의 오류다.
@@ -53,7 +53,7 @@ func (e *JSONRequestError) Error() string {
 		return "<nil>"
 	}
 
-	parts := []string{fmt.Sprintf("status %d", e.StatusCode)}
+	parts := []string{fmt.Sprintf("httputil: status %d", e.StatusCode)}
 	if e.Code != "" {
 		parts = append(parts, e.Code)
 	}
@@ -98,13 +98,13 @@ func DecodeJSONRequest(w http.ResponseWriter, r *http.Request, v any, opts Decod
 		)
 	}
 
-	if err := validateJSONRequestContentType(r.Header.Get(HeaderContentType), opts.RequireContentType); err != nil {
-		return fmt.Errorf("validate JSON request content type: %w", err)
+	if err := validateJSONRequestContentType(r.Header.Get(headerContentType), opts.RequireContentType); err != nil {
+		return err
 	}
 
 	maxBytes := opts.MaxBodyBytes
 	if maxBytes <= 0 {
-		maxBytes = DefaultMaxRequestBodyBytes
+		maxBytes = defaultMaxRequestBodyBytes
 	}
 
 	body := http.MaxBytesReader(w, r.Body, maxBytes)
@@ -147,7 +147,7 @@ func validateJSONRequestContentType(contentType string, required bool) error {
 	}
 
 	mediaType, _, err := mime.ParseMediaType(trimmed)
-	if err != nil || mediaType != ContentTypeJSON {
+	if err != nil || mediaType != contentTypeJSON {
 		return newJSONRequestError(
 			http.StatusUnsupportedMediaType,
 			"unsupported_media_type",

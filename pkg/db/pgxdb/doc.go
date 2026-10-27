@@ -22,7 +22,7 @@
 // # 풀 설정
 //
 // OpenPool은 MaxConns > 0, MinConns >= 0을 요구하며 음수 옵션은 기본값 적용 전에
-// 거부한다. DefaultPoolConfig와 DefaultOptions는 명시적으로 선택하는 기본값이다.
+// 거부한다. 공개 기본 Options는 없으며 호출자가 풀 크기와 ping 기한을 Options에 명시한다.
 // 구조체의 수명이 0이면 최대 수명 1시간·유휴 시간 30분을, 지터가 0이면 수명/5를 쓴다.
 // HealthCheckPeriod와 Pool.PingTimeout이 0이면 pgx 파싱값을 유지하며 검사 주기는 양수여야 한다.
 // Pool.PingTimeout은 시작 Ping과 별개로 획득 시 상태 검사를 제한한다.
@@ -68,8 +68,7 @@
 // 제거하므로, 값 검증은 Config.Validate가, 적용은 pgx가 담당한다. OpenPoolDSN도 같은 경로다.
 //
 // OpenPoolDSN은 pgxpool.ParseConfig의 DSN 값과 기본값을 유지하고 opts.Pool의
-// 양수 필드만 덮어쓴다. shared-go 기본값을 원하면 DefaultPoolConfig()를 명시한다.
-// 수명만 바꾸면 DSN 지터는 유지된다. 덮어쓸 필드의 0은 미지정이므로
+// 양수 필드만 덮어쓴다. 수명만 바꾸면 DSN 지터는 유지된다. 덮어쓸 필드의 0은 미지정이므로
 // DSN의 0이 아닌 설정을 비활성화하려면 DSN을 바꿔야 한다.
 //
 // # 연결 재시도

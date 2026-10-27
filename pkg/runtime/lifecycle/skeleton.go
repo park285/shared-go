@@ -57,12 +57,12 @@ func Run(ctx context.Context, opts Options) error {
 	case runtimeErr == nil && shutdownErr == nil:
 		return nil
 	case runtimeErr == nil:
-		return fmt.Errorf("shutdown: %w", shutdownErr)
+		return fmt.Errorf("lifecycle: shutdown: %w", shutdownErr)
 	case shutdownErr == nil:
-		return fmt.Errorf("run: %w", runtimeErr)
+		return fmt.Errorf("lifecycle: run: %w", runtimeErr)
 	}
 
-	return fmt.Errorf("run: %w", errors.Join(runtimeErr, shutdownErr))
+	return fmt.Errorf("lifecycle: run: %w", errors.Join(runtimeErr, shutdownErr))
 }
 
 func baseContext(ctx context.Context) context.Context {

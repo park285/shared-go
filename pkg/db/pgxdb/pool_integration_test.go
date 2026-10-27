@@ -46,7 +46,7 @@ func quietLogger() *slog.Logger {
 }
 
 func quietOptions() Options {
-	return Options{Logger: quietLogger(), Pool: DefaultPoolConfig(), Ping: DefaultPingConfig()}
+	return Options{Logger: quietLogger(), Pool: defaultPoolConfig(), Ping: PingConfig{PingTimeout: 5 * time.Second}}
 }
 
 func dockerAvailable() bool {
@@ -376,10 +376,7 @@ func TestIntegration_OpenPoolDSNPreservesOptionsAfterNormalization(t *testing.T)
 
 	keywordCfg := testConfig(t)
 
-	keywordDSN, err := keywordCfg.DSN()
-	if err != nil {
-		t.Fatal(err)
-	}
+	keywordDSN := keywordCfg.buildDSN(keywordCfg.Password)
 
 	keywordDSN = strings.Replace(keywordDSN, "sslmode='disable'", "sslmode=' DISABLE '", 1) +
 		" pool_min_conns=1 pool_max_conns=3 pool_max_conn_lifetime=13m pool_max_conn_lifetime_jitter=2m pool_max_conn_idle_time=7m pool_health_check_period=42s application_name='normalized pool' default_query_exec_mode=exec"

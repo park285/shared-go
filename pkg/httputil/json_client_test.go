@@ -18,7 +18,7 @@ import (
 func TestJSONClient_NewJSONRequestSetsHeadersAndBody(t *testing.T) {
 	t.Parallel()
 
-	client := NewJSONClient("https://example.com/", " secret-key ", 5*time.Second)
+	client := NewJSONClientWithHTTPClient("https://example.com/", " secret-key ", NewInternalServiceClient(5*time.Second))
 
 	req, err := client.NewJSONRequest(t.Context(), http.MethodPost, "/internal/test", map[string]any{
 		"name": "kapu",
@@ -72,7 +72,7 @@ func TestJSONClientNewJSONRequestUsesV2WireSemantics(t *testing.T) {
 		CreatedAt time.Time      `json:"createdAt"`
 	}
 
-	client := NewJSONClient("https://example.com", "", time.Second)
+	client := NewJSONClientWithHTTPClient("https://example.com", "", NewInternalServiceClient(time.Second))
 
 	req, err := client.NewJSONRequest(t.Context(), http.MethodPost, "/v2", requestPayload{
 		Digest:    [2]byte{1, 2},
@@ -97,7 +97,7 @@ func TestJSONClientNewJSONRequestUsesV2WireSemantics(t *testing.T) {
 func TestJSONClientNewJSONRequestRejectsUnsupportedV2Shapes(t *testing.T) {
 	t.Parallel()
 
-	client := NewJSONClient("https://example.com", "", time.Second)
+	client := NewJSONClientWithHTTPClient("https://example.com", "", NewInternalServiceClient(time.Second))
 	tests := []struct {
 		name    string
 		payload any
@@ -137,7 +137,7 @@ func TestJSONClientNewJSONRequestRejectsUnsupportedV2Shapes(t *testing.T) {
 func TestJSONClient_NewRequestAppliesAPIKeyWithoutBody(t *testing.T) {
 	t.Parallel()
 
-	client := NewJSONClient("https://example.com", "token", 3*time.Second)
+	client := NewJSONClientWithHTTPClient("https://example.com", "token", NewInternalServiceClient(3*time.Second))
 
 	req, err := client.NewRequest(t.Context(), http.MethodGet, "/health")
 	if err != nil {
@@ -190,7 +190,7 @@ func TestNewJSONClientWithHTTPClientUsesProvidedClient(t *testing.T) {
 func TestJSONClient_DiscardBodyClosesResponse(t *testing.T) {
 	t.Parallel()
 
-	client := NewJSONClient("https://example.com", "", time.Second)
+	client := NewJSONClientWithHTTPClient("https://example.com", "", NewInternalServiceClient(time.Second))
 	body := &trackCloseReadCloser{Reader: strings.NewReader(`{"ok":true}`)}
 
 	if err := client.DiscardBody(&http.Response{Body: body}); err != nil {
@@ -260,8 +260,8 @@ func TestJSONClient_DoWrapsError(t *testing.T) {
 		t.Fatal("Do() expected error for unreachable host")
 	}
 
-	if !strings.HasPrefix(err.Error(), "request: ") {
-		t.Fatalf("Do() error = %q, want prefix %q", err.Error(), "request: ")
+	if !strings.HasPrefix(err.Error(), "httputil: request: ") {
+		t.Fatalf("Do() error = %q, want prefix %q", err.Error(), "httputil: request: ")
 	}
 }
 
@@ -357,7 +357,7 @@ func TestJSONClient_ApplyAPIKeyNilReq(t *testing.T) {
 		}
 	}()
 
-	client := NewJSONClient("https://example.com", "key", time.Second)
+	client := NewJSONClientWithHTTPClient("https://example.com", "key", NewInternalServiceClient(time.Second))
 	client.applyAPIKey(nil)
 }
 
@@ -374,8 +374,8 @@ func TestJSONClient_DiscardBodyReadError(t *testing.T) {
 		t.Fatal("DiscardBody() expected error for failing reader")
 	}
 
-	if !strings.Contains(err.Error(), "discard body") {
-		t.Fatalf("DiscardBody() error = %q, want 'discard body' prefix", err.Error())
+	if !strings.HasPrefix(err.Error(), "httputil: drain and close: ") {
+		t.Fatalf("DiscardBody() error = %q, want prefix %q", err.Error(), "httputil: drain and close: ")
 	}
 }
 

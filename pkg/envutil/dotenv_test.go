@@ -44,17 +44,17 @@ func (tc loadDotenvFileCase) run(t *testing.T) {
 		testsupport.UnsetEnvOnCleanup(t, key)
 	}
 
-	err := LoadDotenvFile(path, tc.required, tc.strict)
+	err := loadDotenvFile(path, tc.required, tc.strict)
 	if tc.wantErr != "" {
 		if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
-			t.Fatalf("LoadDotenvFile() error = %v, want substring %q", err, tc.wantErr)
+			t.Fatalf("loadDotenvFile() error = %v, want substring %q", err, tc.wantErr)
 		}
 
 		return
 	}
 
 	if err != nil {
-		t.Fatalf("LoadDotenvFile() error = %v", err)
+		t.Fatalf("loadDotenvFile() error = %v", err)
 	}
 
 	for key, want := range tc.wantEnv {
@@ -124,16 +124,16 @@ func TestLoadDotenvFileMissingOptional(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "missing.env")
-	if err := LoadDotenvFile(path, false, false); err != nil {
-		t.Fatalf("LoadDotenvFile(optional missing) error = %v", err)
+	if err := loadDotenvFile(path, false, false); err != nil {
+		t.Fatalf("loadDotenvFile(optional missing) error = %v", err)
 	}
 }
 
 func TestServiceDotenvPath(t *testing.T) {
 	t.Parallel()
 
-	if got := ServiceDotenvPath(testServiceTwentyq); got != "/run/twentyq/twentyq.env" {
-		t.Fatalf("ServiceDotenvPath() = %q, want /run/twentyq/twentyq.env", got)
+	if got := serviceDotenvPath(testServiceTwentyq); got != "/run/twentyq/twentyq.env" {
+		t.Fatalf("serviceDotenvPath() = %q, want /run/twentyq/twentyq.env", got)
 	}
 }
 

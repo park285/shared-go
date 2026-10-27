@@ -240,30 +240,6 @@ func appendDecodeScanOverflow(spans []encodedSpan, fallback encodedSpan) []encod
 	return spans
 }
 
-func ContainsSuspiciousBase64(input string) bool {
-	for i := 0; i < len(input); {
-		start := i //nolint:copyloopvar // 루프 변수가 본문에서 전진하므로 시작 위치를 따로 보존한다.
-		match := nextBase64Candidate(input, i)
-
-		i = match.next
-
-		if len(match.value) < minBase64CandidateLen {
-			continue
-		}
-
-		if declaredNonTextDataPayload(input, start) {
-			continue
-		}
-
-		decoded, err := DecodeBase64Candidate(match.value)
-		if err == nil && IsReadableText(decoded) {
-			return true
-		}
-	}
-
-	return false
-}
-
 var (
 	errBase64WordSeparators = errors.New("base64 decode: lowercase word decodes to separators only")
 	errBase64Number         = errors.New("base64 decode: number token")

@@ -47,7 +47,7 @@ func SCRAMVerifier(password string) (string, error) {
 
 	salted, err := pbkdf2.Key(sha256.New, prepared, salt[:], iterations, sha256.Size)
 	if err != nil {
-		return "", errors.New("derive SCRAM key failed")
+		return "", errors.New("pgxdb: derive SCRAM key failed")
 	}
 
 	mac := hmac.New(sha256.New, salted)
@@ -74,7 +74,7 @@ func SCRAMVerifier(password string) (string, error) {
 func compatibleSCRAMPassword(password string) (string, error) {
 	// 배포 자격은 UTF-8 텍스트다. libpq는 빈 값이나 NUL 뒤의 바이트를 사용할 수 없다.
 	if password == "" || strings.IndexByte(password, 0) >= 0 || !utf8.ValidString(password) {
-		return "", errors.New("password is not compatible with PostgreSQL clients")
+		return "", errors.New("pgxdb: password is not compatible with PostgreSQL clients")
 	}
 
 	postgresPassword := postgresSCRAMPassword(password)
@@ -85,7 +85,7 @@ func compatibleSCRAMPassword(password string) (string, error) {
 	}
 
 	if postgresPassword != pgxPassword {
-		return "", errors.New("password is not compatible with PostgreSQL clients")
+		return "", errors.New("pgxdb: password is not compatible with PostgreSQL clients")
 	}
 
 	return postgresPassword, nil

@@ -10,7 +10,8 @@ type ttlEntry[V any] struct {
 	expiresAt time.Time
 }
 
-type TTLCache[K comparable, V any] struct {
+// ttlCache는 Guard 판정 결과를 크기·TTL 상한 안에서 보관한다. Guard 구현 세부라 공개하지 않는다.
+type ttlCache[K comparable, V any] struct {
 	mu      sync.RWMutex
 	entries map[K]ttlEntry[V]
 	maxSize int
@@ -18,11 +19,7 @@ type TTLCache[K comparable, V any] struct {
 	now     func() time.Time
 }
 
-func NewTTLCache[K comparable, V any](maxSize int, ttl time.Duration) *TTLCache[K, V] {
-	return newTTLCache[K, V](maxSize, ttl, time.Now)
-}
-
-func newTTLCache[K comparable, V any](maxSize int, ttl time.Duration, now func() time.Time) *TTLCache[K, V] {
+func newTTLCache[K comparable, V any](maxSize int, ttl time.Duration, now func() time.Time) *ttlCache[K, V] {
 	if maxSize <= 0 {
 		maxSize = 1024
 	}
@@ -31,7 +28,7 @@ func newTTLCache[K comparable, V any](maxSize int, ttl time.Duration, now func()
 		now = time.Now
 	}
 
-	return &TTLCache[K, V]{
+	return &ttlCache[K, V]{
 		entries: make(map[K]ttlEntry[V]),
 		maxSize: maxSize,
 		ttl:     ttl,
@@ -39,7 +36,7 @@ func newTTLCache[K comparable, V any](maxSize int, ttl time.Duration, now func()
 	}
 }
 
-func (c *TTLCache[K, V]) Get(key K) (V, bool) {
+func (c *ttlCache[K, V]) Get(key K) (V, bool) {
 	if c == nil {
 		var zero V
 
@@ -65,7 +62,7 @@ func (c *TTLCache[K, V]) Get(key K) (V, bool) {
 	return entry.value, true
 }
 
-func (c *TTLCache[K, V]) Set(key K, value V) {
+func (c *ttlCache[K, V]) Set(key K, value V) {
 	if c == nil {
 		return
 	}
@@ -84,7 +81,7 @@ func (c *TTLCache[K, V]) Set(key K, value V) {
 	c.entries[key] = c.newEntry(value)
 }
 
-func (c *TTLCache[K, V]) Len() int {
+func (c *ttlCache[K, V]) Len() int {
 	if c == nil {
 		return 0
 	}
@@ -95,23 +92,7 @@ func (c *TTLCache[K, V]) Len() int {
 	return len(c.entries)
 }
 
-func (c *TTLCache[K, V]) keys() []K {
-	if c == nil {
-		return nil
-	}
-
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	keys := make([]K, 0, len(c.entries))
-	for key := range c.entries {
-		keys = append(keys, key)
-	}
-
-	return keys
-}
-
-func (c *TTLCache[K, V]) ensureCapacity() {
+func (c *ttlCache[K, V]) ensureCapacity() {
 	if len(c.entries) < c.maxSize {
 		return
 	}
@@ -125,7 +106,7 @@ func (c *TTLCache[K, V]) ensureCapacity() {
 	c.deleteOneEntry()
 }
 
-func (c *TTLCache[K, V]) deleteExpiredEntries(now time.Time) {
+func (c *ttlCache[K, V]) deleteExpiredEntries(now time.Time) {
 	for key, entry := range c.entries {
 		if !entry.expiresAt.IsZero() && now.After(entry.expiresAt) {
 			delete(c.entries, key)
@@ -137,7 +118,7 @@ func (c *TTLCache[K, V]) deleteExpiredEntries(now time.Time) {
 	}
 }
 
-func (c *TTLCache[K, V]) deleteOneEntry() {
+func (c *ttlCache[K, V]) deleteOneEntry() {
 	for key := range c.entries {
 		delete(c.entries, key)
 
@@ -145,7 +126,7 @@ func (c *TTLCache[K, V]) deleteOneEntry() {
 	}
 }
 
-func (c *TTLCache[K, V]) newEntry(value V) ttlEntry[V] {
+func (c *ttlCache[K, V]) newEntry(value V) ttlEntry[V] {
 	entry := ttlEntry[V]{value: value}
 
 	if c.ttl > 0 {
@@ -155,7 +136,7 @@ func (c *TTLCache[K, V]) newEntry(value V) ttlEntry[V] {
 	return entry
 }
 
-func (c *TTLCache[K, V]) resolveExpired(key K) (V, bool) {
+func (c *ttlCache[K, V]) resolveExpired(key K) (V, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 

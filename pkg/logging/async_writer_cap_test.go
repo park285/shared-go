@@ -319,7 +319,7 @@ func TestEnableFileLoggingOversizePreservesSanitizedFileRecord(t *testing.T) {
 	const secret = "synthetic-credential-canary"
 
 	diagnostic := strings.Repeat("diagnostic detail ", 5000)
-	logger.Error("diagnostic_failed", Event("diagnostic_failed"), RequestID("request-42"),
+	logger.Error("diagnostic_failed", eventAttr("diagnostic_failed"), requestIDAttr("request-42"),
 		slog.String("trace_id", "0123456789abcdef0123456789abcdef"),
 		slog.String("span_id", "0123456789abcdef"),
 		slog.Any("error", errors.New("API_TOKEN="+secret+" "+diagnostic)))

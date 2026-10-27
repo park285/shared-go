@@ -118,12 +118,9 @@ func TestAPIErrorHelpersMatchWrappedErrors(t *testing.T) {
 		Message:    "no subscribed members",
 	})
 
-	if !IsStatus(err, http.StatusNotFound) {
-		t.Fatal("IsStatus() = false, want true")
-	}
-
-	if IsStatus(err, http.StatusConflict) {
-		t.Fatal("IsStatus() = true for wrong status")
+	apiErr, ok := errors.AsType[*APIError](err)
+	if !ok || apiErr.StatusCode != http.StatusNotFound {
+		t.Fatalf("errors.AsType[*APIError]() = (%v, %t), want status 404", apiErr, ok)
 	}
 }
 
@@ -276,13 +273,13 @@ func TestDecodeJSONLimited_OverLimitErrors(t *testing.T) {
 	rc := &trackCloseReadCloser{Reader: strings.NewReader(payload)}
 	resp := &http.Response{Body: rc}
 
-	_, err := DecodeJSONLimited[namedPayload](resp, 64)
+	_, err := decodeJSONLimited[namedPayload](resp, 64)
 	if !errors.Is(err, ErrResponseBodyTooLarge) {
-		t.Fatalf("DecodeJSONLimited() error = %v, want ErrResponseBodyTooLarge", err)
+		t.Fatalf("decodeJSONLimited() error = %v, want ErrResponseBodyTooLarge", err)
 	}
 
 	if !rc.closed {
-		t.Fatal("DecodeJSONLimited() expected body close on over-limit")
+		t.Fatal("decodeJSONLimited() expected body close on over-limit")
 	}
 }
 
@@ -293,17 +290,17 @@ func TestDecodeJSONLimited_AtLimitDecodes(t *testing.T) {
 	rc := &trackCloseReadCloser{Reader: strings.NewReader(payload)}
 	resp := &http.Response{Body: rc}
 
-	out, err := DecodeJSONLimited[namedPayload](resp, int64(len(payload)))
+	out, err := decodeJSONLimited[namedPayload](resp, int64(len(payload)))
 	if err != nil {
-		t.Fatalf("DecodeJSONLimited() error = %v", err)
+		t.Fatalf("decodeJSONLimited() error = %v", err)
 	}
 
 	if out.Name != "test" {
-		t.Fatalf("DecodeJSONLimited() name = %q, want test", out.Name)
+		t.Fatalf("decodeJSONLimited() name = %q, want test", out.Name)
 	}
 
 	if !rc.closed {
-		t.Fatal("DecodeJSONLimited() expected body close")
+		t.Fatal("decodeJSONLimited() expected body close")
 	}
 }
 
@@ -314,17 +311,17 @@ func TestDecodeJSONLimited_TrailingWhitespaceWithinLimitDecodes(t *testing.T) {
 	rc := &trackCloseReadCloser{Reader: strings.NewReader(payload)}
 	resp := &http.Response{Body: rc}
 
-	out, err := DecodeJSONLimited[namedPayload](resp, int64(len(payload)))
+	out, err := decodeJSONLimited[namedPayload](resp, int64(len(payload)))
 	if err != nil {
-		t.Fatalf("DecodeJSONLimited() error = %v", err)
+		t.Fatalf("decodeJSONLimited() error = %v", err)
 	}
 
 	if out.Name != "test" {
-		t.Fatalf("DecodeJSONLimited() name = %q, want test", out.Name)
+		t.Fatalf("decodeJSONLimited() name = %q, want test", out.Name)
 	}
 
 	if !rc.closed {
-		t.Fatal("DecodeJSONLimited() expected body close")
+		t.Fatal("decodeJSONLimited() expected body close")
 	}
 }
 
@@ -334,9 +331,9 @@ func TestDecodeJSONLimited_RejectsMultipleJSONValues(t *testing.T) {
 	payload := `{"name":"first"}{"name":"second"}`
 	resp := &http.Response{Body: io.NopCloser(strings.NewReader(payload))}
 
-	_, err := DecodeJSONLimited[namedPayload](resp, int64(len(payload)))
+	_, err := decodeJSONLimited[namedPayload](resp, int64(len(payload)))
 	if !errors.Is(err, ErrMultipleJSONValues) {
-		t.Fatalf("DecodeJSONLimited() error = %v, want ErrMultipleJSONValues", err)
+		t.Fatalf("decodeJSONLimited() error = %v, want ErrMultipleJSONValues", err)
 	}
 }
 
@@ -348,25 +345,25 @@ func TestDecodeJSONLimited_RejectsTrailingWhitespaceOverLimit(t *testing.T) {
 	rc := &byteByByteReadCloser{reader: strings.NewReader(payload)}
 	resp := &http.Response{Body: rc}
 
-	_, err := DecodeJSONLimited[namedPayload](resp, int64(len(jsonValue)))
+	_, err := decodeJSONLimited[namedPayload](resp, int64(len(jsonValue)))
 	if !errors.Is(err, ErrResponseBodyTooLarge) {
-		t.Fatalf("DecodeJSONLimited() error = %v, want ErrResponseBodyTooLarge", err)
+		t.Fatalf("decodeJSONLimited() error = %v, want ErrResponseBodyTooLarge", err)
 	}
 
 	if rc.readBytes != len(jsonValue)+1 {
-		t.Fatalf("DecodeJSONLimited() read bytes = %d, want %d", rc.readBytes, len(jsonValue)+1)
+		t.Fatalf("decodeJSONLimited() read bytes = %d, want %d", rc.readBytes, len(jsonValue)+1)
 	}
 
 	if !rc.closed {
-		t.Fatal("DecodeJSONLimited() expected body close")
+		t.Fatal("decodeJSONLimited() expected body close")
 	}
 }
 
 func TestDecodeJSON_UsesDefaultLimit(t *testing.T) {
 	t.Parallel()
 
-	if DefaultMaxBodyBytes != 16<<20 {
-		t.Fatalf("DefaultMaxBodyBytes = %d, want %d", DefaultMaxBodyBytes, 16<<20)
+	if defaultMaxBodyBytes != 16<<20 {
+		t.Fatalf("defaultMaxBodyBytes = %d, want %d", defaultMaxBodyBytes, 16<<20)
 	}
 
 	rc := &trackCloseReadCloser{Reader: strings.NewReader(`{"name":"ok"}`)}

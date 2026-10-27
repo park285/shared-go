@@ -13,7 +13,7 @@ var WebhookLatencyBuckets = []float64{
 
 // WebhookMetrics는 iris-client-go webhook.Metrics 관측 포인트를 prefix 네임스페이스
 // 단위로 구현한 공통 구현체입니다. 메서드 집합이 webhook.Metrics와 구조적으로 일치하므로
-// iris-client-go를 import하지 않고도 iris.WithMetrics에 주입할 수 있습니다.
+// iris-client-go를 import하지 않고도 webhook.WithMetrics에 주입할 수 있습니다.
 type WebhookMetrics struct {
 	prefix string
 
@@ -25,9 +25,7 @@ type WebhookMetrics struct {
 	accepted        atomic.Uint64
 
 	handlerDuration *Histogram
-	enqueueWait     *Histogram
 	decodeLatency   *Histogram
-	dedupLatency    *Histogram
 }
 
 // NewWebhookMetrics는 prefix 네임스페이스(예: "chat_bot", "twentyq")로 webhook 메트릭을 만듭니다.
@@ -35,9 +33,7 @@ func NewWebhookMetrics(prefix string) *WebhookMetrics {
 	return &WebhookMetrics{
 		prefix:          prefix,
 		handlerDuration: NewHistogram(WebhookLatencyBuckets),
-		enqueueWait:     NewHistogram(WebhookLatencyBuckets),
 		decodeLatency:   NewHistogram(WebhookLatencyBuckets),
-		dedupLatency:    NewHistogram(WebhookLatencyBuckets),
 	}
 }
 
@@ -83,22 +79,6 @@ func (m *WebhookMetrics) ObserveDecodeLatency(d time.Duration) {
 	}
 }
 
-func (m *WebhookMetrics) ObserveDedupLatency(d time.Duration) {
-	if m != nil && m.dedupLatency != nil {
-		m.dedupLatency.Observe(d.Seconds())
-	}
-}
-
-func (m *WebhookMetrics) ObserveEnqueueWait(d time.Duration) {
-	if m != nil && m.enqueueWait != nil {
-		m.enqueueWait.Observe(d.Seconds())
-	}
-}
-
-// ObserveQueueDepth는 iris-client-go webhook.Metrics 계약을 구현한다. Scheduler queue는
-// Stack Worker Contract registry가 소유하므로 generic webhook metric으로 중복 노출하지 않는다.
-func (m *WebhookMetrics) ObserveQueueDepth(_ int) {}
-
 func (m *WebhookMetrics) ObserveHandlerDuration(d time.Duration) {
 	if m != nil && m.handlerDuration != nil {
 		m.handlerDuration.Observe(d.Seconds())
@@ -137,9 +117,7 @@ func (m *WebhookMetrics) Expose(w io.Writer) bool {
 		hist *Histogram
 	}{
 		{n("handler_duration_seconds"), "Webhook message handler execution duration in seconds.", m.handlerDuration},
-		{n("enqueue_wait_seconds"), "Time a webhook request waited before being enqueued, in seconds.", m.enqueueWait},
 		{n("decode_latency_seconds"), "Webhook request JSON decode latency in seconds.", m.decodeLatency},
-		{n("dedup_latency_seconds"), "Deduplication check latency in seconds.", m.dedupLatency},
 	}
 	for _, h := range histograms {
 		if h.hist == nil {

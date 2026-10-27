@@ -77,7 +77,7 @@ func StringOrSecretFile(key, def string) (string, error) {
 	if strings.TrimSpace(os.Getenv(key+"_FILE")) != "" {
 		out, err := secretFile(key)
 		if err != nil {
-			return out, fmt.Errorf("secret file: %w", err)
+			return out, fmt.Errorf("envutil: secret file: %w", err)
 		}
 
 		return out, nil

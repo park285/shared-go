@@ -95,7 +95,7 @@ func TestRunEConvertsErrorAndNonErrorPanics(t *testing.T) {
 	}
 
 	err = RunE(nil, Goroutine, "string-panic", func() error { panic("kaboom") })
-	if err == nil || !strings.Contains(err.Error(), "string-panic: recovered panic: kaboom") {
+	if err == nil || err.Error() != "panicguard: string-panic: recovered panic: kaboom" {
 		t.Fatalf("RunE(string panic) error = %v, want named recovered panic", err)
 	}
 }
@@ -121,7 +121,7 @@ func TestRunRejectsUnknownLogContractBeforeCallingFunction(t *testing.T) {
 		}
 	}()
 
-	Run(nil, LogContract(255), "invalid", func() { ran = true })
+	Run(nil, LogContract{Message: "missing name key"}, "invalid", func() { ran = true })
 }
 
 func testLogger() (*slog.Logger, *bytes.Buffer) {
@@ -130,4 +130,32 @@ func testLogger() (*slog.Logger, *bytes.Buffer) {
 	logger := slog.New(slog.NewTextHandler(&output, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	return logger, &output
+}
+
+func TestRunUsesConsumerDefinedLogContract(t *testing.T) {
+	t.Parallel()
+
+	logger, output := testLogger()
+	contract := LogContract{Message: "scheduler panic recovered", NameKey: "job"}
+
+	Run(logger, contract, "nightly-digest", func() { panic("boom") })
+
+	logged := output.String()
+
+	for _, want := range []string{"msg=\"scheduler panic recovered\"", "job=nightly-digest", "panic=boom"} {
+		if !strings.Contains(logged, want) {
+			t.Fatalf("panic log = %q, want marker %q", logged, want)
+		}
+	}
+}
+
+func TestRunEReturnsFunctionErrorUnwrapped(t *testing.T) {
+	t.Parallel()
+
+	wantErr := errors.New("load snapshot: timeout")
+
+	err := RunE(nil, BackgroundTask, "snapshot", func() error { return wantErr })
+	if err != wantErr { //nolint:errorlint // 호출자 오류를 감싸지 않고 그대로 돌려주는 계약을 확인한다.
+		t.Fatalf("RunE() error = %v, want the function error itself", err)
+	}
 }

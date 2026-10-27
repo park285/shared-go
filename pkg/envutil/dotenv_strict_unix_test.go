@@ -28,9 +28,9 @@ func TestLoadDotenvFileStrictRejectsSymlink(t *testing.T) {
 
 	testsupport.UnsetEnvOnCleanup(t, "STRICT_SYMLINK_KEY")
 
-	err := LoadDotenvFile(link, true, true)
+	err := loadDotenvFile(link, true, true)
 	if err == nil || !strings.Contains(err.Error(), "must not be symlink") {
-		t.Fatalf("LoadDotenvFile(strict symlink) error = %v, want symlink rejection", err)
+		t.Fatalf("loadDotenvFile(strict symlink) error = %v, want symlink rejection", err)
 	}
 
 	if got := os.Getenv("STRICT_SYMLINK_KEY"); got != "" {
@@ -53,8 +53,8 @@ func TestLoadDotenvFileNonStrictFollowsSymlink(t *testing.T) {
 
 	testsupport.UnsetEnvOnCleanup(t, "LOCAL_SYMLINK_KEY")
 
-	if err := LoadDotenvFile(link, true, false); err != nil {
-		t.Fatalf("LoadDotenvFile(non-strict symlink) error = %v", err)
+	if err := loadDotenvFile(link, true, false); err != nil {
+		t.Fatalf("loadDotenvFile(non-strict symlink) error = %v", err)
 	}
 
 	if got := os.Getenv("LOCAL_SYMLINK_KEY"); got != "value" {
@@ -72,15 +72,15 @@ func TestLoadDotenvFileStrictRejectsFifoWithoutBlocking(t *testing.T) {
 
 	done := make(chan error, 1)
 
-	go func() { done <- LoadDotenvFile(fifo, true, true) }()
+	go func() { done <- loadDotenvFile(fifo, true, true) }()
 
 	select {
 	case err := <-done:
 		if err == nil || !strings.Contains(err.Error(), "must be regular file") {
-			t.Fatalf("LoadDotenvFile(strict fifo) error = %v, want regular file rejection", err)
+			t.Fatalf("loadDotenvFile(strict fifo) error = %v, want regular file rejection", err)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("LoadDotenvFile(strict fifo) blocked; startup must not wait on a FIFO writer")
+		t.Fatal("loadDotenvFile(strict fifo) blocked; startup must not wait on a FIFO writer")
 	}
 }
 
@@ -187,8 +187,8 @@ func TestLoadDotenvFileStrictLoadsRegularFile(t *testing.T) {
 
 	testsupport.UnsetEnvOnCleanup(t, "STRICT_OK_KEY")
 
-	if err := LoadDotenvFile(path, true, true); err != nil {
-		t.Fatalf("LoadDotenvFile(strict) error = %v", err)
+	if err := loadDotenvFile(path, true, true); err != nil {
+		t.Fatalf("loadDotenvFile(strict) error = %v", err)
 	}
 
 	if got := os.Getenv("STRICT_OK_KEY"); got != "value" {

@@ -72,14 +72,3 @@ func NormalizeKey(s string) string {
 
 	return builder.String()
 }
-
-// 공백은 하이픈(-)으로 변환하고, 특정 특수문자를 제거합니다.
-func Slugify(s string) string {
-	s = Normalize(s)
-	s = strings.ReplaceAll(s, " ", "-")
-	s = strings.ReplaceAll(s, "'", "")
-	s = strings.ReplaceAll(s, ".", "")
-	s = strings.ReplaceAll(s, "!", "")
-
-	return s
-}

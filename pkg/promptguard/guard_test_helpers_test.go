@@ -5,6 +5,18 @@ import (
 	"testing"
 )
 
+// compileTestPack은 로더가 rules 파일을 묶는 것과 같은 방식으로 단일 규칙 pack을 만든다.
+func compileTestPack(tb testing.TB, raw *rawRulepack) compiledPack {
+	tb.Helper()
+
+	rules, err := compileRules(raw)
+	if err != nil {
+		tb.Fatalf("compileRules() error = %v", err)
+	}
+
+	return compiledPack{Version: 3, Kind: rulepackKindRules, Policy: compilePolicy(raw), Rules: rules}
+}
+
 func evaluateForTest(tb testing.TB, guard *Guard, input string) Evaluation {
 	tb.Helper()
 

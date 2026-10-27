@@ -1,8 +1,9 @@
 package promptguard
 
 import (
-	"strings"
 	"testing"
+
+	"github.com/park285/shared-go/v2/pkg/internal/guardtext"
 )
 
 func TestNormalizeViewsConfusableGolden(t *testing.T) {
@@ -34,18 +35,7 @@ func TestNormalizeViewsConfusableGolden(t *testing.T) {
 	}
 }
 
-func TestNormalizePostProcessMatchesLegacyPipeline(t *testing.T) {
-	t.Parallel()
-
-	input := "\u200b  MIXED\tCase\n\u00a0Text  "
-	baseline := strings.TrimSpace(collapseWhitespace(strings.ToLower(stripControlChars(input))))
-
-	if got := normalizePostProcess(input); got != baseline {
-		t.Fatalf("normalizePostProcess(%q) = %q, want baseline %q", input, got, baseline)
-	}
-}
-
-var benchmarkNormalizeViewsSink Views
+var benchmarkNormalizeViewsSink guardtext.Views
 
 func benchmarkNormalizeViews(b *testing.B, input string) {
 	b.Helper()

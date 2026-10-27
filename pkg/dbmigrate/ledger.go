@@ -2,10 +2,8 @@ package dbmigrate
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
-	"io/fs"
 	"strings"
 	"unicode"
 )
@@ -24,32 +22,10 @@ type RowQuerier interface {
 	QueryRow(ctx context.Context, query string, args ...any) Row
 }
 
-// SQLQueryRowContext는 database/sql 계열 QueryRowContext 최소 인터페이스다.
-type SQLQueryRowContext interface {
-	// QueryRowContext는 context-aware 단일 row 조회를 실행한다.
-	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
-}
-
 // Ledger는 적용된 migration 파일명을 저장하는 테이블 설정이다.
 type Ledger struct {
 	// Table은 ledger 테이블 이름이다.
 	Table string
-}
-
-// SQLQueryRow는 database/sql 계열 handle을 RowQuerier로 감싼다.
-func SQLQueryRow(db SQLQueryRowContext) RowQuerier {
-	return sqlRowQuerier{db: db}
-}
-
-// WithLedger는 적용 완료 ledger를 사용해 migration을 idempotent하게 만든다.
-// Apply와 Record는 별도 Execer 호출이라 원자적이지 않고, ledger는 at-least-once이므로 migration SQL은 idempotent해야 한다.
-// Ledger 단독은 동시 실행을 막지 못한다: 여러 마이그레이터가 같은 migration을 동시에 Applied()==false로 보고 함께 실행할 수 있다.
-// 다중 레플리카에서 single-flight가 필요하면 Apply를 WithAdvisoryLock으로 감싸라.
-func WithLedger(l Ledger, q RowQuerier) Option {
-	return func(o *options) {
-		o.ledger = &l
-		o.ledgerQuerier = q
-	}
 }
 
 // Ensure는 ledger 테이블을 없으면 생성한다.
@@ -60,49 +36,12 @@ func (l Ledger) Ensure(ctx context.Context, exec Execer) error {
 
 	table, err := l.tableName()
 	if err != nil {
-		return fmt.Errorf("table name: %w", err)
+		return fmt.Errorf("dbmigrate: table name: %w", err)
 	}
 
 	query := queryEnsureLedger(table)
 	if err := exec(ctx, query); err != nil {
 		return fmt.Errorf("dbmigrate: ensure ledger: %w", err)
-	}
-
-	return nil
-}
-
-// Baseline은 지정 migration까지 ledger에 적용 완료로 기록한다.
-func Baseline(ctx context.Context, fsys fs.FS, exec Execer, through string, l Ledger) error {
-	if strings.TrimSpace(through) == "" {
-		return errors.New("dbmigrate: baseline through migration is required")
-	}
-
-	entries, err := Manifest(fsys)
-	if err != nil {
-		return fmt.Errorf("dbmigrate: %w", err)
-	}
-
-	throughIndex := -1
-
-	for i, name := range entries {
-		if name == through {
-			throughIndex = i
-			break
-		}
-	}
-
-	if throughIndex < 0 {
-		return fmt.Errorf("dbmigrate: baseline through migration %q not found in manifest", through)
-	}
-
-	if err := l.Ensure(ctx, exec); err != nil {
-		return fmt.Errorf("ensure: %w", err)
-	}
-
-	for _, name := range entries[:throughIndex+1] {
-		if err := l.Record(ctx, exec, name); err != nil {
-			return fmt.Errorf("record: %w", err)
-		}
 	}
 
 	return nil
@@ -116,7 +55,7 @@ func (l Ledger) Applied(ctx context.Context, q RowQuerier, name string) (bool, e
 
 	table, err := l.tableName()
 	if err != nil {
-		return false, fmt.Errorf("table name: %w", err)
+		return false, fmt.Errorf("dbmigrate: table name: %w", err)
 	}
 
 	var applied bool
@@ -138,7 +77,7 @@ func (l Ledger) Record(ctx context.Context, exec Execer, name string) error {
 
 	table, err := l.tableName()
 	if err != nil {
-		return fmt.Errorf("table name: %w", err)
+		return fmt.Errorf("dbmigrate: table name: %w", err)
 	}
 
 	query := queryRecordLedger(table)
@@ -186,12 +125,4 @@ func validateIdentifier(s string) error {
 	}
 
 	return nil
-}
-
-type sqlRowQuerier struct {
-	db SQLQueryRowContext
-}
-
-func (q sqlRowQuerier) QueryRow(ctx context.Context, query string, args ...any) Row {
-	return q.db.QueryRowContext(ctx, query, args...)
 }

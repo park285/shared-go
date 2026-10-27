@@ -172,7 +172,7 @@ func TestConsoleHandler_SanitizesJSON(t *testing.T) {
 
 	logger, closer, err := enableFileLoggingWithStdout(
 		&stdout,
-		Config{Level: testInfo, Format: FormatJSON},
+		Config{Level: testInfo, Format: formatJSON},
 		"console.log",
 		Options{},
 	)
@@ -199,7 +199,7 @@ func TestFileHandler_SanitizesJSONOnBothLanes(t *testing.T) {
 		&stdout,
 		Config{
 			Level:      testInfo,
-			Format:     FormatJSON,
+			Format:     formatJSON,
 			Dir:        logDir,
 			MaxSizeMB:  10,
 			MaxBackups: 5,
@@ -254,7 +254,7 @@ func formatProbeOutput(t *testing.T, config Config) string {
 
 func TestFormatZeroValue_MatchesExplicitJSON(t *testing.T) {
 	zero := formatProbeOutput(t, Config{Level: testInfo})
-	explicit := formatProbeOutput(t, Config{Level: testInfo, Format: FormatJSON})
+	explicit := formatProbeOutput(t, Config{Level: testInfo, Format: formatJSON})
 
 	zeroRecord := probeJSONRecord(t, "zero-value Format", zero)
 	explicitRecord := probeJSONRecord(t, "explicit json Format", explicit)
@@ -263,7 +263,7 @@ func TestFormatZeroValue_MatchesExplicitJSON(t *testing.T) {
 	delete(explicitRecord, slog.TimeKey)
 
 	if !reflect.DeepEqual(zeroRecord, explicitRecord) {
-		t.Fatalf("zero-value Format diverged from %q\nzero: %s\njson: %s", FormatJSON, zero, explicit)
+		t.Fatalf("zero-value Format diverged from %q\nzero: %s\njson: %s", formatJSON, zero, explicit)
 	}
 }
 
@@ -325,10 +325,10 @@ func TestJSONFormat_LevelPinned(t *testing.T) {
 
 	fileLaneDir := t.TempDir()
 	lanes := map[string]Config{
-		"console": {Level: testInfo, Format: FormatJSON},
+		"console": {Level: testInfo, Format: formatJSON},
 		"file": {
 			Level:      testInfo,
-			Format:     FormatJSON,
+			Format:     formatJSON,
 			Dir:        fileLaneDir,
 			MaxSizeMB:  10,
 			MaxBackups: 5,

@@ -23,8 +23,8 @@ go get github.com/park285/shared-go/v2@latest
 | 패키지 경로 | 기능 및 역할 |
 |---|---|
 | `pkg/backoff` | 시도 횟수 및 상태를 기반으로 한 지수 백오프(Exponential Backoff) 계산 유틸리티 (대기 및 재시도 루프 제어는 호출부에서 직접 처리) |
-| `pkg/db/pgxdb` | `jackc/pgx/v5` pgxpool 기반 PostgreSQL 연결 풀 생성 도구 (sslmode 명시 강제, sslrootcert는 `Config.SSLRootCert`로만 지정하고 env를 읽지 않음, 재시도는 호출자 소유) |
-| `pkg/dbmigrate` | embed.FS의 `manifest.txt` 순서대로 SQL 마이그레이션 파일을 실행하는 공통 처리 모듈 (`database/sql` 또는 pgx 실행 함수 주입 방식) |
+| `pkg/db/pgxdb` | `jackc/pgx/v5` pgxpool 기반 PostgreSQL 연결 풀 생성 도구 (sslmode 명시 강제, sslrootcert는 `Config.SSLRootCert`로만 지정하고 env를 읽지 않음, 풀 크기·ping 기한 등 `Options`는 호출자가 명시, 재시도는 호출자 소유) |
+| `pkg/dbmigrate` | embed.FS의 `manifest.txt` 순서대로 SQL 마이그레이션 파일을 실행하는 공통 처리 모듈 (pgx 실행 함수 주입 방식) |
 | `pkg/envutil` | 환경 변수 로드 및 `*_FILE` 형태의 파일 경로로 보안 토큰/시크릿 값을 주입하는 도구 (숫자·bool·duration은 잘못된 값을 오류로 돌려주는 `IntE`·`Int64E`·`FloatE`·`BoolE`·`BoolExplicit`·`DurationE`만 제공) |
 | `pkg/ginjson` | Go 1.27 `encoding/json/v2` JSON을 HTML-safe로 인코딩하는 Gin renderer와 response helper |
 | `pkg/h3` | HTTP/3 전송 프로토콜 설정 도구 (자체 CA 번들 등록, TLS 상세 사양 정의) |
@@ -34,7 +34,6 @@ go get github.com/park285/shared-go/v2@latest
 | `pkg/irisdurable` | Iris webhook durability 계약(admission·nonce·reply outbox 어휘, Iris admission 보존·replay 지평 typed 상수, bounded reissue ladder) |
 | `pkg/irisdurable/contracttest` | irisdurable 계약을 봇별 저장소 구현에 적용하는 재사용 테스트 스위트(admission 멱등성, nonce set-once, outcome_unknown 보존, bounded reissue, 보존·지평) |
 | `pkg/irisdurable/pgstore` | irisdurable 계약의 PostgreSQL 구현(ordering key FIFO inbox, nonce set-once TTL, reply outbox claim fence·redrive·retire·prune). 테이블 DDL은 소비 저장소 migration이 소유하고 `testdata/schema.sql`이 참조 스키마다 |
-| `pkg/jsonutil` | 텍스트 혹은 HTTP 응답 문자열로부터 유효한 JSON을 정규화하여 추출하는 헬퍼 유틸리티 |
 | `pkg/kakaoformat` | Markdown 표현을 카카오 일반 채팅용 평문과 링크로 변환하는 formatter |
 | `pkg/llm` | LLM provider 클라이언트 추상화 (`JSONGenerator`, OpenAI 호환 JSON 생성·가드, 진단 redaction). 지시는 `InvariantPrompt`/`DeveloperPrompt` 계층으로만 전달 |
 | `pkg/llm/openaipreset` | `pkg/llm`의 OpenAI 호환 JSON 생성 경로를 functional options로 구성하는 재사용 preset (지시는 `PromptLayers`로만 전달) |
@@ -47,17 +46,25 @@ go get github.com/park285/shared-go/v2@latest
 | `pkg/promptguard` | source-aware 프롬프트 인젝션 가드 (embedded v3 한/영/일 baseline, optional rules-only overlay, bounded decoding, policy digest, TTL cache) |
 | `pkg/reflectutil` | interface에 담긴 nilable 값을 안전하게 판별하는 reflection helper |
 | `pkg/retry` | `pkg/backoff`의 지연 값 계산을 사용해 context 취소를 존중하며 sleep·재시도·중단을 수행하는 재시도 루프(`WithRetry`) 구현체 |
-| `pkg/runtime/automaxprocs` | container CPU quota에 맞게 `GOMAXPROCS`를 설정하는 process bootstrap helper |
-| `pkg/runtime/bootstrap` | 프로세스 시작 입력을 검증하고 runtime 구성을 적용하는 bootstrap helper |
-| `pkg/runtime/httpserver` | HTTP server 생성(수신 한계·OTel 계측)·본문 읽기 예산·시작·실행·graceful shutdown 소유권을 단일화하는 lifecycle helper |
+| `pkg/runtime/automaxprocs` | `AUTOMAXPROCS_FORCE`일 때만 container CPU quota에 맞게 `GOMAXPROCS`를 설정하고(기본은 Go runtime 판단, `AUTOMAXPROCS_DISABLE` 우선) 결정을 기록하는 helper |
+| `pkg/runtime/bootstrap` | 프로세스 시작 입력을 검증하고 runtime 구성을 적용하는 bootstrap helper. 필수 `NewLogger`로 서비스 logger를 만든 직후 그 logger로 `automaxprocs.Init`을 실행 |
+| `pkg/runtime/httpserver` | HTTP server 생성(수신 한계·OTel 계측)·본문 읽기 예산·시작·실행·graceful shutdown 소유권을 단일화하는 lifecycle helper. 서버 실행 정본: 종료 ctx로 수명을 닫는 프로세스는 `Run(ctx, server, timeout)`, `lifecycle.Run` 훅 안에서는 `StartServerWithPrefix`와 `Shutdown` |
 | `pkg/runtime/lifecycle` | 기동·주기 실행·종료 정리와 다중 close를 조정하는 runtime lifecycle helper |
 | `pkg/sqlutil` | embed FS의 SQL asset을 읽고 공백을 제거하며 누락·빈 query에서 panic하는 loader |
 | `pkg/stringutil` | 범용 문자열 처리 유틸리티 |
 | `pkg/telemetry` | OpenTelemetry 기반의 분산 트레이싱(Tracing) 정보 설정 및 컨텍스트 전파 유틸리티 |
-| `pkg/workercontract` | strict worker profile 로드(env 경로·identity), service-owned settings decode·shape 검증, diagnostics registry, 공통 Prometheus exposition 모듈 |
+| `pkg/workercontract` | strict worker profile 로드(env 경로, 소비 서비스가 소유한 `Identity`), service-owned settings decode·shape 검증, diagnostics registry, 공통 Prometheus exposition 모듈 |
 | `pkg/workerpool` | 큐(Queue) 기반의 동시성 제어 워커 풀 구현체 |
 
-새로운 공통 기능이 필요할 경우, `pkg/` 하위에 신규 패키지 형식으로 추가해 주십시오.
+새로운 공통 기능이 필요할 경우, `pkg/` 하위에 신규 패키지 형식으로 추가해 주십시오. 스택 소비자가 쓰지 않는 구현 세부는 `pkg/internal/` 아래에 둡니다(예: Prometheus text 표기 규칙을 obsmetrics·workercontract가 공유하는 `pkg/internal/promtext`).
+
+### 공개 API 일관성 규칙
+
+새로 추가하거나 바꾸는 공개 API는 아래 규칙을 따릅니다. 기존 API의 미준수는 해당 패키지를 고칠 때 함께 맞춥니다.
+
+- 설정은 struct 옵션을 기본으로 하고, 선택지가 계속 늘어나는 열린 집합일 때만 functional option을 씁니다(`llm/openaipreset`은 열린 집합이라 option을 유지합니다).
+- `*slog.Logger`를 받는 API는 nil이면 `slog.Default()`를 씁니다.
+- 반환 오류 문자열은 `<pkg>: ` 접두로 시작합니다. 콜백 오류를 그대로 돌려주는 것이 계약인 함수(`panicguard.RunE`·`logging.RunOperation`·`dbmigrate.WithAdvisoryLock`)의 콜백 오류와 `io.Reader` 계약상 그대로 전달하는 하위 reader 오류(`io.EOF` 등)는 감싸지 않습니다. 호출자가 접두를 정하는 helper(`logging.LogAndWrapError`·`httpserver.Shutdown`)는 그 접두를 씁니다.
 
 ## stdout 사본과 유실 계측
 

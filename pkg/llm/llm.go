@@ -74,17 +74,17 @@ func RunJSON(ctx context.Context, generator JSONGenerator, req JSONRequest, prov
 		return JSONResponse{}, ErrNilJSONGenerator
 	}
 
-	if err := ValidateJSONRequest(req); err != nil {
-		return JSONResponse{}, fmt.Errorf("validate JSON request: %w", err)
+	if err := validateJSONRequest(req); err != nil {
+		return JSONResponse{}, err
 	}
 
 	if err := ctx.Err(); err != nil {
-		return JSONResponse{}, err
+		return JSONResponse{}, fmt.Errorf("llm: context done: %w", err)
 	}
 
 	resp, err := generator.GenerateJSON(ctx, req)
 	if err != nil {
-		return JSONResponse{}, fmt.Errorf("generate JSON: %w", err)
+		return JSONResponse{}, fmt.Errorf("llm: generate JSON: %w", err)
 	}
 
 	if reporter != nil {
@@ -99,7 +99,7 @@ func RunJSON(ctx context.Context, generator JSONGenerator, req JSONRequest, prov
 	return resp, nil
 }
 
-func ValidateJSONRequest(req JSONRequest) error {
+func validateJSONRequest(req JSONRequest) error {
 	if strings.TrimSpace(req.Model) == "" {
 		return fmt.Errorf("%w: model is empty", ErrInvalidJSONRequest)
 	}

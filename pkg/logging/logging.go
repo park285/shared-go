@@ -46,10 +46,6 @@ func NewLogger() *slog.Logger {
 	return slog.New(newFormatHandler(slog.LevelInfo, os.Stdout))
 }
 
-func NewTestLogger() *slog.Logger {
-	return slog.New(slog.DiscardHandler)
-}
-
 // Options는 파일 로깅의 선택 동작을 제어한다.
 type Options struct {
 	// AsyncStdout이 true면 stdout 사본 lane을 drop-on-full 비동기 writer로 감싸
@@ -68,7 +64,7 @@ type Options struct {
 func EnableFileLoggingWithOptions(config Config, fileName string, opts Options) (*slog.Logger, io.Closer, error) {
 	logger, closer, err := enableFileLoggingWithStdout(os.Stdout, config, fileName, opts)
 	if err != nil {
-		return nil, nil, fmt.Errorf("enable file logging with stdout: %w", err)
+		return nil, nil, fmt.Errorf("logging: enable file logging with stdout: %w", err)
 	}
 
 	return logger, closer, nil
@@ -243,7 +239,7 @@ func (h *otelHandler) Handle(ctx context.Context, record slog.Record) error {
 	}
 
 	if err := h.inner.Handle(ctx, record); err != nil {
-		return fmt.Errorf("handle: %w", err)
+		return fmt.Errorf("logging: handle: %w", err)
 	}
 
 	return nil

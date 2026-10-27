@@ -35,13 +35,6 @@ func TestLoggingAllocationCeilings(t *testing.T) {
 				}
 			},
 		},
-		{
-			name:      "log warn with error attrs",
-			maxAllocs: 12,
-			call: func() {
-				LogWarnWithErrorAttrs(ctx, logger, "event", "message", context.DeadlineExceeded, slog.String("a", "b"))
-			},
-		},
 	}
 
 	for _, test := range tests {

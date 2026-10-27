@@ -156,7 +156,7 @@ func TestGuardedDialContextResolvesAndBlocksPrivateTargets(t *testing.T) {
 		},
 	}
 
-	err := callGuardedDial(GuardedDialContext(base, policy), "example.com:443")
+	err := callGuardedDial(guardedDialContext(base, policy), "example.com:443")
 	if err == nil {
 		t.Fatal("guarded dial error = nil, want base error")
 	}
@@ -165,7 +165,7 @@ func TestGuardedDialContextResolvesAndBlocksPrivateTargets(t *testing.T) {
 		t.Fatalf("dialed = %v, want resolved public address", dialed)
 	}
 
-	err = callGuardedDial(GuardedDialContext(base, policy), "internal.net:443")
+	err = callGuardedDial(guardedDialContext(base, policy), "internal.net:443")
 	if !errors.Is(err, ErrBlockedIP) {
 		t.Fatalf("guarded dial error = %v, want ErrBlockedIP", err)
 	}
@@ -202,7 +202,7 @@ func TestGuardedDialContextFailsOverResolvedAddresses(t *testing.T) {
 		}},
 	}
 
-	conn, err := GuardedDialContext(base, policy)(t.Context(), "tcp", "example.com:443")
+	conn, err := guardedDialContext(base, policy)(t.Context(), "tcp", "example.com:443")
 	if err != nil {
 		t.Fatalf("guarded dial error = %v", err)
 	}
@@ -228,7 +228,7 @@ func TestGuardedDialContextRejectsDisallowedPort(t *testing.T) {
 		AllowedPorts: []string{"443"},
 	}
 
-	err := callGuardedDial(GuardedDialContext(base, policy), "example.com:80")
+	err := callGuardedDial(guardedDialContext(base, policy), "example.com:80")
 	if err == nil {
 		t.Fatal("guarded dial error = nil, want disallowed port")
 	}

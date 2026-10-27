@@ -125,61 +125,6 @@ func BenchmarkFixedWindowAllowCapacityChurnEndToEnd(b *testing.B) {
 	}
 }
 
-func BenchmarkLoginFailureIsAllowedSaturatedMiss(b *testing.B) {
-	for _, cardinality := range []int{1, 10000} {
-		b.Run(fmt.Sprintf("identities-%d", cardinality), func(b *testing.B) {
-			now := time.Date(2026, time.July, 28, 10, 0, 0, 0, time.UTC)
-			limiter := NewLoginFailureRateLimiter(LoginFailureRateLimiterOptions{
-				MaxIdentities: cardinality,
-				Window:        time.Hour,
-				Now:           func() time.Time { return now },
-			})
-
-			for _, identity := range benchmarkIdentities(cardinality, "prefill") {
-				limiter.IsAllowed(identity)
-			}
-
-			b.ReportAllocs()
-
-			for b.Loop() {
-				benchmarkAllowedSink, _ = limiter.IsAllowed("unseen-at-capacity")
-			}
-		})
-	}
-}
-
-func BenchmarkLoginFailureIsAllowedExpiryCleanup(b *testing.B) {
-	for _, cardinality := range []int{128, 10000} {
-		b.Run(fmt.Sprintf("identities-%d", cardinality), func(b *testing.B) {
-			start := time.Date(2026, time.July, 28, 10, 0, 0, 0, time.UTC)
-			identities := benchmarkIdentities(cardinality, "expired")
-
-			b.ReportAllocs()
-
-			for b.Loop() {
-				b.StopTimer()
-
-				now := start
-				limiter := NewLoginFailureRateLimiter(LoginFailureRateLimiterOptions{
-					MaxIdentities: cardinality,
-					Window:        time.Hour,
-					Now:           func() time.Time { return now },
-				})
-
-				for _, identity := range identities {
-					limiter.IsAllowed(identity)
-				}
-
-				now = start.Add(time.Hour)
-
-				b.StartTimer()
-
-				benchmarkAllowedSink, _ = limiter.IsAllowed("after-expiry")
-			}
-		})
-	}
-}
-
 func BenchmarkClientIPForwarded(b *testing.B) {
 	trusted, err := ParseTrustedProxies([]string{"10.0.0.0/8"})
 	if err != nil {
@@ -211,7 +156,7 @@ func BenchmarkClientIPForwarded(b *testing.B) {
 			b.ReportAllocs()
 
 			for b.Loop() {
-				benchmarkClientIPSink = ClientIP(request, options)
+				benchmarkClientIPSink = clientIP(request, options)
 			}
 		})
 	}
@@ -221,7 +166,7 @@ func BenchmarkRateLimitKeyHash(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		benchmarkHashSink = RateLimitKeyHash("some-api-key-with-enough-entropy")
+		benchmarkHashSink = rateLimitKeyHash("some-api-key-with-enough-entropy")
 	}
 }
 

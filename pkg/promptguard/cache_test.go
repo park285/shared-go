@@ -26,12 +26,12 @@ func TestTTLCacheGetSetAndExpire(t *testing.T) {
 func TestTTLCacheEvictionAndDefaults(t *testing.T) {
 	t.Parallel()
 
-	cache := NewTTLCache[string, int](0, 0)
+	cache := newTTLCache[string, int](0, 0, time.Now)
 	if cache.maxSize != 1024 {
 		t.Fatalf("maxSize = %d, want %d", cache.maxSize, 1024)
 	}
 
-	small := NewTTLCache[string, int](1, 0)
+	small := newTTLCache[string, int](1, 0, time.Now)
 	small.Set("a", 1)
 	small.Set("b", 2)
 
@@ -48,7 +48,7 @@ func TestTTLCacheUpdateAtCapacityPreservesOtherEntry(t *testing.T) {
 	t.Parallel()
 
 	for range 128 {
-		cache := NewTTLCache[string, int](2, time.Minute)
+		cache := newTTLCache[string, int](2, time.Minute, time.Now)
 		cache.Set("a", 1)
 		cache.Set("b", 2)
 		cache.Set("a", 3)

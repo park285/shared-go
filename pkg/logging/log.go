@@ -45,7 +45,7 @@ func log(ctx context.Context, logger *slog.Logger, level slog.Level, event, mess
 // 그 병합 slice가 record마다 할당된다.
 func logWith(ctx context.Context, logger *slog.Logger, level slog.Level, event, message string, skip int, primary, secondary []slog.Attr) {
 	if logger == nil {
-		return
+		logger = slog.Default()
 	}
 
 	ctx = contextOrBackground(ctx)
@@ -60,7 +60,7 @@ func logWith(ctx context.Context, logger *slog.Logger, level slog.Level, event, 
 
 	record := slog.NewRecord(time.Now(), level, logMessage(event, message), pcs[0])
 	if strings.TrimSpace(event) != "" {
-		record.AddAttrs(Event(event))
+		record.AddAttrs(eventAttr(event))
 	}
 
 	contextValuesFrom(ctx).addToRecord(&record)

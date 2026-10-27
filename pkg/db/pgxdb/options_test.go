@@ -63,7 +63,7 @@ func TestPoolDSNRejectsExplicitInvalidValuesBeforeOverlay(t *testing.T) {
 		"pool_health_check_period=0s", "pool_health_check_period=-1s", "pool_ping_timeout=-1s",
 	} {
 		t.Run(param, func(t *testing.T) {
-			_, err := OpenPoolDSN(t.Context(), "postgres://test@127.0.0.1:1/test?sslmode=disable&"+param, DefaultOptions())
+			_, err := OpenPoolDSN(t.Context(), "postgres://test@127.0.0.1:1/test?sslmode=disable&"+param, Options{Pool: defaultPoolConfig()})
 			requireConfigurationFailure(t, err)
 		})
 	}

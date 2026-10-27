@@ -19,48 +19,6 @@ func TestNewLogger(t *testing.T) {
 	}
 }
 
-func TestNewTestLogger(t *testing.T) {
-	logger := NewTestLogger()
-	if logger == nil {
-		t.Fatal("NewTestLogger returned nil")
-	}
-
-	logger.Info("test message", "key", "value")
-	logger.Error("error message", "error", "test error")
-}
-
-func TestUnsanitizedTestLoggerWritesOutput(t *testing.T) {
-	var buf bytes.Buffer
-
-	logger := newUnsanitizedTestLogger(&buf)
-
-	if logger == nil {
-		t.Fatal("newUnsanitizedTestLogger returned nil")
-	}
-
-	logger.Info("test message", "key", "value")
-
-	output := buf.String()
-	if !strings.Contains(output, "test message") {
-		t.Errorf("expected log output to contain 'test message', got: %s", output)
-	}
-
-	if !strings.Contains(output, "key=value") {
-		t.Errorf("expected log output to contain 'key=value', got: %s", output)
-	}
-}
-
-func newUnsanitizedTestLogger(buf *bytes.Buffer) *slog.Logger {
-	return slog.New(slog.NewTextHandler(buf, nil))
-}
-
-func TestNewTestLoggerDiscardsOutput(_ *testing.T) {
-	logger := NewTestLogger()
-
-	logger.Info("this should be discarded")
-	logger.Error("this should also be discarded")
-}
-
 func TestOTelHandler_WithoutSpan(t *testing.T) {
 	var buf bytes.Buffer
 

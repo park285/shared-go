@@ -25,7 +25,7 @@ func Rollback(ctx context.Context, tx Rollbacker) error {
 	}
 
 	if err != nil {
-		return fmt.Errorf("rollback: %w", err)
+		return fmt.Errorf("pgxdb: rollback: %w", err)
 	}
 
 	return nil
@@ -38,5 +38,5 @@ func RollbackDeferred(ctx context.Context, tx Rollbacker, err *error) {
 		return
 	}
 
-	*err = errors.Join(*err, fmt.Errorf("rollback transaction: %w", rollbackErr))
+	*err = errors.Join(*err, rollbackErr)
 }

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 )
 
 // JSONClient는 내부 서비스 간 JSON API 호출용 공통 HTTP 클라이언트입니다.
@@ -17,12 +16,8 @@ type JSONClient struct {
 	httpClient *http.Client
 }
 
-// NewJSONClient는 공통 internal service client를 생성합니다.
-func NewJSONClient(baseURL, apiKey string, timeout time.Duration) *JSONClient {
-	return NewJSONClientWithHTTPClient(baseURL, apiKey, NewInternalServiceClient(timeout))
-}
-
-// NewJSONClientWithHTTPClient는 caller가 준비한 http.Client로 JSONClient를 생성합니다.
+// NewJSONClientWithHTTPClient는 caller가 준비한 http.Client로 JSONClient를 생성합니다. 인자가 nil이면
+// timeout 없는 NewInternalServiceClient(0)을 씁니다.
 func NewJSONClientWithHTTPClient(baseURL, apiKey string, httpClient *http.Client) *JSONClient {
 	if httpClient == nil {
 		httpClient = NewInternalServiceClient(0)
@@ -39,7 +34,7 @@ func NewJSONClientWithHTTPClient(baseURL, apiKey string, httpClient *http.Client
 func (c *JSONClient) NewRequest(ctx context.Context, method, path string) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, http.NoBody)
 	if err != nil {
-		return nil, fmt.Errorf("new request: %w", err)
+		return nil, fmt.Errorf("httputil: new request: %w", err)
 	}
 
 	c.applyAPIKey(req)
@@ -51,12 +46,12 @@ func (c *JSONClient) NewRequest(ctx context.Context, method, path string) (*http
 func (c *JSONClient) NewJSONRequest(ctx context.Context, method, path string, payload any) (*http.Request, error) {
 	body, err := jsonv2.Marshal(payload)
 	if err != nil {
-		return nil, fmt.Errorf("marshal request: %w", err)
+		return nil, fmt.Errorf("httputil: marshal request: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("new request: %w", err)
+		return nil, fmt.Errorf("httputil: new request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -68,18 +63,14 @@ func (c *JSONClient) NewJSONRequest(ctx context.Context, method, path string, pa
 func (c *JSONClient) Do(req *http.Request) (*http.Response, error) {
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("request: %w", err)
+		return nil, fmt.Errorf("httputil: request: %w", err)
 	}
 
 	return resp, nil
 }
 
 func (c *JSONClient) CheckStatus(resp *http.Response) error {
-	if err := CheckStatus(resp); err != nil {
-		return fmt.Errorf("check status: %w", err)
-	}
-
-	return nil
+	return CheckStatus(resp)
 }
 
 func (c *JSONClient) DecodeJSON[T any](resp *http.Response) (T, error) {
@@ -91,11 +82,7 @@ func (c *JSONClient) DiscardBody(resp *http.Response) error {
 		return nil
 	}
 
-	if err := DrainAndClose(resp.Body, DefaultDrainLimit); err != nil {
-		return fmt.Errorf("discard body: %w", err)
-	}
-
-	return nil
+	return DrainAndClose(resp.Body, DefaultDrainLimit)
 }
 
 func (c *JSONClient) applyAPIKey(req *http.Request) {

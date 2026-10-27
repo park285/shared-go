@@ -415,7 +415,8 @@ func TestCheckConcurrentSameKeyEmitsOneEventPerCaller(t *testing.T) {
 func newDecisionGuard(decision Decision, onEvaluation func(EvaluationEvent)) *Guard {
 	return &Guard{
 		cfg:           Config{Enabled: true},
-		cache:         NewTTLCache[string, Evaluation](16, time.Minute),
+		logger:        slog.New(slog.DiscardHandler),
+		cache:         newTTLCache[string, Evaluation](16, time.Minute, time.Now),
 		maxInputBytes: 1024,
 		onEvaluation:  onEvaluation,
 		evaluateInputFn: func(string) (Evaluation, error) {

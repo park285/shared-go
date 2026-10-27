@@ -9,8 +9,8 @@
 // 주입합니다.
 //
 // JSON request 생성, API key header 적용, response body decode/discard, non-2xx
-// response를 APIError로 변환하는 흐름도 이 패키지에서 제공합니다. 호출부는 error
-// helper로 HTTP status와 API error code를 분기할 수 있습니다.
+// response를 APIError로 변환하는 흐름도 이 패키지에서 제공합니다. 호출부는
+// errors.AsType[*httputil.APIError]로 HTTP status와 API error code를 분기할 수 있습니다.
 //
 // # 주요 사용 패턴
 //
@@ -29,7 +29,7 @@
 //	    return err
 //	}
 //
-//	api := httputil.NewJSONClient(baseURL, apiKey, 10*time.Second)
+//	api := httputil.NewJSONClientWithHTTPClient(baseURL, apiKey, httputil.NewInternalServiceClient(10*time.Second))
 //	req, err := api.NewJSONRequest(ctx, http.MethodPost, "/v1/jobs", payload)
 //	if err != nil {
 //	    return err

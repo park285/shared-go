@@ -61,33 +61,6 @@ func (s *Store) DeferInboxUntil(ctx context.Context, claim InboxClaim, available
 		s.opts.Scope, claim.ID, claim.ClaimToken, claim.MessageID, float64(0), availableAt.UTC())
 }
 
-// InboxRecovery는 유한 lease 복구에서 자동 재처리와 수동 검토로 옮긴 행 수다.
-type InboxRecovery struct {
-	Retried      int64
-	ManualReview int64
-	// RetriedIDs와 ManualReviewIDs는 같은 transaction에서 소비자 metadata를 갱신할 행이다.
-	RetriedIDs      []int64
-	ManualReviewIDs []int64
-}
-
-// RecoverInboxBefore는 lease가 leaseBefore 전에 끝난 행을 limit개까지 복구한다.
-// 아직 살아 있는 lease는 건드리지 않는다. MaxAttempts가 양수이면 소진 행은 manual_review가 된다.
-// 본문 보존은 DiscardInboxManualReviewPayload를 따르며 scope와 row lock으로 다른 소유자를 격리한다.
-func (s *Store) RecoverInboxBefore(ctx context.Context, leaseBefore time.Time, maxAttempts, limit int) (InboxRecovery, error) {
-	if limit <= 0 {
-		return InboxRecovery{}, errors.New("pgstore: recovery limit must be positive")
-	}
-
-	var result InboxRecovery
-
-	if err := s.db.QueryRow(ctx, queryRecoverInboxBefore, s.opts.Scope, leaseBefore.UTC(), maxAttempts, limit,
-		s.opts.DiscardInboxManualReviewPayload).Scan(&result.Retried, &result.ManualReview, &result.RetriedIDs, &result.ManualReviewIDs); err != nil {
-		return InboxRecovery{}, fmt.Errorf("pgstore: recover inbox batch: %w", err)
-	}
-
-	return result, nil
-}
-
 // InboxRecoveryDecision은 잠근 inbox snapshot에 적용할 소비자의 복구 판정이다.
 // ClaimToken이 비어 있으면 미청구 pending, 아니면 LeaseUntil까지 일치하는 processing만 바꾼다.
 type InboxRecoveryDecision struct {
@@ -170,21 +143,6 @@ func (s *Store) ApplyInboxRecovery(ctx context.Context, decisions []InboxRecover
 	}
 
 	return nil
-}
-
-// CompletePendingInboxBefore는 createdBefore보다 오래된 미청구 pending을 유한하게 종단 처리한다.
-// 처리 중인 claim은 변경하지 않고 본문을 지운다. Reason은 성공과 만료 같은 종단 사유를 구분한다.
-func (s *Store) CompletePendingInboxBefore(ctx context.Context, createdBefore time.Time, limit int, reason string) (int64, error) {
-	if limit <= 0 || reason == "" {
-		return 0, errors.New("pgstore: pending completion requires a positive limit and reason")
-	}
-
-	tag, err := s.db.Exec(ctx, queryCompleteInboxBefore, s.opts.Scope, createdBefore.UTC(), limit, reason)
-	if err != nil {
-		return 0, fmt.Errorf("pgstore: complete old pending inbox: %w", err)
-	}
-
-	return tag.RowsAffected(), nil
 }
 
 // PruneInboxBefore는 종단 시각이 before 이하인 행을 limit개까지 지운다.

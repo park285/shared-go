@@ -128,50 +128,6 @@ func TestLedgerRecordBindsFilenameParameter(t *testing.T) {
 	}
 }
 
-func TestBaselineRecordsManifestThroughWatermark(t *testing.T) {
-	t.Parallel()
-
-	db := newFakeLedgerDB()
-	fsys := fstest.MapFS{
-		ManifestName: {Data: []byte("001 one.sql\n002 two.sql\n003 three.sql\n")},
-	}
-
-	if err := Baseline(t.Context(), fsys, db.Exec, "two.sql", Ledger{}); err != nil {
-		t.Fatalf("Baseline() error = %v", err)
-	}
-
-	want := []string{"one.sql", "two.sql"}
-	if !slices.Equal(db.records, want) {
-		t.Fatalf("records = %v, want %v", db.records, want)
-	}
-
-	if db.applied["three.sql"] {
-		t.Fatal("Baseline() recorded migration after watermark")
-	}
-}
-
-func TestBaselineErrorsWhenWatermarkMissing(t *testing.T) {
-	t.Parallel()
-
-	db := newFakeLedgerDB()
-	fsys := fstest.MapFS{
-		ManifestName: {Data: []byte("001 one.sql\n")},
-	}
-
-	err := Baseline(t.Context(), fsys, db.Exec, "missing.sql", Ledger{})
-	if err == nil {
-		t.Fatal("Baseline() error = nil, want missing watermark")
-	}
-
-	if !strings.Contains(err.Error(), "not found") {
-		t.Fatalf("Baseline() error = %v, want not found", err)
-	}
-
-	if len(db.records) != 0 {
-		t.Fatalf("records = %v, want none on missing watermark", db.records)
-	}
-}
-
 func TestApplyWithLedgerSkipsAppliedAndRecordsAfterExec(t *testing.T) {
 	t.Parallel()
 
@@ -186,7 +142,7 @@ func TestApplyWithLedgerSkipsAppliedAndRecordsAfterExec(t *testing.T) {
 		"three.sql":  {Data: []byte("select 3")},
 	}
 
-	err := Apply(t.Context(), fsys, db.Exec, WithLedger(Ledger{}, db))
+	err := Apply(t.Context(), fsys, db.Exec, ApplyOptions{Ledger: &Ledger{}, LedgerQuerier: db})
 	if err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}

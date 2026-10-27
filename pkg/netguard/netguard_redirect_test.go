@@ -165,7 +165,7 @@ func TestPolicyMatchesIDNHostInEitherAllowlistForm(t *testing.T) {
 				return nil, errors.New("stop after address capture")
 			}
 
-			if err := callGuardedDial(GuardedDialContext(base, policy), punycodeHost+":443"); err == nil {
+			if err := callGuardedDial(guardedDialContext(base, policy), punycodeHost+":443"); err == nil {
 				t.Fatal("guarded dial error = nil, want captured dial error")
 			}
 
@@ -188,7 +188,7 @@ func TestPolicyRejectsDisallowedIDNHost(t *testing.T) {
 		t.Fatalf("ValidateURL(unicode) error = %v, want ErrHostNotAllowed", err)
 	}
 
-	if err := callGuardedDial(GuardedDialContext(nil, policy), "xn--bcher-kva.example:443"); !errors.Is(err, ErrHostNotAllowed) {
+	if err := callGuardedDial(guardedDialContext(nil, policy), "xn--bcher-kva.example:443"); !errors.Is(err, ErrHostNotAllowed) {
 		t.Fatalf("guarded dial error = %v, want ErrHostNotAllowed", err)
 	}
 }
@@ -439,7 +439,7 @@ func TestRedirectPolicyLimitAndDisableFollow(t *testing.T) {
 type staticResolver map[string][]net.IP
 
 func (r staticResolver) LookupIP(_ context.Context, _, host string) ([]net.IP, error) {
-	ips, ok := r[NormalizeHost(host)]
+	ips, ok := r[normalizeHost(host)]
 	if !ok {
 		return nil, &net.DNSError{Name: host, Err: "not found"}
 	}
@@ -661,8 +661,8 @@ func TestIsBlockedAddrZonedAddressFailsClosed(t *testing.T) {
 				t.Fatalf("netip.ParseAddr(%q) error = %v", raw, err)
 			}
 
-			if !IsBlockedAddr(addr) {
-				t.Fatalf("IsBlockedAddr(%q) = false, want true", raw)
+			if !isBlockedAddr(addr) {
+				t.Fatalf("isBlockedAddr(%q) = false, want true", raw)
 			}
 		})
 	}

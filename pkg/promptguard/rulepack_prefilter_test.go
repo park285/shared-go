@@ -31,7 +31,7 @@ func TestRequiredLiteralBranchesAdmitEmbeddedCorpusRegexMatches(t *testing.T) {
 	for _, tc := range readCorpusCases(t, "testdata/corpus-v3.jsonl") {
 		segments := buildEvaluationSegmentsFiltered(tc.Input, guard.aggregateMayMatch)
 
-		decoded, _ := guard.decodedTextSegments(tc.Input)
+		decoded, _ := guard.decodedTextSegmentsWithRaw(tc.Input, Evaluation{}, nil)
 
 		segments = append(segments, decoded...)
 

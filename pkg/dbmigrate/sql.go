@@ -18,8 +18,6 @@ var (
 	queryEnsureLedgerTemplate  = mustQuery("queries/ensure_ledger.sql.tpl")
 	queryLedgerAppliedTemplate = mustQuery("queries/ledger_applied.sql.tpl")
 	queryRecordLedgerTemplate  = mustQuery("queries/record_ledger.sql.tpl")
-	queryTryAdvisoryLock       = mustQuery("queries/try_advisory_lock.sql")
-	queryAdvisoryUnlock        = mustQuery("queries/advisory_unlock.sql")
 	querySetLockTimeout        = mustQuery("queries/set_lock_timeout.sql")
 	querySetStatementTimeout   = mustQuery("queries/set_statement_timeout.sql")
 )

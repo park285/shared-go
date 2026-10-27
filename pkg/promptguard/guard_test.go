@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -288,7 +289,7 @@ func TestLoadRulepacksRejectsSymlink(t *testing.T) {
 func TestGuardCachesEvaluations(t *testing.T) {
 	t.Parallel()
 
-	pack, err := compileRulepack(&rawRulepack{
+	pack := compileTestPack(t, &rawRulepack{
 		Version: 3,
 		Policy: rawPolicy{
 			BlockThreshold:   1.0,
@@ -299,14 +300,12 @@ func TestGuardCachesEvaluations(t *testing.T) {
 			{ID: "policy", Family: "policy_bypass", Type: ruleTypeRegex, Action: hitActionScore, View: "joined", Segments: []string{testSegmentPlain}, Pattern: "정책[\\s\\S]{0,12}무시", Weight: 0.7},
 		},
 	})
-	if err != nil {
-		t.Fatalf("compileRulepack() error = %v", err)
-	}
 
 	guard := &Guard{
-		cfg:   Config{Enabled: true},
-		packs: []compiledPack{pack},
-		cache: NewTTLCache[string, Evaluation](10, time.Minute),
+		cfg:    Config{Enabled: true},
+		logger: slog.New(slog.DiscardHandler),
+		packs:  []compiledPack{pack},
+		cache:  newTTLCache[string, Evaluation](10, time.Minute, time.Now),
 	}
 
 	evaluation := evaluateForTest(t, guard, "정책 무시")

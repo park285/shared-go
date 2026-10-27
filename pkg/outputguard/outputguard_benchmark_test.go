@@ -51,12 +51,14 @@ func BenchmarkOutputGuardProtectedIndex(b *testing.B) {
 	b.ResetTimer()
 
 	for b.Loop() {
-		_ = buildProtectedIndex(protected)
+		if _, err := newProtectedIndex(protected); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
 func BenchmarkOutputGuardExactNoMatch(b *testing.B) {
-	index := buildProtectedIndex([]string{"protected exact benchmark value"})
+	index := mustProtectedIndex(b, []string{"protected exact benchmark value"})
 	text := strings.Repeat("ordinary benchmark response ", 256)
 
 	if index.overlapsText(text) {
@@ -80,7 +82,7 @@ func BenchmarkOutputGuardExactCommonPrefix(b *testing.B) {
 		protected[i] = fmt.Sprintf("%s-secret-%02d", commonPrefix, i)
 	}
 
-	index := buildProtectedIndex(protected)
+	index := mustProtectedIndex(b, protected)
 	text := strings.Repeat(commonPrefix+"-public ", 256)
 
 	if index.overlapsText(text) {
@@ -96,7 +98,7 @@ func BenchmarkOutputGuardExactCommonPrefix(b *testing.B) {
 }
 
 func BenchmarkOutputGuardExactRepeatedPrefix(b *testing.B) {
-	index := buildProtectedIndex([]string{strings.Repeat("ab", 32) + "z"})
+	index := mustProtectedIndex(b, []string{strings.Repeat("ab", 32) + "z"})
 	text := strings.Repeat(strings.Repeat("ab", 32)+"x", 1<<10)
 
 	if index.overlapsText(text) {
@@ -109,4 +111,15 @@ func BenchmarkOutputGuardExactRepeatedPrefix(b *testing.B) {
 	for b.Loop() {
 		_ = index.overlapsText(text)
 	}
+}
+
+func mustProtectedIndex(b *testing.B, protected []string) *protectedIndex {
+	b.Helper()
+
+	index, err := newProtectedIndex(protected)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	return index
 }

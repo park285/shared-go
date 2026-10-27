@@ -105,13 +105,13 @@ func TestRunMainExitCodesWithCheckSeam(t *testing.T) {
 			var out, errOut bytes.Buffer
 
 			checkCalls := 0
-			code := runMain(tt.args, &out, &errOut, func(string) error {
+			code := runCLI(tt.args, &out, &errOut, func(context.Context, string, map[string]string) ([]byte, error) {
 				checkCalls++
-				return tt.checkErr
+				return nil, tt.checkErr
 			})
 
 			if code != tt.wantCode {
-				t.Fatalf("runMain() code = %d, want %d", code, tt.wantCode)
+				t.Fatalf("runCLI() code = %d, want %d", code, tt.wantCode)
 			}
 
 			if got := out.String(); got != tt.wantStdout {

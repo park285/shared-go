@@ -17,15 +17,15 @@ func TestLoadDotenvFileStrictFailsClosedWithoutNoFollow(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Unsetenv("FALLBACK_STRICT_KEY") })
 
-	if err := LoadDotenvFile(path, true, true); err == nil {
-		t.Fatal("LoadDotenvFile(strict) error = nil, want fail-closed on this platform")
+	if err := loadDotenvFile(path, true, true); err == nil {
+		t.Fatal("loadDotenvFile(strict) error = nil, want fail-closed on this platform")
 	}
 	if got := os.Getenv("FALLBACK_STRICT_KEY"); got != "" {
 		t.Fatalf("FALLBACK_STRICT_KEY = %q, want empty", got)
 	}
 
-	if err := LoadDotenvFile(path, true, false); err != nil {
-		t.Fatalf("LoadDotenvFile(non-strict) error = %v, want local dotenv to keep working", err)
+	if err := loadDotenvFile(path, true, false); err != nil {
+		t.Fatalf("loadDotenvFile(non-strict) error = %v, want local dotenv to keep working", err)
 	}
 	if got := os.Getenv("FALLBACK_STRICT_KEY"); got != "value" {
 		t.Fatalf("FALLBACK_STRICT_KEY = %q, want value", got)

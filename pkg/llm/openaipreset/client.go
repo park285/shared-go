@@ -84,7 +84,7 @@ func New(baseURL, apiKey, model string, opts ...Option) (*Client, error) {
 		MaxRetries: cfg.maxRetries,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("open AI compatible JSON generator: %w", err)
+		return nil, fmt.Errorf("openaipreset: open AI compatible JSON generator: %w", err)
 	}
 
 	reporter := cfg.usageReporter
@@ -151,7 +151,7 @@ func (c *Client) GenerateJSONAs[T any](
 
 	resp, err := c.generate(ctx, task, prompts.Invariant, prompts.Developer, prompts.User, schema)
 	if err != nil {
-		return zero, fmt.Errorf("generate: %w", err)
+		return zero, fmt.Errorf("openaipreset: generate: %w", err)
 	}
 
 	return decodeJSONAs[T](task, resp.Text)
@@ -176,7 +176,7 @@ func (c *Client) GenerateLayeredResponsesJSON(ctx context.Context, task string, 
 		CacheKey: c.promptCacheKeyFor(task),
 	})
 	if err != nil {
-		return "", fmt.Errorf("completion params: %w", err)
+		return "", fmt.Errorf("openaipreset: completion params: %w", err)
 	}
 
 	attrs := promptSummaryAttrs(model, joinedPromptLen(prompts.Invariant, prompts.Developer, prompts.User))
@@ -208,7 +208,7 @@ func (c *Client) GenerateLayeredResponsesJSON(ctx context.Context, task string, 
 		return text, nil
 	})
 	if err != nil {
-		return out, fmt.Errorf("run request: %w", err)
+		return out, fmt.Errorf("openaipreset: run request: %w", err)
 	}
 
 	return out, nil
@@ -272,7 +272,7 @@ func decodeJSONAs[T any](task, text string) (T, error) {
 	var out T
 
 	if err := jsonv2.Unmarshal([]byte(text), &out); err != nil {
-		return out, fmt.Errorf("decode %s json failed: %w", strings.TrimSpace(task), &redactedCauseError{cause: err})
+		return out, fmt.Errorf("openaipreset: decode %s json failed: %w", strings.TrimSpace(task), &redactedCauseError{cause: err})
 	}
 
 	return out, nil

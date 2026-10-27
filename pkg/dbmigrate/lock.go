@@ -2,8 +2,6 @@ package dbmigrate
 
 import (
 	"context"
-	"database/sql"
-	"database/sql/driver"
 	"errors"
 	"fmt"
 	"time"
@@ -44,7 +42,7 @@ type LockConfig struct {
 	OnUnlockError func(error)
 }
 
-// WithAdvisoryLock은 advisory lock을 잡은 동안 fn을 실행한다.
+// WithAdvisoryLock은 advisory lock을 잡은 동안 fn을 실행한다. 콜백 fn의 오류는 감싸지 않고 그대로 반환한다.
 func WithAdvisoryLock(ctx context.Context, s LockSession, cfg LockConfig, fn func(context.Context) error) (err error) {
 	if s == nil {
 		return errors.New("dbmigrate: lock session is required")
@@ -56,7 +54,7 @@ func WithAdvisoryLock(ctx context.Context, s LockSession, cfg LockConfig, fn fun
 
 	cfg = cfg.withDefaults()
 	if acquireErr := acquireAdvisoryLock(ctx, s, cfg); acquireErr != nil {
-		return fmt.Errorf("acquire advisory lock: %w", acquireErr)
+		return acquireErr
 	}
 
 	defer func() {
@@ -85,11 +83,7 @@ func WithAdvisoryLock(ctx context.Context, s LockSession, cfg LockConfig, fn fun
 		err = unlockErr
 	}()
 
-	if err := fn(ctx); err != nil {
-		return fmt.Errorf("fn: %w", err)
-	}
-
-	return nil
+	return fn(ctx)
 }
 
 // fn의 panic unwinding 중 defer 안에서 evict가 다시 panic하면 원 panic을 대체하고
@@ -106,58 +100,6 @@ func evictAfterUnlockFailure(e UnlockFailureEvicter) (err error) {
 	}
 
 	return nil
-}
-
-// SQLLockSession은 database/sql 연결을 LockSession으로 감싼다.
-func SQLLockSession(c *sql.Conn) LockSession {
-	return sqlLockSession{conn: c}
-}
-
-type sqlLockSession struct {
-	conn *sql.Conn
-}
-
-func (s sqlLockSession) EvictAfterUnlockFailure() error {
-	if s.conn == nil {
-		return errors.New("dbmigrate: sql lock connection is nil")
-	}
-
-	err := s.conn.Raw(func(any) error {
-		return driver.ErrBadConn
-	})
-	if err != nil && !errors.Is(err, driver.ErrBadConn) {
-		return fmt.Errorf("dbmigrate: evict sql lock connection: %w", err)
-	}
-
-	return nil
-}
-
-func (s sqlLockSession) TryAdvisoryLock(ctx context.Context, key int64) (bool, error) {
-	if s.conn == nil {
-		return false, errors.New("dbmigrate: sql lock connection is nil")
-	}
-
-	var acquired bool
-
-	if err := s.conn.QueryRowContext(ctx, queryTryAdvisoryLock, key).Scan(&acquired); err != nil {
-		return false, fmt.Errorf("scan: %w", err)
-	}
-
-	return acquired, nil
-}
-
-func (s sqlLockSession) AdvisoryUnlock(ctx context.Context, key int64) (bool, error) {
-	if s.conn == nil {
-		return false, errors.New("dbmigrate: sql lock connection is nil")
-	}
-
-	var released bool
-
-	if err := s.conn.QueryRowContext(ctx, queryAdvisoryUnlock, key).Scan(&released); err != nil {
-		return false, fmt.Errorf("scan: %w", err)
-	}
-
-	return released, nil
 }
 
 func (c LockConfig) withDefaults() LockConfig {

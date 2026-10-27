@@ -1,11 +1,13 @@
 package h3
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
 	"os"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -106,6 +108,49 @@ func TestCertificateReloaderAppliesChangeAndKeepsCachedCertificateOnFailure(t *t
 	if third != second {
 		t.Fatal("reload failure replaced the last valid certificate")
 	}
+}
+
+// Run은 handshake 없이 ticker만으로 갱신해야 하고, ctx가 끝나면 반환해야 호출자가 join할 수 있다.
+func TestCertificateReloaderRunReloadsWithoutHandshakeAndReturnsOnCancel(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		certFile, keyFile := writeSelfSignedCert(t, "run.test")
+
+		r, err := NewCertificateReloader(certFile, keyFile, CertificateReloaderOptions{ReloadInterval: time.Second})
+		if err != nil {
+			t.Fatalf("NewCertificateReloader() error = %v", err)
+		}
+
+		first := r.current.Load()
+
+		replacementCert, replacementKey := writeSelfSignedCert(t, "run.test")
+		mustWriteFile(t, certFile, mustReadFile(t, replacementCert))
+		mustWriteFile(t, keyFile, mustReadFile(t, replacementKey))
+
+		ctx, cancel := context.WithCancel(t.Context())
+		done := make(chan struct{})
+
+		go func() {
+			defer close(done)
+
+			r.Run(ctx)
+		}()
+
+		time.Sleep(r.interval)
+		synctest.Wait()
+
+		if r.current.Load() == first {
+			t.Fatal("Run did not replace the cached snapshot after one interval")
+		}
+
+		cancel()
+		synctest.Wait()
+
+		select {
+		case <-done:
+		default:
+			t.Fatal("Run did not return after ctx cancellation")
+		}
+	})
 }
 
 func mustReadFile(t *testing.T, path string) []byte {

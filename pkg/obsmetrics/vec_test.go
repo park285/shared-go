@@ -24,7 +24,7 @@ func TestCounterVecWriteExpositionSortsLabels(t *testing.T) {
 
 	body := buf.String()
 
-	for _, want := range []string{"# HELP requests_total line1 line2", "# TYPE requests_total counter", "requests_total", "/v1/path", testStatus, " 3"} {
+	for _, want := range []string{"# HELP requests_total line1\\nline2", "# TYPE requests_total counter", "requests_total", "/v1/path", testStatus, " 3"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("body missing %q:\n%s", want, body)
 		}
@@ -38,7 +38,7 @@ func TestCounterVecWriteExpositionSortsLabels(t *testing.T) {
 func TestGaugeVecWriteExposition(t *testing.T) {
 	t.Parallel()
 
-	vec := NewGaugeVec("temperature", "Current temperature")
+	vec := NewGaugeVecWithOptions("temperature", "Current temperature", VecOptions{})
 	vec.Set(Labels{"room": "bot"}, 3.5)
 
 	var buf bytes.Buffer

@@ -119,7 +119,7 @@ func (b *bodyReadTimeout) Read(p []byte) (int, error) {
 	}
 
 	if err != nil {
-		return n, fmt.Errorf("read request body: %w", err)
+		return n, fmt.Errorf("httpserver: read request body: %w", err)
 	}
 
 	return n, nil
@@ -143,7 +143,7 @@ func (b *bodyReadTimeout) Close() error {
 	b.stop()
 
 	if err := b.closeBody(); err != nil {
-		return fmt.Errorf("close timed request body: %w", err)
+		return fmt.Errorf("httpserver: close timed request body: %w", err)
 	}
 
 	return nil

@@ -5,14 +5,6 @@ import (
 	"testing"
 )
 
-func TestSanitizeHelp(t *testing.T) {
-	t.Parallel()
-
-	if got := SanitizeHelp("line1\nline2"); got != "line1 line2" {
-		t.Fatalf("SanitizeHelp() = %q, want %q", got, "line1 line2")
-	}
-}
-
 func TestReadResidentMemoryBytes(t *testing.T) {
 	t.Parallel()
 

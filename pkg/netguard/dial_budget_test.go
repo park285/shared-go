@@ -40,7 +40,7 @@ func TestGuardedDialContextSplitsDeadlineAcrossCandidates(t *testing.T) {
 
 	overallDeadline, _ := ctx.Deadline()
 
-	if _, err := GuardedDialContext(base, policy)(ctx, "tcp", "example.com:443"); err == nil {
+	if _, err := guardedDialContext(base, policy)(ctx, "tcp", "example.com:443"); err == nil {
 		t.Fatal("guarded dial error = nil, want joined attempt errors")
 	}
 
@@ -79,7 +79,7 @@ func TestGuardedDialContextKeepsFullBudgetForSingleCandidate(t *testing.T) {
 
 	overallDeadline, _ := ctx.Deadline()
 
-	if _, err := GuardedDialContext(base, policy)(ctx, "tcp", "example.com:443"); err == nil {
+	if _, err := guardedDialContext(base, policy)(ctx, "tcp", "example.com:443"); err == nil {
 		t.Fatal("guarded dial error = nil, want attempt error")
 	}
 
@@ -104,7 +104,7 @@ func TestGuardedDialContextStopsWhenBudgetExhausted(t *testing.T) {
 	ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
 	defer cancel()
 
-	_, err := GuardedDialContext(base, policy)(ctx, "tcp", "example.com:443")
+	_, err := guardedDialContext(base, policy)(ctx, "tcp", "example.com:443")
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("guarded dial error = %v, want context.DeadlineExceeded", err)
 	}
@@ -135,7 +135,7 @@ func TestGuardedDialContextKeepsConnUsableAfterAttemptCancel(t *testing.T) {
 
 	dialer := &net.Dialer{}
 
-	conn, err := GuardedDialContext(dialer.DialContext, policy)(ctx, "tcp", net.JoinHostPort("probe.test", port))
+	conn, err := guardedDialContext(dialer.DialContext, policy)(ctx, "tcp", net.JoinHostPort("probe.test", port))
 	if err != nil {
 		t.Fatalf("guarded dial error = %v, want connection to the middle candidate", err)
 	}
@@ -245,7 +245,7 @@ func TestPolicyNormalizesAllowlistOnceAtGuardConstruction(t *testing.T) {
 
 		return nil, errors.New("stop after address capture")
 	}
-	dial := GuardedDialContext(base, policy)
+	dial := guardedDialContext(base, policy)
 
 	if err := callGuardedDial(dial, "xn--bcher-kva.example:443"); err == nil {
 		t.Fatal("guarded dial error = nil, want captured dial error")

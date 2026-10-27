@@ -91,8 +91,8 @@ func TestWriteJSON(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusCreated)
 	}
 
-	if got := rec.Header().Get(HeaderContentType); got != ContentTypeJSON {
-		t.Fatalf("Content-Type = %q, want %q", got, ContentTypeJSON)
+	if got := rec.Header().Get(headerContentType); got != contentTypeJSON {
+		t.Fatalf("Content-Type = %q, want %q", got, contentTypeJSON)
 	}
 
 	body := rec.Body.String()
@@ -115,8 +115,8 @@ func TestWriteJSONEncodeFailureDoesNotCommitResponse(t *testing.T) {
 		t.Fatalf("error type = %T, want *jsontext.SyntacticError", err)
 	}
 
-	if w.status != 0 || w.body.Len() != 0 || w.header.Get(HeaderContentType) != "" {
-		t.Fatalf("response committed on encode failure: status=%d header=%q body=%q", w.status, w.header.Get(HeaderContentType), w.body.String())
+	if w.status != 0 || w.body.Len() != 0 || w.header.Get(headerContentType) != "" {
+		t.Fatalf("response committed on encode failure: status=%d header=%q body=%q", w.status, w.header.Get(headerContentType), w.body.String())
 	}
 }
 
@@ -132,8 +132,8 @@ func TestWriteErrorJSONTrimsAndUsesWriteJSON(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
 	}
 
-	if got := rec.Header().Get(HeaderContentType); got != ContentTypeJSON {
-		t.Fatalf("Content-Type = %q, want %q", got, ContentTypeJSON)
+	if got := rec.Header().Get(headerContentType); got != contentTypeJSON {
+		t.Fatalf("Content-Type = %q, want %q", got, contentTypeJSON)
 	}
 
 	var payload ErrorResponse

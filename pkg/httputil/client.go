@@ -37,13 +37,9 @@ var internalServiceTransportProfile = TransportProfile{
 	MaxIdleConnsPerHost:   32,
 }
 
-// NewClient는 HTTP/1.1 전용 transport를 사용합니다. 같은 host로 동시 요청이 많은 소비자는
-// NewInternalServiceClient 또는 NewExternalAPIClient를 사용해 더 큰 전용 pool을 확보하십시오.
-func NewClient(timeout time.Duration) *http.Client {
-	return &http.Client{Timeout: timeout, Transport: baseProfiledTransport()}
-}
-
-// proxy·keep-alive·pool baseline은 DefaultTransport에서 가져오고, HTTP는 HTTP/1.1만 사용합니다.
+// NewProfiledClient는 profile의 timeout·pool 값을 적용한 client를 만듭니다. 기본 proxy·keep-alive·pool 값은
+// DefaultTransport에서 가져오고, HTTP는 HTTP/1.1만 사용합니다. 같은 host로 동시 요청이 많은 소비자는
+// NewInternalServiceClient 또는 NewExternalAPIClient로 더 큰 전용 pool을 확보하십시오.
 func NewProfiledClient(profile TransportProfile) *http.Client {
 	transport := baseProfiledTransport()
 	applyTransportProfile(transport, profile)

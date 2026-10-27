@@ -45,16 +45,16 @@ func (c *Client) Complete(ctx context.Context, req CompletionRequest) (Completio
 	}
 
 	if ctx == nil {
-		return CompletionResponse{}, sharedllm.ErrNilContext
+		return CompletionResponse{}, fmt.Errorf("openaipreset: %w", sharedllm.ErrNilContext)
 	}
 
 	if err := ctx.Err(); err != nil {
-		return CompletionResponse{}, fmt.Errorf("context error: %w", err)
+		return CompletionResponse{}, fmt.Errorf("openaipreset: context error: %w", err)
 	}
 
 	params, requestedModel, err := c.completionParams(req)
 	if err != nil {
-		return CompletionResponse{}, fmt.Errorf("completion params: %w", err)
+		return CompletionResponse{}, fmt.Errorf("openaipreset: completion params: %w", err)
 	}
 
 	attrs := promptSummaryAttrs(requestedModel, completionPromptLen(req.Messages))
@@ -77,7 +77,7 @@ func (c *Client) Complete(ctx context.Context, req CompletionRequest) (Completio
 		return completion, nil
 	})
 	if err != nil {
-		return CompletionResponse{}, fmt.Errorf("run request: %w", err)
+		return CompletionResponse{}, fmt.Errorf("openaipreset: run request: %w", err)
 	}
 
 	return out, nil

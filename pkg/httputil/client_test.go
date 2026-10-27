@@ -6,22 +6,6 @@ import (
 	"time"
 )
 
-func TestNewClient(t *testing.T) {
-	t.Parallel()
-
-	const timeout = 15 * time.Second
-
-	client := NewClient(timeout)
-
-	if client == nil {
-		t.Fatal("NewClient() returned nil")
-	}
-
-	if client.Timeout != timeout {
-		t.Fatalf("NewClient() timeout = %s, want %s", client.Timeout, timeout)
-	}
-}
-
 func TestNewProfiledClient(t *testing.T) {
 	t.Parallel()
 

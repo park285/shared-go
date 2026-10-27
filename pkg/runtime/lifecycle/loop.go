@@ -9,11 +9,11 @@ import (
 
 func RunTickerLoop(ctx context.Context, interval time.Duration, onTick func(context.Context) error) error {
 	if err := validateTickerLoop(interval, onTick); err != nil {
-		return fmt.Errorf("validate ticker loop: %w", err)
+		return fmt.Errorf("lifecycle: validate ticker loop: %w", err)
 	}
 
 	if err := runTickerLoop(ctx, interval, onTick); err != nil {
-		return fmt.Errorf("run ticker loop: %w", err)
+		return fmt.Errorf("lifecycle: run ticker loop: %w", err)
 	}
 
 	return nil

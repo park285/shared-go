@@ -18,10 +18,6 @@ func decodedTextSegments(input string) ([]textSegment, guardtext.DecodeStatus) {
 	return textSegmentsFromDecodeResult(guardtext.DecodeCandidatesWithContext(input))
 }
 
-func (g *Guard) decodedTextSegments(input string) ([]textSegment, guardtext.DecodeStatus) {
-	return g.decodedTextSegmentsWithRaw(input, Evaluation{}, nil)
-}
-
 func (g *Guard) decodedTextSegmentsWithRaw(input string, raw Evaluation, budget *guardtext.RuleRegionDecoder) ([]textSegment, guardtext.DecodeStatus) {
 	if g == nil {
 		return decodedTextSegments(input)
@@ -309,7 +305,7 @@ func requiredLiteralContextRunes(packs []compiledPack) int {
 	return max(0, maximum-1)
 }
 
-func decodedContributionView(rule *compiledRule, views Views) string {
+func decodedContributionView(rule *compiledRule, views guardtext.Views) string {
 	switch rule.View {
 	case viewJoined, viewAggregateJoined:
 		return views.Joined

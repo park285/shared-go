@@ -1,6 +1,7 @@
 package h3
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
@@ -41,7 +42,6 @@ type CertificateReloader struct {
 	current   atomic.Pointer[certificateSnapshot]
 	reloadMu  sync.Mutex
 	lastCheck time.Time
-	startOnce sync.Once
 	failureMu sync.Mutex
 	lastError string
 }
@@ -54,13 +54,13 @@ func NewCertificateReloader(certFile, keyFile string, opts CertificateReloaderOp
 
 	cert, fingerprint, err := loadCertificatePair(certFile, keyFile)
 	if err != nil {
-		return nil, fmt.Errorf("load h3 certificate pair: %w", err)
+		return nil, fmt.Errorf("h3: load certificate pair: %w", err)
 	}
 
 	r := &CertificateReloader{
 		certFile:  certFile,
 		keyFile:   keyFile,
-		logger:    opts.Logger,
+		logger:    cmp.Or(opts.Logger, slog.Default()),
 		interval:  interval,
 		lastCheck: time.Now(),
 	}
@@ -69,43 +69,37 @@ func NewCertificateReloader(certFile, keyFile string, opts CertificateReloaderOp
 	return r, nil
 }
 
-// Start는 ctx 수명 동안 백그라운드 갱신을 시작한다. 여러 호출 중 첫 호출만 유효하다.
-func (r *CertificateReloader) Start(ctx context.Context) {
+// Run은 ctx가 끝날 때까지 interval마다 갱신을 시도하며 블로킹한다. 갱신 goroutine의 join과 panic
+// 처리는 호출자가 소유한다.
+func (r *CertificateReloader) Run(ctx context.Context) {
 	if r == nil || ctx == nil {
 		return
 	}
 
-	r.startOnce.Do(func() {
-		go r.run(ctx)
-	})
-}
-
-func (r *CertificateReloader) run(ctx context.Context) {
-	ticker := time.NewTicker(r.interval)
-	defer ticker.Stop()
+	tick := time.Tick(r.interval)
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case now := <-ticker.C:
+		case now := <-tick:
 			r.reloadIfDue(now)
 		}
 	}
 }
 
-// GetCertificate는 handshake 경로에서 파일을 매번 읽지 않는다. Start를 사용하지 않는
+// GetCertificate는 handshake 경로에서 파일을 매번 읽지 않는다. Run을 사용하지 않는
 // 소비자도 interval이 지난 첫 handshake에서 갱신을 시도한다.
 func (r *CertificateReloader) GetCertificate(_ *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	if r == nil {
-		return nil, errors.New("load h3 certificate: nil reloader")
+		return nil, errors.New("h3: load certificate: nil reloader")
 	}
 
 	r.reloadIfDue(time.Now())
 
 	snapshot := r.current.Load()
 	if snapshot == nil || snapshot.cert == nil {
-		return nil, errors.New("load h3 certificate: no cached certificate")
+		return nil, errors.New("h3: load certificate: no cached certificate")
 	}
 
 	return snapshot.cert, nil
@@ -163,10 +157,6 @@ func loadCertificatePair(certFile, keyFile string) (*tls.Certificate, certificat
 }
 
 func (r *CertificateReloader) recordFailure(err error) {
-	if r.logger == nil {
-		return
-	}
-
 	r.failureMu.Lock()
 	defer r.failureMu.Unlock()
 

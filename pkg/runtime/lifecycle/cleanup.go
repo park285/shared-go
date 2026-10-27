@@ -2,25 +2,23 @@ package lifecycle
 
 import "sync"
 
-type CleanupCloser struct {
+// cleanupCloser는 cleanup을 한 번만 실행한다. 값으로 복사해도 같은 once를 공유한다.
+type cleanupCloser struct {
 	cleanup func()
-	once    *sync.Once
 }
 
-func NewCleanupCloser(cleanup func()) CleanupCloser {
-	return CleanupCloser{cleanup: cleanup, once: &sync.Once{}}
+func newCleanupCloser(cleanup func()) cleanupCloser {
+	if cleanup == nil {
+		return cleanupCloser{}
+	}
+
+	return cleanupCloser{cleanup: sync.OnceFunc(cleanup)}
 }
 
-func (c *CleanupCloser) Close() {
+func (c *cleanupCloser) Close() {
 	if c == nil || c.cleanup == nil {
 		return
 	}
 
-	if c.once == nil {
-		c.cleanup()
-
-		return
-	}
-
-	c.once.Do(c.cleanup)
+	c.cleanup()
 }

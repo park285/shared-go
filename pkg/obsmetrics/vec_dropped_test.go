@@ -37,7 +37,7 @@ func TestWriteExposition_EmitsDroppedSeriesCounter(t *testing.T) {
 	t.Run("counter", func(t *testing.T) {
 		t.Parallel()
 
-		vec := NewCounterVecWithOptions("requests_total", "Requests", VecOptions{MaxSeries: 1})
+		vec := newCounterVecWithOptions("requests_total", "Requests", VecOptions{MaxSeries: 1})
 		vec.Inc(Labels{testRoute: "/a"})
 		vec.Inc(Labels{testRoute: "/b"})
 		vec.Inc(Labels{testRoute: "/c"})
@@ -46,8 +46,8 @@ func TestWriteExposition_EmitsDroppedSeriesCounter(t *testing.T) {
 		assertHasLine(t, lines, "# TYPE requests_total_dropped_series_total counter")
 		assertHasLine(t, lines, "requests_total_dropped_series_total 2")
 
-		if got := vec.DroppedSeries(); got != 2 {
-			t.Fatalf("DroppedSeries() = %d, want 2", got)
+		if got := vec.limiter.droppedSeries(); got != 2 {
+			t.Fatalf("dropped series = %d, want 2", got)
 		}
 	})
 
@@ -166,7 +166,7 @@ func TestCanonicalLabels_StableAndOrderIndependent(t *testing.T) {
 		t.Fatalf("canonical key = %q, want %q", first, want)
 	}
 
-	if len(pairs) != 3 || pairs[0].name != "alpha" || pairs[2].name != "zeta" {
+	if len(pairs) != 3 || pairs[0].Name != "alpha" || pairs[2].Name != "zeta" {
 		t.Fatalf("pairs = %v, want sorted by name", pairs)
 	}
 }
@@ -194,18 +194,5 @@ func BenchmarkCanonicalLabels(b *testing.B) {
 
 	for b.Loop() {
 		_, _ = canonicalLabels(labels)
-	}
-}
-
-func BenchmarkEscapeLabelValue(b *testing.B) {
-	values := []string{"/v1/messages", `has "quote"`, "line\nbreak", `back\slash`}
-
-	b.ReportAllocs()
-
-	i := 0
-
-	for b.Loop() {
-		_ = escapeLabelValue(values[i%len(values)])
-		i++
 	}
 }

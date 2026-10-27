@@ -46,7 +46,7 @@ func TestClientRetryAttemptsAreOwnedByOption(t *testing.T) {
 		opts         []openaipreset.Option
 		wantRequests int64
 	}{
-		{name: "default preserves sdk behavior", wantRequests: 1 + sharedllm.DefaultOpenAIMaxRetries},
+		{name: "default preserves sdk behavior", wantRequests: 1 + int64(sharedllm.ResolveOpenAIMaxRetries(nil))},
 		{name: "zero leaves retry to the consumer", opts: []openaipreset.Option{openaipreset.WithMaxRetries(0)}, wantRequests: 1},
 		{name: "explicit budget is honored", opts: []openaipreset.Option{openaipreset.WithMaxRetries(1)}, wantRequests: 2},
 	}

@@ -17,8 +17,8 @@ type DotenvOptions struct {
 	LocalPaths     []string
 }
 
-// ServiceDotenvPath는 OpenBao Agent dotenv 렌더링 기본 경로를 반환한다.
-func ServiceDotenvPath(serviceName string) string {
+// serviceDotenvPath는 서비스 env file 기본 경로(/run/<service>/<service>.env)를 반환한다.
+func serviceDotenvPath(serviceName string) string {
 	name := strings.Trim(strings.ToLower(strings.TrimSpace(serviceName)), "/")
 	if name == "" {
 		return ""
@@ -38,7 +38,7 @@ func LoadDotenv(opts DotenvOptions) error {
 	if opts.LocalEnableKey != "" {
 		enabled, err := BoolE(opts.LocalEnableKey, false)
 		if err != nil {
-			return fmt.Errorf("read local dotenv enable flag: %w", err)
+			return fmt.Errorf("envutil: read local dotenv enable flag: %w", err)
 		}
 
 		localEnabled = enabled
@@ -48,7 +48,7 @@ func LoadDotenv(opts DotenvOptions) error {
 	if serviceName != "" {
 		handled, err := loadServiceDotenv(serviceName)
 		if err != nil {
-			return fmt.Errorf("load service dotenv: %w", err)
+			return fmt.Errorf("envutil: load service dotenv: %w", err)
 		}
 
 		if handled {
@@ -72,17 +72,17 @@ func LoadDotenv(opts DotenvOptions) error {
 	}
 
 	for _, path := range paths {
-		if err := LoadDotenvFile(path, false, false); err != nil {
-			return fmt.Errorf("load dotenv file: %w", err)
+		if err := loadDotenvFile(path, false, false); err != nil {
+			return fmt.Errorf("envutil: load dotenv file: %w", err)
 		}
 	}
 
 	return nil
 }
 
-// LoadDotenvFile는 dotenv 파일을 로드하며 strict 모드에서 symlink, non-regular file, world-accessible 파일을 거부한다.
+// loadDotenvFile은 dotenv 파일을 로드하며 strict 모드에서 symlink, non-regular file, world-accessible 파일을 거부한다.
 // 전체 줄 주석(#로 시작)만 인식하며 따옴표 없는 값의 inline #는 주석이 아니라 값의 일부로 남는다.
-func LoadDotenvFile(path string, required, strict bool) error {
+func loadDotenvFile(path string, required, strict bool) error {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		if required {
@@ -106,7 +106,7 @@ func LoadDotenvFile(path string, required, strict bool) error {
 	}
 
 	if !strict {
-		if err := loadDotenvFile(path); err != nil {
+		if err := loadNonStrictDotenvFile(path); err != nil {
 			return fmt.Errorf("load dotenv file: %w", err)
 		}
 
@@ -177,11 +177,11 @@ func loadServiceDotenv(serviceName string) (bool, error) {
 		return false, fmt.Errorf("read static secrets guard: %w", err)
 	}
 
-	defaultPath := ServiceDotenvPath(serviceName)
+	defaultPath := serviceDotenvPath(serviceName)
 
 	if envFile := strings.TrimSpace(os.Getenv(prefix + "_ENV_FILE")); envFile != "" {
 		strict := requireStaticSecrets || strings.HasPrefix(envFile, defaultPathDir(defaultPath)+string(os.PathSeparator))
-		if err := LoadDotenvFile(envFile, true, strict); err != nil {
+		if err := loadDotenvFile(envFile, true, strict); err != nil {
 			return true, fmt.Errorf("load dotenv file: %w", err)
 		}
 
@@ -189,7 +189,7 @@ func loadServiceDotenv(serviceName string) (bool, error) {
 	}
 
 	if requireStaticSecrets {
-		if err := LoadDotenvFile(defaultPath, true, true); err != nil {
+		if err := loadDotenvFile(defaultPath, true, true); err != nil {
 			return true, fmt.Errorf("load dotenv file: %w", err)
 		}
 
@@ -199,7 +199,7 @@ func loadServiceDotenv(serviceName string) (bool, error) {
 	return false, nil
 }
 
-func loadDotenvFile(path string) error {
+func loadNonStrictDotenvFile(path string) error {
 	file, err := os.Open(path) //nolint:gosec // 운영자가 지정하고 호출자가 검증한 dotenv 경로다.
 	if err != nil {
 		return fmt.Errorf("open dotenv file %s: %w", path, err)

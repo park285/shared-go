@@ -53,15 +53,9 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-func (c *Config) DSN() (string, error) {
-	if err := c.Validate(); err != nil {
-		return "", fmt.Errorf("validate: %w", err)
-	}
-
-	return c.buildDSN(c.Password), nil
-}
-
-func (c *Config) SafeDSN() (string, error) {
+// safeDSN은 Validate를 통과한 Config의 DSN을 비밀번호만 가린 형태로 만든다. 파싱 오류에 원문
+// 비밀번호가 실리지 않도록 pgx 파싱은 이 값으로 하고 비밀번호는 파싱 뒤 따로 채운다.
+func (c *Config) safeDSN() (string, error) {
 	if err := c.Validate(); err != nil {
 		return "", fmt.Errorf("validate: %w", err)
 	}
@@ -403,7 +397,8 @@ type PoolConfig struct {
 	PingTimeout time.Duration
 }
 
-func DefaultPoolConfig() PoolConfig {
+// defaultPoolConfig는 구조체 경로에서 0인 수명 필드를 채울 기본값이다.
+func defaultPoolConfig() PoolConfig {
 	return PoolConfig{
 		// 유휴 상태에서 연결을 하나도 유지하지 않아도 된다.
 		MinConns:        0,
@@ -415,10 +410,4 @@ func DefaultPoolConfig() PoolConfig {
 
 type PingConfig struct {
 	PingTimeout time.Duration
-}
-
-func DefaultPingConfig() PingConfig {
-	return PingConfig{
-		PingTimeout: 5 * time.Second,
-	}
 }

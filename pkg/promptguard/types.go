@@ -57,8 +57,8 @@ type EvaluationEvent struct {
 }
 
 var (
-	ErrInvalidCheckRequest = errors.New("invalid prompt guard check request")
-	ErrGuardUnavailable    = errors.New("prompt guard unavailable")
+	ErrInvalidCheckRequest = errors.New("promptguard: invalid check request")
+	ErrGuardUnavailable    = errors.New("promptguard: guard unavailable")
 )
 
 type Match struct {
@@ -95,5 +95,5 @@ type BlockedError struct {
 }
 
 func (e *BlockedError) Error() string {
-	return fmt.Sprintf("input blocked by injection guard (score=%.2f, threshold=%.2f)", e.Score, e.Threshold)
+	return fmt.Sprintf("promptguard: input blocked by injection guard (score=%.2f, threshold=%.2f)", e.Score, e.Threshold)
 }

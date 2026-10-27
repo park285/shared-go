@@ -31,7 +31,7 @@ const (
 func NewServer(addr string, handler http.Handler, certFile, keyFile string) (*http3.Server, error) {
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
-		return nil, fmt.Errorf("load h3 certificate pair: %w", err)
+		return nil, fmt.Errorf("h3: load certificate pair: %w", err)
 	}
 
 	return NewServerWithTLSConfig(addr, handler, &tls.Config{
@@ -80,20 +80,20 @@ func NewClient(timeout time.Duration, opts ClientOptions) (*http.Client, func(),
 	if opts.CACertFile != "" {
 		roots, err := loadRootCAs(opts.CACertFile)
 		if err != nil {
-			return nil, nil, fmt.Errorf("load root c as: %w", err)
+			return nil, nil, fmt.Errorf("h3: %w", err)
 		}
 
 		tlsConfig.RootCAs = roots
 	}
 
 	if (opts.ClientCertFile == "") != (opts.ClientKeyFile == "") {
-		return nil, nil, errors.New("h3 client certificate and key must be configured together")
+		return nil, nil, errors.New("h3: client certificate and key must be configured together")
 	}
 
 	if opts.ClientCertFile != "" {
 		certificate, err := tls.LoadX509KeyPair(opts.ClientCertFile, opts.ClientKeyFile)
 		if err != nil {
-			return nil, nil, fmt.Errorf("load h3 client certificate pair: %w", err)
+			return nil, nil, fmt.Errorf("h3: load client certificate pair: %w", err)
 		}
 
 		tlsConfig.Certificates = []tls.Certificate{certificate}
@@ -122,7 +122,7 @@ func newGuardedDialer(guard func(net.IP) error) func(ctx context.Context, addr s
 	return func(ctx context.Context, addr string, tlsCfg *tls.Config, cfg *quic.Config) (*quic.Conn, error) {
 		host, port, err := net.SplitHostPort(addr)
 		if err != nil {
-			return nil, fmt.Errorf("split h3 dial addr %s: %w", addr, err)
+			return nil, fmt.Errorf("h3: split dial addr %s: %w", addr, err)
 		}
 
 		// net.ResolveUDPAddr는 ctx를 받지 않는다. transport.Close()는 mutex를 쥔 채
@@ -130,11 +130,11 @@ func newGuardedDialer(guard func(net.IP) error) func(ctx context.Context, addr s
 		// 요청이 resolver 타임아웃 전부를 함께 기다린다.
 		addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
 		if err != nil {
-			return nil, fmt.Errorf("resolve h3 dial addr %s: %w", addr, err)
+			return nil, fmt.Errorf("h3: resolve dial addr %s: %w", addr, err)
 		}
 
 		if len(addrs) == 0 {
-			return nil, fmt.Errorf("resolve h3 dial addr %s: no addresses", addr)
+			return nil, fmt.Errorf("h3: resolve dial addr %s: no addresses", addr)
 		}
 
 		chosen := preferIPv4(addrs)
@@ -142,14 +142,19 @@ func newGuardedDialer(guard func(net.IP) error) func(ctx context.Context, addr s
 		// net.IP의 판별 메서드는 nil/unspecified에서 전부 false라, 올바른 guard도
 		// 이 주소를 허용한다. guard에 넘기기 전에 거른다.
 		if len(chosen.IP) == 0 || chosen.IP.IsUnspecified() {
-			return nil, fmt.Errorf("reject h3 dial addr %s: unusable destination address", addr)
+			return nil, fmt.Errorf("h3: reject dial addr %s: unusable destination address", addr)
 		}
 
 		if guardErr := guard(chosen.IP); guardErr != nil {
-			return nil, fmt.Errorf("guard: %w", guardErr)
+			return nil, fmt.Errorf("h3: guard dial addr %s: %w", addr, guardErr)
 		}
 
-		return quic.DialAddrEarly(ctx, net.JoinHostPort(dialHost(chosen), port), tlsCfg, cfg)
+		conn, err := quic.DialAddrEarly(ctx, net.JoinHostPort(dialHost(chosen), port), tlsCfg, cfg)
+		if err != nil {
+			return nil, fmt.Errorf("h3: dial %s: %w", addr, err)
+		}
+
+		return conn, nil
 	}
 }
 
@@ -183,26 +188,17 @@ func newClientQUICConfig() *quic.Config {
 	}
 }
 
-func loadRootCAs(path string) (*x509.CertPool, error) {
-	roots, err := LoadCertificatePool(path)
-	if err != nil {
-		return nil, fmt.Errorf("load root CAs: %w", err)
-	}
-
-	return roots, nil
-}
-
-// LoadCertificatePool은 경로의 모든 PEM 블록을 인증서로 검증해 새 pool을 반환한다.
+// loadRootCAs는 경로의 모든 PEM 블록을 인증서로 검증해 새 pool을 반환한다.
 // 인증서 외 블록, 손상된 블록, 앞뒤의 비공백 데이터는 모두 거부한다.
-func LoadCertificatePool(path string) (*x509.CertPool, error) {
+func loadRootCAs(path string) (*x509.CertPool, error) {
 	pemBytes, err := os.ReadFile(path) //nolint:gosec // 운영자가 지정하는 CA 경로
 	if err != nil {
-		return nil, fmt.Errorf("read h3 CA file: %w", err)
+		return nil, fmt.Errorf("load root CAs: read h3 CA file: %w", err)
 	}
 
 	roots, err := parseCertificatePool(pemBytes)
 	if err != nil {
-		return nil, fmt.Errorf("parse h3 CA pool: %w", err)
+		return nil, fmt.Errorf("load root CAs: parse h3 CA pool: %w", err)
 	}
 
 	return roots, nil

@@ -15,13 +15,13 @@ import (
 // DecodeWorkerSettingsSet는 모든 worker의 decoder를 빠짐없이 지정한 뒤 strict decode한다.
 func DecodeWorkerSettingsSet(loaded LoadedProfile, destinations map[string]any) error {
 	if len(loaded.Profile.Workers) != len(destinations) {
-		return errors.New("worker settings: decoder worker set must match profile")
+		return errors.New("workercontract: worker settings: decoder worker set must match profile")
 	}
 
 	ids := sortedWorkerIDs(loaded.Profile.Workers)
 	for _, id := range ids {
 		if _, ok := destinations[id]; !ok {
-			return fmt.Errorf("decode %s settings: worker decoder is missing", id)
+			return fmt.Errorf("workercontract: decode %s settings: worker decoder is missing", id)
 		}
 	}
 
@@ -41,24 +41,24 @@ func DecodeWorkerSettingsSet(loaded LoadedProfile, destinations map[string]any) 
 func DecodeWorkerSettings(loaded LoadedProfile, workerID string, destination any) error {
 	worker, ok := loaded.Profile.Workers[workerID]
 	if !ok {
-		return fmt.Errorf("decode %s settings: worker is missing", workerID)
+		return fmt.Errorf("workercontract: decode %s settings: worker is missing", workerID)
 	}
 
 	typ := reflect.TypeOf(destination)
 	if typ == nil || typ.Kind() != reflect.Pointer || typ.Elem().Kind() != reflect.Struct {
-		return fmt.Errorf("decode %s settings: settings destination must be a struct pointer", workerID)
+		return fmt.Errorf("workercontract: decode %s settings: settings destination must be a struct pointer", workerID)
 	}
 
 	if reflect.ValueOf(destination).IsNil() {
-		return fmt.Errorf("decode %s settings: settings destination must not be nil", workerID)
+		return fmt.Errorf("workercontract: decode %s settings: settings destination must not be nil", workerID)
 	}
 
 	if err := DecodeSettings(worker.Settings, destination); err != nil {
-		return fmt.Errorf("decode %s settings: %w", workerID, err)
+		return fmt.Errorf("workercontract: decode %s settings: %w", workerID, err)
 	}
 
 	if err := validateSettingsValue(worker.Settings, typ.Elem(), "settings"); err != nil {
-		return fmt.Errorf("decode %s settings: %w", workerID, err)
+		return fmt.Errorf("workercontract: decode %s settings: %w", workerID, err)
 	}
 
 	return nil
