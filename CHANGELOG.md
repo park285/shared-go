@@ -3,9 +3,9 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
-## Unreleased
+## v2.18.0 - 2026-10-28
 
-- **소비자 동시 이전(v2.18.0 coordinated minor 준비):** 하위 호환 patch가 아닙니다. v2.17.0처럼 스택 소비자(hololive-bot·chat-bot-go-kakao·twentyq-bot·iris-console)의 코드와 shared-go pin을 같은 변경 묶음에서 옮기는 것을 전제로 하며 모듈 경로 `/v2`는 유지합니다. 라이브러리가 몰래 채우던 정책 기본값을 없애고 호출자가 명시하게 했으며, 퇴역 경로와 한 서비스 전용 패키지를 삭제했습니다.
+- **소비자 동시 이전(coordinated minor):** 하위 호환 patch가 아닙니다. v2.17.0처럼 스택 소비자(hololive-bot·chat-bot-go-kakao·twentyq-bot·iris-console)의 코드와 shared-go pin을 같은 변경 묶음에서 옮기는 것을 전제로 하며 모듈 경로 `/v2`는 유지합니다. 라이브러리가 몰래 채우던 정책 기본값을 없애고 호출자가 명시하게 했으며, 퇴역 경로와 한 서비스 전용 패키지를 삭제했습니다.
   - **삭제한 패키지:** `pkg/runtime/automaxprocs`(Go 1.25+ runtime이 container CPU quota를 기본 반영하고 `AUTOMAXPROCS_*`를 설정한 배포가 없음)와 `go.uber.org/automaxprocs` 의존성, `pkg/ginjson`(hololive-shared로 이전)과 gin 계열 전이 의존성, `pkg/lockutil`(chat-bot-go-kakao 내부로 이전). `bootstrap.Options.Run`은 더 이상 `automaxprocs.Init`을 부르지 않으므로 기동 로그 `automaxprocs skipped; ...` 한 줄이 사라집니다.
   - **`db/pgxdb`:** `Options.Ping.PingTimeout > 0`이 두 경로 모두 필수이며 0이면 `pgxdb: startup ping timeout must be positive`입니다(이전 숨은 값 5초). `OpenPool`(구조화 경로)은 `PoolConfig.ConnMaxLifetime`·`ConnMaxIdleTime > 0`이 필수이고(이전 1시간·30분), `ConnMaxLifetimeJitter` 0은 지터 없음입니다(이전 수명/5). `PoolConfig.PingTimeout`은 획득 시 상태 검사임을 드러내도록 `PoolConfig.AcquirePingTimeout`으로 이름을 바꿨습니다. DSN 경로의 overlay 의미(0은 DSN 값 유지)는 같습니다.
   - **`llm`·`llm/openaipreset`:** `OpenAICompatibleConfig.MaxRetries`가 `*int`에서 필수 `int`로 바뀌고 음수는 오류입니다. nil일 때의 기본 2회 재시도는 없습니다. `openaipreset.New`는 `WithMaxRetries`가 없으면 `openaipreset: WithMaxRetries is required`를 반환합니다. LLM 요청은 응답 유실 시 과금·tool 사용이 중복될 수 있어 재시도 수를 라이브러리가 정하지 않습니다. `ResolveOpenAIMaxRetries`·`ResponsesSchemaName`은 `pkg/llm/internal`로 옮겼고, `RedactDiagnostic`·`DefaultDiagnosticLimit`은 삭제했습니다(진단 마스킹 정본은 `logging.RedactDiagnostic`).
