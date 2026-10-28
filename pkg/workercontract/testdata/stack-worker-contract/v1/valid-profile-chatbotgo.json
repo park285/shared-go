@@ -32,7 +32,7 @@
         "processing_lease_ms": 1920000,
         "retry_base_delay_ms": 1000,
         "max_attempts": 6,
-        "terminal_retention_ms": 604800000,
+        "terminal_retention_ms": 691200000,
         "prune_interval_ms": 300000,
         "prune_batch_size": 1000,
         "prune_max_batches": 10,
