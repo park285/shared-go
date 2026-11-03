@@ -3,6 +3,12 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## v2.19.0 - 2026-11-03
+
+- **`obsmetrics`:** `WriteRuntimeMetrics`가 `/proc/self/stat`의 utime+stime을 초로 바꾼 `process_cpu_seconds_total` counter를 함께 씁니다. comm에 공백이나 괄호가 있어도 마지막 `)` 뒤에서 필드를 셉니다. Linux가 아니거나 읽지 못하면 RSS처럼 sample을 생략합니다. 하위 호환 추가이며 기존 지표는 바뀌지 않습니다.
+- **`kakaoformat` 성능:** 링크·블록·간격·URL 정규식 4개를 바이트 스캐너로 바꾸고, `Restore`를 한 번의 순회로 처리합니다. 출력은 같으며, 정규식·Replacer oracle과의 차분 시험과 fuzz가 이를 확인합니다. arm64에서 방송 목록 1건 렌더가 약 28.7µs·77 allocs에서 10.8µs·41 allocs로 줄었습니다.
+- **내부 정리:** `dbmigrate`·`irisdurable/pgstore`의 로컬 `mustQuery` wrapper를 없애고 `sqlutil.MustQuery`를 직접 씁니다. 공개 API는 바뀌지 않습니다.
+
 ## v2.18.0 - 2026-10-28
 
 - **소비자 동시 이전(coordinated minor):** 하위 호환 patch가 아닙니다. v2.17.0처럼 스택 소비자(hololive-bot·chat-bot-go-kakao·twentyq-bot·iris-console)의 코드와 shared-go pin을 같은 변경 묶음에서 옮기는 것을 전제로 하며 모듈 경로 `/v2`는 유지합니다. 라이브러리가 몰래 채우던 정책 기본값을 없애고 호출자가 명시하게 했으며, 퇴역 경로와 한 서비스 전용 패키지를 삭제했습니다.
