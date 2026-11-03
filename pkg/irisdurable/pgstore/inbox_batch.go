@@ -29,7 +29,7 @@ func (s *Store) ClaimBatch(ctx context.Context, limit int) ([]InboxClaim, error)
 		return nil, err
 	}
 
-	rows, err := s.db.Query(ctx, queryClaimInbox, s.opts.Scope, token, s.opts.Lease.Seconds(), limit, s.opts.InboxExplicitRecovery)
+	rows, err := s.db.Query(ctx, claimInboxSQL, s.opts.Scope, token, s.opts.Lease.Seconds(), limit, s.opts.InboxExplicitRecovery)
 	if err != nil {
 		return nil, &ClaimBatchError{Token: token, Err: fmt.Errorf("pgstore: claim inbox batch: %w", err)}
 	}
@@ -79,7 +79,7 @@ func (s *Store) ReleaseClaimToken(ctx context.Context, token string, keep []int6
 		return 0, errors.New("pgstore: release claim token requires a token")
 	}
 
-	tag, err := s.db.Exec(ctx, queryReleaseClaimToken, s.opts.Scope, token, keep)
+	tag, err := s.db.Exec(ctx, releaseClaimTokenSQL, s.opts.Scope, token, keep)
 	if err != nil {
 		return 0, fmt.Errorf("pgstore: release claim token: %w", err)
 	}
@@ -89,13 +89,13 @@ func (s *Store) ReleaseClaimToken(ctx context.Context, token string, keep []int6
 
 // ReleaseInboxAt은 claim을 정확한 availableAt 이후의 재처리로 반환한다. 시도 횟수는 유지한다.
 func (s *Store) ReleaseInboxAt(ctx context.Context, claim InboxClaim, availableAt time.Time) error {
-	return s.execFenced(ctx, "release inbox at", queryReleaseInbox,
+	return s.execFenced(ctx, "release inbox at", releaseInboxSQL,
 		s.opts.Scope, claim.ID, claim.ClaimToken, float64(0), availableAt.UTC())
 }
 
 // DeferInboxUntil은 실행하지 않은 claim을 반환하고 시도 횟수를 되돌린다. AvailableAt을 보존한다.
 func (s *Store) DeferInboxUntil(ctx context.Context, claim InboxClaim, availableAt time.Time) error {
-	return s.execFenced(ctx, "defer inbox until", queryDeferInbox,
+	return s.execFenced(ctx, "defer inbox until", deferInboxSQL,
 		s.opts.Scope, claim.ID, claim.ClaimToken, claim.MessageID, float64(0), availableAt.UTC())
 }
 
@@ -170,7 +170,7 @@ func (s *Store) ApplyInboxRecovery(ctx context.Context, decisions []InboxRecover
 		reasons[i] = decision.Reason
 	}
 
-	tag, err := s.db.Exec(ctx, queryApplyInboxRecovery, s.opts.Scope,
+	tag, err := s.db.Exec(ctx, applyInboxRecoverySQL, s.opts.Scope,
 		ids, messageIDs, tokens, attempts, leases, statuses, reasons, s.opts.DiscardInboxManualReviewPayload)
 	if err != nil {
 		return fmt.Errorf("pgstore: apply inbox recovery: %w", err)
@@ -202,7 +202,7 @@ func (s *Store) pruneInbox(ctx context.Context, action string, before any, limit
 		return 0, fmt.Errorf("pgstore: %s requires Options.InboxTerminalRetention", action)
 	}
 
-	tag, err := s.db.Exec(ctx, queryPruneInboxCompleted, s.opts.Scope, s.opts.InboxTerminalRetention.Seconds(), limit, before)
+	tag, err := s.db.Exec(ctx, pruneInboxCompletedSQL, s.opts.Scope, s.opts.InboxTerminalRetention.Seconds(), limit, before)
 	if err != nil {
 		return 0, fmt.Errorf("pgstore: %s completed: %w", action, err)
 	}
@@ -214,7 +214,7 @@ func (s *Store) pruneInbox(ctx context.Context, action string, before any, limit
 		return deleted, nil
 	}
 
-	tag, err = s.db.Exec(ctx, queryPruneInboxManualReview, s.opts.Scope, s.opts.InboxManualReviewRetention.Seconds(), remaining, before)
+	tag, err = s.db.Exec(ctx, pruneInboxManualReviewSQL, s.opts.Scope, s.opts.InboxManualReviewRetention.Seconds(), remaining, before)
 	if err != nil {
 		return deleted, fmt.Errorf("pgstore: %s manual review: %w", action, err)
 	}

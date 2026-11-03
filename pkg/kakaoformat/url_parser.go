@@ -53,13 +53,13 @@ func (p *literalURLParser) Parse(parent ast.Node, reader text.Reader, context pa
 	start -= prefix
 
 	line := source[start:segment.Stop]
-	match := reLiteralURL.FindIndex(line)
 
-	if len(match) != 2 || match[0] != 0 {
+	match := literalURLMatchEnd(line, 0)
+	if match < 0 {
 		return nil
 	}
 
-	end := literalURLEnd(line, match[1], context.LastDelimiter())
+	end := literalURLEnd(line, match, context.LastDelimiter())
 
 	previous.Value = text.NewSingleLineValueFromIndex(text.NewIndex(previous.Value.Index().Start, start), reader.Decoder())
 	if previous.Value.Index().Start == start {

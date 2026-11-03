@@ -5,10 +5,10 @@ import (
 	"testing"
 )
 
+var testZeroWidthNeutralizer = strings.NewReplacer("*", "*\u200b", "_", "_\u200b", "`", "`\u200b", "~", "~\u200b", "]", "]\u200b", "#", "#\u200b", "&", "&\u200b", "<", "<\u200b", "\\", "\\\u200b")
+
 func TestRenderPreservesZeroWidthNeutralizedMarkers(t *testing.T) {
 	t.Parallel()
-
-	neutralizer := strings.NewReplacer("*", "*\u200b", "_", "_\u200b", "`", "`\u200b", "~", "~\u200b", "]", "]\u200b", "#", "#\u200b", "&", "&\u200b", "<", "<\u200b", "\\", "\\\u200b")
 
 	for _, literal := range []string{
 		"**미코 Miko** _노래_ ~~오늘~~",
@@ -22,7 +22,7 @@ func TestRenderPreservesZeroWidthNeutralizedMarkers(t *testing.T) {
 		t.Run(literal, func(t *testing.T) {
 			t.Parallel()
 
-			input := neutralizer.Replace(literal)
+			input := testZeroWidthNeutralizer.Replace(literal)
 			if got := Render(input); got != input {
 				t.Errorf("neutralized text reinterpreted: got=%q want=%q", got, input)
 			}

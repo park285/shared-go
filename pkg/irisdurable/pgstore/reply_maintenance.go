@@ -29,7 +29,7 @@ func (s *Store) Redrive(ctx context.Context, limit int) ([]RedriveCandidate, err
 		return nil, err
 	}
 
-	rows, err := s.db.Query(ctx, queryListRedrivableReplies, s.opts.Scope, s.opts.MaxAttempts, s.opts.AutomaticReplayHorizon.Seconds(), limit)
+	rows, err := s.db.Query(ctx, listRedrivableRepliesSQL, s.opts.Scope, s.opts.MaxAttempts, s.opts.AutomaticReplayHorizon.Seconds(), limit)
 	if err != nil {
 		return nil, fmt.Errorf("pgstore: list redrivable replies: %w", err)
 	}
@@ -90,7 +90,7 @@ func (s *Store) Retire(ctx context.Context, limit int) ([]RetiredReply, error) {
 		return nil, err
 	}
 
-	rows, err := s.db.Query(ctx, queryRetireExhaustedReplies, s.opts.Scope, s.opts.MaxAttempts, s.opts.AutomaticReplayHorizon.Seconds(), limit)
+	rows, err := s.db.Query(ctx, retireExhaustedRepliesSQL, s.opts.Scope, s.opts.MaxAttempts, s.opts.AutomaticReplayHorizon.Seconds(), limit)
 	if err != nil {
 		return nil, fmt.Errorf("pgstore: retire exhausted replies: %w", err)
 	}
@@ -132,7 +132,7 @@ func (s *Store) Retire(ctx context.Context, limit int) ([]RetiredReply, error) {
 // 그 수는 backlog 관측에 쓸 값이 아니고, 세려면 보존 기간 전체를 훑어야 한다. 어느 상태에도 행이
 // 없으면 그 키는 결과에 없다.
 func (s *Store) CountRepliesByStatus(ctx context.Context) (map[irisdurable.ReplyStatus]int64, error) {
-	rows, err := s.db.Query(ctx, queryCountRepliesByStatus, s.opts.Scope)
+	rows, err := s.db.Query(ctx, countRepliesByStatusSQL, s.opts.Scope)
 	if err != nil {
 		return nil, fmt.Errorf("pgstore: count replies by status: %w", err)
 	}
@@ -167,7 +167,7 @@ func (s *Store) ReplyReadySnapshot(ctx context.Context) (ReadySnapshot, error) {
 		return ReadySnapshot{}, err
 	}
 
-	return s.readySnapshot(ctx, "reply ready snapshot", queryReplyReadySnapshot,
+	return s.readySnapshot(ctx, "reply ready snapshot", replyReadySnapshotSQL,
 		s.opts.Scope, s.opts.MaxAttempts, s.opts.AutomaticReplayHorizon.Seconds(),
 	)
 }
@@ -179,7 +179,7 @@ func (s *Store) PruneReplies(ctx context.Context, limit int) (int64, error) {
 		return 0, errors.New("pgstore: prune limit must be positive")
 	}
 
-	tag, err := s.db.Exec(ctx, queryPruneReplies, s.opts.Scope, limit)
+	tag, err := s.db.Exec(ctx, pruneRepliesSQL, s.opts.Scope, limit)
 	if err != nil {
 		return 0, fmt.Errorf("pgstore: prune replies: %w", err)
 	}

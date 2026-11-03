@@ -41,7 +41,7 @@ func (s *Store) Admit(ctx context.Context, input irisdurable.AdmissionInput) (wo
 
 	var id int64
 
-	err := s.db.QueryRow(ctx, queryAdmitInbox, s.opts.Scope, input.MessageID, input.OrderingKey, string(input.Payload)).Scan(&id)
+	err := s.db.QueryRow(ctx, admitInboxSQL, s.opts.Scope, input.MessageID, input.OrderingKey, string(input.Payload)).Scan(&id)
 
 	switch {
 	case err == nil:
@@ -89,7 +89,7 @@ func (s *Store) Claim(ctx context.Context) (claim InboxClaim, ok bool, err error
 
 	var payload string
 
-	row := s.db.QueryRow(ctx, queryClaimInbox, s.opts.Scope, token, s.opts.Lease.Seconds(), 1, s.opts.InboxExplicitRecovery)
+	row := s.db.QueryRow(ctx, claimInboxSQL, s.opts.Scope, token, s.opts.Lease.Seconds(), 1, s.opts.InboxExplicitRecovery)
 
 	err = row.Scan(&claim.ID, &claim.MessageID, &claim.OrderingKey, &payload, &claim.ClaimToken, &claim.Attempts, &claim.CreatedAt, &claim.EligibleAt)
 
@@ -111,7 +111,7 @@ func (s *Store) Claim(ctx context.Context) (claim InboxClaim, ok bool, err error
 // Fence는 claim token에 더해 message_id와 살아 있는 lease를 대조한다. 그 이유는
 // queries/complete_inbox.sql이 적는다.
 func (s *Store) Complete(ctx context.Context, claim InboxClaim, reason string) error {
-	return s.execFenced(ctx, "complete inbox", queryCompleteInbox,
+	return s.execFenced(ctx, "complete inbox", completeInboxSQL,
 		s.opts.Scope, claim.ID, claim.ClaimToken, reason, claim.MessageID,
 	)
 }
@@ -123,7 +123,7 @@ func (s *Store) RenewInbox(ctx context.Context, claim InboxClaim) error {
 		return err
 	}
 
-	return s.execFenced(ctx, "renew inbox lease", queryRenewInboxLease, s.opts.Scope, claim.ID, claim.ClaimToken, s.opts.Lease.Seconds())
+	return s.execFenced(ctx, "renew inbox lease", renewInboxLeaseSQL, s.opts.Scope, claim.ID, claim.ClaimToken, s.opts.Lease.Seconds())
 }
 
 // Release는 처리에 실패한 행을 retryAfter 뒤 다시 처리하도록 되돌린다. 표준 지수 백오프는
@@ -133,7 +133,7 @@ func (s *Store) Release(ctx context.Context, claim InboxClaim, retryAfter time.D
 		retryAfter = 0
 	}
 
-	return s.execFenced(ctx, "release inbox", queryReleaseInbox, s.opts.Scope, claim.ID, claim.ClaimToken, retryAfter.Seconds(), nil)
+	return s.execFenced(ctx, "release inbox", releaseInboxSQL, s.opts.Scope, claim.ID, claim.ClaimToken, retryAfter.Seconds(), nil)
 }
 
 // Defer는 처리를 시작하지 못한 행의 소유권만 반납하고 Claim이 올린 attempts를 되돌린다.
@@ -143,7 +143,7 @@ func (s *Store) Defer(ctx context.Context, claim InboxClaim, retryAfter time.Dur
 		retryAfter = 0
 	}
 
-	return s.execFenced(ctx, "defer inbox", queryDeferInbox,
+	return s.execFenced(ctx, "defer inbox", deferInboxSQL,
 		s.opts.Scope, claim.ID, claim.ClaimToken, claim.MessageID, retryAfter.Seconds(), nil,
 	)
 }
@@ -155,7 +155,7 @@ func (s *Store) ManualReviewInbox(ctx context.Context, claim InboxClaim, reason 
 		return errors.New("pgstore: manual review requires a reason")
 	}
 
-	return s.execFenced(ctx, "manual review inbox", queryManualReviewInbox,
+	return s.execFenced(ctx, "manual review inbox", manualReviewInboxSQL,
 		s.opts.Scope, claim.ID, claim.ClaimToken, reason, s.opts.DiscardInboxManualReviewPayload)
 }
 
@@ -191,7 +191,7 @@ func (s *Store) RuntimeSnapshot(ctx context.Context) (InboxRuntimeSnapshot, erro
 		ageSecs  float64
 	)
 
-	err := s.db.QueryRow(ctx, queryInboxRuntimeSnapshot, s.opts.Scope).
+	err := s.db.QueryRow(ctx, inboxRuntimeSnapshotSQL, s.opts.Scope).
 		Scan(&snapshot.Pending, &snapshot.Processing, &snapshot.ManualReview, &snapshot.Due, &ageSecs)
 	if err != nil {
 		return InboxRuntimeSnapshot{}, fmt.Errorf("pgstore: inbox runtime snapshot: %w", err)
@@ -204,7 +204,7 @@ func (s *Store) RuntimeSnapshot(ctx context.Context) (InboxRuntimeSnapshot, erro
 
 // InboxReadySnapshot은 잠금·개수 제한 없이 Claim의 적격 조건을 적용한다.
 func (s *Store) InboxReadySnapshot(ctx context.Context) (ReadySnapshot, error) {
-	return s.readySnapshot(ctx, "inbox ready snapshot", queryInboxReadySnapshot, s.opts.Scope, s.opts.InboxExplicitRecovery)
+	return s.readySnapshot(ctx, "inbox ready snapshot", inboxReadySnapshotSQL, s.opts.Scope, s.opts.InboxExplicitRecovery)
 }
 
 func (s *Store) readySnapshot(ctx context.Context, action, sql string, args ...any) (ReadySnapshot, error) {

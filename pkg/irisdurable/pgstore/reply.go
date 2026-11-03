@@ -73,7 +73,7 @@ func (s *Store) StageRow(ctx context.Context, record irisdurable.ReplyRecord) (S
 
 // stageRow는 이미 열린 트랜잭션 안에서 순번열을 잠그고 stage한다.
 func (s *Store) stageRow(ctx context.Context, db Querier, record irisdurable.ReplyRecord) (StagedReply, error) {
-	if _, err := db.Exec(ctx, queryLockReplySequence, s.opts.Scope, record.MessageID, record.Phase); err != nil {
+	if _, err := db.Exec(ctx, lockReplySequenceSQL, s.opts.Scope, record.MessageID, record.Phase); err != nil {
 		return StagedReply{}, fmt.Errorf("pgstore: lock reply sequence %s/%s: %w", record.MessageID, record.Phase, err)
 	}
 
@@ -86,7 +86,7 @@ func (s *Store) stageRow(ctx context.Context, db Querier, record irisdurable.Rep
 		inserted bool
 	)
 
-	err := db.QueryRow(ctx, queryStageReply,
+	err := db.QueryRow(ctx, stageReplySQL,
 		s.opts.Scope, record.MessageID, record.Phase, record.Ordinal,
 		record.RoomID, record.ClientRequestID, string(record.Payload), hash,
 		s.opts.ReplyRetention.Seconds(),
@@ -114,7 +114,7 @@ func (s *Store) stageRow(ctx context.Context, db Querier, record irisdurable.Rep
 	case staged.PayloadHash == hash:
 		staged.Outcome = irisdurable.ReplyAlreadyStaged
 	default:
-		if _, err := db.Exec(ctx, queryMarkReplyPayloadDivergence, s.opts.Scope, record.MessageID, record.Phase, record.Ordinal); err != nil {
+		if _, err := db.Exec(ctx, markReplyPayloadDivergenceSQL, s.opts.Scope, record.MessageID, record.Phase, record.Ordinal); err != nil {
 			return StagedReply{}, fmt.Errorf("pgstore: mark reply divergence %s/%s/%d: %w", record.MessageID, record.Phase, record.Ordinal, err)
 		}
 
@@ -139,7 +139,7 @@ func (s *Store) BeginAttempt(ctx context.Context, identity irisdurable.ReplyIden
 
 	attempt := irisdurable.ReplyAttempt{ReplyIdentity: identity, ClaimToken: token}
 
-	err = s.db.QueryRow(ctx, queryBeginReplyAttempt,
+	err = s.db.QueryRow(ctx, beginReplyAttemptSQL,
 		s.opts.Scope, identity.MessageID, identity.Phase, identity.Ordinal, token, s.opts.Lease.Seconds(),
 		s.opts.MaxAttempts, s.opts.AutomaticReplayHorizon.Seconds(),
 	).Scan(&attempt.Attempt, &attempt.ClientRequestID)
@@ -153,7 +153,7 @@ func (s *Store) BeginAttempt(ctx context.Context, identity irisdurable.ReplyIden
 
 	var exists int
 
-	existsErr := s.db.QueryRow(ctx, queryReplyExists, s.opts.Scope, identity.MessageID, identity.Phase, identity.Ordinal).Scan(&exists)
+	existsErr := s.db.QueryRow(ctx, replyExistsSQL, s.opts.Scope, identity.MessageID, identity.Phase, identity.Ordinal).Scan(&exists)
 
 	switch {
 	case errors.Is(existsErr, pgx.ErrNoRows):
@@ -190,7 +190,7 @@ func (s *Store) Settle(ctx context.Context, attempt irisdurable.ReplyAttempt, ou
 		retryAfter = 0
 	}
 
-	return s.execFenced(ctx, "settle reply", querySettleReply,
+	return s.execFenced(ctx, "settle reply", settleReplySQL,
 		s.opts.Scope, attempt.MessageID, attempt.Phase, attempt.Ordinal, attempt.ClaimToken,
 		string(outcome.Status), outcome.ClientRequestID, outcome.IrisRequestID, retryAfter, outcome.Progressed,
 	)
@@ -203,7 +203,7 @@ func (s *Store) Inspect(ctx context.Context, identity irisdurable.ReplyIdentity)
 		status string
 	)
 
-	err := s.db.QueryRow(ctx, queryInspectReply, s.opts.Scope, identity.MessageID, identity.Phase, identity.Ordinal).
+	err := s.db.QueryRow(ctx, inspectReplySQL, s.opts.Scope, identity.MessageID, identity.Phase, identity.Ordinal).
 		Scan(&status, &state.ClientRequestID, &state.Attempts, &state.PayloadPresent)
 
 	switch {

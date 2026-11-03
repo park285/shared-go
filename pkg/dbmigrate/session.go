@@ -23,13 +23,13 @@ func (c SessionConfig) Configure(ctx context.Context, exec Execer) error {
 	}
 
 	if c.LockTimeout > 0 {
-		if err := exec(ctx, querySetLockTimeout, timeoutSetting(c.LockTimeout)); err != nil {
+		if err := exec(ctx, setLockTimeoutSQL, timeoutSetting(c.LockTimeout)); err != nil {
 			return fmt.Errorf("dbmigrate: set lock_timeout: %w", err)
 		}
 	}
 
 	if c.StatementTimeout > 0 {
-		if err := exec(ctx, querySetStatementTimeout, timeoutSetting(c.StatementTimeout)); err != nil {
+		if err := exec(ctx, setStatementTimeoutSQL, timeoutSetting(c.StatementTimeout)); err != nil {
 			return fmt.Errorf("dbmigrate: set statement_timeout: %w", err)
 		}
 	}

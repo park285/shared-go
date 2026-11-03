@@ -11,6 +11,9 @@ var reCodeBlock = regexp.MustCompile("(?s)\\A([ \t]*)```([^\n`]*)\n(.*?)\n```[ \
 func protectCodeRanges(input string, dst *store) string {
 	var output strings.Builder
 
+	// 코드가 없어도 입력 전체를 옮겨 쓰므로 결과의 하한인 입력 크기만큼 미리 잡는다.
+	output.Grow(len(input))
+
 	last := 0
 	destinations := literalDestinations(input)
 	destination := 0

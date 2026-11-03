@@ -44,11 +44,11 @@ func TestSessionConfigConfigureAppliesTimeouts(t *testing.T) {
 		t.Fatalf("exec calls = %d, want 2", len(calls))
 	}
 
-	if calls[0].query != querySetLockTimeout {
+	if calls[0].query != setLockTimeoutSQL {
 		t.Errorf("first query = %q, want set lock_timeout", calls[0].query)
 	}
 
-	if calls[1].query != querySetStatementTimeout {
+	if calls[1].query != setStatementTimeoutSQL {
 		t.Errorf("second query = %q, want set statement_timeout", calls[1].query)
 	}
 
@@ -157,7 +157,7 @@ func TestApplyWithSessionConfiguresBeforeMigrations(t *testing.T) {
 		got = append(got, call.query)
 	}
 
-	want := []string{querySetLockTimeout, querySetStatementTimeout, "select 1"}
+	want := []string{setLockTimeoutSQL, setStatementTimeoutSQL, "select 1"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("executed queries = %v, want %v", got, want)
 	}
@@ -166,7 +166,7 @@ func TestApplyWithSessionConfiguresBeforeMigrations(t *testing.T) {
 func TestSessionQueriesUseSessionScope(t *testing.T) {
 	t.Parallel()
 
-	for _, query := range []string{querySetLockTimeout, querySetStatementTimeout} {
+	for _, query := range []string{setLockTimeoutSQL, setStatementTimeoutSQL} {
 		if !strings.Contains(query, "set_config(") || !strings.Contains(query, "$1, false)") {
 			t.Errorf("session query %q must use set_config(..., $1, false)", query)
 		}

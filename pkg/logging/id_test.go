@@ -6,15 +6,15 @@ import (
 	"testing"
 )
 
+var (
+	jobIDPattern     = regexp.MustCompile(`^job_\d+_[0-9a-f]{12}$`)
+	newIDPartPattern = regexp.MustCompile(`^(.+)_(\d+)_([0-9a-f]{12})$`)
+)
+
 func TestNewIDFormat(t *testing.T) {
 	got := newID("job")
 
-	matched, err := regexp.MatchString(`^job_[0-9]+_[0-9a-f]{12}$`, got)
-	if err != nil {
-		t.Fatalf("compile newID regex: %v", err)
-	}
-
-	if !matched {
+	if !jobIDPattern.MatchString(got) {
 		t.Fatalf("newID() = %q, want <prefix>_<unixMillis>_<hex>", got)
 	}
 }
@@ -22,7 +22,7 @@ func TestNewIDFormat(t *testing.T) {
 func TestNewIDUsesSanitizedPrefix(t *testing.T) {
 	input := "__Video.Job-01__"
 	got := newID(input)
-	matches := regexp.MustCompile(`^(.+)_(\d+)_([0-9a-f]{12})$`).FindStringSubmatch(got)
+	matches := newIDPartPattern.FindStringSubmatch(got)
 
 	if matches == nil {
 		t.Fatalf("newID(%q) = %q, want sanitized prefix, timestamp, and hex suffix", input, got)

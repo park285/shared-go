@@ -29,6 +29,11 @@ func protectNeutralizedMarkers(input string, dst *store) string {
 			tokens[marker] = dst.Put(input[i:end])
 		}
 
+		if start == 0 {
+			// 보호 표식이 원래 마커보다 길어 결과는 입력 이상이므로 첫 치환에서 입력 크기만큼 잡는다.
+			output.Grow(len(input))
+		}
+
 		output.WriteString(input[start:i])
 		output.WriteString(tokens[marker])
 
