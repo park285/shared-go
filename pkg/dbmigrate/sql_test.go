@@ -9,11 +9,11 @@ func TestSQLAssetsAreLoaded(t *testing.T) {
 	t.Parallel()
 
 	queries := []string{
-		queryEnsureLedgerTemplate,
-		queryLedgerAppliedTemplate,
-		queryRecordLedgerTemplate,
-		querySetLockTimeout,
-		querySetStatementTimeout,
+		ensureLedgerTemplateSQL,
+		ledgerAppliedTemplateSQL,
+		recordLedgerTemplateSQL,
+		setLockTimeoutSQL,
+		setStatementTimeoutSQL,
 	}
 	for _, query := range queries {
 		if strings.TrimSpace(query) == "" {

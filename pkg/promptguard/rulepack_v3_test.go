@@ -209,10 +209,12 @@ func TestV3MatchRespectsRemainingOccurrenceBudget(t *testing.T) {
 	}
 }
 
+var conjunctiveLiteralPattern = regexp.MustCompile(`(?i)(?:show|reveal)[\s\S]{0,12}(?:prompt|policy)`)
+
 func TestRegexLiteralPrefilterKeepsConjunctiveRequirements(t *testing.T) {
 	t.Parallel()
 
-	groups := requiredRegexLiteralGroups(regexp.MustCompile(`(?i)(?:show|reveal)[\s\S]{0,12}(?:prompt|policy)`))
+	groups := requiredRegexLiteralGroups(conjunctiveLiteralPattern)
 	if len(groups) < 2 {
 		t.Fatalf("required literal groups = %#v, want conjunctive groups", groups)
 	}

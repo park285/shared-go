@@ -18,7 +18,7 @@ func (s *Store) IsDuplicate(ctx context.Context, key string, ttl time.Duration) 
 		return false, errors.New("pgstore: nonce ttl must be positive")
 	}
 
-	tag, err := s.db.Exec(ctx, queryInsertNonce, s.opts.Scope, key, ttl.Seconds())
+	tag, err := s.db.Exec(ctx, insertNonceSQL, s.opts.Scope, key, ttl.Seconds())
 	if err != nil {
 		return false, fmt.Errorf("pgstore: record nonce: %w", err)
 	}
@@ -35,7 +35,7 @@ func (s *Store) PruneNonce(ctx context.Context, limit int) (int64, error) {
 		return 0, errors.New("pgstore: prune limit must be positive")
 	}
 
-	tag, err := s.db.Exec(ctx, queryPruneNonce, s.opts.Scope, limit)
+	tag, err := s.db.Exec(ctx, pruneNonceSQL, s.opts.Scope, limit)
 	if err != nil {
 		return 0, fmt.Errorf("pgstore: prune nonce: %w", err)
 	}

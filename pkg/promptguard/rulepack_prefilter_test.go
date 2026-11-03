@@ -7,9 +7,10 @@ import (
 	"unicode/utf8"
 )
 
+var alternationBranchPattern = regexp.MustCompile(`(?i)(?:show.{0,3}prompt|reveal.{0,3}instructions)`)
+
 func TestRequiredLiteralBranchesPreserveAlternationConjunctions(t *testing.T) {
-	pattern := regexp.MustCompile(`(?i)(?:show.{0,3}prompt|reveal.{0,3}instructions)`)
-	branches := requiredRegexLiteralBranches(pattern)
+	branches := requiredRegexLiteralBranches(alternationBranchPattern)
 
 	if len(branches) != 2 {
 		t.Fatalf("branches = %#v, want two alternatives", branches)

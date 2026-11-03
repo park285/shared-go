@@ -41,7 +41,7 @@ func render(input string) string {
 	code := newStore("CODE")
 	source := []byte(escapeDateListMarkers(protectCodeRanges(protectNeutralizedMarkers(input, literal), code)))
 	root := plainParser.Parse(source)
-	document := plainDocument{source: source, shapes: make(map[ast.Node]spanShape)}
+	document := plainDocument{source: source}
 	document.measure(root)
 
 	return literal.Restore(code.Restore(cleanupSpacing(document.blocks(root, 0))))
@@ -65,9 +65,14 @@ func (d *plainDocument) measure(node ast.Node) spanShape {
 		shape = spanShape{convertible(value, false), convertible(value, true)}
 	case *ast.Link, *ast.Image, *ast.AutoLink, *ast.CodeSpan, *ast.RawHTML, *literalURL:
 		shape = spanShape{}
-	}
+	case *ast.Emphasis, *ast.Strong:
+		// 결과는 emphasis()가 강조 노드에서만 읽으므로 강조가 있을 때만 맵을 만든다.
+		if d.shapes == nil {
+			d.shapes = make(map[ast.Node]spanShape)
+		}
 
-	d.shapes[node] = shape
+		d.shapes[node] = shape
+	}
 
 	return shape
 }
@@ -77,6 +82,11 @@ func (d *plainDocument) blocks(parent ast.Node, level int) string {
 		output   strings.Builder
 		previous ast.Node
 	)
+
+	// 문서 최상위 결과는 원문과 비슷한 크기이므로 한 번에 잡는다. 중첩 블록은 작아서 그대로 둔다.
+	if parent.Kind() == ast.KindDocument {
+		output.Grow(len(d.source))
+	}
 
 	for node := parent.FirstChild(); node != nil; node = node.NextSibling() {
 		value := d.block(node, level)

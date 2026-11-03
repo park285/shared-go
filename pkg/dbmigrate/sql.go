@@ -10,26 +10,22 @@ import (
 //go:embed queries/*.sql queries/*.sql.tpl
 var queryFS embed.FS
 
-func mustQuery(name string) string {
-	return sqlutil.MustQuery(queryFS, name)
-}
-
 var (
-	queryEnsureLedgerTemplate  = mustQuery("queries/ensure_ledger.sql.tpl")
-	queryLedgerAppliedTemplate = mustQuery("queries/ledger_applied.sql.tpl")
-	queryRecordLedgerTemplate  = mustQuery("queries/record_ledger.sql.tpl")
-	querySetLockTimeout        = mustQuery("queries/set_lock_timeout.sql")
-	querySetStatementTimeout   = mustQuery("queries/set_statement_timeout.sql")
+	ensureLedgerTemplateSQL  = sqlutil.MustQuery(queryFS, "queries/ensure_ledger.sql.tpl")
+	ledgerAppliedTemplateSQL = sqlutil.MustQuery(queryFS, "queries/ledger_applied.sql.tpl")
+	recordLedgerTemplateSQL  = sqlutil.MustQuery(queryFS, "queries/record_ledger.sql.tpl")
+	setLockTimeoutSQL        = sqlutil.MustQuery(queryFS, "queries/set_lock_timeout.sql")
+	setStatementTimeoutSQL   = sqlutil.MustQuery(queryFS, "queries/set_statement_timeout.sql")
 )
 
 func queryEnsureLedger(table string) string {
-	return strings.ReplaceAll(queryEnsureLedgerTemplate, "{{ledger_table}}", table)
+	return strings.ReplaceAll(ensureLedgerTemplateSQL, "{{ledger_table}}", table)
 }
 
 func queryLedgerApplied(table string) string {
-	return strings.ReplaceAll(queryLedgerAppliedTemplate, "{{ledger_table}}", table)
+	return strings.ReplaceAll(ledgerAppliedTemplateSQL, "{{ledger_table}}", table)
 }
 
 func queryRecordLedger(table string) string {
-	return strings.ReplaceAll(queryRecordLedgerTemplate, "{{ledger_table}}", table)
+	return strings.ReplaceAll(recordLedgerTemplateSQL, "{{ledger_table}}", table)
 }
