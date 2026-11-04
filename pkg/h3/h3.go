@@ -66,7 +66,7 @@ type ClientOptions struct {
 	CACertFile     string
 	ClientCertFile string
 	ClientKeyFile  string
-	// SAN에 없는 주소(127.0.0.1, docker DNS)로 접속할 때 SAN에 있는 이름으로 검증한다.
+	// SAN에 없는 주소(127.0.0.1, 컨테이너 network DNS)로 접속할 때 SAN에 있는 이름으로 검증한다.
 	ServerName string
 	DialGuard  func(net.IP) error
 }

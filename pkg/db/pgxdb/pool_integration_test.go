@@ -24,7 +24,7 @@ func TestMain(m *testing.M) {
 }
 
 func runTests(m *testing.M) int {
-	if !dockerAvailable() {
+	if !podmanAvailable() {
 		return m.Run()
 	}
 
@@ -49,8 +49,9 @@ func quietOptions() Options {
 	return Options{Logger: quietLogger(), Pool: testPoolConfig(), Ping: testPing()}
 }
 
-func dockerAvailable() bool {
-	if _, err := exec.LookPath("docker"); err != nil {
+// kapu는 Docker 없이 rootless podman으로 일회용 PostgreSQL을 띄운다.
+func podmanAvailable() bool {
+	if _, err := exec.LookPath("podman"); err != nil {
 		return false
 	}
 
@@ -58,7 +59,7 @@ func dockerAvailable() bool {
 
 	defer cancel()
 
-	return exec.CommandContext(ctx, "docker", "info").Run() == nil
+	return exec.CommandContext(ctx, "podman", "info").Run() == nil
 }
 
 func startPostgres() (string, string, error) {
@@ -67,13 +68,13 @@ func startPostgres() (string, string, error) {
 
 	// 이미지 pull·platform 경고는 stderr로 나온다. stdout의 container ID만 읽어야 시작한 컨테이너를
 	// 정리할 수 있고, 경고가 섞인 ID로 inspect가 실패해 테스트가 조용히 skip되지 않는다.
-	out, err := exec.CommandContext(runCtx, "docker", "run", "-d", "--rm",
+	out, err := exec.CommandContext(runCtx, "podman", "run", "-d", "--rm",
 		"-e", "POSTGRES_PASSWORD=sharedgo-local-test-placeholder",
 		"-e", "POSTGRES_DB=sharedgo_test",
-		"-P", "postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873",
+		"-P", "docker.io/library/postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873",
 	).Output()
 	if err != nil {
-		return "", "", fmt.Errorf("docker run: %w: %s", err, commandStderr(err))
+		return "", "", fmt.Errorf("podman run: %w: %s", err, commandStderr(err))
 	}
 
 	id := strings.TrimSpace(string(out))
@@ -99,11 +100,11 @@ func mappedPort(id string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	out, err := exec.CommandContext(ctx, "docker", "inspect", //nolint:gosec // 테스트가 만든 컨테이너 ID와 고정 명령만 전달한다.
+	out, err := exec.CommandContext(ctx, "podman", "inspect", //nolint:gosec // 테스트가 만든 컨테이너 ID와 고정 명령만 전달한다.
 		"--format", `{{ (index (index .NetworkSettings.Ports "5432/tcp") 0).HostPort }}`, id,
 	).CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("docker inspect: %w: %s", err, strings.TrimSpace(string(out)))
+		return "", fmt.Errorf("podman inspect: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 
 	port := strings.TrimSpace(string(out))
@@ -143,8 +144,8 @@ func removeContainer(id string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	if err := exec.CommandContext(ctx, "docker", "rm", "-f", "-v", id).Run(); err != nil { //nolint:gosec // 테스트가 만든 컨테이너 ID와 고정 명령만 전달한다.
-		fmt.Fprintf(os.Stderr, "pgxdb: docker rm -f -v %s failed: %v\n", id, err)
+	if err := exec.CommandContext(ctx, "podman", "rm", "-f", "-v", id).Run(); err != nil { //nolint:gosec // 테스트가 만든 컨테이너 ID와 고정 명령만 전달한다.
+		fmt.Fprintf(os.Stderr, "pgxdb: podman rm -f -v %s failed: %v\n", id, err)
 	}
 }
 
@@ -160,7 +161,7 @@ func requireContainer(t *testing.T) string {
 	t.Helper()
 
 	if testDSN == "" {
-		t.Skip("docker/postgres unavailable; skipping integration test")
+		t.Skip("podman/postgres unavailable; skipping integration test")
 	}
 
 	return testDSN
