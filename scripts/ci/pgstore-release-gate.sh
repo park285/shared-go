@@ -5,14 +5,14 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${ROOT_DIR}"
 
-for tool in docker jq go; do
+for tool in podman jq go; do
   if ! command -v "${tool}" >/dev/null 2>&1; then
     echo "pgstore-release-gate: ${tool} is required" >&2
     exit 1
   fi
 done
 
-POSTGRES_IMAGE='postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873'
+POSTGRES_IMAGE='docker.io/library/postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873'
 container_id=''
 result_file="$(mktemp)"
 cleanup() {
@@ -20,7 +20,7 @@ cleanup() {
   trap - EXIT INT TERM
 
   if [[ -n "${container_id}" ]]; then
-    if ! docker rm -f -v "${container_id}" >/dev/null; then
+    if ! podman rm -f -v "${container_id}" >/dev/null; then
       echo 'pgstore-release-gate: disposable PostgreSQL cleanup failed' >&2
       exit_status=1
     fi
@@ -35,10 +35,10 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 # 호스트 loopback의 임의 포트에만 노출한다. 인증은 이 일회용 서버 내부에서만 생략한다.
-container_id="$(docker run --rm -d -p 127.0.0.1::5432 \
-  --label io.iris.observability.logs=exclude \
+# kapu에는 Docker가 없어 실행 사용자의 rootless podman을 쓴다. 관측 수집은 rootless(_UID≠0) journal을 제외한다.
+container_id="$(podman run --rm -d -p 127.0.0.1::5432 \
   -e POSTGRES_HOST_AUTH_METHOD=trust "${POSTGRES_IMAGE}")"
-port_binding="$(docker port "${container_id}" 5432/tcp)"
+port_binding="$(podman port "${container_id}" 5432/tcp)"
 if [[ ! "${port_binding}" =~ ^127\.0\.0\.1:([0-9]+)$ ]]; then
   echo 'pgstore-release-gate: unexpected PostgreSQL port binding' >&2
   exit 1
@@ -47,7 +47,7 @@ port="${BASH_REMATCH[1]}"
 
 ready=false
 for _ in {1..30}; do
-  if docker exec "${container_id}" pg_isready -q -U postgres; then
+  if podman exec "${container_id}" pg_isready -q -U postgres; then
     ready=true
     break
   fi

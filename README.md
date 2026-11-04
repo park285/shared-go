@@ -204,4 +204,4 @@ go build ./...
 
 파일 줄 수(800)와 함수 길이 상한은 `.golangci.yml`의 revive `file-length-limit`과 `funlen`이 검사합니다. 별도 구조 예산은 두지 않습니다. Workflow 보안 정책(action 전체 SHA 고정, `id-token`·`attestations` 권한은 `release.yml`만, PR의 secret 사용 금지)은 iris-stack의 `tools/checks/check-workflow-policy.py`가 검증합니다. 로컬 릴리스 게이트도 `make test-allocations`로 race 빌드에서 빠지는 할당 상한을 검증합니다.
 
-릴리스 검증(`bash scripts/ci/release-gate.sh`)은 Docker가 준비된 환경에서 별도 일회용 PostgreSQL 컨테이너를 소유합니다. `pkg/irisdurable/...`의 race 테스트를 실제 DB로 실행하고 필수 pgstore 사례의 pass와 전체 skip=0을 확인합니다. 컨테이너를 준비할 수 없으면 릴리스 검증은 실패합니다.
+릴리스 검증(`bash scripts/ci/release-gate.sh`)은 rootless Podman이 준비된 환경에서 별도 일회용 PostgreSQL 컨테이너를 소유합니다. `pkg/irisdurable/...`의 race 테스트를 실제 DB로 실행하고 필수 pgstore 사례의 pass와 전체 skip=0을 확인합니다. 컨테이너를 준비할 수 없으면 릴리스 검증은 실패합니다.

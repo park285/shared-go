@@ -13,7 +13,7 @@ import (
 	sharedlogging "github.com/park285/shared-go/v2/pkg/logging"
 )
 
-// Run이 error를 반환하면 Options.Run은 비-0 exit code로 종료해 supervisor(systemd/Docker)의
+// Run이 error를 반환하면 Options.Run은 비-0 exit code로 종료해 supervisor(systemd/컨테이너 런타임)의
 // 재시작 정책이 동작하도록 합니다.
 type runtime interface {
 	Run() error
