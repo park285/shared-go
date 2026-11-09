@@ -5,7 +5,8 @@
 
 ## 미출시
 
-- **의존성 갱신:** pgx v5.12.0, grpc v1.85.0, goldmark v2.1.15, yaml v3.0.6, x/net v0.62.0으로 올렸습니다. API 변경은 없습니다.
+- **의존성 갱신:** pgx v5.12.0, goldmark v2.1.15, yaml v3.0.6, x/net v0.62.0으로 올렸습니다. API 변경은 없습니다.
+- **OpenTelemetry tracing 제거(소비자 동시 이전):** Jaeger 퇴역에 맞춰 `pkg/telemetry` 패키지, `logging.Options.OTel`(로그의 `trace_id`·`span_id` 상관과 `otel_correlation` 시작 로그 속성), `httpserver.ServerOptions.EnableOTel`·`OTelServiceName`(HTTP span 계측)을 제거했습니다. 공개 API 제거이므로 minor로 올리며 hololive-bot·chat-bot-go-kakao·twentyq-bot은 같은 변경에서 사용처를 지웁니다. OpenTelemetry·gRPC 직접·전이 의존성이 빠집니다.
 
 ## v2.19.0 - 2026-11-03
 

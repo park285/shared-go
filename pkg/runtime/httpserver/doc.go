@@ -3,6 +3,6 @@
 //
 // 서버 실행 정본은 두 가지다. 종료 ctx로 수명을 닫는 프로세스는 Run(ctx, server, timeout)을 쓰고,
 // lifecycle.Run 훅 안에서는 Start 훅에서 StartServerWithPrefix를, Shutdown 훅에서 Shutdown을 호출한다.
-// NewServer는 수신 한계·OpenTelemetry 계측을, WithBodyReadTimeout은
+// NewServer는 수신 한계를, WithBodyReadTimeout은
 // 핸들러 진입 이후 본문 읽기 기한을 적용한다. 라우터 구성은 호출자 책임이다.
 package httpserver

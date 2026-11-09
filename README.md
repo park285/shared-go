@@ -45,11 +45,10 @@ go get github.com/park285/shared-go/v2@latest
 | `pkg/reflectutil` | interface에 담긴 nilable 값을 안전하게 판별하는 reflection helper |
 | `pkg/retry` | `pkg/backoff`의 지연 값 계산을 사용해 context 취소를 존중하며 sleep·재시도·중단을 수행하는 재시도 루프(`WithRetry`) 구현체 |
 | `pkg/runtime/bootstrap` | 프로세스 시작 입력을 검증하고 runtime 구성을 적용하는 bootstrap helper. 필수 `NewLogger`로 서비스 logger를 만든다. `GOMAXPROCS`는 Go runtime의 container 인식 기본값을 따른다 |
-| `pkg/runtime/httpserver` | HTTP server 생성(수신 한계·OTel 계측)·본문 읽기 예산·시작·실행·graceful shutdown 소유권을 단일화하는 lifecycle helper. 서버 실행 정본: 종료 ctx로 수명을 닫는 프로세스는 `Run(ctx, server, timeout)`, `lifecycle.Run` 훅 안에서는 `StartServerWithPrefix`와 `Shutdown` |
+| `pkg/runtime/httpserver` | HTTP server 생성(수신 한계)·본문 읽기 예산·시작·실행·graceful shutdown 소유권을 단일화하는 lifecycle helper. 서버 실행 정본: 종료 ctx로 수명을 닫는 프로세스는 `Run(ctx, server, timeout)`, `lifecycle.Run` 훅 안에서는 `StartServerWithPrefix`와 `Shutdown` |
 | `pkg/runtime/lifecycle` | 기동·주기 실행·종료 정리와 다중 close를 조정하는 runtime lifecycle helper |
 | `pkg/sqlutil` | embed FS의 SQL asset을 읽고 공백을 제거하며 누락·빈 query에서 panic하는 loader |
 | `pkg/stringutil` | 범용 문자열 처리 유틸리티 |
-| `pkg/telemetry` | OpenTelemetry 기반의 분산 트레이싱(Tracing) 정보 설정 및 컨텍스트 전파 유틸리티 |
 | `pkg/workercontract` | strict worker profile 로드(env 경로, 소비 서비스가 소유한 `Identity`), service-owned settings decode·shape 검증, diagnostics registry, 공통 Prometheus exposition 모듈 |
 | `pkg/workerpool` | 큐(Queue) 기반의 동시성 제어 워커 풀 구현체 |
 
