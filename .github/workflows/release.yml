@@ -66,7 +66,7 @@ jobs:
           path: .
           format: spdx-json
           output-file: ${{ runner.temp }}/release.spdx.json
-          syft-version: v1.54.1
+          syft-version: v1.57.0
           dependency-snapshot: false
           upload-artifact: false
           upload-release-assets: false
