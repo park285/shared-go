@@ -12,7 +12,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"go.opentelemetry.io/otel/trace"
 	"gopkg.in/natefinch/lumberjack.v2"
 
 	"github.com/park285/shared-go/v2/pkg/logging/internal/archive"
@@ -52,8 +51,6 @@ type Options struct {
 	// stdout fd 정체가 로깅 전체를 블로킹하지 않게 한다. 파일 lane은 동기 기록을 유지한다.
 	// 파일 lane이 없는 콘솔 전용 구성(Dir 빈 값)에서는 유일한 기록처를 잃을 수 있어 적용하지 않는다.
 	AsyncStdout bool
-	// OTel이 true면 span context의 trace_id/span_id를 로그 attr로 상관시킨다.
-	OTel bool
 	// PrivacyKeys는 이 서비스가 개인 식별자로 다루는 attr·group·map key다(예: room, sender). 일치하는
 	// 값은 credential과 같이 가린다. 키는 대소문자·`-`·`.`·공백을 정규화한 정확 일치이며 빈 키는 오류다.
 	// 라이브러리는 privacy 키를 내장하지 않으므로 비우면 credential 규칙만 적용한다.
@@ -87,7 +84,7 @@ func enableFileLoggingWithStdout(stdout io.Writer, config Config, fileName strin
 
 	logDir := strings.TrimSpace(config.Dir)
 	if logDir == "" {
-		logger := slog.New(newConsoleHandler(level, stdout, privacy, opts.OTel))
+		logger := slog.New(newFormatHandler(level, stdout, privacy))
 
 		//nolint:nilnil // 콘솔 전용 구성에서 Closer가 nil인 것은 문서화된 반환 계약이다.
 		return logger, nil, nil
@@ -111,17 +108,10 @@ func enableFileLoggingWithStdout(stdout io.Writer, config Config, fileName strin
 
 	w, closers := buildLogLanes(stdout, logFile, logArchiver, opts)
 
-	handler := newFormatHandler(level, w, privacy)
-
-	if opts.OTel {
-		handler = newOTelHandler(handler)
-	}
-
-	logger := slog.New(handler)
+	logger := slog.New(newFormatHandler(level, w, privacy))
 	logger.Info("file_logging_enabled",
 		slog.String("path", logFile.Filename),
 		slog.String("archive_dir", filepath.Join(logDir, archive.DirName)),
-		slog.Bool("otel_correlation", opts.OTel),
 		slog.Bool("async_stdout", opts.AsyncStdout),
 	)
 	logArchiver.Trigger()
@@ -213,51 +203,4 @@ func (w *bestEffortWriter) writeLossSummary() {
 	if err := newFormatHandler(record.Level, w.summary, nil).Handle(context.Background(), record); err != nil {
 		return
 	}
-}
-
-func newConsoleHandler(level slog.Level, w io.Writer, privacy privacyKeys, enableOTel bool) slog.Handler {
-	handler := newFormatHandler(level, w, privacy)
-
-	if enableOTel {
-		handler = newOTelHandler(handler)
-	}
-
-	return handler
-}
-
-type otelHandler struct {
-	inner slog.Handler
-}
-
-func newOTelHandler(inner slog.Handler) *otelHandler {
-	return &otelHandler{inner: inner}
-}
-
-func (h *otelHandler) Enabled(ctx context.Context, level slog.Level) bool {
-	return h.inner.Enabled(ctx, level)
-}
-
-func (h *otelHandler) Handle(ctx context.Context, record slog.Record) error {
-	span := trace.SpanFromContext(ctx)
-	if span.SpanContext().IsValid() {
-		spanCtx := span.SpanContext()
-		record.AddAttrs(
-			slog.String("trace_id", spanCtx.TraceID().String()),
-			slog.String("span_id", spanCtx.SpanID().String()),
-		)
-	}
-
-	if err := h.inner.Handle(ctx, record); err != nil {
-		return fmt.Errorf("logging: handle: %w", err)
-	}
-
-	return nil
-}
-
-func (h *otelHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return &otelHandler{inner: h.inner.WithAttrs(attrs)}
-}
-
-func (h *otelHandler) WithGroup(name string) slog.Handler {
-	return &otelHandler{inner: h.inner.WithGroup(name)}
 }
