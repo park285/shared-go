@@ -5,6 +5,7 @@
 
 ## 미출시
 
+- **CI 도구 갱신:** CI Python을 CPython 3.15.2로, uv bootstrap과 로컬 runner 하한을 0.13.7로, 릴리스 SBOM 생성용 Syft를 v1.57.0으로 올렸습니다. 공개 API 변경은 없습니다.
 - **의존성 갱신:** pgx v5.12.0, grpc v1.85.0, goldmark v2.1.15, yaml v3.0.6, x/net v0.62.0으로 올렸습니다. API 변경은 없습니다.
 
 ## v2.19.0 - 2026-11-03
