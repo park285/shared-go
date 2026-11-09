@@ -19,7 +19,7 @@ const (
 )
 
 var plainParser = parser.New(
-	parser.WithExtensions(extension.TableParser, extension.TaskListItemParser, extension.FootnoteParser),
+	parser.WithExtensions(extension.NewTableParser(), extension.NewTaskListItemParser(), extension.NewFootnoteParser()),
 	parser.WithInlineParsers(
 		util.Prioritized[parser.InlineParser](&literalURLParser{}, 150),
 		util.Prioritized[parser.InlineParser](strikethroughParser{}, 500),
