@@ -3,6 +3,10 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## 미출시
+
+- **의존성 갱신:** pgx v5.12.0, grpc v1.85.0, goldmark v2.1.15, yaml v3.0.6, x/net v0.62.0으로 올렸습니다. API 변경은 없습니다.
+
 ## v2.19.0 - 2026-11-03
 
 - **`obsmetrics`:** `WriteRuntimeMetrics`가 `/proc/self/stat`의 utime+stime을 초로 바꾼 `process_cpu_seconds_total` counter를 함께 씁니다. comm에 공백이나 괄호가 있어도 마지막 `)` 뒤에서 필드를 셉니다. Linux가 아니거나 읽지 못하면 RSS처럼 sample을 생략합니다. 하위 호환 추가이며 기존 지표는 바뀌지 않습니다.
