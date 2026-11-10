@@ -31,8 +31,48 @@ func DecodeCandidatesWithContextForProtected(
 	return mergeSemanticCandidates(semantic.candidates, decoded)
 }
 
+// EmbeddedContextRadiusBytes는 보호 경로의 EmbeddedContextMatcher가 encoded 구간 앞뒤로 읽는 최대 바이트다.
+const EmbeddedContextRadiusBytes = 384
+
 // EmbeddedContextMatcher는 모호한 Base64 내부 경계를 디코딩한 값이 원래 문맥에서도 기여하는지 판정한다.
 type EmbeddedContextMatcher func(input string, encodedStart, encodedEnd int, decoded string) bool
+
+func embeddedContextContributes(
+	input string,
+	span encodedSpan,
+	decoded string,
+	nested DecodeResult,
+	matcher EmbeddedContextMatcher,
+	work *protectedDecodeWork,
+	status *DecodeStatus,
+) bool {
+	if embeddedContextMatches(input, span, decoded, matcher, work, status) {
+		return true
+	}
+
+	return slices.ContainsFunc(nested.Candidates, func(candidate string) bool {
+		return embeddedContextMatches(input, span, candidate, matcher, work, status)
+	})
+}
+
+// embeddedContextMatches는 예산을 넘으면 matcher를 부르지 않고 미완료(DecodeByteLimit)로 남긴다.
+func embeddedContextMatches(
+	input string,
+	span encodedSpan,
+	decoded string,
+	matcher EmbeddedContextMatcher,
+	work *protectedDecodeWork,
+	status *DecodeStatus,
+) bool {
+	if work != nil && work.embeddedContextRadius > 0 {
+		window := min(span.start, work.embeddedContextRadius) + len(decoded) + min(len(input)-span.end, work.embeddedContextRadius)
+		if !consumeProtectedContextWork(work, status, window) {
+			return false
+		}
+	}
+
+	return matcher(input, span.start, span.end, decoded)
+}
 
 func decodeCandidatesWithContext(
 	input string,
@@ -61,6 +101,7 @@ func decodeCandidatesWithContext(
 		visited:                      make(map[string]struct{}, len(roots)+maxDecodeCandidates),
 		includeShort:                 includeShort,
 		embeddedContextMayContribute: embeddedContextMayContribute,
+		protectedWork:                protectedDecodeWork{embeddedContextRadius: EmbeddedContextRadiusBytes},
 		seenWholes:                   newSpanContextSeen(input),
 		roots:                        roots,
 		mayContribute:                mayContribute,
@@ -356,7 +397,7 @@ func classifyFilteredContextCandidate(
 	status *DecodeStatus,
 ) {
 	if embeddedContextMayContribute != nil {
-		classifyEmbeddedContextCandidate(input, candidate, nested, embeddedContextMayContribute)
+		classifyEmbeddedContextCandidate(input, candidate, nested, embeddedContextMayContribute, work, status)
 
 		return
 	}
@@ -416,8 +457,10 @@ func classifyEmbeddedContextCandidate(
 	candidate *decodedContextCandidate,
 	nested DecodeResult,
 	matcher EmbeddedContextMatcher,
+	work *protectedDecodeWork,
+	status *DecodeStatus,
 ) {
-	candidate.contextMayContribute = embeddedContextContributes(input, candidate.span, candidate.decoded, nested, matcher)
+	candidate.contextMayContribute = embeddedContextContributes(input, candidate.span, candidate.decoded, nested, matcher, work, status)
 	if !candidate.contextMayContribute {
 		return
 	}

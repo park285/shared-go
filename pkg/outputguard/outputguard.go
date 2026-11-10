@@ -134,7 +134,7 @@ func matchProtectedSurfaces(text string, restrictedSurfaces []string, index *pro
 }
 
 func protectedDecodeContextWindow(input string, encodedStart, encodedEnd int, decoded string) string {
-	const contextBytes = protectedRuneWindow * utf8.UTFMax
+	const contextBytes = guardtext.EmbeddedContextRadiusBytes
 
 	windowStart := max(0, encodedStart-contextBytes)
 	for windowStart < encodedStart && !utf8.RuneStart(input[windowStart]) {

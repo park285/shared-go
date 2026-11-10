@@ -173,3 +173,32 @@ func TestContextualAdmissionDeduplicatesBeforeBudgetEnforcement(t *testing.T) {
 		t.Fatal("new candidate beyond capacity must remain incomplete")
 	}
 }
+
+// 패딩 없는 읽기 가능 Base64 토큰은 하위 구간마다 embedded 문맥 창을 평가한다. 그 창도 문맥 예산에 과금해야
+// 최악 비용이 maxProtectedContextBytes에서 끝난다.
+func TestDecodeCandidatesWithContextForProtectedChargesEmbeddedContextWindows(t *testing.T) {
+	t.Parallel()
+
+	var builder strings.Builder
+
+	for index := 1000; builder.Len() < 64<<10; index++ {
+		builder.WriteString(base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("distinct readable payload %d", index))))
+		builder.WriteByte(' ')
+	}
+
+	input := builder.String()
+	windowBytes := 0
+	result := DecodeCandidatesWithContextForProtected(
+		input,
+		func(string) bool { return false },
+		func(text string, start, end int, decoded string) bool {
+			windowBytes += min(start, EmbeddedContextRadiusBytes) + len(decoded) + min(len(text)-end, EmbeddedContextRadiusBytes)
+
+			return false
+		},
+	)
+
+	if windowBytes > maxProtectedContextBytes || result.Status&DecodeByteLimit == 0 {
+		t.Fatalf("embedded context windows = %d bytes, status = %v; want at most %d bytes and the byte limit", windowBytes, result.Status, maxProtectedContextBytes)
+	}
+}

@@ -23,6 +23,7 @@ const (
 	// (BenchmarkOutputGuardContextualDecodeMaximumOutput).
 	// 낮추면 적대 입력보다 정상 입력이 먼저 끊긴다: 25KB 정상 장문이 이미 최대
 	// 1.29MB를 쓰고, 1<<20에서 TestBoundGuardAllowsLongTechnicalAnswers가 오차단된다.
+	// 보호 경로의 embedded 문맥 창(EmbeddedContextRadiusBytes)도 이 예산에 과금한다.
 	maxProtectedContextBytes = 16 << 20
 	maxHTMLEntityNameBytes   = 31
 	maxLegacyHTMLEntityBytes = 6
@@ -64,6 +65,8 @@ type protectedDecodeWork struct {
 	base64PrefixMemo map[string]struct{}
 	// prompt 영역 경로는 읽을 수 없는 Base64 값 내부의 짧은 창을 해석하지 않는다.
 	regionInteriors bool
+	// 0보다 크면 EmbeddedContextMatcher 호출마다 encoded 앞뒤 이 바이트까지의 창을 contextBytes에 과금한다.
+	embeddedContextRadius int
 }
 
 type decodeFamily uint8
