@@ -3,6 +3,10 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## v2.20.1 - 2026-11-10
+
+- **`outputguard` 보호 경로의 최악 비용 상한:** `Bind`한 guard가 패딩 없는 Base64 토큰의 하위 구간마다 평가하는 embedded 문맥 창(encoded 앞뒤 각 384B)을 문맥 예산(`maxProtectedContextBytes`, 16MiB)에 과금합니다. 이전에는 이 창 평가가 예산 밖이어서 토큰이 많은 출력의 검사 시간이 크기에 따라 계속 늘었습니다(64KiB에서 창 합계 약 62MB). 같은 측정 입력에서 128KiB 검사 시간이 약 5.6초에서 1.6초로 줄고, 1MiB는 약 2.5초입니다. 예산을 넘으면 기존 미완료 처리(`decode_incomplete`, fail-closed)를 따릅니다. 측정한 입력(4KiB~1MiB)에서는 수정 전후 판정이 같았습니다. 그 밖에 rules 경로는 끝나지만 embedded 창만 16MiB를 넘던 출력이 있다면 허용에서 차단으로 바뀝니다. 입력 guard(`promptguard`)의 과금은 바뀌지 않습니다. 공개 API 변경은 없습니다.
+
 ## v2.20.0 - 2026-11-09
 
 - **CI 도구 갱신:** CI Python을 CPython 3.15.2로, uv bootstrap과 로컬 runner 하한을 0.13.7로, 릴리스 SBOM 생성용 Syft를 v1.57.0으로 올렸습니다. 공개 API 변경은 없습니다.

@@ -87,7 +87,7 @@ func shortHexContextContributes(
 	var contributes bool
 
 	if embeddedContextMayContribute != nil {
-		contributes = embeddedContextContributes(input, contextSpan, decoded, nested, embeddedContextMayContribute)
+		contributes = embeddedContextContributes(input, contextSpan, decoded, nested, embeddedContextMayContribute, work, status)
 	} else {
 		if !consumeProtectedContextWork(work, status, contextBytes) {
 			return false, true

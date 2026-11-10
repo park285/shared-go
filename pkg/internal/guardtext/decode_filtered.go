@@ -407,7 +407,7 @@ func appendEmbeddedProtectedBase64Span(
 
 	contributes := mode == embeddedDirectOrContext && direct
 	if !contributes {
-		contributes = embeddedContextContributes(input, span, decoded, nested, embeddedContextMayContribute)
+		contributes = embeddedContextContributes(input, span, decoded, nested, embeddedContextMayContribute, work, status)
 	}
 
 	if !contributes {
@@ -419,22 +419,6 @@ func appendEmbeddedProtectedBase64Span(
 	}
 
 	return spans, true
-}
-
-func embeddedContextContributes(
-	input string,
-	span encodedSpan,
-	decoded string,
-	nested DecodeResult,
-	matcher EmbeddedContextMatcher,
-) bool {
-	if matcher(input, span.start, span.end, decoded) {
-		return true
-	}
-
-	return slices.ContainsFunc(nested.Candidates, func(candidate string) bool {
-		return matcher(input, span.start, span.end, candidate)
-	})
 }
 
 // decodeChargePolicy는 중복 변환 메모에 없는 작업의 과금 시점을 정한다.
