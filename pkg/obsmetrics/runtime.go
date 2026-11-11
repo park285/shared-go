@@ -95,7 +95,7 @@ func writeGCDurationSummary(w io.Writer, ms runtime.MemStats) bool {
 // 고정돼 있고 client_golang procfs도 같은 값을 쓴다.
 const userHZ = 100
 
-// /proc/self/stat의 utime+stime을 초로 돌려준다. Linux 외 환경이나 읽기 실패 시 metric을 생략한다.
+// Linux 외 환경이나 읽기 실패 시 metric을 생략한다.
 func readProcessCPUSeconds() (float64, bool) {
 	data, err := os.ReadFile("/proc/self/stat")
 	if err != nil {

@@ -293,7 +293,6 @@ func writeDotenvFile(t *testing.T, path, content string, perm os.FileMode) {
 	}
 }
 
-// LocalEnableKey는 BoolE 규칙을 따르며 잘못된 값은 설정 오류로 반환한다.
 func TestLoadDotenvLocalEnableFlag(t *testing.T) {
 	localOpts := DotenvOptions{
 		LocalEnableKey: testChatbotgoLoadDotenv,
@@ -378,8 +377,7 @@ func TestLoadDotenvLocalEnableFlag(t *testing.T) {
 	}
 }
 
-// <PREFIX>_REQUIRE_STATIC_SECRETS도 BoolE 규칙으로 판정한다. 오타 값이 false로 접히면
-// local dotenv로 넘어가거나 world-readable env file을 strict 검사 없이 적용하게 된다.
+// 오타 값이 false로 접히면 local dotenv로 넘어가거나 world-readable env file을 strict 검사 없이 적용하게 된다.
 func TestLoadDotenvStaticSecretsGuard(t *testing.T) {
 	tests := []loadDotenvCase{
 		{

@@ -34,7 +34,6 @@ type ReissueResult struct {
 	Generation      int
 }
 
-// ClientRequestID는 base의 generation차 id를 만든다.
 func (l ReissueLadder) ClientRequestID(base string, generation int) (string, error) {
 	if l.Derive == nil || l.MaxGenerations <= 0 {
 		return "", ErrReissueLadderInvalid
@@ -56,7 +55,6 @@ func (l ReissueLadder) ClientRequestID(base string, generation int) (string, err
 	return id, nil
 }
 
-// GenerationOf는 저장된 id가 base의 몇 세대인지 복원한다. 어느 세대와도 맞지 않으면 false다.
 func (l ReissueLadder) GenerationOf(base, stored string) (int, bool) {
 	if stored == base {
 		return 0, true

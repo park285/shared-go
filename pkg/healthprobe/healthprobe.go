@@ -39,8 +39,7 @@ var (
 	errCredentialedRedirect = errors.New("healthprobe: client certificate redirect changes origin")
 )
 
-// tlsOverrides는 내부 probe용 HTTPS 신뢰·인증서 설정이다. CLI 경로만 HEALTHCHECK_* env에서
-// 한 번 읽어 넘기며, 외부 대상 검사(CheckURL)는 시스템 CA만 쓰고 클라이언트 인증서를 제시하지 않는다.
+// CLI 경로만 HEALTHCHECK_* env에서 한 번 읽어 넘기며, 외부 대상 검사(CheckURL)는 시스템 CA만 쓰고 클라이언트 인증서를 제시하지 않는다.
 type tlsOverrides struct {
 	CACertFile     string
 	ClientCertFile string

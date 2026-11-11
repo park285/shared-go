@@ -110,7 +110,6 @@ func TestCertificateReloaderAppliesChangeAndKeepsCachedCertificateOnFailure(t *t
 	}
 }
 
-// Run은 handshake 없이 ticker만으로 갱신해야 하고, ctx가 끝나면 반환해야 호출자가 join할 수 있다.
 func TestCertificateReloaderRunReloadsWithoutHandshakeAndReturnsOnCancel(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		certFile, keyFile := writeSelfSignedCert(t, "run.test")

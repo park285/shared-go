@@ -5,7 +5,6 @@ import (
 	"testing"
 )
 
-// (a) isSensitiveKey는 비민감 키 반복 호출에서 alloc 0이어야 한다 (package-level 사전 상수화).
 func TestIsSensitiveKey_ZeroAllocClean(t *testing.T) {
 	if got := testing.AllocsPerRun(1000, func() {
 		_ = isSensitiveKey("clean_key")
@@ -14,8 +13,6 @@ func TestIsSensitiveKey_ZeroAllocClean(t *testing.T) {
 	}
 }
 
-// (b) 민감 attr·message 변경이 없는 record는 fast-path로 원본을 그대로 전달해야 한다.
-// 현재 무조건 NewRecord 재구축은 record 1개당 다수 alloc을 유발하므로 이 상한에서 실패해야 한다.
 func TestSanitizeHandler_CleanRecordLowAlloc(t *testing.T) {
 	h := newSanitizeHandler(discardHandler{})
 	ctx := t.Context()

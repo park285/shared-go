@@ -49,7 +49,6 @@ func quietOptions() Options {
 	return Options{Logger: quietLogger(), Pool: testPoolConfig(), Ping: testPing()}
 }
 
-// kapu는 Docker 없이 rootless podman으로 일회용 PostgreSQL을 띄운다.
 func podmanAvailable() bool {
 	if _, err := exec.LookPath("podman"); err != nil {
 		return false

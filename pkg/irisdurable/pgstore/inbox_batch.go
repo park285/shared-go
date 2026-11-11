@@ -87,7 +87,7 @@ func (s *Store) ReleaseClaimToken(ctx context.Context, token string, keep []int6
 	return tag.RowsAffected(), nil
 }
 
-// ReleaseInboxAt은 claim을 정확한 availableAt 이후의 재처리로 반환한다. 시도 횟수는 유지한다.
+// 시도 횟수는 유지한다.
 func (s *Store) ReleaseInboxAt(ctx context.Context, claim InboxClaim, availableAt time.Time) error {
 	return s.execFenced(ctx, "release inbox at", releaseInboxSQL,
 		s.opts.Scope, claim.ID, claim.ClaimToken, float64(0), availableAt.UTC())
@@ -111,11 +111,8 @@ type InboxRecoveryDecision struct {
 	Reason     string
 }
 
-// ApplyInboxRecovery는 pending·completed·manual_review 판정을 한 문장으로 적용한다.
-// Store는 호출자의 transaction에 묶여 있어야 한다. 호출자는 선택·업무 행을 잠그고 미청구·만료
-// inbox 또는 자신이 소유한 처리 claim만 판정한다. 살아 있는 업무 lease는 소비자가 제외한다.
-// 오류 시 업무 변경을 포함한 transaction 전체를 rollback한다.
-// ErrClaimLost는 일부 행만 바뀐 경우에도 반환하므로 이 메서드의 오류를 무시하고 commit하면 안 된다.
+// Store는 호출자의 transaction에 묶여 있어야 한다. 호출자는 선택·업무 행을 잠그고 미청구·만료 inbox 또는 자신이 소유한 처리 claim만 판정한다. 살아 있는 업무 lease는 소비자가
+// 제외한다. 오류 시 업무 변경을 포함한 transaction 전체를 rollback한다. ErrClaimLost는 일부 행만 바뀐 경우에도 반환하므로 이 메서드의 오류를 무시하고 commit하면 안 된다.
 func (s *Store) ApplyInboxRecovery(ctx context.Context, decisions []InboxRecoveryDecision) error {
 	if _, ok := s.db.(txQuerier); !ok {
 		return errors.New("pgstore: apply inbox recovery requires a transaction")
@@ -183,16 +180,13 @@ func (s *Store) ApplyInboxRecovery(ctx context.Context, decisions []InboxRecover
 	return nil
 }
 
-// PruneInboxBefore는 종단 시각이 before 이하인 행을 limit개까지 지운다.
 // Before를 미래로 주더라도 Options의 최소 보존을 단축하지 않는다. 수동 검토 보존 0은 무기한이다.
 func (s *Store) PruneInboxBefore(ctx context.Context, before time.Time, limit int) (int64, error) {
 	return s.pruneInbox(ctx, "prune inbox before", before.UTC(), limit)
 }
 
-// pruneInbox는 completed와 manual_review 갈래를 각자의 부분 인덱스 순서로 끝나는 별도 문장으로 지운다.
-// 한 문장의 OR 술어는 두 인덱스 순서를 쓰지 못해 기한이 지난 행 전체를 읽고 정렬하므로 나눈다.
-// 수동 검토 갈래는 보존이 지정됐을 때만 실행하고 앞 갈래가 지운 수를 뺀 나머지 한도만 써서
-// 한 호출이 limit보다 많이 지우지 않는다. 인자 before가 nil이면 보존 기준만 쓴다.
+// 한 문장의 OR 술어는 두 인덱스 순서를 쓰지 못해 기한이 지난 행 전체를 읽고 정렬하므로 나눈다. 수동 검토 갈래는 보존이 지정됐을 때만 실행하고 앞 갈래가 지운 수를 뺀 나머지 한도만 써서 한 호출이
+// limit보다 많이 지우지 않는다. 인자 before가 nil이면 보존 기준만 쓴다.
 func (s *Store) pruneInbox(ctx context.Context, action string, before any, limit int) (int64, error) {
 	if limit <= 0 {
 		return 0, errors.New("pgstore: prune limit must be positive")

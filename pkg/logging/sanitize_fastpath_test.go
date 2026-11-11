@@ -24,7 +24,6 @@ func handleVia(t *testing.T, r slog.Record) slog.Record {
 	return sink.records[0]
 }
 
-// fast-path: clean record는 message·attrs가 원본과 byte-identical하게 보존돼야 한다.
 func TestSanitizeHandler_FastPathPreservesCleanRecord(t *testing.T) {
 	r := slog.NewRecord(testTime(), slog.LevelInfo, "plain message no secrets", 0)
 	r.AddAttrs(
@@ -59,7 +58,6 @@ func TestSanitizeHandler_FastPathPreservesCleanRecord(t *testing.T) {
 	}
 }
 
-// fast-path off: sensitive key·value는 여전히 마스킹돼야 한다 (재구축 경로).
 func TestSanitizeHandler_RebuildMasksSensitive(t *testing.T) {
 	r := slog.NewRecord(testTime(), slog.LevelInfo, "Bearer abc123.def and ?token=secret", 0)
 	r.AddAttrs(
@@ -89,8 +87,7 @@ func TestSanitizeHandler_RebuildMasksSensitive(t *testing.T) {
 	}
 }
 
-// uncomparable any 값(slice 등)은 Value.Equal 경유 비교 시 panic하므로,
-// fast-path 판정이 그 경로를 타지 않고 record를 그대로 통과시켜야 한다.
+// uncomparable any 값(slice 등)은 Value.Equal 경유 비교 시 panic하므로, fast-path 판정이 그 경로를 타지 않고 record를 그대로 통과시켜야 한다.
 func TestSanitizeHandler_UncomparableAnyAttrDoesNotPanic(t *testing.T) {
 	r := slog.NewRecord(testTime(), slog.LevelInfo, "Resolved target minutes", 0)
 	r.AddAttrs(

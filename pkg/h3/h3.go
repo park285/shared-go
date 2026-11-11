@@ -188,7 +188,6 @@ func newClientQUICConfig() *quic.Config {
 	}
 }
 
-// loadRootCAs는 경로의 모든 PEM 블록을 인증서로 검증해 새 pool을 반환한다.
 // 인증서 외 블록, 손상된 블록, 앞뒤의 비공백 데이터는 모두 거부한다.
 func loadRootCAs(path string) (*x509.CertPool, error) {
 	pemBytes, err := os.ReadFile(path) //nolint:gosec // 운영자가 지정하는 CA 경로

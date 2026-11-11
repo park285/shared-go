@@ -25,9 +25,7 @@ const (
 	pruneProtectedRows = 5
 )
 
-// rescanningPlanner는 후보 부분 질의를 nested loop 안쪽에 두고 바깥 행마다 다시 실행하는 계획을
-// planner가 고르게 한다. 통계와 규모에 따라 운영 planner도 고를 수 있는 모양이므로, 호출당
-// 상한은 어떤 조인 전략에서도 지켜져야 한다.
+// 통계와 규모에 따라 운영 planner도 고를 수 있는 모양이므로, 호출당 상한은 어떤 조인 전략에서도 지켜져야 한다.
 var rescanningPlanner = map[string]string{
 	"enable_hashjoin":  prunePlannerOff,
 	"enable_mergejoin": prunePlannerOff,
@@ -36,9 +34,7 @@ var rescanningPlanner = map[string]string{
 	"enable_sort":      prunePlannerOff,
 }
 
-// TestPruneInboxDeletesAtMostTheLimitPerCall은 지울 행이 많아도 한 호출이 요청한 수를 넘겨 지우지
-// 않고, 매번 남은 후보 중 (terminal_at, id)가 가장 앞선 행만 지우는지 확인한다. 넘겨 지우면
-// 유지보수 한 번의 잠금·WAL·지연이 batch 크기로 묶이지 않는다.
+// 넘겨 지우면 유지보수 한 번의 잠금·WAL·지연이 batch 크기로 묶이지 않는다.
 func TestPruneInboxDeletesAtMostTheLimitPerCall(t *testing.T) {
 	planners := []struct {
 		name   string
@@ -82,8 +78,7 @@ func TestPruneInboxDeletesAtMostTheLimitPerCall(t *testing.T) {
 	}
 }
 
-// TestPruneInboxSkipsLockedRowsWithinTheLimit은 다른 트랜잭션이 잡은 후보를 건너뛰고 그 뒤 후보로
-// 상한을 채우는지 확인한다. 잠긴 행에서 멈추거나 기다리면 동시에 도는 유지보수가 서로를 막는다.
+// 잠긴 행에서 멈추거나 기다리면 동시에 도는 유지보수가 서로를 막는다.
 func TestPruneInboxSkipsLockedRowsWithinTheLimit(t *testing.T) {
 	pool := newMigratedPool(t)
 	seedPruneFixture(t, pool)
@@ -134,9 +129,7 @@ func TestPruneInboxSkipsLockedRowsWithinTheLimit(t *testing.T) {
 	assertPruneSurvivors(t, pool, pruneReviewRows)
 }
 
-// seedPruneFixture는 두 scope에 같은 모양의 오래된 종단 행을 섞어 넣고, pruneScope에만 보존이
-// 남은 completed와 활성 행을 더한다. 각 terminal_at은 두 행씩 같아 id가 순서를 가른다. 기준 시각을
-// 반환한다.
+// 각 terminal_at은 두 행씩 같아 id가 순서를 가른다.
 func seedPruneFixture(t *testing.T, pool *pgxpool.Pool) time.Time {
 	t.Helper()
 
@@ -173,7 +166,6 @@ func seedPruneFixture(t *testing.T, pool *pgxpool.Pool) time.Time {
 	return base
 }
 
-// withPlanner는 같은 데이터베이스에 planner 설정만 바꾼 연결을 연다. 설정이 없으면 pool을 그대로 쓴다.
 func withPlanner(t *testing.T, pool *pgxpool.Pool, params map[string]string) *pgxpool.Pool {
 	t.Helper()
 
@@ -194,8 +186,7 @@ func withPlanner(t *testing.T, pool *pgxpool.Pool, params map[string]string) *pg
 	return planned
 }
 
-// pruneOracle은 fixture 이름표로 pruneScope의 남은 후보를 기대 삭제 순서대로 돌려준다. 정리는
-// 완료 갈래를 먼저 비우고 남은 한도로 manual_review 갈래를 지우므로 갈래 순서가 먼저다.
+// 정리는 완료 갈래를 먼저 비우고 남은 한도로 manual_review 갈래를 지우므로 갈래 순서가 먼저다.
 func pruneOracle(t *testing.T, pool *pgxpool.Pool, includeReview bool, cutoff time.Time) []int64 {
 	t.Helper()
 
@@ -219,8 +210,7 @@ func pruneOracle(t *testing.T, pool *pgxpool.Pool, includeReview bool, cutoff ti
 	return ids
 }
 
-// drainPrune은 prune을 빈 호출까지 반복하며 매 호출이 남은 후보 중 앞선 pruneLimit개만 지우는지
-// 본다. 차집합을 테이블 전체에서 구하므로 다른 scope나 보호 행을 지워도 드러난다.
+// 차집합을 테이블 전체에서 구하므로 다른 scope나 보호 행을 지워도 드러난다.
 func drainPrune(t *testing.T, pool *pgxpool.Pool, candidates []int64, prune func() (int64, error)) {
 	t.Helper()
 
@@ -249,7 +239,6 @@ func drainPrune(t *testing.T, pool *pgxpool.Pool, candidates []int64, prune func
 	}
 }
 
-// assertPruneSurvivors는 prune이 끝난 뒤에도 보호 대상 행이 모두 남았는지 본다.
 func assertPruneSurvivors(t *testing.T, pool *pgxpool.Pool, wantReview int) {
 	t.Helper()
 
@@ -294,7 +283,6 @@ func inboxIDs(t *testing.T, pool *pgxpool.Pool) []int64 {
 	return ids
 }
 
-// removedIDs는 정렬된 before에서 정렬된 after에 없는 id를 오름차순으로 돌려준다.
 func removedIDs(before, after []int64) []int64 {
 	return slices.DeleteFunc(slices.Clone(before), func(id int64) bool {
 		_, kept := slices.BinarySearch(after, id)

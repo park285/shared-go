@@ -89,9 +89,8 @@ func normalizeWithSpacePolicy(text string, trimEdges bool) string {
 	return normalizePostProcessWithEdges(normalized, trimEdges)
 }
 
-// foldDisguisedCapitalI는 ASCII 소문자 바로 뒤의 대문자 I를 l로 읽는다. 단어 중간의 대문자 I는 l을
-// 흉내 낸 위장(poIicy, reveaI, aII)이거나 camelCase의 새 단어 시작이다. 규칙 핵심어 중 i로 시작하는
-// ignore·instructions·internal이 될 수 있는 In·Ig 시작(previousInstructions, pleaseIgnore)만 i로 남긴다.
+// 단어 중간의 대문자 I는 l을 흉내 낸 위장(poIicy, reveaI, aII)이거나 camelCase의 새 단어 시작이다. 규칙 핵심어 중 i로 시작하는 ignore·instructions·internal이
+// 될 수 있는 In·Ig 시작(previousInstructions, pleaseIgnore)만 i로 남긴다.
 func foldDisguisedCapitalI(text string) string {
 	if !strings.Contains(text, "I") {
 		return text
@@ -155,8 +154,6 @@ func NormalizeEncodingSyntax(text string) string {
 	return markReadableBareHex(builder.String())
 }
 
-// decodeJSONWhitespaceEscapes는 JSON 문자열에 붙여 넣은 로그·설정의 \n·\r·\t를 실제 문자로 바꾼다.
-// 이스케이프한 역슬래시(\\)는 그대로 둔다.
 func decodeJSONWhitespaceEscapes(text string) string {
 	if !strings.Contains(text, `\`) {
 		return text
@@ -190,10 +187,8 @@ func decodeJSONWhitespaceEscapes(text string) string {
 	return builder.String()
 }
 
-// wrapsBase64Line은 앞 줄이 패딩 없이 Base64 문자로 끝나고 다음 줄 전체가 Base64 행일 때만 참이다.
-// 패딩은 인코딩의 끝이므로 그 뒤의 줄은 같은 값의 연속이 아니다. 긴 hex 숫자 줄은 앞 줄도 그런 줄일
-// 때만 잇는다. 다른 줄에 붙이면 단어와 섞여 hex 토큰으로 읽히지 않고, 숫자와 a-f만인 Base64 행은
-// 지시 문장을 만들지 못한다.
+// 패딩은 인코딩의 끝이므로 그 뒤의 줄은 같은 값의 연속이 아니다. 긴 hex 숫자 줄은 앞 줄도 그런 줄일 때만 잇는다. 다른 줄에 붙이면 단어와 섞여 hex 토큰으로 읽히지 않고, 숫자와 a-f만인
+// Base64 행은 지시 문장을 만들지 못한다.
 func wrapsBase64Line(previous, line string) bool {
 	if previous == "" || line == "" || !isBase64Char(previous[len(previous)-1]) {
 		return false

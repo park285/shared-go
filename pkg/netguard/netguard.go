@@ -131,7 +131,6 @@ func IsBlockedIP(ip net.IP) bool {
 	return isBlockedAddr(addr)
 }
 
-// isBlockedAddr는 주소가 private 또는 특수 목적 대역인지 검사한다.
 func isBlockedAddr(addr netip.Addr) bool {
 	if !addr.IsValid() {
 		return true
@@ -154,7 +153,6 @@ func isBlockedAddr(addr netip.Addr) bool {
 	return !addr.IsGlobalUnicast()
 }
 
-// normalizeHost는 비교용 host 문자열을 정규화한다.
 func normalizeHost(host string) string {
 	return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
 }
@@ -185,7 +183,6 @@ func isASCII(value string) bool {
 	return true
 }
 
-// ValidateURL은 URL 문자열을 파싱하고 정책에 맞는지 검증한다.
 func (p Policy) ValidateURL(ctx context.Context, rawURL string) (*url.URL, error) {
 	trimmed := strings.TrimSpace(rawURL)
 	if trimmed == "" {
@@ -204,7 +201,6 @@ func (p Policy) ValidateURL(ctx context.Context, rawURL string) (*url.URL, error
 	return parsed, nil
 }
 
-// ValidateTarget은 파싱된 URL 대상이 정책에 맞는지 검증한다.
 func (p Policy) ValidateTarget(ctx context.Context, target *url.URL) error {
 	if err := p.validateRequestTarget(target); err != nil {
 		return fmt.Errorf("netguard: validate request target: %w", err)
@@ -226,7 +222,6 @@ func (p Policy) ValidateTarget(ctx context.Context, target *url.URL) error {
 	return nil
 }
 
-// resolveHost는 정책 resolver로 host의 IP 주소 목록을 반환한다.
 func (p Policy) resolveHost(ctx context.Context, host string) ([]net.IP, error) {
 	host = normalizeHost(host)
 	if ip := net.ParseIP(host); ip != nil {
@@ -259,7 +254,6 @@ func (p Policy) resolveHost(ctx context.Context, host string) ([]net.IP, error) 
 	return ips, nil
 }
 
-// guardedDialContext는 dial 전에 host, port, IP 정책을 검증하는 dial 함수를 만든다.
 func guardedDialContext(
 	base func(context.Context, string, string) (net.Conn, error),
 	p Policy,
@@ -637,7 +631,6 @@ func (p Policy) allowsIP(ip net.IP) bool {
 	return false
 }
 
-// prepared는 요청마다 반복되던 allowlist 정규화를 guard 생성 시점으로 한 번만 옮긴다.
 func (p Policy) prepared() Policy {
 	if len(p.AllowedHosts) == 0 || p.normalizedAllowedHosts != nil {
 		return p

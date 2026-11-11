@@ -91,7 +91,6 @@ func appendShortRuleBase64Whole(
 	return appendShortRuleBase64Interiors(spans, seen, input, whole, mayContribute, embeddedContextMayContribute, work, status), seen
 }
 
-// appendShortRuleBase64Interiors는 읽을 수 없는 전체 토큰 안에 숨긴 짧은 Base64 구간을 찾는다.
 // 시작점마다 공통 디코딩 접두가 이미 읽을 수 없으면 그 시작점의 더 긴 구간은 디코딩하지 않는다.
 func appendShortRuleBase64Interiors(
 	spans []encodedSpan,

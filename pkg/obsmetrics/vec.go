@@ -189,7 +189,6 @@ type CounterVec struct {
 	help string
 }
 
-// counter는 원자적으로 증가하는 단일 counter series입니다.
 type counter struct {
 	value atomic.Uint64
 }

@@ -8,7 +8,6 @@ import (
 	"testing"
 )
 
-// testContract는 소비자가 정의하는 LogContract 값의 예다.
 var testContract = LogContract{Message: "background goroutine panic recovered", NameKey: "guard"}
 
 func TestRunRecoversPanicAndLogsStableEvent(t *testing.T) {

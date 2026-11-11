@@ -84,7 +84,6 @@ func decodeCandidatesForRules(input string, mayContribute func(string) bool) Dec
 	return mergeSemanticCandidates(semantic.candidates, decoded)
 }
 
-// decodeCandidatesWithContextForRuleOwner는 변환할 입력이 없으면 소유자 콜백을 할당하지 않는다.
 func decodeCandidatesWithContextForRuleOwner[T any](
 	input string,
 	owner T,

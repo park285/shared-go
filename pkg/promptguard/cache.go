@@ -10,7 +10,6 @@ type ttlEntry[V any] struct {
 	expiresAt time.Time
 }
 
-// ttlCache는 Guard 판정 결과를 크기·TTL 상한 안에서 보관한다. Guard 구현 세부라 공개하지 않는다.
 type ttlCache[K comparable, V any] struct {
 	mu      sync.RWMutex
 	entries map[K]ttlEntry[V]

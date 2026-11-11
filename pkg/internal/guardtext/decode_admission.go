@@ -11,11 +11,8 @@ const (
 	admissionRawBytesPerSide = maxDecodedCandidateLen
 )
 
-// contextualAdmissionCandidate는 승격용 경계 윈도우 splice를 만든다. 구분자 run은
-// projection(JoinShortSeparators)에서 길이와 무관하게 접히므로 raw 거리로 자르면
-// run 너머와의 재조합 탐지가 끊긴다: run은 정보 단위 1로 세어 윈도우를 그 너머까지
-// 연장하고, 승격 문자열에는 run을 admissionSeparatorKeep rune으로 절단해 넣는다
-// (절단 전후 projection이 같아 exact 매칭이 동일하다). Raw 한도를 넘는 연장은
+// 구분자 run은 projection(JoinShortSeparators)에서 길이와 무관하게 접히므로 raw 거리로 자르면 run 너머와의 재조합 탐지가 끊긴다: run은 정보 단위 1로 세어 윈도우를 그
+// 너머까지 연장하고, 승격 문자열에는 run을 admissionSeparatorKeep rune으로 절단해 넣는다 (절단 전후 projection이 같아 exact 매칭이 동일하다). Raw 한도를 넘는 연장은
 // 기존 계약과 같이 미완료(fail-closed)로 보고한다.
 func contextualAdmissionCandidate(input string, span encodedSpan, decoded string) (string, bool) {
 	contextual, _, bounded := contextualAdmissionDetails(input, span, decoded)

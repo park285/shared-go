@@ -33,7 +33,6 @@ type serviceDotenv struct {
 	defaultPath             string
 }
 
-// serviceDotenv는 service 단계 설정을 반환한다. 세 필드가 모두 비면 service 단계가 없다(ok=false).
 func (opts DotenvOptions) serviceDotenv() (serviceDotenv, bool, error) {
 	service := serviceDotenv{
 		envFileKey:              strings.TrimSpace(opts.EnvFileKey),
@@ -116,7 +115,6 @@ func LoadDotenv(opts DotenvOptions) error {
 	return nil
 }
 
-// loadDotenvFile은 dotenv 파일을 로드하며 strict 모드에서 symlink, non-regular file, world-accessible 파일을 거부한다.
 // 전체 줄 주석(#로 시작)만 인식하며 따옴표 없는 값의 inline #는 주석이 아니라 값의 일부로 남는다.
 func loadDotenvFile(path string, required, strict bool) error {
 	path = strings.TrimSpace(path)

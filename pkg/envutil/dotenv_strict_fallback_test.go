@@ -8,7 +8,6 @@ import (
 	"testing"
 )
 
-// no-follow open을 지원하지 않는 플랫폼에서 strict dotenv는 의도적으로 항상 실패한다.
 func TestLoadDotenvFileStrictFailsClosedWithoutNoFollow(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "fallback.env")

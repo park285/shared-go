@@ -28,7 +28,6 @@ type Ledger struct {
 	Table string
 }
 
-// Ensure는 ledger 테이블을 없으면 생성한다.
 func (l Ledger) Ensure(ctx context.Context, exec Execer) error {
 	if exec == nil {
 		return errors.New("dbmigrate: exec is required")
@@ -47,7 +46,6 @@ func (l Ledger) Ensure(ctx context.Context, exec Execer) error {
 	return nil
 }
 
-// Applied는 migration 파일명이 ledger에 기록되어 있는지 조회한다.
 func (l Ledger) Applied(ctx context.Context, q RowQuerier, name string) (bool, error) {
 	if q == nil {
 		return false, errors.New("dbmigrate: ledger querier is required")

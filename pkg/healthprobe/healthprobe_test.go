@@ -315,7 +315,6 @@ func writeSelfSignedCert(t *testing.T, serverName string) (string, string) {
 	return certFile, keyFile
 }
 
-// TestCheckURLOptionsIgnoreInternalTLSEnv는 외부 대상 검사가 내부 probe용 HEALTHCHECK_* env를 읽지 않는지 본다.
 // 환경 변수를 읽던 이전 경로는 설정된 클라이언트 인증서를 외부 호스트에 제시하거나 내부 CA로 검증해 실패했다.
 func TestCheckURLOptionsIgnoreInternalTLSEnv(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "missing.pem")

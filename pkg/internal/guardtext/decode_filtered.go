@@ -421,7 +421,6 @@ func appendEmbeddedProtectedBase64Span(
 	return spans, true
 }
 
-// decodeChargePolicy는 중복 변환 메모에 없는 작업의 과금 시점을 정한다.
 // 열거는 시도마다, 선형 전체 스팬은 읽을 수 있는 값에만 과금한다.
 type decodeChargePolicy uint8
 

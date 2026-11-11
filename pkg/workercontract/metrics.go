@@ -62,7 +62,6 @@ var metricDescriptors = []metricDescriptor{
 	{"iris_stack_worker_discarded_total", "Owned work discarded before attempt start by reason.", MetricCounter},
 }
 
-// Metrics는 현재 diagnostics를 exact metric vocabulary로 변환한다.
 func (r *Registry) Metrics(observedAt time.Time) ([]MetricFamily, error) {
 	envelope, err := r.Diagnostics(observedAt)
 	if err != nil {

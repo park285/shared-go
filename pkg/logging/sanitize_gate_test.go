@@ -29,7 +29,6 @@ func sanitizeMessage(t *testing.T, msg string) string {
 	return buf.String()
 }
 
-// I2: 싼 pre-check 게이트가 혼합 대소문자 Bearer를 우회시키지 않아야 한다.
 func TestRedactSecrets_MixedCaseBearerNotBypassed(t *testing.T) {
 	cases := []string{
 		"Bearer abc123.def",
@@ -49,7 +48,6 @@ func TestRedactSecrets_MixedCaseBearerNotBypassed(t *testing.T) {
 	}
 }
 
-// I2: 게이트가 매치 없는 입력에 대해 출력을 변경하지 않아야 한다 (idempotent skip).
 func TestRedactSecrets_NoMatchUnchanged(t *testing.T) {
 	in := "plain message with no secrets and value=visible"
 	if got := redactSecrets(in); got != in {
@@ -57,10 +55,8 @@ func TestRedactSecrets_NoMatchUnchanged(t *testing.T) {
 	}
 }
 
-// I2 회귀: Unicode case-fold trap. (?i) 정규식·EqualFold는 ſ(U+017F)↔s,
-// K(U+212A, Kelvin)↔k를 fold-equivalent로 보지만, 멀티바이트 룬은 토큰과
-// 바이트 폭이 달라 고정 폭 게이트가 skip할 수 있다. 게이트 출력은 정규식 직접
-// 호출 결과와 byte-identical이어야 한다 (superset 불변식).
+// (?i) 정규식·EqualFold는 ſ(U+017F)↔s, K(U+212A, Kelvin)↔k를 fold-equivalent로 보지만, 멀티바이트 룬은 토큰과 바이트 폭이 달라 고정 폭 게이트가 skip할 수
+// 있다. 게이트 출력은 정규식 직접 호출 결과와 byte-identical이어야 한다 (superset 불변식).
 func TestRedactSecrets_UnicodeFoldTrap(t *testing.T) {
 	cases := []string{
 		"?paſsword=LEAKEDPW",        // long-s ſ ↔ "password"의 s
@@ -125,7 +121,6 @@ func TestQuerySecret_SemicolonSeparator(t *testing.T) {
 	}
 }
 
-// I3: 신규 query 키 (pwd/passwd/private_key/secret_key) 마스킹.
 func TestQuerySecret_NewKeys(t *testing.T) {
 	cases := []struct{ key, secret string }{
 		{"pwd", "pwdval"},
@@ -162,7 +157,6 @@ func TestQuerySecret_BareKeyMasked(t *testing.T) {
 	}
 }
 
-// I3: 신규 민감 키 (pwd/passwd/private_key/secret_key 및 _suffix 변형) 마스킹.
 func TestIsSensitiveKey_NewKeys(t *testing.T) {
 	masked := []string{
 		"pwd", "passwd", "private_key", "secret_key",
@@ -185,7 +179,6 @@ func TestIsSensitiveKey_BroadKeysStillNotMasked(t *testing.T) {
 	}
 }
 
-// I3: message lane에서도 ;password= DSN 케이스가 마스킹되는지.
 func TestMessageMasking_SemicolonDSN(t *testing.T) {
 	out := sanitizeMessage(t, "connecting host=db;password=topsecret;sslmode=require")
 	if strings.Contains(out, "topsecret") {

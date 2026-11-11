@@ -14,7 +14,6 @@ import (
 	"github.com/park285/shared-go/v2/pkg/workercontract"
 )
 
-// Fixture들이 공유하는 durable webhook inbox worker ID다.
 const webhookInboxWorker = "webhook_inbox"
 
 // chatbotIdentity는 valid-profile-chatbotgo.json fixture와 짝인 identity다. Worker 목록은 소비 서비스가

@@ -166,7 +166,6 @@ func (c *ProfileFileChecker) observeStatus(now time.Time) ProfileFileStatus {
 	return status
 }
 
-// Status는 마지막 완료된 비교 결과를 반환한다.
 func (c *ProfileFileChecker) Status() ProfileFileStatus {
 	if c == nil {
 		return ProfileFileStatus{}
@@ -179,7 +178,6 @@ func (c *ProfileFileChecker) Status() ProfileFileStatus {
 	return c.status
 }
 
-// Run은 고정 cadence로 drift를 확인하며 context 종료 시 반환한다.
 func (c *ProfileFileChecker) Run(ctx context.Context) {
 	if c == nil {
 		return

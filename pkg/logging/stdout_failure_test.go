@@ -22,8 +22,7 @@ func (w *brokenStdout) Write(_ []byte) (int, error) {
 	return 0, errStdoutBroken
 }
 
-// stdout이 죽어도 파일 lane은 계속 기록돼야 한다. Io.MultiWriter는 첫 실패 이후 나머지
-// writer를 건너뛰므로, 순서만으로는 이 불변식이 지켜지지 않는다.
+// Io.MultiWriter는 첫 실패 이후 나머지 writer를 건너뛰므로, 순서만으로는 이 불변식이 지켜지지 않는다.
 func TestEnableFileLogging_StdoutFailureDoesNotBlockFileLane(t *testing.T) {
 	t.Parallel()
 

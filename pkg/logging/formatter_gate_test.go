@@ -112,7 +112,6 @@ func collectFormatterCalls(t *testing.T, root string) []formatterCall {
 	return calls
 }
 
-// 함수 값 참조도 검사하며, 파일 범위 초기화식의 소유자는 함수와 구분한다.
 func formatterCallsInFile(fset *token.FileSet, file *ast.File, rel string) []formatterCall {
 	imports, dotImports := importPathsByName(file)
 
@@ -125,7 +124,6 @@ func formatterCallsInFile(fset *token.FileSet, file *ast.File, rel string) []for
 	return calls
 }
 
-// 함수 리터럴은 별도 소유자로 검사하여 외부로 반출되는 formatter도 제한한다.
 func formatterRefsUnder(
 	fset *token.FileSet,
 	root ast.Node,
@@ -163,7 +161,6 @@ func formatterRefsUnder(
 	return calls
 }
 
-// Selector 내부 식별자를 dot-import 참조로 중복 집계하지 않는다.
 func formatterRefName(node ast.Node, imports map[string]string, dotImports []string) (string, bool) {
 	switch expr := node.(type) {
 	case *ast.SelectorExpr:

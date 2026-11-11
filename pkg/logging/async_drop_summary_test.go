@@ -46,7 +46,6 @@ func (b *syncBuffer) String() string {
 	return b.buf.String()
 }
 
-// Close가 drop>0이면 target에 요약 1줄을 남겨야 한다.
 func TestAsyncDropWriter_CloseWritesDropSummary(t *testing.T) {
 	t.Parallel()
 
@@ -262,7 +261,6 @@ func TestAsyncDropWriter_ConcurrentCloseDoesNotRaceOnTarget(t *testing.T) {
 	}
 }
 
-// drop이 없으면 요약 라인을 남기지 않아야 한다.
 func TestAsyncDropWriter_CloseNoSummaryWhenNoDrops(t *testing.T) {
 	t.Parallel()
 

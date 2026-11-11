@@ -113,8 +113,7 @@ func newCompiledDecodePattern(program *syntax.Prog, start uint32, maxRunes int) 
 	return pattern
 }
 
-// addFirstHangul은 instruction이 받는 한글 음절을 firstHangul에 더한다. 한 글자 리터럴의 접기 짝은 한글 음절이
-// 아니므로 그 글자만, 문자 클래스는 범위 쌍만 본다.
+// 한 글자 리터럴의 접기 짝은 한글 음절이 아니므로 그 글자만, 문자 클래스는 범위 쌍만 본다.
 func (pattern *compiledDecodePattern) addFirstHangul(instruction *syntax.Inst) {
 	var ranges []rune
 
@@ -180,7 +179,6 @@ type decodeSourcePart struct {
 	fragments []string
 }
 
-// viewTexts는 values를 view에 맞게 합성하거나 정규화한 값이다.
 func (part *decodeSourcePart) viewTexts(view string) []string {
 	if part.raws == nil {
 		part.raws = make([]string, len(part.values))

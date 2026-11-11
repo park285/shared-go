@@ -181,8 +181,6 @@ func TestOpenAICompatibleJSONGeneratorChatCompletionsStructuredOutput(t *testing
 	assertJSONContains(t, payload["reasoning_effort"], "low")
 }
 
-// 지시 계층이 모두 비어도 단일 계층 경로를 탄다. Responses 요청은 instructions 없이 user 메시지 하나만
-// 보내고, 계층 label을 만들지 않는다.
 func TestOpenAICompatibleJSONGeneratorResponsesWithoutInstructionLayers(t *testing.T) {
 	var payload map[string]any
 
@@ -224,8 +222,6 @@ func TestOpenAICompatibleJSONGeneratorResponsesWithoutInstructionLayers(t *testi
 	}
 }
 
-// 지시 계층이 모두 비면 Chat Completions의 system 메시지는 schema 지시만 담고, user 입력을 지시로
-// 끌어올리지 않는다.
 func TestOpenAICompatibleJSONGeneratorChatCompletionsWithoutInstructionLayers(t *testing.T) {
 	var payload map[string]any
 

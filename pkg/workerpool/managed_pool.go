@@ -223,7 +223,6 @@ func newManagedPool(config ManagedConfig) *ManagedPool {
 	return pool
 }
 
-// Snapshot은 호출 시점의 queue depth, in-flight, oldest queue age, outcome 누계를 반환한다.
 func (p *ManagedPool) Snapshot() ManagedSnapshot {
 	if p == nil {
 		return ManagedSnapshot{Outcomes: map[JobOutcome]uint64{}}

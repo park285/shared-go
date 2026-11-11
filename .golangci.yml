@@ -228,7 +228,7 @@ linters:
       qualified-name: true
 
     wrapcheck:
-      # 같은 패키지 helper의 오류는 그 helper가 이미 맥락을 붙였으므로 다시 감싸지 않는다(2026-09-02 재감사 T03: 지점 억제 337건의 원인).
+      # 같은 패키지 helper의 오류는 그 helper가 이미 맥락을 붙였으므로 다시 감싸지 않는다.
       report-internal-errors: false
       ignore-sigs:
         - .Errorf(

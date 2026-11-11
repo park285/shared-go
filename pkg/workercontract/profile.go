@@ -54,7 +54,7 @@ func Milliseconds(value int64) time.Duration {
 	return time.Duration(value) * time.Millisecond
 }
 
-// FixedDuration은 유효한 fixed 정책만 반환한다. None/per_job은 별도 정책이다.
+// None/per_job은 별도 정책이다.
 func (p DurationPolicy) FixedDuration() (time.Duration, bool) {
 	if p.Mode != DurationModeFixed || p.Milliseconds == nil ||
 		*p.Milliseconds < 1 || *p.Milliseconds > MaxFixedDurationMS {
@@ -141,7 +141,6 @@ func sortedWorkerIDs(workers map[string]WorkerProfile) []string {
 	return slices.Sorted(maps.Keys(workers))
 }
 
-// decodeSettings는 service-owned settings를 unknown field와 trailing JSON 없이 해석한다.
 func decodeSettings(raw jsontext.Value, destination any) error {
 	if destination == nil {
 		return errors.New("workercontract: worker settings: nil destination")

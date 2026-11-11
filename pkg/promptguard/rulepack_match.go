@@ -31,7 +31,6 @@ func (r *compiledRule) appliesToTextSegment(segment textSegment) bool {
 	return false
 }
 
-// masksText는 예외 문맥이나 문장 경계를 가린 원문으로 적중을 다시 확인하는 규칙인지 나타낸다.
 func (r *compiledRule) masksText() bool {
 	return len(r.Exclude) > 0 || r.SentenceBreak > 0
 }
@@ -68,7 +67,6 @@ func (r *compiledRule) matchSegment(segment textSegment, policy compiledPolicy, 
 	return r.matchSegmentText(textSegment{Kind: segment.Kind, Views: views}, policy, limit)
 }
 
-// maskViews는 가린 원문으로 세그먼트 view를 다시 만든다. 가린 범위가 없으면 원래 view를 돌려준다.
 func (r *compiledRule) maskViews(views guardtext.Views) (guardtext.Views, bool) {
 	masked, changed := r.maskExclusions(views.Raw)
 	if !changed {

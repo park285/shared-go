@@ -50,9 +50,8 @@ func longformCorpora() map[string]string {
 	}
 }
 
-// 해시·JWT·URL·hex·숫자열·base64 토큰이 섞인 장문 정상 답변은 decode 예산 소진으로
-// 차단되면 안 된다. 이 회귀가 깨지면 실서비스에서 무해한 장문 답변이
-// decode_incomplete로 fail-closed 오차단된다(2026-07 chat-bot-go-kakao 운영 이슈).
+// 해시·JWT·URL·hex·숫자열·base64 토큰이 섞인 장문 정상 답변은 decode 예산 소진으로 차단되면 안 된다. 이 회귀가 깨지면 실서비스에서 무해한 장문 답변이 decode_incomplete로
+// fail-closed 오차단된다.
 func TestBoundGuardAllowsLongTechnicalAnswers(t *testing.T) {
 	t.Parallel()
 

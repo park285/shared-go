@@ -147,7 +147,6 @@ func RateLimitIdentity(r *http.Request, apiKey string, opts ClientIPOptions) str
 	return "ip:" + ip
 }
 
-// rateLimitKeyHash는 rate-limit key/log용 짧은 SHA-256 해시를 반환한다.
 func rateLimitKeyHash(value string) string {
 	sum := sha256.Sum256([]byte(value))
 
@@ -189,7 +188,6 @@ func NewFixedWindowRateLimiter(limit int, window time.Duration, opts FixedWindow
 	}
 }
 
-// Allow는 identity가 현재 window에서 허용되는지 반환한다.
 func (l *FixedWindowRateLimiter) Allow(identity string) bool {
 	if l == nil {
 		return true
