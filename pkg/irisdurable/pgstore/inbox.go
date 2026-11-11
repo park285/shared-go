@@ -103,7 +103,7 @@ func (s *Store) Claim(ctx context.Context) (claim InboxClaim, ok bool, err error
 	return claim, true, nil
 }
 
-// 인자 reason은 "재시도해도 같은 결과인 입력 결함"처럼 성공이 아닌 완료의 사유를 남기는 자리이고, 빈 값이면 기록하지 않는다. … Fence는 claim token에 더해 message_id와 살아 있는
+// 인자 reason은 "재시도해도 같은 결과인 입력 결함"처럼 성공이 아닌 완료의 사유를 남기는 자리이고, 빈 값이면 기록하지 않는다. Fence는 claim token에 더해 message_id와 살아 있는
 // lease를 대조한다. 그 이유는 queries/complete_inbox.sql이 적는다.
 func (s *Store) Complete(ctx context.Context, claim InboxClaim, reason string) error {
 	return s.execFenced(ctx, "complete inbox", completeInboxSQL,

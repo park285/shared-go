@@ -71,7 +71,8 @@ type acquireGate struct {
 	held    map[*pgx.Conn]struct{}
 }
 
-// 상태는 재사용되는 호출자 컨텍스트가 아닌 단일 Acquire에 속한다. … 컨텍스트 임베딩으로 획득마다 추가 WithValue 할당을 피한다.
+// 상태는 재사용되는 호출자 컨텍스트가 아닌 단일 Acquire에 속하고, 연결 맵은 허가 수 이내의 성공한 일반 임대만 담는다.
+// 컨텍스트 임베딩으로 획득마다 추가 WithValue 할당을 피한다.
 type acquireContext struct {
 	context.Context //nolint:containedctx // 단일 Acquire의 Context 구현이며 풀이나 워커에 보관하지 않는다.
 
