@@ -8,7 +8,6 @@ import (
 	"testing"
 )
 
-// recordSink는 Handle로 전달된 최종 slog.Record를 캡처한다.
 type recordSink struct {
 	records []slog.Record
 }
@@ -21,8 +20,6 @@ func (s *recordSink) Handle(_ context.Context, r slog.Record) error {
 func (s *recordSink) WithAttrs(_ []slog.Attr) slog.Handler { return s }
 func (s *recordSink) WithGroup(_ string) slog.Handler      { return s }
 
-// TestSanitizeHandler_MessageMasking — Behavior 1 (RED 예상)
-// Message 문자열 안의 Bearer 토큰과 query secret이 마스킹돼야 한다.
 func TestSanitizeHandler_MessageMasking(t *testing.T) {
 	sink := &recordSink{}
 	h := newSanitizeHandler(sink)
@@ -49,7 +46,6 @@ func TestSanitizeHandler_MessageMasking(t *testing.T) {
 	}
 }
 
-// TextHandler 경유로도 출력에 마스킹이 적용되는지 통합 검증.
 func TestSanitizeHandler_MessageMasking_TextOutput(t *testing.T) {
 	var buf bytes.Buffer
 
@@ -78,8 +74,6 @@ func TestBareKey_NameAloneNotMasked_ValueGatesRedaction_8e92058d(t *testing.T) {
 	}
 }
 
-// TestIsSensitiveKey_ApiKeyVariantsMasked — Behavior 3 (기존 동작 보존)
-// api_key / apikey / x_api_key 변형은 여전히 마스킹돼야 한다.
 func TestIsSensitiveKey_ApiKeyVariantsMasked(t *testing.T) {
 	cases := []string{"api_key", "apikey", "x_api_key", "MY_API_KEY"}
 	for _, k := range cases {

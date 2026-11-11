@@ -11,7 +11,6 @@ import (
 	"strings"
 )
 
-// defaultMaxRequestBodyBytes는 JSON 요청 본문의 기본 최대 크기다.
 const defaultMaxRequestBodyBytes int64 = 64 << 10
 
 var (
@@ -47,7 +46,6 @@ type JSONRequestError struct {
 	Err error
 }
 
-// Error는 JSON 요청 오류를 문자열로 반환한다.
 func (e *JSONRequestError) Error() string {
 	if e == nil {
 		return "<nil>"
@@ -69,7 +67,6 @@ func (e *JSONRequestError) Error() string {
 	return strings.Join(parts, ": ")
 }
 
-// Unwrap은 원래 JSON 요청 decode 오류를 반환한다.
 func (e *JSONRequestError) Unwrap() error {
 	if e == nil {
 		return nil

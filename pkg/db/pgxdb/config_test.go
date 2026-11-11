@@ -124,7 +124,6 @@ func TestConfigDSN_RootCertAndQueryExecMode(t *testing.T) {
 	}
 }
 
-// Config.SSLRootCert만 sslrootcert를 채우며 POSTGRES_SSLROOTCERT 환경 변수는 읽지 않는다.
 func TestConfigDSN_IgnoresPostgresSSLRootCertEnv(t *testing.T) {
 	t.Setenv("POSTGRES_SSLROOTCERT", "/env/ca.pem")
 

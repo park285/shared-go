@@ -68,8 +68,6 @@ func TestRunAgainstPostgres(t *testing.T) {
 	})
 }
 
-// TestReferenceSchemaIsRepeatable은 소비자가 자기 migration으로 옮겨 적는 참조 스키마가
-// 유효한 SQL이고 다시 적용해도 안전한지 확인한다.
 func TestReferenceSchemaIsRepeatable(t *testing.T) {
 	pool := newBlankPool(t)
 
@@ -90,9 +88,7 @@ func TestReferenceSchemaIsRepeatable(t *testing.T) {
 	}
 }
 
-// TestAdmitClassifiesDeterministicRejections는 서버가 거절한 것이 확실한 admit을 결과 미상이
-// 아니라 거절로 보고하는지 본다. 결과 미상은 호출자가 503으로 매핑해 Iris 재전송을 부르므로,
-// 같은 payload로는 영원히 실패하는 입력이 재전송 루프에 갇힌다.
+// 결과 미상은 호출자가 503으로 매핑해 Iris 재전송을 부르므로, 같은 payload로는 영원히 실패하는 입력이 재전송 루프에 갇힌다.
 func TestAdmitClassifiesDeterministicRejections(t *testing.T) {
 	pool := newMigratedPool(t)
 	store := newScopedStore(t, pool)
@@ -121,7 +117,6 @@ func TestAdmitClassifiesDeterministicRejections(t *testing.T) {
 	}
 }
 
-// TestInboxOrderingKeyServesOneMessageAtATime은 같은 ordering key의 FIFO head 규칙을 확인한다.
 func TestInboxOrderingKeyServesOneMessageAtATime(t *testing.T) {
 	pool := newMigratedPool(t)
 	store := newScopedStore(t, pool)
@@ -163,7 +158,6 @@ func TestInboxOrderingKeyServesOneMessageAtATime(t *testing.T) {
 	}
 }
 
-// TestInboxRenewAndRelease는 lease 연장과 호출자가 정한 재시도 지연을 확인한다.
 func TestInboxRenewAndRelease(t *testing.T) {
 	pool := newMigratedPool(t)
 	store := newScopedStore(t, pool)
@@ -220,9 +214,7 @@ func TestInboxRenewAndRelease(t *testing.T) {
 	}
 }
 
-// TestAdmitSerializesOrderingKeyAcrossTransactions는 같은 ordering key의 admit이 직렬화되는지
-// 확인한다. 직렬화가 없으면 아직 commit되지 않은 앞 메시지를 Claim의 head 규칙이 보지 못해,
-// 뒤 메시지를 head로 잡고 앞 메시지가 보이게 된 뒤 두 행이 동시에 처리된다.
+// 직렬화가 없으면 아직 commit되지 않은 앞 메시지를 Claim의 head 규칙이 보지 못해, 뒤 메시지를 head로 잡고 앞 메시지가 보이게 된 뒤 두 행이 동시에 처리된다.
 func TestAdmitSerializesOrderingKeyAcrossTransactions(t *testing.T) {
 	pool := newMigratedPool(t)
 	store := newScopedStore(t, pool)
@@ -262,8 +254,6 @@ func TestAdmitSerializesOrderingKeyAcrossTransactions(t *testing.T) {
 	}
 }
 
-// beginAdmittedTx는 열린 트랜잭션 안에서 메시지 하나를 admit하고 그 트랜잭션을 돌려준다.
-// 호출자가 commit할 때까지 그 행은 다른 세션에 보이지 않는다.
 func beginAdmittedTx(t *testing.T, pool *pgxpool.Pool, scope, messageID, orderingKey string) pgx.Tx {
 	t.Helper()
 
@@ -294,8 +284,7 @@ func beginAdmittedTx(t *testing.T, pool *pgxpool.Pool, scope, messageID, orderin
 	return tx
 }
 
-// admitAsync는 별도 goroutine에서 admit을 시작하고 결과 채널을 돌려준다. 같은 ordering key의
-// 앞 트랜잭션이 열려 있는 동안 이 호출은 막혀 있어야 한다.
+// 같은 ordering key의 앞 트랜잭션이 열려 있는 동안 이 호출은 막혀 있어야 한다.
 func admitAsync(store *pgstore.Store, messageID, orderingKey string) <-chan error {
 	done := make(chan error, 1)
 
@@ -312,7 +301,6 @@ func admitAsync(store *pgstore.Store, messageID, orderingKey string) <-chan erro
 	return done
 }
 
-// TestReplyRedriveAndRetire는 유지보수 연산이 재발송 후보와 소진 행을 갈라내는지 확인한다.
 func TestReplyRedriveAndRetire(t *testing.T) {
 	pool := newMigratedPool(t)
 	store := newScopedStore(t, pool)
@@ -375,9 +363,7 @@ func TestReplyRedriveAndRetire(t *testing.T) {
 	}
 }
 
-// TestRetireLeavesInFlightAttemptAlone은 시작만 하고 아직 정착되지 않은 시도를 Retire가 종단으로
-// 보내지 않는지 확인한다. BeginAttempt가 보내기 전에 attempts를 올리므로 마지막 시도는 시작하는
-// 순간 이미 소진 조건을 만족하고, lease가 전송보다 짧으면 전송 중에 payload가 지워진다.
+// BeginAttempt가 보내기 전에 attempts를 올리므로 마지막 시도는 시작하는 순간 이미 소진 조건을 만족하고, lease가 전송보다 짧으면 전송 중에 payload가 지워진다.
 func TestRetireLeavesInFlightAttemptAlone(t *testing.T) {
 	pool := newMigratedPool(t)
 	store := newScopedStoreWithOptions(t, pool, pgstore.Options{
@@ -504,8 +490,7 @@ func newMigratedPool(t *testing.T) *pgxpool.Pool {
 	return pool
 }
 
-// applyReferenceSchema는 testdata/schema.sql을 적용한다. 이 DDL은 스택 SQL 소유권 계약상
-// 소비자 migration이 소유하므로 shared-go에서는 계약 스위트를 돌리기 위한 fixture로만 쓴다.
+// 이 DDL은 스택 SQL 소유권 계약상 소비자 migration이 소유하므로 shared-go에서는 계약 스위트를 돌리기 위한 fixture로만 쓴다.
 func applyReferenceSchema(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 
@@ -519,8 +504,6 @@ func applyReferenceSchema(t *testing.T, pool *pgxpool.Pool) {
 	}
 }
 
-// newBlankPool은 TEST_DATABASE_URL 서버에 일회용 데이터베이스를 만들어 그 pool을 돌려주고,
-// 테스트가 끝나면 지운다. 두 환경변수가 없으면 테스트를 건너뛴다.
 func newBlankPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 

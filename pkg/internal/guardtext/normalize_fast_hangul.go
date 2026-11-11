@@ -32,10 +32,8 @@ func writeNormalizedASCII(normalized *strings.Builder, text string, trimEdges, p
 	return pendingSpace
 }
 
-// normalizeFastHangulASCIIText는 ASCII와 한글 음절만 있는 글을 전체 경로와 같은 값으로 정규화한다. 이런 글은 NFKC에서
-// 바뀌지 않고, normalizeWithKoreanPreserved는 한글 음절을 그대로 둔 채 그 사이 ASCII 구간마다 위장 I를 접고 정규화한다.
-// ASCII 구간은 ASCII 빠른 경로와 같은 글자별 대응표로 바꾸고, 공백은 후처리처럼 글 전체에서 접는다. 한글 음절은
-// 공백·제어 문자가 아니고 소문자화로 바뀌지 않는다.
+// 이런 글은 NFKC에서 바뀌지 않고, normalizeWithKoreanPreserved는 한글 음절을 그대로 둔 채 그 사이 ASCII 구간마다 위장 I를 접고 정규화한다. ASCII 구간은 ASCII 빠른
+// 경로와 같은 글자별 대응표로 바꾸고, 공백은 후처리처럼 글 전체에서 접는다. 한글 음절은 공백·제어 문자가 아니고 소문자화로 바뀌지 않는다.
 func normalizeFastHangulASCIIText(text string, trimEdges bool) (string, bool) {
 	for _, value := range text {
 		if value >= utf8.RuneSelf && (value < 0xAC00 || value > 0xD7A3) {

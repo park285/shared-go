@@ -204,7 +204,6 @@ func Apply(ctx context.Context, fsys fs.FS, exec Execer, opts ApplyOptions) erro
 	return nil
 }
 
-// selectOnly는 nil이 아닌 Only 목록을 검증해 조회용 집합으로 바꾼다.
 func selectOnly(names, entries []string) (map[string]bool, error) {
 	if len(names) == 0 {
 		return nil, errors.New("dbmigrate: Only requires at least one migration name")

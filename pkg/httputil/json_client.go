@@ -30,7 +30,6 @@ func NewJSONClientWithHTTPClient(baseURL, apiKey string, httpClient *http.Client
 	}
 }
 
-// NewRequest는 body 없는 요청을 생성합니다.
 func (c *JSONClient) NewRequest(ctx context.Context, method, path string) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, http.NoBody)
 	if err != nil {
@@ -42,7 +41,6 @@ func (c *JSONClient) NewRequest(ctx context.Context, method, path string) (*http
 	return req, nil
 }
 
-// NewJSONRequest는 JSON body 요청을 생성합니다.
 func (c *JSONClient) NewJSONRequest(ctx context.Context, method, path string, payload any) (*http.Request, error) {
 	body, err := jsonv2.Marshal(payload)
 	if err != nil {

@@ -77,7 +77,6 @@ func NewRegistry(loaded LoadedProfile, checker *ProfileFileChecker) *Registry {
 	}
 }
 
-// Register는 worker adapter 하나를 중복 없이 등록한다.
 func (r *Registry) Register(registration Registration) error {
 	if r == nil {
 		return errors.New("workercontract: worker registry: nil registry")

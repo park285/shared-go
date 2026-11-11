@@ -65,7 +65,6 @@ func dateListYearDot(input string, start int) int {
 	return dot
 }
 
-// skipBlanks는 input[i:]의 공백·탭을 최대 limit개 건너뛴 위치를 돌려준다.
 func skipBlanks(input string, i, limit int) int {
 	end := i
 	for end < len(input) && end-i < limit && (input[end] == ' ' || input[end] == '\t') {
@@ -75,7 +74,6 @@ func skipBlanks(input string, i, limit int) int {
 	return end
 }
 
-// skipDigits는 input[i:]의 ASCII 숫자를 최대 limit개 건너뛴 위치를 돌려준다.
 func skipDigits(input string, i, limit int) int {
 	end := i
 	for end < len(input) && end-i < limit && asciiDigit(rune(input[end])) {

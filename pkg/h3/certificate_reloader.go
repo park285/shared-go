@@ -69,8 +69,7 @@ func NewCertificateReloader(certFile, keyFile string, opts CertificateReloaderOp
 	return r, nil
 }
 
-// Run은 ctx가 끝날 때까지 interval마다 갱신을 시도하며 블로킹한다. 갱신 goroutine의 join과 panic
-// 처리는 호출자가 소유한다.
+// 갱신 goroutine의 join과 panic 처리는 호출자가 소유한다.
 func (r *CertificateReloader) Run(ctx context.Context) {
 	if r == nil || ctx == nil {
 		return
@@ -88,8 +87,6 @@ func (r *CertificateReloader) Run(ctx context.Context) {
 	}
 }
 
-// GetCertificate는 handshake 경로에서 파일을 매번 읽지 않는다. Run을 사용하지 않는
-// 소비자도 interval이 지난 첫 handshake에서 갱신을 시도한다.
 func (r *CertificateReloader) GetCertificate(_ *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	if r == nil {
 		return nil, errors.New("h3: load certificate: nil reloader")

@@ -74,10 +74,6 @@ func growBase64Scratch(scratch []byte, encoded string) []byte {
 	return make([]byte, needed)
 }
 
-// spanContextSeen은 값이 같아도 주변 문맥이 다르면 문맥 의존 매칭(임베디드 문맥
-// 판정, splice 규칙 매칭) 결과가 달라질 수 있으므로 값 키 아래에 스팬 위치를 모아
-// 앞뒤 윈도우까지 같을 때만 중복으로 접는다. 작은 입력은 반복으로 예산이 고갈될
-// 수 없으므로 dedup을 아예 걸지 않아 핫패스 할당 상한을 지킨다.
 type spanContextRef struct {
 	text string
 	span encodedSpan
@@ -245,11 +241,8 @@ var (
 	errBase64Number         = errors.New("base64 decode: number token")
 )
 
-// base64Reading은 소문자 영단어가 글자·숫자 없는 값으로 풀리는 경우(file → "~)^")와 숫자만인 토큰
-// (행 번호·연도)을 해석에서 뺀다. 이런 값은 근거를 더하지 못하고 원문 단어를 지워 규칙 간격만 좁힌다.
-// 숫자만인 Base64는 3바이트마다 첫 바이트가 0xD0 이상이라 ASCII 글자·공백을 만들지 못하고, 결합 문자로
-// 풀리면 주변 문맥까지 다시 해석하게 만든다. 인코딩한 구분자(IA==, Cg==, LQ==)는 대문자·패딩을 포함하므로
-// 그대로 해석한다.
+// 이런 값은 근거를 더하지 못하고 원문 단어를 지워 규칙 간격만 좁힌다. 숫자만인 Base64는 3바이트마다 첫 바이트가 0xD0 이상이라 ASCII 글자·공백을 만들지 못하고, 결합 문자로 풀리면 주변 문맥까지
+// 다시 해석하게 만든다. 인코딩한 구분자(IA==, Cg==, LQ==)는 대문자·패딩을 포함하므로 그대로 해석한다.
 func base64Reading(input string, decoded []byte) ([]byte, error) {
 	if strings.TrimLeft(input, "0123456789") == "" {
 		return nil, errBase64Number
@@ -391,7 +384,7 @@ func (work *protectedDecodeWork) rememberBase64Prefix(prefix string) {
 	}
 }
 
-// base64AlphabetEnd는 토큰 끝 패딩을 뺀 위치다. 패딩은 마지막 그룹에만 오므로 그 앞까지가 공통 접두다.
+// 패딩은 마지막 그룹에만 오므로 그 앞까지가 공통 접두다.
 func base64AlphabetEnd(input string, whole encodedSpan) int {
 	end := whole.end
 	for end > whole.start && input[end-1] == '=' {
@@ -401,7 +394,6 @@ func base64AlphabetEnd(input string, whole encodedSpan) int {
 	return end
 }
 
-// base64PrefixExcludes는 시작점부터 alphabetLen 문자를 덮는 스팬이 판독 불가 접두를 포함하는지 판정한다.
 func base64PrefixExcludes(unreadable, alphabetLen int) bool {
 	return unreadable > 0 && 3*(alphabetLen/4) >= unreadable
 }
@@ -418,8 +410,7 @@ func base64UnexcludedEnd(unreadable, start, alphabetEnd int) int {
 	return start + covering - 1
 }
 
-// base64Digit은 표준·URL 알파벳을 같은 6비트 값으로 읽는다. 두 알파벳이 섞인 스팬은 실제
-// 디코딩이 실패하므로 판독 불가 판정에 영향을 주지 않는다.
+// 두 알파벳이 섞인 스팬은 실제 디코딩이 실패하므로 판독 불가 판정에 영향을 주지 않는다.
 func base64Digit(char byte) (uint32, bool) {
 	switch {
 	case char >= 'A' && char <= 'Z':

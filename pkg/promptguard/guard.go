@@ -244,7 +244,6 @@ func detectFailureCause(err error) fallbackCause {
 	return fallbackCauseDetectorError
 }
 
-// fallbackEvaluation은 guard 평가가 실패했을 때의 conservative fallback이다.
 func (g *Guard) fallbackEvaluation(policy compiledPolicy, source Source, cause fallbackCause) Evaluation {
 	attrs := []any{
 		slog.String("reason", ruleEvaluationFallback),

@@ -124,8 +124,7 @@ func TestOverlayPoolConfig_OverridesWhenSet(t *testing.T) {
 	}
 }
 
-// QueryExecMode는 DSN 파라미터 단일 경로로만 적용된다. Pgx가 default_query_exec_mode 지원을
-// 끊으면 이 테스트가 먼저 실패해야 한다.
+// Pgx가 default_query_exec_mode 지원을 끊으면 이 테스트가 먼저 실패해야 한다.
 func TestBuildConfigPool_AppliesQueryExecModeThroughDSNOnly(t *testing.T) {
 	tests := []struct {
 		name string

@@ -244,7 +244,6 @@ func (w *asyncDropWriter) truncatedCount() uint64 {
 
 type multiCloser []io.Closer
 
-// Close는 앞 lane이 실패해도 모든 lane을 닫고, 실패한 lane의 오류를 모두 errors.Join으로 남긴다.
 func (c multiCloser) Close() error {
 	var closeErr error
 

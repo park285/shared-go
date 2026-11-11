@@ -35,10 +35,7 @@ func DecodeWorkerSettingsSet(loaded LoadedProfile, destinations map[string]any) 
 	return nil
 }
 
-// decodeWorkerSettings는 workerID의 service-owned settings를 destination(struct pointer)에 해석한다.
-//
-// Settings의 모든 struct 키 집합은 json 태그 필드 집합과 정확히 같아야 한다.
-// 포인터 외의 null과 빠진 키는 거부하므로 zero value로 조용히 채워지는 설정이 없다.
+// Settings의 모든 struct 키 집합은 json 태그 필드 집합과 정확히 같아야 한다. 포인터 외의 null과 빠진 키는 거부하므로 zero value로 조용히 채워지는 설정이 없다.
 func decodeWorkerSettings(loaded LoadedProfile, workerID string, destination any) error {
 	worker, ok := loaded.Profile.Workers[workerID]
 	if !ok {

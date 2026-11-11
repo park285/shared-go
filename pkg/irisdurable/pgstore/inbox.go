@@ -74,8 +74,6 @@ func admissionFailure(err error) workercontract.AdmissionResult {
 	}
 }
 
-// Claim은 처리 가능한 다음 메시지의 소유권을 잡는다. 후보가 없으면 ok가 false다.
-//
 // 같은 ordering key에 더 오래된 미종단 행이 있으면 그 행이 먼저 끝나야 하므로 FIFO가 유지된다.
 func (s *Store) Claim(ctx context.Context) (claim InboxClaim, ok bool, err error) {
 	if policyErr := s.requirePolicy("claim inbox", true, false, false); policyErr != nil {
@@ -105,19 +103,15 @@ func (s *Store) Claim(ctx context.Context) (claim InboxClaim, ok bool, err error
 	return claim, true, nil
 }
 
-// Complete는 처리가 끝난 행을 종단으로 보내고 payload를 지운다. 인자 reason은 "재시도해도 같은
-// 결과인 입력 결함"처럼 성공이 아닌 완료의 사유를 남기는 자리이고, 빈 값이면 기록하지 않는다.
-//
-// Fence는 claim token에 더해 message_id와 살아 있는 lease를 대조한다. 그 이유는
-// queries/complete_inbox.sql이 적는다.
+// 인자 reason은 "재시도해도 같은 결과인 입력 결함"처럼 성공이 아닌 완료의 사유를 남기는 자리이고, 빈 값이면 기록하지 않는다. … Fence는 claim token에 더해 message_id와 살아 있는
+// lease를 대조한다. 그 이유는 queries/complete_inbox.sql이 적는다.
 func (s *Store) Complete(ctx context.Context, claim InboxClaim, reason string) error {
 	return s.execFenced(ctx, "complete inbox", completeInboxSQL,
 		s.opts.Scope, claim.ID, claim.ClaimToken, reason, claim.MessageID,
 	)
 }
 
-// RenewInbox는 처리 중인 행의 lease를 Options.Lease만큼 연장한다. 처리 시간이 lease보다 긴
-// 호출자가 heartbeat로 소유권을 유지하는 경로다. 이미 lease를 잃었으면 ErrClaimLost다.
+// 처리 시간이 lease보다 긴 호출자가 heartbeat로 소유권을 유지하는 경로다. 이미 lease를 잃었으면 ErrClaimLost다.
 func (s *Store) RenewInbox(ctx context.Context, claim InboxClaim) error {
 	if err := s.requirePolicy("renew inbox lease", true, false, false); err != nil {
 		return err
@@ -126,8 +120,7 @@ func (s *Store) RenewInbox(ctx context.Context, claim InboxClaim) error {
 	return s.execFenced(ctx, "renew inbox lease", renewInboxLeaseSQL, s.opts.Scope, claim.ID, claim.ClaimToken, s.opts.Lease.Seconds())
 }
 
-// Release는 처리에 실패한 행을 retryAfter 뒤 다시 처리하도록 되돌린다. 표준 지수 백오프는
-// 호출자가 BackoffFor(claim.Attempts)로 얻고, 0은 즉시 재처리를 뜻한다.
+// 표준 지수 백오프는 호출자가 BackoffFor(claim.Attempts)로 얻고, 0은 즉시 재처리를 뜻한다.
 func (s *Store) Release(ctx context.Context, claim InboxClaim, retryAfter time.Duration) error {
 	if retryAfter < 0 {
 		retryAfter = 0
@@ -148,7 +141,6 @@ func (s *Store) Defer(ctx context.Context, claim InboxClaim, retryAfter time.Dur
 	)
 }
 
-// ManualReviewInbox는 자동으로 판정할 수 없는 행을 사람이 볼 안전 경계 상태로 보낸다.
 // 기본적으로 payload를 남기며 DiscardInboxManualReviewPayload인 소비자는 본문만 지운다.
 func (s *Store) ManualReviewInbox(ctx context.Context, claim InboxClaim, reason string) error {
 	if reason == "" {
@@ -159,9 +151,8 @@ func (s *Store) ManualReviewInbox(ctx context.Context, claim InboxClaim, reason 
 		s.opts.Scope, claim.ID, claim.ClaimToken, reason, s.opts.DiscardInboxManualReviewPayload)
 }
 
-// PruneInbox는 보존이 지난 종단 행을 지우고 지운 수를 반환한다. 두 갈래의 보존은 따로이고,
-// completed는 Options.InboxTerminalRetention을, manual_review는
-// Options.InboxManualReviewRetention을 따른다. 후자가 0이면 사람이 처리할 때까지 남긴다.
+// 두 갈래의 보존은 따로이고, completed는 Options.InboxTerminalRetention을, manual_review는 Options.InboxManualReviewRetention을 따른다.
+// 후자가 0이면 사람이 처리할 때까지 남긴다.
 func (s *Store) PruneInbox(ctx context.Context, limit int) (int64, error) {
 	return s.pruneInbox(ctx, "prune inbox", nil, limit)
 }
@@ -184,7 +175,6 @@ type ReadySnapshot struct {
 	OldestAge time.Duration
 }
 
-// RuntimeSnapshot은 inbox 적재를 관측용으로 읽는다.
 func (s *Store) RuntimeSnapshot(ctx context.Context) (InboxRuntimeSnapshot, error) {
 	var (
 		snapshot InboxRuntimeSnapshot

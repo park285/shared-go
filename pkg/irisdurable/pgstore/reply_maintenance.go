@@ -172,7 +172,6 @@ func (s *Store) ReplyReadySnapshot(ctx context.Context) (ReadySnapshot, error) {
 	)
 }
 
-// PruneReplies는 보존이 지난 행을 지우고 지운 수를 반환한다.
 // 사람이 처리할 때까지 manual_review 행은 남긴다.
 func (s *Store) PruneReplies(ctx context.Context, limit int) (int64, error) {
 	if limit <= 0 {

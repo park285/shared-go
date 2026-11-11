@@ -20,7 +20,6 @@ type Querier interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
-// 인터페이스 txQuerier는 이미 트랜잭션 안에 있는 Querier다. 이 계약은 pgx.Tx가 만족한다.
 type txQuerier interface {
 	Querier
 
@@ -28,7 +27,6 @@ type txQuerier interface {
 	Rollback(ctx context.Context) error
 }
 
-// 인터페이스 beginner는 자기 트랜잭션을 열 수 있는 Querier다. 이 계약은 pgxpool.Pool이 만족한다.
 type beginner interface {
 	Querier
 
@@ -83,7 +81,6 @@ type Options struct {
 	DiscardInboxManualReviewPayload bool
 }
 
-// validate는 지정한 정책 값이 스택 보존 계약을 어기는지 기동 시점에 검사한다.
 func (o Options) validate() error {
 	if o.IrisAdmissionRetention < 0 || o.IrisAutomaticReplayHorizon < 0 || o.Lease < 0 || o.MaxAttempts < 0 || o.BackoffBase < 0 || o.BackoffMax < 0 ||
 		o.AutomaticReplayHorizon < 0 || o.ReplyRetention < 0 || o.InboxTerminalRetention < 0 || o.InboxManualReviewRetention < 0 {
@@ -173,13 +170,11 @@ func New(db Querier, opts Options) (*Store, error) {
 	return &Store{db: db, opts: opts}, nil
 }
 
-// Options는 New에 넘긴 정책이다.
 func (s *Store) Options() Options {
 	return s.opts
 }
 
-// inTransaction은 여러 문이 한 트랜잭션에서 돌아야 하는 연산을 실행한다. 이미 트랜잭션 안이면
-// 그 트랜잭션을 그대로 쓰고(호출자가 commit 시점을 소유한다), pool이면 자기 트랜잭션을 연다.
+// 이미 트랜잭션 안이면 그 트랜잭션을 그대로 쓰고(호출자가 commit 시점을 소유한다), pool이면 자기 트랜잭션을 연다.
 func (s *Store) inTransaction(ctx context.Context, action string, run func(Querier) error) (resultErr error) {
 	switch db := s.db.(type) {
 	case txQuerier:
@@ -206,8 +201,7 @@ func (s *Store) inTransaction(ctx context.Context, action string, run func(Queri
 	}
 }
 
-// requirePolicy는 연산이 쓰는 정책 값이 지정됐는지 확인한다. 기본값으로 채우지 않으므로 빠진 값은
-// 호출 시점 오류로 드러난다.
+// 기본값으로 채우지 않으므로 빠진 값은 호출 시점 오류로 드러난다.
 func (s *Store) requirePolicy(action string, lease, attempts, horizon bool) error {
 	switch {
 	case lease && s.opts.Lease <= 0:
@@ -221,7 +215,6 @@ func (s *Store) requirePolicy(action string, lease, attempts, horizon bool) erro
 	}
 }
 
-// backoff는 attempt번째 재시도의 대기 시간이다.
 func (s *Store) backoff(attempt int) time.Duration {
 	shift := min(max(attempt-1, 0), irisdurable.RetryBackoffMaxShift)
 

@@ -29,7 +29,6 @@ func (s *Store) IsDuplicate(ctx context.Context, key string, ttl time.Duration) 
 // SetOnceNonce는 이 저장소가 set-once 성질을 보장한다는 마커다.
 func (s *Store) SetOnceNonce() {}
 
-// PruneNonce는 만료된 nonce 행을 지우고 지운 수를 반환한다.
 func (s *Store) PruneNonce(ctx context.Context, limit int) (int64, error) {
 	if limit <= 0 {
 		return 0, errors.New("pgstore: prune limit must be positive")

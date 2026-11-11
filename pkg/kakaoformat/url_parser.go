@@ -20,7 +20,6 @@ type literalURL struct {
 
 func (n *literalURL) Kind() ast.NodeKind { return kindLiteralURL }
 
-// Dump는 Goldmark 진단에 원문 URL 노드의 종류를 제공한다.
 func (n *literalURL) Dump(_ []byte) *ast.NodeDump {
 	return ast.NewNodeDump(n, nil)
 }
@@ -29,7 +28,6 @@ type literalURLParser struct{}
 
 func (p *literalURLParser) Trigger() []byte { return []byte{':'} }
 
-// CloseBlock은 블록 간 상태를 보관하지 않는 URL 파서의 종료 훅이다.
 func (p *literalURLParser) CloseBlock(_ ast.Node, _ parser.Context) {}
 
 // URL 내부 별표·밑줄은 기존 일반톡 계약에 따라 강조 대신 주소의 일부로 보존한다.

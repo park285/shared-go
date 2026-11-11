@@ -72,7 +72,6 @@ func (c *Counters) RecordAttempt(outcome AttemptOutcome) bool {
 	return true
 }
 
-// RecordDiscard는 attempt 시작 전 discard를 기록한다.
 func (c *Counters) RecordDiscard(reason DiscardReason) bool {
 	if c == nil {
 		return false
@@ -167,7 +166,6 @@ type WorkerTotals struct {
 	Discarded  DiscardTotals   `json:"discarded"`
 }
 
-// Snapshot은 현재 bounded outcome 누계를 반환한다.
 func (c *Counters) Snapshot() WorkerTotals {
 	if c == nil {
 		return WorkerTotals{}

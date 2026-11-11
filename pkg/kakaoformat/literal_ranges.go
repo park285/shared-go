@@ -211,8 +211,7 @@ func markdownEscaped(input string, index int) bool {
 	return count%2 != 0
 }
 
-// listContext는 목록 항목 내용의 들여쓰기를 추적한다. 항목 안에서 빈 줄 뒤 4칸 들여쓴 문단과 fence는
-// CommonMark에서 항목 내용이므로, 문서 최상위 기준으로 들여쓰기 코드로 오인하지 않게 한다.
+// 항목 안에서 빈 줄 뒤 4칸 들여쓴 문단과 fence는 CommonMark에서 항목 내용이므로, 문서 최상위 기준으로 들여쓰기 코드로 오인하지 않게 한다.
 type listContext struct{ indents []int }
 
 // observe는 줄이 속한 목록 항목의 내용 들여쓰기를 반환하고, 그 줄이 목록 항목이면 다음 줄을 위해 기록한다.
@@ -255,7 +254,6 @@ func (c *listContext) observe(line string, previousBlank bool) int {
 	return base
 }
 
-// listContentOffset은 목록 표식 뒤 공백까지 포함한 항목 내용의 시작 열을 CommonMark 규칙대로 계산한다.
 func listContentOffset(line string, marker int) int {
 	spaces := 0
 	for marker-1+spaces < len(line) && line[marker-1+spaces] == ' ' {

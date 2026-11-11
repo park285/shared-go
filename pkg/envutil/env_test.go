@@ -69,7 +69,6 @@ func TestStringRaw(t *testing.T) {
 	}
 }
 
-// 비엄격 Int/Bool/Float/Duration은 제거되었고 잘못된 값은 기본값 대신 에러로 드러난다.
 func TestIntEValues(t *testing.T) {
 	tests := []struct {
 		name     string

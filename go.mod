@@ -1,6 +1,6 @@
 module github.com/park285/shared-go/v2
 
-go 1.27.3
+go 1.27.4
 
 retract v2.4.1 // exported package removal was incorrectly published as a patch; use v2.5.0
 

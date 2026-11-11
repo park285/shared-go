@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// 단일 패스로 바꾸기 전의 Restore다. 새 Restore는 모든 입력에서 이 결과와 바이트 단위로 같아야 한다.
+// 새 Restore는 모든 입력에서 이 결과와 바이트 단위로 같아야 한다.
 func restoreWithReplacer(s *store, text string) string {
 	if len(s.values) == 0 {
 		return text

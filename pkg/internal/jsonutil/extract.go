@@ -23,7 +23,6 @@ const (
 	jsonQuote       byte = 34
 )
 
-// 코드펜스 정규식.
 var fenceRe = regexp.MustCompile("(?s)```(?:json)?\\s*([\\s\\S]*?)```")
 
 // 1. 코드펜스 내 JSON 우선 시도
@@ -42,14 +41,12 @@ func Extract(text string) ([]byte, error) {
 		}
 	}
 
-	// 1. 코드펜스 우선
 	if matches := fenceRe.FindStringSubmatch(text); len(matches) > 1 {
 		if candidate := []byte(strings.TrimSpace(matches[1])); jsontext.Value(candidate).IsValid() {
 			return candidate, nil
 		}
 	}
 
-	// 2. 브라켓 매칭 폴백
 	out, err := extractFirstJSON(text)
 	if err != nil {
 		return out, fmt.Errorf("extract first JSON: %w", err)

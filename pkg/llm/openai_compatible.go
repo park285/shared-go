@@ -206,8 +206,7 @@ func (g *OpenAICompatibleJSONGenerator) generateChatCompletionsJSON(ctx context.
 	}, nil
 }
 
-// layeredJSONMessages는 요청을 invariant·developer·user 순서의 메시지로 만든다. 빈 지시 계층은
-// AdaptInstructionMessages가 건너뛰고, user 메시지는 항상 마지막에 남는다.
+// 빈 지시 계층은 AdaptInstructionMessages가 건너뛰고, user 메시지는 항상 마지막에 남는다.
 func layeredJSONMessages(req JSONRequest) []Message {
 	return []Message{
 		{Role: roleSystem, Content: req.InvariantPrompt},
@@ -216,8 +215,7 @@ func layeredJSONMessages(req JSONRequest) []Message {
 	}
 }
 
-// singleSystemInstruction은 단일 system profile로 변환한 메시지에서 지시를 꺼낸다. 이 profile은
-// 지시 계층이 있을 때만 system 메시지 하나를 맨 앞에 두므로, 첫 메시지가 user이면 지시가 없는 것이다.
+// 이 profile은 지시 계층이 있을 때만 system 메시지 하나를 맨 앞에 두므로, 첫 메시지가 user이면 지시가 없는 것이다.
 func singleSystemInstruction(messages []Message) string {
 	if len(messages) > 0 && messages[0].Role == roleSystem {
 		return messages[0].Content

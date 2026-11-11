@@ -85,7 +85,6 @@ func (m *WebhookMetrics) ObserveHandlerDuration(d time.Duration) {
 	}
 }
 
-// Expose는 <prefix>_webhook_* 메트릭을 Prometheus 텍스트 포맷으로 직렬화합니다.
 func (m *WebhookMetrics) Expose(w io.Writer) bool {
 	if m == nil {
 		return true

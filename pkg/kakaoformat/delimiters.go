@@ -56,7 +56,6 @@ func parseEmphasisDelimiter(block text.Reader, minimum int, processor parser.Del
 	return delimiter
 }
 
-// commonMarkFlanking은 CommonMark 강조 규칙의 열기·닫기 가능 여부를 계산한다.
 func commonMarkFlanking(char byte, before, after rune) (canOpen, canClose bool) {
 	left := parser.IsLeftFlankingDelimiterRun(before, after)
 	right := parser.IsRightFlankingDelimiterRun(before, after)
@@ -68,7 +67,6 @@ func commonMarkFlanking(char byte, before, after rune) (canOpen, canClose bool) 
 	return left && (!right || util.IsPunctRune(before)), right && (!left || util.IsPunctRune(after))
 }
 
-// delimiterNeighbors는 구분자 묶음 바로 뒤 글자와 그다음 글자를 반환하며 줄 끝은 공백으로 본다.
 func delimiterNeighbors(line []byte, length int) (rune, rune) {
 	if length >= len(line) {
 		return ' ', ' '
@@ -121,7 +119,6 @@ func (tildeDelimiterProcessor) CanOpenCloser(opener, closer *parser.Delimiter) b
 
 func (tildeDelimiterProcessor) OnMatch(int) ast.Node { return extast.NewStrikethrough() }
 
-// strikethroughParser는 `~~` 두 개짜리만 취소선으로 해석한다.
 // GFM은 물결표 하나도 허용하지만 한국어의 `3~5일`·`10~20만 원` 범위 표기가 둘 이상이면 사이 문장이 지워진다.
 type strikethroughParser struct{}
 
@@ -146,5 +143,4 @@ func (strikethroughParser) Parse(_ ast.Node, block text.Reader, pc parser.Contex
 	return parser.ParseDelimiter(block, 2, tildeDelimiterProcessor{}, pc)
 }
 
-// CloseBlock은 블록 간 상태를 보관하지 않는 취소선 파서의 종료 훅이다.
 func (strikethroughParser) CloseBlock(ast.Node, parser.Context) {}

@@ -19,9 +19,7 @@ import (
 	"github.com/park285/shared-go/v2/pkg/irisdurable/pgstore"
 )
 
-// TestSettleCountsOnlyStalledAttemptsAgainstTheCap은 전진한 시도가 재시도 예산을 쓰지 않는지
-// 확인한다. 전진한 시도까지 세면 한 응답을 여러 조각으로 나눠 보내는 호출자에서 조각 수가
-// (상한 / 조각당 왕복)을 넘는 순간 상한이 먼저 소진돼 응답의 꼬리가 영구 유실된다.
+// 전진한 시도까지 세면 한 응답을 여러 조각으로 나눠 보내는 호출자에서 조각 수가 (상한 / 조각당 왕복)을 넘는 순간 상한이 먼저 소진돼 응답의 꼬리가 영구 유실된다.
 func TestSettleCountsOnlyStalledAttemptsAgainstTheCap(t *testing.T) {
 	pool := newMigratedPool(t)
 	store := newScopedStore(t, pool)
@@ -44,7 +42,6 @@ func TestSettleCountsOnlyStalledAttemptsAgainstTheCap(t *testing.T) {
 	}
 }
 
-// settleOnce는 한 시도를 시작해 outcome_unknown으로 정산하고 남은 attempts를 돌려준다.
 func settleOnce(t *testing.T, store *pgstore.Store, identity irisdurable.ReplyIdentity, progressed bool) int {
 	t.Helper()
 
@@ -69,8 +66,7 @@ func settleOnce(t *testing.T, store *pgstore.Store, identity irisdurable.ReplyId
 	return state.Attempts
 }
 
-// TestStageRejectsALateLowerOrdinal은 더 높은 ordinal이 이미 있는 (message, phase)에 낮은
-// 순번이 뒤늦게 도착하면 받지 않는지 확인한다. 받으면 이미 보낸 응답 뒤에 앞 순번이 다시 나간다.
+// 받으면 이미 보낸 응답 뒤에 앞 순번이 다시 나간다.
 func TestStageRejectsALateLowerOrdinal(t *testing.T) {
 	pool := newMigratedPool(t)
 	store := newScopedStore(t, pool)
@@ -115,7 +111,6 @@ func TestStageRejectsALateLowerOrdinal(t *testing.T) {
 	}
 }
 
-// TestStageRowReturnsTheStoredRow는 stage 직후 저장본을 추가 왕복 없이 읽을 수 있는지 확인한다.
 func TestStageRowReturnsTheStoredRow(t *testing.T) {
 	pool := newMigratedPool(t)
 	store := newScopedStore(t, pool)
@@ -198,9 +193,7 @@ func requireSameJSON(t *testing.T, got, want []byte, label string) {
 	}
 }
 
-// TestCompleteRequiresTheMessageIdAndALiveLease는 종단 전이의 fence를 확인한다. 토큰만 대조하면
-// lease가 만료된 뒤 재claim·복구 전의 창에서 complete이 성공하고, 같은 순간 그 경로가 행을
-// 되돌리면 같은 메시지가 두 번 처리된다.
+// 토큰만 대조하면 lease가 만료된 뒤 재claim·복구 전의 창에서 complete이 성공하고, 같은 순간 그 경로가 행을 되돌리면 같은 메시지가 두 번 처리된다.
 func TestCompleteRequiresTheMessageIdAndALiveLease(t *testing.T) {
 	pool := newMigratedPool(t)
 	store := newScopedStore(t, pool)
@@ -228,8 +221,6 @@ func TestCompleteRequiresTheMessageIdAndALiveLease(t *testing.T) {
 	}
 }
 
-// TestCompleteRecordsANonSuccessReason은 "재시도해도 같은 결과인 입력 결함"처럼 성공이 아닌
-// 완료의 사유가 종단 행에 남는지 확인한다.
 func TestCompleteRecordsANonSuccessReason(t *testing.T) {
 	pool := newMigratedPool(t)
 	store := newScopedStore(t, pool)
@@ -257,8 +248,6 @@ func TestCompleteRecordsANonSuccessReason(t *testing.T) {
 	}
 }
 
-// TestDeferReturnsTheAttemptBudget은 처리를 시작하지 못하고 소유권만 반납한 claim이 재시도
-// 예산을 쓰지 않는지 확인한다.
 func TestDeferReturnsTheAttemptBudget(t *testing.T) {
 	pool := newMigratedPool(t)
 	store := newScopedStore(t, pool)
@@ -296,7 +285,6 @@ func TestDeferReturnsTheAttemptBudget(t *testing.T) {
 	}
 }
 
-// TestPruneInboxKeepsManualReviewLonger는 두 종단 갈래의 보존이 따로 도는지 확인한다.
 func TestPruneInboxKeepsManualReviewLonger(t *testing.T) {
 	pool := newMigratedPool(t)
 	scope := fmt.Sprintf("test-%d-%d", time.Now().UnixNano(), scopeCounter.Add(1))
@@ -340,8 +328,6 @@ func TestPruneInboxKeepsManualReviewLonger(t *testing.T) {
 	}
 }
 
-// TestManualReviewRetentionMayNotUndercutTerminalRetention은 아직 검토하지 않은 행이 이미
-// 검토가 끝난 completed 행보다 먼저 사라지는 구성을 기동 시점에 막는지 본다.
 func TestManualReviewRetentionMayNotUndercutTerminalRetention(t *testing.T) {
 	t.Parallel()
 
@@ -354,7 +340,6 @@ func TestManualReviewRetentionMayNotUndercutTerminalRetention(t *testing.T) {
 	}
 }
 
-// TestSnapshotsMatchTheClaimPredicates는 관측 조회가 실제로 집을 수 있는 행을 세는지 확인한다.
 // 술어가 어긋나면 밀린 건수와 실제 처리 가능한 행 수가 달라져 워커 수 판단이 틀어진다.
 func TestSnapshotsMatchTheClaimPredicates(t *testing.T) {
 	pool := newMigratedPool(t)
@@ -419,7 +404,6 @@ func TestSnapshotsMatchTheClaimPredicates(t *testing.T) {
 	}
 }
 
-// admitAndClaim은 메시지 하나를 admit하고 곧바로 claim해 돌려준다.
 func admitAndClaim(t *testing.T, store *pgstore.Store, label string) pgstore.InboxClaim {
 	t.Helper()
 
@@ -461,9 +445,7 @@ func backdateTerminalAt(t *testing.T, pool *pgxpool.Pool, id int64, age time.Dur
 	}
 }
 
-// TestStageSerializesTheOrdinalSequence는 같은 (message, phase)의 stage가 직렬화되는지 확인한다.
-// 직렬화가 없으면 두 stage가 서로의 미commit 행을 보지 못해 후속 ordinal 가드를 양쪽 다
-// 통과하고, 늦게 도착한 낮은 순번이 행으로 남아 이미 보낸 응답 뒤에 앞 순번이 다시 나간다.
+// 직렬화가 없으면 두 stage가 서로의 미commit 행을 보지 못해 후속 ordinal 가드를 양쪽 다 통과하고, 늦게 도착한 낮은 순번이 행으로 남아 이미 보낸 응답 뒤에 앞 순번이 다시 나간다.
 func TestStageSerializesTheOrdinalSequence(t *testing.T) {
 	pool := newMigratedPool(t)
 	store := newScopedStore(t, pool)
@@ -517,7 +499,6 @@ type stageResult struct {
 	err    error
 }
 
-// beginStagedTx는 열린 트랜잭션 안에서 응답 하나를 stage하고 그 트랜잭션을 돌려준다.
 func beginStagedTx(t *testing.T, pool *pgxpool.Pool, scope string, record irisdurable.ReplyRecord) pgx.Tx {
 	t.Helper()
 
@@ -544,8 +525,7 @@ func beginStagedTx(t *testing.T, pool *pgxpool.Pool, scope string, record irisdu
 	return tx
 }
 
-// stageAsync는 별도 goroutine에서 stage를 시작하고 결과 채널을 돌려준다. 같은 순번열의 앞
-// 트랜잭션이 열려 있는 동안 이 호출은 막혀 있어야 한다.
+// 같은 순번열의 앞 트랜잭션이 열려 있는 동안 이 호출은 막혀 있어야 한다.
 func stageAsync(store *pgstore.Store, record irisdurable.ReplyRecord) <-chan stageResult {
 	done := make(chan stageResult, 1)
 
@@ -558,9 +538,7 @@ func stageAsync(store *pgstore.Store, record irisdurable.ReplyRecord) <-chan sta
 	return done
 }
 
-// TestRetireReturnsTheRowsItClosed는 Retire가 지우기 직전의 상태와 payload를 함께 돌려주는지
-// 확인한다. 전송을 시작하지 못한 행에서 text 대체본을 파생하는 호출자는 이 둘이 없으면 이미
-// 전달됐을 수 있는 행까지 다시 보내거나, payload가 지워진 뒤라 아무것도 파생하지 못한다.
+// 전송을 시작하지 못한 행에서 text 대체본을 파생하는 호출자는 이 둘이 없으면 이미 전달됐을 수 있는 행까지 다시 보내거나, payload가 지워진 뒤라 아무것도 파생하지 못한다.
 func TestRetireReturnsTheRowsItClosed(t *testing.T) {
 	pool := newMigratedPool(t)
 	store := newScopedStore(t, pool)
@@ -619,9 +597,7 @@ func TestRetireReturnsTheRowsItClosed(t *testing.T) {
 	}
 }
 
-// TestClaimPlanUsesThePartialIndexes는 claim과 runtime snapshot이 참조 스키마의 부분 인덱스를
-// 실제로 타는지 확인한다. 인덱스를 놓치면 inbox가 커질수록 claim이 순차 스캔으로 내려앉는다.
-// 이 claim은 key별 head를 head 인덱스의 재귀 건너뛰기로 꺼내므로 비용이 활성 key 수에 비례한다.
+// 인덱스를 놓치면 inbox가 커질수록 claim이 순차 스캔으로 내려앉는다. 이 claim은 key별 head를 head 인덱스의 재귀 건너뛰기로 꺼내므로 비용이 활성 key 수에 비례한다.
 func TestClaimPlanUsesThePartialIndexes(t *testing.T) {
 	pool := newMigratedPool(t)
 	store := newScopedStore(t, pool)
@@ -687,9 +663,7 @@ func explainQuery(ctx context.Context, t *testing.T, conn *pgxpool.Conn, label, 
 	return strings.Join(lines, "\n")
 }
 
-// TestCountRepliesByStatusLeavesOutTerminalRows는 상태별 개수가 backlog만 담는지 확인한다.
-// 종단 행까지 세면 그 값은 backlog가 아니게 되고, 술어가 부분 인덱스를 벗어나 보존 기간
-// 전체를 훑는다.
+// 종단 행까지 세면 그 값은 backlog가 아니게 되고, 술어가 부분 인덱스를 벗어나 보존 기간 전체를 훑는다.
 func TestCountRepliesByStatusLeavesOutTerminalRows(t *testing.T) {
 	pool := newMigratedPool(t)
 	store := newScopedStore(t, pool)

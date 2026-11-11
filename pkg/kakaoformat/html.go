@@ -17,7 +17,6 @@ var (
 	htmlSubscripts   = scriptMap("0123456789+-=()", "₀₁₂₃₄₅₆₇₈₉₊₋₌₍₎")
 )
 
-// rawHTMLText는 인라인 HTML 중 화면 의미가 분명한 줄바꿈과 주석만 평문으로 바꾸고 나머지 태그는 원문으로 둔다.
 func rawHTMLText(value string) string {
 	switch {
 	case reBreakTag.MatchString(value):
@@ -29,7 +28,6 @@ func rawHTMLText(value string) string {
 	}
 }
 
-// scriptTag는 <sup>·<sub>와 짝이 맞는 닫는 태그 사이를 위·아래 첨자로 바꾼다.
 // 짝이 없거나 첨자로 표시할 수 없는 문자는 ^(...)·_(...)로 남겨 지수 의미를 잃지 않게 한다.
 func (d *plainDocument) scriptTag(node ast.Node, style int) (ast.Node, string, bool) {
 	open, ok := node.(*ast.RawHTML)

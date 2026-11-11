@@ -24,9 +24,7 @@ func (s ReplyStatus) Terminal() bool {
 	return s == ReplyStatusDead || s == ReplyStatusPermanentConflict
 }
 
-// Resendable은 저장된 clientRequestId로 발송을 다시 시도할 수 있는 상태인지 알려준다.
-// Outcome_unknown이 포함되는 이유: 결과 미상은 실패가 아니며, 같은 id 재전송은 Iris admission이
-// 멱등하게 흡수하므로 새 id 없이 다시 보내는 것이 유일하게 안전한 경로다.
+// Outcome_unknown이 포함되는 이유: 결과 미상은 실패가 아니며, 같은 id 재전송은 Iris admission이 멱등하게 흡수하므로 새 id 없이 다시 보내는 것이 유일하게 안전한 경로다.
 func (s ReplyStatus) Resendable() bool {
 	return s == ReplyStatusPending || s == ReplyStatusRetryablePreDispatch || s == ReplyStatusOutcomeUnknown
 }

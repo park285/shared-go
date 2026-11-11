@@ -16,7 +16,6 @@ type SessionConfig struct {
 	StatementTimeout time.Duration
 }
 
-// Configure는 0보다 큰 timeout을 exec 세션에 설정한다.
 func (c SessionConfig) Configure(ctx context.Context, exec Execer) error {
 	if exec == nil {
 		return errors.New("dbmigrate: exec is required")

@@ -53,8 +53,7 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// safeDSN은 Validate를 통과한 Config의 DSN을 비밀번호만 가린 형태로 만든다. 파싱 오류에 원문
-// 비밀번호가 실리지 않도록 pgx 파싱은 이 값으로 하고 비밀번호는 파싱 뒤 따로 채운다.
+// 파싱 오류에 원문 비밀번호가 실리지 않도록 pgx 파싱은 이 값으로 하고 비밀번호는 파싱 뒤 따로 채운다.
 func (c *Config) safeDSN() (string, error) {
 	if err := c.Validate(); err != nil {
 		return "", fmt.Errorf("validate: %w", err)
@@ -68,7 +67,6 @@ func (c *Config) safeDSN() (string, error) {
 	return c.buildDSN(password), nil
 }
 
-// buildDSN은 sslrootcert를 Config.SSLRootCert에서만 채운다.
 func (c *Config) buildDSN(password string) string {
 	sslRootCert := strings.TrimSpace(c.SSLRootCert)
 	queryExecMode := normalizeQueryExecMode(c.QueryExecMode)

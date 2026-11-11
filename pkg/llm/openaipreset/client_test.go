@@ -476,8 +476,7 @@ func TestGenerateJSONAsPromptSummaryOmitsWhitespaceOnlyLayers(t *testing.T) {
 	}
 }
 
-// 지시 계층이 모두 공백이면 instructions 없이 user 메시지 하나만 보낸다. 단일 system prompt 경로는
-// 없으므로 빈 지시도 계층 경로 하나로 처리한다.
+// 단일 system prompt 경로는 없으므로 빈 지시도 계층 경로 하나로 처리한다.
 func TestGenerateJSONAsResponsesWhitespaceOnlyLayersSendUserOnly(t *testing.T) {
 	var payload map[string]any
 

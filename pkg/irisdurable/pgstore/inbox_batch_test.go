@@ -21,8 +21,7 @@ const (
 	inboxRecoveryScope   = "recovery"
 )
 
-// 명시 복구 모드에서는 만료 claim이 준비 상태나 ClaimBatch로 다시 나오지 않고, 만료된 소유자는
-// 종단 전이를 하지 못한다. 복구 판정은 ApplyInboxRecovery 테스트가 따로 검증한다.
+// 복구 판정은 ApplyInboxRecovery 테스트가 따로 검증한다.
 func TestInboxBatchKeepsFIFOAndRequiresExplicitRecovery(t *testing.T) {
 	pool := newMigratedPool(t)
 	store := newScopedStoreWithOptions(t, pool, pgstore.Options{

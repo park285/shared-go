@@ -19,7 +19,6 @@ const (
 	testValue                = "value"
 )
 
-// twentyqServiceOptions는 TwentyQ가 넘기는 service 단계 키와 기본 경로를 opts에 채운다.
 func twentyqServiceOptions(opts DotenvOptions) DotenvOptions {
 	opts.EnvFileKey = testTwentyqEnvFile
 	opts.RequireStaticSecretsKey = testRequireStaticSecrets

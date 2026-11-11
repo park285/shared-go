@@ -19,7 +19,6 @@ const (
 	testManualReviewRetention  = 30 * 24 * time.Hour
 )
 
-// testPolicy는 테스트가 따로 정하지 않은 정책 항목을 명시 테스트 값으로 채운다.
 func testPolicy(opts pgstore.Options) pgstore.Options {
 	fill := func(value *time.Duration, def time.Duration) {
 		if *value == 0 {
@@ -43,9 +42,7 @@ func testPolicy(opts pgstore.Options) pgstore.Options {
 	return opts
 }
 
-// TestOptionsEnforceIrisAdmissionBoundaries는 보존·지평이 호출자가 넘긴 Iris admission 보존과 정본 지평을
-// 기준으로 기동 시점에 검증되는지 본다. 종단 inbox 보존은 admission 보존과 같아도 거부하고(XST-02),
-// 정본 지평(144h)을 한 시간이라도 넘는 지평은 admission 보존 안이어도 거부한다(XST-03).
+// 종단 inbox 보존은 admission 보존과 같아도 거부하고, 정본 지평(144h)을 한 시간이라도 넘는 지평은 admission 보존 안이어도 거부한다.
 func TestOptionsEnforceIrisAdmissionBoundaries(t *testing.T) {
 	t.Parallel()
 
@@ -89,7 +86,6 @@ func TestOptionsEnforceIrisAdmissionBoundaries(t *testing.T) {
 	}
 }
 
-// TestOperationsRejectMissingPolicy는 정책 기본값이 없어 0인 값을 쓰는 연산이 SQL 전에 오류를 내는지 본다.
 // 이전에는 lease 30초·시도 8회·백오프 1초~1분이 조용히 채워져 소비자 정책과 달라질 수 있었다.
 func TestOperationsRejectMissingPolicy(t *testing.T) {
 	t.Parallel()

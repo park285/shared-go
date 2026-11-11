@@ -35,13 +35,9 @@ func (s *Store) Stage(ctx context.Context, record irisdurable.ReplyRecord) (iris
 	return staged.Outcome, err
 }
 
-// StageRow는 Stage와 같은 일을 하고 저장된 행을 함께 돌려준다. 발송 여부를 저장본의 상태와
-// 시도 횟수로 판단하는 호출자가 Stage 뒤에 Inspect를 한 번 더 하지 않게 한다.
-//
-// 같은 (scope, message_id, phase)의 stage는 advisory transaction lock으로 직렬화한다. 잠금과
-// 삽입은 반드시 서로 다른 문이어야 한다. 후속 ordinal 가드는 스냅샷 읽기인데 READ COMMITTED의
-// 문 스냅샷은 잠금을 얻기 전에 잡히므로, 한 문에 담으면 대기가 풀려도 방금 commit된 후속 행을
-// 보지 못한다. 그래서 Querier가 이미 트랜잭션이 아니면 여기서 트랜잭션을 연다.
+// 발송 여부를 저장본의 상태와 시도 횟수로 판단하는 호출자가 Stage 뒤에 Inspect를 한 번 더 하지 않게 한다. … 같은 (scope, message_id, phase)의 stage는 advisory
+// transaction lock으로 직렬화한다. 잠금과 삽입은 반드시 서로 다른 문이어야 한다. 후속 ordinal 가드는 스냅샷 읽기인데 READ COMMITTED의 문 스냅샷은 잠금을 얻기 전에 잡히므로, 한
+// 문에 담으면 대기가 풀려도 방금 commit된 후속 행을 보지 못한다. 그래서 Querier가 이미 트랜잭션이 아니면 여기서 트랜잭션을 연다.
 func (s *Store) StageRow(ctx context.Context, record irisdurable.ReplyRecord) (StagedReply, error) {
 	if record.MessageID == "" || record.Phase == "" || record.RoomID == "" || record.ClientRequestID == "" {
 		return StagedReply{}, errors.New("pgstore: reply record requires messageID, phase, roomID and clientRequestID")
@@ -124,9 +120,8 @@ func (s *Store) stageRow(ctx context.Context, db Querier, record irisdurable.Rep
 	return staged, nil
 }
 
-// BeginAttempt는 재발송 가능한 행의 소유권을 잡고 시도 수를 올린다. 종단, 활성 lease,
-// MaxAttempts 또는 AutomaticReplayHorizon 경계로 발송이 금지되면
-// irisdurable.ErrReplyNotClaimable을, 행이 없으면 ErrNotFound를 반환한다.
+// 종단, 활성 lease, MaxAttempts 또는 AutomaticReplayHorizon 경계로 발송이 금지되면 irisdurable.ErrReplyNotClaimable을, 행이 없으면
+// ErrNotFound를 반환한다.
 func (s *Store) BeginAttempt(ctx context.Context, identity irisdurable.ReplyIdentity) (irisdurable.ReplyAttempt, error) {
 	if err := s.requirePolicy("begin reply attempt", true, true, true); err != nil {
 		return irisdurable.ReplyAttempt{}, err
@@ -165,8 +160,7 @@ func (s *Store) BeginAttempt(ctx context.Context, identity irisdurable.ReplyIden
 	return irisdurable.ReplyAttempt{}, fmt.Errorf("pgstore: begin reply attempt %s/%s/%d: %w", identity.MessageID, identity.Phase, identity.Ordinal, irisdurable.ErrReplyNotClaimable)
 }
 
-// Settle이 받아들이는 결과 상태다. 시도 결과가 아닌 pending·submitting과, 사람이 판정할 사유가
-// 필요한 manual_review는 Settle 결과로 받지 않는다.
+// 시도 결과가 아닌 pending·submitting과, 사람이 판정할 사유가 필요한 manual_review는 Settle 결과로 받지 않는다.
 var settleableStatuses = map[irisdurable.ReplyStatus]bool{
 	irisdurable.ReplyStatusAccepted:             true,
 	irisdurable.ReplyStatusRetryablePreDispatch: true,
@@ -196,7 +190,6 @@ func (s *Store) Settle(ctx context.Context, attempt irisdurable.ReplyAttempt, ou
 	)
 }
 
-// Inspect는 행의 관측 상태를 읽기만 한다.
 func (s *Store) Inspect(ctx context.Context, identity irisdurable.ReplyIdentity) (irisdurable.ReplyState, error) {
 	var (
 		state  irisdurable.ReplyState

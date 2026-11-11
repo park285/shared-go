@@ -81,7 +81,7 @@ func (decoder *RuleRegionDecoder) ReserveContext(bytes int) DecodeStatus {
 	return status
 }
 
-// Walk는 독립 영역을 순서대로 검사한다. Evidence는 단독 디코딩 근거를 즉시 소비한다.
+// Evidence는 단독 디코딩 근거를 즉시 소비한다.
 func (decoder *RuleRegionDecoder) Walk(input string, evidence func(int, int, string), visit func(RuleDecodeRegion)) DecodeStatus {
 	var status DecodeStatus
 
@@ -202,7 +202,7 @@ func (decoder *regionDecoder) base64(current string) {
 	}
 }
 
-// decodedBase64는 스팬 수집이 이미 풀어 메모에 남긴 값을 다시 풀지 않는다. 메모의 빈 문자열은 읽을 수 없는 값이다.
+// 메모의 빈 문자열은 읽을 수 없는 값이다.
 func (decoder *regionDecoder) decodedBase64(encoded string) (string, bool) {
 	if value, exists := decoder.work.base64Memo[encoded]; exists {
 		return value, value != ""
@@ -216,8 +216,7 @@ func (decoder *regionDecoder) decodedBase64(encoded string) (string, bool) {
 	return string(decoded), true
 }
 
-// withoutHexPayloads는 hex: 표지 뒤 값을 같은 길이의 공백으로 바꿔 다른 해석의 탐색에서 뺀다. 값 뒤에
-// Base64 문자가 이어지면 hex 값이 아니라 더 긴 토큰의 앞부분이므로, 가려서 Base64 정렬을 바꾸지 않는다.
+// 값 뒤에 Base64 문자가 이어지면 hex 값이 아니라 더 긴 토큰의 앞부분이므로, 가려서 Base64 정렬을 바꾸지 않는다.
 func withoutHexPayloads(text string) string {
 	if !containsHexFold(text) {
 		return text
@@ -402,8 +401,7 @@ func hexRegionEnd(input string, start int) int {
 	return start + match[3]
 }
 
-// ruleJSONEscapeEnd는 영역을 잇는 JSON 이스케이프의 끝이다. 줄바꿈·탭 이스케이프는 풀면 공백이라
-// 영역을 나누므로 ruleRegionGap이 건너뛴다.
+// 줄바꿈·탭 이스케이프는 풀면 공백이라 영역을 나누므로 ruleRegionGap이 건너뛴다.
 func ruleJSONEscapeEnd(input string, start int) int {
 	if start+1 == len(input) {
 		return start
@@ -421,8 +419,7 @@ func ruleJSONEscapeEnd(input string, start int) int {
 	return start
 }
 
-// ruleRegionGap은 영역 사이 구분자 하나의 byte 길이다. JSON 줄바꿈·탭 이스케이프는 풀면 공백이므로
-// 두 글자를 한 구분자로 건너뛴다. 뒤 글자를 다음 영역의 시작으로 읽으면 이어지는 값이 깨진다.
+// JSON 줄바꿈·탭 이스케이프는 풀면 공백이므로 두 글자를 한 구분자로 건너뛴다. 뒤 글자를 다음 영역의 시작으로 읽으면 이어지는 값이 깨진다.
 func ruleRegionGap(input string, position int) int {
 	if isJSONWhitespaceEscape(input, position) {
 		return 2

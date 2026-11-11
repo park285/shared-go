@@ -41,7 +41,6 @@ func TestLooksLikeToolCallEnvelope(t *testing.T) {
 	}
 }
 
-// 전체 파싱본과 달리 조기 종료 판정은 잘린 envelope도 tool-call로 본다.
 func TestLooksLikeToolCallEnvelopeTruncatedTailStillDetected(t *testing.T) {
 	t.Parallel()
 
