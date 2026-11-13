@@ -12,18 +12,13 @@ const (
 	maxDecodedTotalBytes   = 64 << 10
 	maxDecodeDepth         = 2
 	maxDecodeScans         = 256
-	// 열거·기여 검사 시도 예산이며, junk 기각이 무과금으로 바뀐 뒤에는 고유 suspect의
-	// 경계 열거(스팬 길이 제곱)만 이 예산을 쓰므로, 25KB급 정상 답변의 열거 총량
-	// (~수만)을 여유 있게 덮되 대량 고유-junk 스터핑은 소진→fail-closed로 남긴다.
+	// 고유 suspect의 경계 열거는 스팬 길이 제곱으로 늘어난다.
+	// 정상 장문은 허용하되 대량 고유 junk가 예산을 소진하면 fail-closed로 끝낸다.
 	maxProtectedDecodeTries = 1 << 18
 	maxProtectedDecodeBytes = 4 << 20
-	// 최악 CPU를 지배하는 것은 시도 횟수가 아니라 이 문맥 예산이다: 긴 구분자 run이
-	// 8KB 윈도우를 무력화하면 contextualMatchSurface가 입력 전체를 재조합해 규칙
-	// 정규식을 돌리므로 1회 과금이 곧 입력 길이가 된다. 1MB 적대 입력 실측 4.35s/op
-	// (BenchmarkOutputGuardContextualDecodeMaximumOutput).
-	// 낮추면 적대 입력보다 정상 입력이 먼저 끊긴다: 25KB 정상 장문이 이미 최대
-	// 1.29MB를 쓰고, 1<<20에서 TestBoundGuardAllowsLongTechnicalAnswers가 오차단된다.
-	// 보호 경로의 embedded 문맥 창(EmbeddedContextRadiusBytes)도 이 예산에 과금한다.
+	// 최악 CPU는 시도 횟수가 아니라 이 예산이 정하므로 올리면 적대 입력의 처리 시간도 함께 늘어난다.
+	// 긴 구분자 run으로 작은 창을 쓸 수 없으면 재조합한 입력 전체가 문맥 비용으로 과금된다.
+	// 정상 장문의 문맥 확장 여유를 남기며 embedded 문맥 창도 같은 예산에 포함한다.
 	maxProtectedContextBytes = 16 << 20
 	maxHTMLEntityNameBytes   = 31
 	maxLegacyHTMLEntityBytes = 6
