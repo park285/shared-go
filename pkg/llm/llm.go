@@ -3,19 +3,15 @@ package llm
 import (
 	"context"
 	"errors"
-	"fmt"
-	"strings"
+
+	"github.com/park285/shared-go/v2/pkg/llm/internal/openaidiag"
 )
 
 var (
-	ErrNilContext         = errors.New("llm: context is nil")
-	ErrNilJSONGenerator   = errors.New("llm: json generator is nil")
-	ErrInvalidJSONRequest = errors.New("llm: invalid json request")
+	ErrNilContext          = errors.New("llm: context is nil")
+	ErrOpenAIEmptyOutput   = openaidiag.ErrEmptyOutput
+	ErrOpenAIRefusalOutput = openaidiag.ErrRefusalOutput
 )
-
-type JSONGenerator interface {
-	GenerateJSON(ctx context.Context, req JSONRequest) (JSONResponse, error)
-}
 
 type Message struct {
 	Role    string
@@ -24,28 +20,6 @@ type Message struct {
 	// 경계로 표시한다. 이전 모델은 해당 필드를 400으로 거부하므로 호출자가
 	// 모델에 맞춰 설정해야 한다.
 	CacheBreakpoint bool
-}
-
-// JSONRequest의 지시는 InvariantPrompt/DeveloperPrompt 계층으로 전달한다.
-type JSONRequest struct {
-	TaskName        string
-	UserPrompt      string
-	InvariantPrompt string
-	DeveloperPrompt string
-	SchemaName      string
-	Schema          map[string]any
-	Model           string
-	Temperature     *float64
-	ReasoningEffort string
-	WebSearch       bool
-	ChatCompletions bool
-	CacheKey        string
-}
-
-type JSONResponse struct {
-	Text  string
-	Model string
-	Usage Usage
 }
 
 type Usage struct {
@@ -64,53 +38,3 @@ type UsageReporter interface {
 type NoopUsageReporter struct{}
 
 func (NoopUsageReporter) RecordUsage(context.Context, string, string, Usage) {}
-
-func RunJSON(ctx context.Context, generator JSONGenerator, req JSONRequest, provider string, reporter UsageReporter) (JSONResponse, error) {
-	if ctx == nil {
-		return JSONResponse{}, ErrNilContext
-	}
-
-	if generator == nil {
-		return JSONResponse{}, ErrNilJSONGenerator
-	}
-
-	if err := validateJSONRequest(req); err != nil {
-		return JSONResponse{}, err
-	}
-
-	if err := ctx.Err(); err != nil {
-		return JSONResponse{}, fmt.Errorf("llm: context done: %w", err)
-	}
-
-	resp, err := generator.GenerateJSON(ctx, req)
-	if err != nil {
-		return JSONResponse{}, fmt.Errorf("llm: generate JSON: %w", err)
-	}
-
-	if reporter != nil {
-		model := strings.TrimSpace(resp.Model)
-		if model == "" {
-			model = strings.TrimSpace(req.Model)
-		}
-
-		reporter.RecordUsage(ctx, provider, model, resp.Usage)
-	}
-
-	return resp, nil
-}
-
-func validateJSONRequest(req JSONRequest) error {
-	if strings.TrimSpace(req.Model) == "" {
-		return fmt.Errorf("%w: model is empty", ErrInvalidJSONRequest)
-	}
-
-	if strings.TrimSpace(req.SchemaName) == "" {
-		return fmt.Errorf("%w: schema name is empty", ErrInvalidJSONRequest)
-	}
-
-	if len(req.Schema) == 0 {
-		return fmt.Errorf("%w: schema is empty", ErrInvalidJSONRequest)
-	}
-
-	return nil
-}

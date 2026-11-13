@@ -1,7 +1,6 @@
 package httputil
 
 import (
-	"encoding/json/jsontext"
 	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
@@ -107,63 +106,4 @@ func newAPIError(statusCode int, body string) *APIError {
 	return apiErr
 }
 
-const defaultMaxBodyBytes int64 = 16 << 20
-
 var ErrResponseBodyTooLarge = errors.New("httputil: response body exceeds limit")
-
-// DecodeJSON은 2xx 본문을 최대 16 MiB까지 읽어 단일 JSON 값으로 해석하고 본문을 닫습니다.
-func DecodeJSON[T any](resp *http.Response) (T, error) {
-	return decodeJSONLimited[T](resp, defaultMaxBodyBytes)
-}
-
-func decodeJSONLimited[T any](resp *http.Response, maxBytes int64) (T, error) {
-	defer resp.Body.Close()
-
-	var out T
-
-	if maxBytes < 0 {
-		maxBytes = 0
-	}
-
-	// maxBytes+1까지 읽어 본문이 상한을 실제로 넘었는지 판별한다.
-	counter := &countingReader{r: io.LimitReader(resp.Body, maxBytes+1)}
-	decoder := jsontext.NewDecoder(counter)
-	decodeErr := jsonv2.UnmarshalDecode(decoder, &out)
-
-	if counter.n > maxBytes {
-		return out, ErrResponseBodyTooLarge
-	}
-
-	if decodeErr != nil {
-		return out, fmt.Errorf("httputil: decode JSON: %w", decodeErr)
-	}
-
-	_, trailingErr := decoder.ReadValue()
-
-	if counter.n > maxBytes {
-		return out, ErrResponseBodyTooLarge
-	}
-
-	if trailingErr == nil {
-		return out, ErrMultipleJSONValues
-	}
-
-	if errors.Is(trailingErr, io.EOF) {
-		return out, nil
-	}
-
-	return out, fmt.Errorf("httputil: read trailing JSON: %w", trailingErr)
-}
-
-type countingReader struct {
-	r io.Reader
-	n int64
-}
-
-func (c *countingReader) Read(p []byte) (int, error) {
-	n, err := c.r.Read(p)
-
-	c.n += int64(n)
-
-	return n, err
-}

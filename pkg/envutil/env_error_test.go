@@ -3,7 +3,6 @@ package envutil
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -60,13 +59,6 @@ func TestStrictParseErrorsDoNotContainRawValues(t *testing.T) {
 		{name: "int64", key: "TEST_SECRET_INT64", call: func(key string) error {
 			if _, err := Int64E(key, 0); err != nil {
 				return fmt.Errorf("int64: %w", err)
-			}
-
-			return nil
-		}},
-		{name: "float", key: "TEST_SECRET_FLOAT", call: func(key string) error {
-			if _, err := FloatE(key, 0); err != nil {
-				return fmt.Errorf("float: %w", err)
 			}
 
 			return nil
@@ -133,22 +125,6 @@ func TestInt64E(t *testing.T) {
 	}
 }
 
-func TestFloatE(t *testing.T) {
-	t.Setenv("TEST_FLOAT_E", " 3.5 ")
-
-	got, err := FloatE("TEST_FLOAT_E", 1.5)
-	if err != nil || got != 3.5 {
-		t.Fatalf("FloatE() = (%v, %v), want (3.5, nil)", got, err)
-	}
-
-	t.Setenv("TEST_FLOAT_E", "invalid")
-
-	got, err = FloatE("TEST_FLOAT_E", 1.5)
-	if err == nil || got != 0 {
-		t.Fatalf("FloatE(invalid) = (%v, %v), want (0, error)", got, err)
-	}
-}
-
 func TestBoolE(t *testing.T) {
 	for _, tt := range []struct {
 		value string
@@ -206,11 +182,6 @@ func TestBoolAcceptanceSetIsShared(t *testing.T) {
 				t.Errorf("BoolE(%q) = (%v, %v), want (%v, nil)", value, got, err, want)
 			}
 
-			gotExplicit, explicit, err := BoolExplicit("TEST_BOOL_TABLE")
-			if err != nil || !explicit || gotExplicit != want {
-				t.Errorf("BoolExplicit(%q) = (%v, %v, %v), want (%v, true, nil)", value, gotExplicit, explicit, err, want)
-			}
-
 			if err := LoadDotenv(dotenvOpts); err != nil {
 				t.Errorf("LoadDotenv(LocalEnableKey=%q) error = %v, want nil", value, err)
 			}
@@ -225,69 +196,11 @@ func TestBoolAcceptanceSetIsShared(t *testing.T) {
 				t.Errorf("BoolE(%q) error = nil, want error", value)
 			}
 
-			if _, _, err := BoolExplicit("TEST_BOOL_TABLE"); err == nil {
-				t.Errorf("BoolExplicit(%q) error = nil, want error", value)
-			}
-
 			if err := LoadDotenv(dotenvOpts); !errors.Is(err, strconv.ErrSyntax) {
 				t.Errorf("LoadDotenv(LocalEnableKey=%q) error = %v, want strconv.ErrSyntax", value, err)
 			}
 		})
 	}
-}
-
-func TestBoolExplicit(t *testing.T) {
-	t.Run("unset", func(t *testing.T) {
-		if err := os.Unsetenv("TEST_BOOL_EXPLICIT"); err != nil {
-			t.Fatalf("Unsetenv() error = %v", err)
-		}
-
-		value, explicit, err := BoolExplicit("TEST_BOOL_EXPLICIT")
-		if value || explicit || err != nil {
-			t.Fatalf("BoolExplicit(unset) = (%v, %v, %v), want (false, false, nil)", value, explicit, err)
-		}
-	})
-
-	t.Run("blank counts as unset", func(t *testing.T) {
-		t.Setenv("TEST_BOOL_EXPLICIT", "   ")
-
-		value, explicit, err := BoolExplicit("TEST_BOOL_EXPLICIT")
-		if value || explicit || err != nil {
-			t.Fatalf("BoolExplicit(blank) = (%v, %v, %v), want (false, false, nil)", value, explicit, err)
-		}
-	})
-
-	t.Run("explicit false", func(t *testing.T) {
-		t.Setenv("TEST_BOOL_EXPLICIT", "false")
-
-		value, explicit, err := BoolExplicit("TEST_BOOL_EXPLICIT")
-		if value || !explicit || err != nil {
-			t.Fatalf("BoolExplicit(false) = (%v, %v, %v), want (false, true, nil)", value, explicit, err)
-		}
-	})
-
-	t.Run("invalid does not leak value", func(t *testing.T) {
-		const canary = "raw-env-canary-do-not-echo-1234567890"
-
-		t.Setenv("TEST_BOOL_EXPLICIT", canary)
-
-		_, explicit, err := BoolExplicit("TEST_BOOL_EXPLICIT")
-		if err == nil {
-			t.Fatal("BoolExplicit(invalid) error = nil, want error")
-		}
-
-		if !explicit {
-			t.Error("BoolExplicit(invalid) explicit = false, want true")
-		}
-
-		if strings.Contains(err.Error(), canary) {
-			t.Fatalf("BoolExplicit(invalid) leaked raw value: %q", err)
-		}
-
-		if !errors.Is(err, strconv.ErrSyntax) {
-			t.Fatalf("BoolExplicit(invalid) error = %v, want strconv.ErrSyntax", err)
-		}
-	})
 }
 
 func TestDurationE(t *testing.T) {

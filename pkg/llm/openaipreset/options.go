@@ -12,7 +12,6 @@ type config struct {
 	temperature          *float64
 	reasoningEffort      string
 	webSearch            bool
-	chatCompletions      bool
 	httpClient           *http.Client
 	usageReporter        sharedllm.UsageReporter
 	logger               *slog.Logger
@@ -39,12 +38,6 @@ func WithTemperature(temperature float64) Option {
 func WithWebSearch(enabled bool) Option {
 	return func(c *config) {
 		c.webSearch = enabled
-	}
-}
-
-func WithChatCompletions() Option {
-	return func(c *config) {
-		c.chatCompletions = true
 	}
 }
 

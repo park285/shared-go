@@ -133,35 +133,6 @@ func TestBoolEValues(t *testing.T) {
 	}
 }
 
-func TestFloatEValues(t *testing.T) {
-	tests := []struct {
-		name     string
-		key      string
-		value    string
-		def      float64
-		expected float64
-		wantErr  bool
-	}{
-		{"valid float", testTestFloat, "3.14", 0.0, 3.14, false},
-		{testTrimApplied, testTestFloat, "  3.14  ", 0.0, 3.14, false},
-		{"negative float", testTestFloat, "-2.5", 0.0, -2.5, false},
-		{"scientific notation", testTestFloat, "1.5e2", 0.0, 150.0, false},
-		{"invalid returns error", testTestFloat, "invalid", 99.9, 0, true},
-		{testEmptyReturnsDefault, testTestFloat, "", 99.9, 99.9, false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv(tt.key, tt.value)
-
-			result, err := FloatE(tt.key, tt.def)
-			if (err != nil) != tt.wantErr || result != tt.expected {
-				t.Errorf("FloatE(%q, %f) = (%f, %v), want (%f, error=%t)", tt.key, tt.def, result, err, tt.expected, tt.wantErr)
-			}
-		})
-	}
-}
-
 func TestDurationEValues(t *testing.T) {
 	tests := []struct {
 		name     string

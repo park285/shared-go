@@ -25,7 +25,7 @@ go get github.com/park285/shared-go/v2@latest
 | `pkg/backoff` | 시도 횟수 및 상태를 기반으로 한 지수 백오프(Exponential Backoff) 계산 유틸리티 (대기 및 재시도 루프 제어는 호출부에서 직접 처리) |
 | `pkg/db/pgxdb` | `jackc/pgx/v5` pgxpool 기반 PostgreSQL 연결 풀 생성 도구 (sslmode 명시 강제, sslrootcert는 `Config.SSLRootCert`로만 지정하고 env를 읽지 않음, 라이브러리 기본값 없이 시작 ping 기한(`Ping.PingTimeout`, 필수)·구조화 경로의 풀 크기·수명(`ConnMaxLifetime`·`ConnMaxIdleTime`, 필수, 지터 0은 지터 없음)을 호출자가 명시, 재시도는 호출자 소유) |
 | `pkg/dbmigrate` | embed.FS의 `manifest.txt` 순서대로 SQL 마이그레이션 파일을 실행하는 공통 처리 모듈 (pgx 실행 함수 주입 방식) |
-| `pkg/envutil` | 환경 변수 로드 및 `*_FILE` 형태의 파일 경로로 보안 토큰/시크릿 값을 주입하는 도구 (숫자·bool·duration은 잘못된 값을 오류로 돌려주는 `IntE`·`Int64E`·`FloatE`·`BoolE`·`BoolExplicit`·`DurationE`만 제공, `StringOrSecretFile`은 `KEY`와 `KEY_FILE`이 함께 설정되면 오류) |
+| `pkg/envutil` | 환경 변수 로드 및 `*_FILE` 형태의 파일 경로로 보안 토큰/시크릿 값을 주입하는 도구 (숫자·bool·duration은 잘못된 값을 오류로 돌려주는 `IntE`·`Int64E`·`BoolE`·`DurationE`만 제공, `StringOrSecretFile`은 `KEY`와 `KEY_FILE`이 함께 설정되면 오류) |
 | `pkg/h3` | HTTP/3 전송 프로토콜 설정 도구 (자체 CA 번들 등록, TLS 상세 사양 정의) |
 | `pkg/health` | version·uptime·component 상태 스냅샷과 /health·/ready 응답 본문 계약을 보관하는 server 측 health 모듈 |
 | `pkg/healthprobe` | 서비스 헬스체크 및 프로브(Readiness / Liveness Probe) 도구 |
@@ -34,8 +34,8 @@ go get github.com/park285/shared-go/v2@latest
 | `pkg/irisdurable/contracttest` | irisdurable 계약을 봇별 저장소 구현에 적용하는 재사용 테스트 스위트(admission 멱등성, nonce set-once, outcome_unknown 보존, bounded reissue, 보존·지평) |
 | `pkg/irisdurable/pgstore` | irisdurable 계약의 PostgreSQL 구현(ordering key FIFO inbox, nonce set-once TTL, reply outbox claim fence·redrive·retire·prune). 정책 기본값이 없어 `Options`의 lease·시도 상한·백오프·보존·`IrisAdmissionRetention`·`IrisAutomaticReplayHorizon`을 호출자가 넘기고, 0인 값을 쓰는 연산은 오류를 반환한다. inbox 종단 보존은 Iris admission 보존보다 길어야 하고, 자동 replay 지평은 정본 지평 이하이며 정본 지평은 admission 보존보다 짧아야 한다. `ClaimBatch`가 결과 미상 오류(`*ClaimBatchError`)를 내거나 후속 처리가 실패하면 소비자가 계속 처리할 claim id를 keep으로 넘겨 `ReleaseClaimToken(ctx, token, keep)`으로 나머지 claim만 즉시 반납한다. 테이블 DDL은 소비 저장소 migration이 소유하고 `testdata/schema.sql`이 참조 스키마다 |
 | `pkg/kakaoformat` | Markdown 표현을 카카오 일반 채팅용 평문과 링크로 변환하는 formatter |
-| `pkg/llm` | LLM provider 클라이언트 추상화 (`JSONGenerator`, OpenAI 호환 JSON 생성·가드, 필수 SDK 재시도 수 `OpenAICompatibleConfig.MaxRetries`). 지시는 `InvariantPrompt`/`DeveloperPrompt` 계층으로만 전달 |
-| `pkg/llm/openaipreset` | `pkg/llm`의 OpenAI 호환 JSON 생성 경로를 functional options로 구성하는 재사용 preset (`WithMaxRetries` 필수, 지시는 `PromptLayers`로만 전달) |
+| `pkg/llm` | LLM 공통 타입(`Message`, `Usage`, `UsageReporter`), 공급자 지시 계층 변환(`AdaptInstructionMessages`), OpenAI 출력 오류 값 |
+| `pkg/llm/openaipreset` | OpenAI 호환 Responses API 호출을 functional options로 구성하는 재사용 preset (`WithMaxRetries` 필수, 계층 JSON 생성은 `PromptLayers`로만 지시를 받음) |
 | `pkg/logging` | Slog 기반의 구조화된 로깅 모듈 (비동기 처리, credential 마스킹과 서비스가 `Options.PrivacyKeys`로 넘긴 개인 식별자 키 마스킹, 실시간 로그 로테이션 지원) |
 | `pkg/netguard` | 외부 HTTP 대상 URL 및 dial 주소를 fail-closed로 검증하는 네트워크 가드 (private/loopback/link-local/ULA 대역 차단, `Policy.AllowedHosts` allowlist 지원) |
 | `pkg/obsmetrics` | `client_golang` 의존성 없이 Prometheus 평문 텍스트 exposition을 생성하는 메트릭 키트 (webhook/런타임 메트릭, prefix 네임스페이스 분리) |

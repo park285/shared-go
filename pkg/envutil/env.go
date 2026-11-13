@@ -72,41 +72,6 @@ func BoolE(key string, def bool) (bool, error) {
 	return parseBoolE(key, value)
 }
 
-func FloatE(key string, def float64) (float64, error) {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return def, nil
-	}
-
-	parsed, err := strconv.ParseFloat(value, 64)
-	if err != nil {
-		return 0, fmt.Errorf("envutil: invalid float64 env %s (%w)", key, strictParseCause(err))
-	}
-
-	return parsed, nil
-}
-
-// BoolExplicit은 값과 함께 "명시적으로 설정되었는지"를 반환한다. 미설정과 공백-only는
-// 모두 explicit=false로 접어 unset과 동일하게 다룬다(String/BoolE의 trim 규칙과 일치).
-func BoolExplicit(key string) (value, explicit bool, err error) {
-	raw, found := os.LookupEnv(key)
-	if !found {
-		return false, false, nil
-	}
-
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return false, false, nil
-	}
-
-	parsed, ok := lookupBool(trimmed)
-	if !ok {
-		return false, true, fmt.Errorf("envutil: invalid bool env %s (%w)", key, strconv.ErrSyntax)
-	}
-
-	return parsed, true, nil
-}
-
 func DurationE(key string, def time.Duration) (time.Duration, error) {
 	value := strings.TrimSpace(os.Getenv(key))
 	if value == "" {
@@ -121,7 +86,6 @@ func DurationE(key string, def time.Duration) (time.Duration, error) {
 	return parsed, nil
 }
 
-// lookupBool은 BoolE/BoolExplicit(과 BoolE를 쓰는 LoadDotenv 플래그)이 공유하는 유일한 bool 수용 집합이다.
 // 미수용 값은 모두 에러로 돌려주며 기본값으로 접는 경로는 없다.
 func lookupBool(value string) (parsed, ok bool) {
 	switch strings.ToLower(value) {

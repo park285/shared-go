@@ -36,33 +36,6 @@ func TestJoinedPromptLenMatchesTrimmedJoin(t *testing.T) {
 	}
 }
 
-func TestLayeredPromptLenSelectsActiveLayers(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name                                   string
-		invariantPrompt, developerPrompt, user string
-		want                                   int
-	}{
-		{name: "no layers counts user only", user: testShortRoleUser, want: len("usr")},
-		{name: "blank layers ignored", invariantPrompt: "  ", developerPrompt: "\n", user: testShortRoleUser, want: len("usr")},
-		{name: "invariant only", invariantPrompt: "inv", user: testShortRoleUser, want: len("inv\nusr")},
-		{name: "developer only", developerPrompt: "dev", user: testShortRoleUser, want: len("dev\nusr")},
-		{name: "both layers", invariantPrompt: "inv", developerPrompt: "dev", user: testShortRoleUser, want: len("inv\ndev\nusr")},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			got := layeredPromptLen(tt.invariantPrompt, tt.developerPrompt, tt.user)
-			if got != tt.want {
-				t.Fatalf("layeredPromptLen() = %d, want %d", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestCompletionPromptLenMatchesJoinedTrimmedMessages(t *testing.T) {
 	t.Parallel()
 
