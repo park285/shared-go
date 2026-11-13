@@ -3,13 +3,15 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
-## Unreleased
+## v2.21.0 - 2026-11-14
 
 - **스택 소비자가 없는 export 삭제:** README 호환성 정책에 따라 스택 소비자(hololive-bot·chat-bot-go-kakao·twentyq-bot·iris-console)가 쓰지 않는 공개 API를 지웁니다. 소비자 코드는 바뀌지 않습니다.
   - **`httputil`:** `JSONClient`와 `NewJSONClientWithHTTPClient`, 응답 본문 해석 `DecodeJSON`을 삭제했습니다. 요청 본문 해석 `DecodeJSONRequest`와 `ErrResponseBodyTooLarge`는 그대로입니다.
   - **`db/pgxdb`:** `IsDuplicateKey`를 삭제했습니다.
   - **`envutil`:** `FloatE`와 `BoolExplicit`를 삭제했습니다.
   - **`llm`·`llm/openaipreset`:** `openaipreset.Client.GenerateJSONAs`와 이것만 쓰던 `llm.RunJSON`·`JSONGenerator`·`JSONRequest`·`JSONResponse`·`ErrNilJSONGenerator`·`ErrInvalidJSONRequest`, OpenAI 호환 JSON 생성기(`NewOpenAICompatibleJSONGenerator`·`OpenAICompatibleJSONGenerator`·`OpenAICompatibleConfig`)를 삭제했습니다. Chat Completions 전송을 고르던 `openaipreset.WithChatCompletions`와 그 선택에서만 나던 `ErrResponsesJSONRequired`도 삭제했습니다. `Complete`·`GenerateLayeredResponsesJSON`과 나머지 옵션은 그대로입니다. 빈 API key는 이제 `openaipreset.New`가 직접 거부하므로 오류 문구가 `openaipreset: api key is empty`로 바뀝니다.
+- **Go 1.27.4:** `go.mod`의 `go` 지시어를 1.27.3에서 1.27.4로 올리고 주석 규칙에 맞춰 문서 주석을 줄였습니다. 스택 소비자는 모두 이미 1.27.4입니다.
+- **시험 PostgreSQL 플랫폼 고정:** `scripts/ci/pgstore-release-gate.sh`와 `pkg/db/pgxdb` 통합 시험이 시험 PostgreSQL을 호스트 플랫폼 이미지로 실행합니다. 로컬 이미지 이름이 다른 아키텍처 이미지를 가리키면 에뮬레이션으로 기동해 준비 기한을 넘기고, pgxdb 통합 시험 전체가 skip된 채 release gate를 통과하던 경로를 막습니다. 공개 API 변경은 없습니다.
 - **주석 정리:** guard 문맥 예산의 실측 기록, 이전 정책 기본값 설명과 HTTP·로깅 문서의 장황한 예제를 줄였습니다. 예산·본문 소유권·마스킹 제약과 공개 API·실행 동작은 그대로입니다.
 
 ## v2.20.1 - 2026-11-10
