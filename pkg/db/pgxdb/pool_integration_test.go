@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -68,6 +69,8 @@ func startPostgres() (string, string, error) {
 	// 이미지 pull·platform 경고는 stderr로 나온다. stdout의 container ID만 읽어야 시작한 컨테이너를
 	// 정리할 수 있고, 경고가 섞인 ID로 inspect가 실패해 테스트가 조용히 skip되지 않는다.
 	out, err := exec.CommandContext(runCtx, "podman", "run", "-d", "--rm",
+		// 교차 빌드의 캐시가 테스트 DB를 다른 아키텍처의 에뮬레이션 이미지로 바꾸지 않게 한다.
+		"--platform", "linux/"+runtime.GOARCH,
 		"-e", "POSTGRES_PASSWORD=sharedgo-local-test-placeholder",
 		"-e", "POSTGRES_DB=sharedgo_test",
 		"-P", "docker.io/library/postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873",
