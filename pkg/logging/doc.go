@@ -8,17 +8,4 @@
 // Options.PrivacyKeys로 넘긴다. 내장 privacy 키는 없으므로 room_id·user_id처럼 넘기지 않은 키는
 // 보존된다. 마스킹은 slog 속성·group과 중첩 map[string]any에서 깊이 8까지 적용하며
 // map[string]string·[]any 내부 맵·구조체는 제외한다. 보존·마스킹 키 표는 README가 소유한다.
-//
-// # 사용 예
-//
-//	ctx = logging.WithComponent(ctx, "poller")
-//	err := logging.RunOperation(ctx, logger, logging.OperationOptions{
-//	    Name: "ingest.batch",
-//	}, func(ctx context.Context) error {
-//	    return process(ctx)
-//	})
-//
-//	logging.Info(ctx, logger, "youtube.poll.started", "poll started",
-//	    logging.Runtime("youtube-producer"),
-//	)
 package logging

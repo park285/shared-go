@@ -1,8 +1,6 @@
 // Package httputil은 공용 HTTP client, JSON request, response 검증 helper를
 // 제공합니다.
 //
-// # 패키지 개요
-//
 // 이 패키지는 서비스 간 HTTP 호출과 외부 API 호출에서 반복되는 client timeout,
 // connection pool 정책을 TransportProfile로 맞춥니다. 기본 transport의 proxy와
 // keep-alive는 유지하고, HTTP는 HTTP/1.1만 사용하며 호출 목적에 맞는 profile만
@@ -12,20 +10,5 @@
 // response를 APIError로 변환하는 흐름도 이 패키지에서 제공합니다. 호출부는
 // errors.AsType[*httputil.APIError]로 HTTP status와 API error code를 분기할 수 있습니다.
 //
-// # 주요 사용 패턴
-//
-//	client := httputil.NewExternalAPIClient(30 * time.Second)
-//	resp, err := client.Get(url)
-//	if err != nil {
-//	    return err
-//	}
-//	// non-2xx 시 CheckStatus가 body를 drain+close하므로 아래 defer는 no-op이 됩니다.
-//	// 2xx success 경로에서는 caller가 body를 읽고 닫습니다.
-//	defer resp.Body.Close()
-//	if err := httputil.CheckStatus(resp); err != nil {
-//	    return err
-//	}
-//	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
-//	    return err
-//	}
+// CheckStatus는 non-2xx 응답 본문을 drain하고 닫습니다. 성공 응답의 본문은 호출자가 읽고 닫습니다.
 package httputil

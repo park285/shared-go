@@ -10,6 +10,7 @@
   - **`db/pgxdb`:** `IsDuplicateKey`를 삭제했습니다.
   - **`envutil`:** `FloatE`와 `BoolExplicit`를 삭제했습니다.
   - **`llm`·`llm/openaipreset`:** `openaipreset.Client.GenerateJSONAs`와 이것만 쓰던 `llm.RunJSON`·`JSONGenerator`·`JSONRequest`·`JSONResponse`·`ErrNilJSONGenerator`·`ErrInvalidJSONRequest`, OpenAI 호환 JSON 생성기(`NewOpenAICompatibleJSONGenerator`·`OpenAICompatibleJSONGenerator`·`OpenAICompatibleConfig`)를 삭제했습니다. Chat Completions 전송을 고르던 `openaipreset.WithChatCompletions`와 그 선택에서만 나던 `ErrResponsesJSONRequired`도 삭제했습니다. `Complete`·`GenerateLayeredResponsesJSON`과 나머지 옵션은 그대로입니다. 빈 API key는 이제 `openaipreset.New`가 직접 거부하므로 오류 문구가 `openaipreset: api key is empty`로 바뀝니다.
+- **주석 정리:** guard 문맥 예산의 실측 기록, 이전 정책 기본값 설명과 HTTP·로깅 문서의 장황한 예제를 줄였습니다. 예산·본문 소유권·마스킹 제약과 공개 API·실행 동작은 그대로입니다.
 
 ## v2.20.1 - 2026-11-10
 

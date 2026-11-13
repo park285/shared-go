@@ -86,7 +86,6 @@ func TestOptionsEnforceIrisAdmissionBoundaries(t *testing.T) {
 	}
 }
 
-// 이전에는 lease 30초·시도 8회·백오프 1초~1분이 조용히 채워져 소비자 정책과 달라질 수 있었다.
 func TestOperationsRejectMissingPolicy(t *testing.T) {
 	t.Parallel()
 
