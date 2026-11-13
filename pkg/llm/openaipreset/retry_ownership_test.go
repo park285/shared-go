@@ -1,10 +1,8 @@
 package openaipreset_test
 
 import (
-	"errors"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -62,50 +60,5 @@ func TestClientRetryAttemptsAreOwnedByOption(t *testing.T) {
 				t.Fatalf("provider request count = %d, want %d", got, tt.wantRequests)
 			}
 		})
-	}
-}
-
-func TestGenerateJSONAsDecodeErrorPreservesCauseClass(t *testing.T) {
-	t.Parallel()
-
-	const secret = "Bearer provider-canary-must-not-appear"
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(t, w, `{"id":"resp-1","object":"response","created_at":1,"status":"completed","model":"gpt-test","output":[{"id":"msg-1","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"`+secret+`","annotations":[]}]}]}`)
-	}))
-
-	defer server.Close()
-
-	client, err := openaipreset.New(server.URL, "test-key", "gpt-test", openaipreset.WithMaxRetries(0))
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
-
-	_, err = client.GenerateJSONAs[answerPayload](t.Context(), "decode-test", testPromptLayers(), map[string]any{testFieldType: testObject})
-	if err == nil {
-		t.Fatal("GenerateJSONAs() error = nil, want decode failure")
-	}
-
-	if strings.Contains(err.Error(), "provider-canary") || strings.Contains(err.Error(), secret) {
-		t.Fatalf("decode error leaked provider output: %v", err)
-	}
-
-	if !strings.Contains(err.Error(), "decode decode-test json failed") {
-		t.Fatalf("decode error lost task context: %v", err)
-	}
-
-	unwrapped := err
-
-	for {
-		next := errors.Unwrap(unwrapped)
-		if next == nil {
-			break
-		}
-
-		unwrapped = next
-	}
-
-	if errors.Is(unwrapped, err) {
-		t.Fatal("decode error erased its cause; want the decoder error reachable via Unwrap")
 	}
 }

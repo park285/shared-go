@@ -8,7 +8,7 @@
 // keep-alive는 유지하고, HTTP는 HTTP/1.1만 사용하며 호출 목적에 맞는 profile만
 // 주입합니다.
 //
-// JSON request 생성, API key header 적용, response body decode/discard, non-2xx
+// JSON request 본문 해석, API key 인증, response body drain, non-2xx
 // response를 APIError로 변환하는 흐름도 이 패키지에서 제공합니다. 호출부는
 // errors.AsType[*httputil.APIError]로 HTTP status와 API error code를 분기할 수 있습니다.
 //
@@ -26,25 +26,6 @@
 //	    return err
 //	}
 //	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
-//	    return err
-//	}
-//
-//	api := httputil.NewJSONClientWithHTTPClient(baseURL, apiKey, httputil.NewInternalServiceClient(10*time.Second))
-//	req, err := api.NewJSONRequest(ctx, http.MethodPost, "/v1/jobs", payload)
-//	if err != nil {
-//	    return err
-//	}
-//	resp, err := api.Do(req)
-//	if err != nil {
-//	    return err
-//	}
-//	// non-2xx 시 CheckStatus가 body를 drain+close하므로 아래 defer는 no-op이 됩니다.
-//	defer resp.Body.Close()
-//	if err := api.CheckStatus(resp); err != nil {
-//	    return err
-//	}
-//	out, err := api.DecodeJSON[jobResponse](resp)
-//	if err != nil {
 //	    return err
 //	}
 package httputil

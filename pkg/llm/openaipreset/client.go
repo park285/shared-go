@@ -2,7 +2,6 @@ package openaipreset
 
 import (
 	"context"
-	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -30,17 +29,12 @@ const (
 
 var errClientNil = errors.New("openaipreset: client is nil")
 
-// ErrResponsesJSONRequired는 strict Responses JSON contract를 fallback 없이 충족할 수 없을 때 반환된다.
-var ErrResponsesJSONRequired = errors.New("openaipreset: responses JSON transport required")
-
 type Client struct {
-	generator            sharedllm.JSONGenerator
 	openai               openai.Client
 	model                string
 	temperature          *float64
 	reasoningEffort      string
 	webSearch            bool
-	chatCompletions      bool
 	usageReporter        sharedllm.UsageReporter
 	logger               *slog.Logger
 	promptCacheKeyPrefix string
@@ -55,6 +49,10 @@ type PromptLayers struct {
 func New(baseURL, apiKey, model string, opts ...Option) (*Client, error) {
 	if strings.TrimSpace(model) == "" {
 		return nil, errors.New("openaipreset: model is empty")
+	}
+
+	if strings.TrimSpace(apiKey) == "" {
+		return nil, errors.New("openaipreset: api key is empty")
 	}
 
 	cfg := &config{}
@@ -87,29 +85,17 @@ func New(baseURL, apiKey, model string, opts ...Option) (*Client, error) {
 
 	requestOpts = append(requestOpts, option.WithHTTPClient(httpClient))
 
-	generator, err := sharedllm.NewOpenAICompatibleJSONGenerator(sharedllm.OpenAICompatibleConfig{
-		BaseURL:    baseURL,
-		APIKey:     apiKey,
-		HTTPClient: httpClient,
-		MaxRetries: maxRetries,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("openaipreset: open AI compatible JSON generator: %w", err)
-	}
-
 	reporter := cfg.usageReporter
 	if reporter == nil {
 		reporter = sharedllm.NoopUsageReporter{}
 	}
 
 	return &Client{
-		generator:            generator,
 		openai:               openai.NewClient(requestOpts...),
 		model:                strings.TrimSpace(model),
 		temperature:          cfg.temperature,
 		reasoningEffort:      cfg.reasoningEffort,
 		webSearch:            cfg.webSearch,
-		chatCompletions:      cfg.chatCompletions,
 		usageReporter:        reporter,
 		logger:               cfg.logger,
 		promptCacheKeyPrefix: cfg.promptCacheKeyPrefix,
@@ -146,36 +132,11 @@ func (c *Client) Model() string {
 	return c.model
 }
 
-// GenerateJSONAs는 PromptLayers로 지시를 받고 task를 schema 이름과 prompt cache key 접미사로 쓴다.
-func (c *Client) GenerateJSONAs[T any](
-	ctx context.Context,
-	task string,
-	prompts PromptLayers,
-	schema map[string]any,
-) (T, error) {
-	var zero T
-
-	if c == nil {
-		return zero, errClientNil
-	}
-
-	resp, err := c.generate(ctx, task, prompts.Invariant, prompts.Developer, prompts.User, schema)
-	if err != nil {
-		return zero, fmt.Errorf("openaipreset: generate: %w", err)
-	}
-
-	return decodeJSONAs[T](task, resp.Text)
-}
-
 // GenerateLayeredResponsesJSON은 정상 종료된 Responses 스트림의 전체 output_text를 반환합니다.
 // 객체 추출이나 디코딩 전의 출력을 유지하여 호출자가 전체 응답을 검증할 수 있습니다.
 func (c *Client) GenerateLayeredResponsesJSON(ctx context.Context, task string, prompts PromptLayers, schema map[string]any) (string, error) {
 	if c == nil {
 		return "", errClientNil
-	}
-
-	if c.chatCompletions {
-		return "", ErrResponsesJSONRequired
 	}
 
 	profile := sharedllm.InstructionProfileOpenAI
@@ -248,57 +209,6 @@ func completeResponsesOutputText(resp *responses.Response) string {
 	return out.String()
 }
 
-func (c *Client) generate(
-	ctx context.Context,
-	taskName, invariantPrompt, developerPrompt, userPrompt string,
-	schema map[string]any,
-) (sharedllm.JSONResponse, error) {
-	attrs := promptSummaryAttrs(c.model, layeredPromptLen(invariantPrompt, developerPrompt, userPrompt))
-
-	out, err := runRequest(ctx, c.logger, attrs, func() (sharedllm.JSONResponse, error) {
-		return sharedllm.RunJSON(ctx, c.generator, sharedllm.JSONRequest{
-			TaskName:        taskName,
-			UserPrompt:      userPrompt,
-			InvariantPrompt: invariantPrompt,
-			DeveloperPrompt: developerPrompt,
-			SchemaName:      taskName,
-			Schema:          schema,
-			Model:           c.model,
-			Temperature:     c.temperature,
-			ReasoningEffort: c.reasoningEffort,
-			WebSearch:       c.webSearch,
-			ChatCompletions: c.chatCompletions,
-			CacheKey:        c.promptCacheKeyFor(taskName),
-		}, providerLabel, c.usageReporter)
-	})
-	if err != nil {
-		return out, fmt.Errorf("run request: %w", err)
-	}
-
-	return out, nil
-}
-
-func decodeJSONAs[T any](task, text string) (T, error) {
-	var out T
-
-	if err := jsonv2.Unmarshal([]byte(text), &out); err != nil {
-		return out, fmt.Errorf("openaipreset: decode %s json failed: %w", strings.TrimSpace(task), &redactedCauseError{cause: err})
-	}
-
-	return out, nil
-}
-
-// JSON decode error 메시지는 실패 지점 주변 원문을 담을 수 있으므로 렌더링하면 provider
-// 출력이 샌다(TestGenerateJSONAsDecodeErrorOmitsProviderOutput). 원문은 Unwrap으로만
-// 전달해 errors.Is/As 대상 클래스를 보존하고, 메시지에는 타입만 남긴다.
-type redactedCauseError struct{ cause error }
-
-func (e *redactedCauseError) Error() string {
-	return openaidiag.ErrorClass(e.cause)
-}
-
-func (e *redactedCauseError) Unwrap() error { return e.cause }
-
 func runRequest[T any](ctx context.Context, logger *slog.Logger, attrs []slog.Attr, run func() (T, error)) (T, error) {
 	logging.Info(ctx, logger, "llm.request.started", "llm request started", attrs...)
 
@@ -324,22 +234,6 @@ func promptSummaryAttrs(model string, promptLen int) []slog.Attr {
 		slog.String("provider", providerLabel),
 		slog.String("model", model),
 		slog.Int("prompt_len", promptLen),
-	}
-}
-
-func layeredPromptLen(invariantPrompt, developerPrompt, userPrompt string) int {
-	hasInvariantPrompt := strings.TrimSpace(invariantPrompt) != ""
-	hasDeveloperPrompt := strings.TrimSpace(developerPrompt) != ""
-
-	switch {
-	case hasInvariantPrompt && hasDeveloperPrompt:
-		return joinedPromptLen(invariantPrompt, developerPrompt, userPrompt)
-	case hasInvariantPrompt:
-		return joinedPromptLen(invariantPrompt, userPrompt)
-	case hasDeveloperPrompt:
-		return joinedPromptLen(developerPrompt, userPrompt)
-	default:
-		return joinedPromptLen(userPrompt)
 	}
 }
 

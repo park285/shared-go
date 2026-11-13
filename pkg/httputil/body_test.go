@@ -361,25 +361,6 @@ func TestDrainAndCloseJoinsDrainAndCloseErrors(t *testing.T) {
 	}
 }
 
-func TestJSONClientDiscardBodyBoundsUnlimitedStream(t *testing.T) {
-	t.Parallel()
-
-	body := &countingBody{reader: endlessReader{}}
-	client := &JSONClient{}
-
-	if err := client.DiscardBody(&http.Response{Body: body}); err != nil {
-		t.Fatalf("DiscardBody() error = %v, want nil", err)
-	}
-
-	if body.read > DefaultDrainLimit+1 {
-		t.Fatalf("drained bytes = %d, want bounded by DefaultDrainLimit", body.read)
-	}
-
-	if body.closes != 1 {
-		t.Fatalf("close calls = %d, want 1", body.closes)
-	}
-}
-
 func TestCheckStatusBoundsErrorBodyDrain(t *testing.T) {
 	t.Parallel()
 

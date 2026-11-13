@@ -8,141 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	sharedllm "github.com/park285/shared-go/v2/pkg/llm"
 	"github.com/park285/shared-go/v2/pkg/llm/openaipreset"
 )
-
-func TestGenerateJSONAsChatCompletions(t *testing.T) {
-	var payload map[string]any
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/chat/completions" {
-			t.Errorf("path = %s, want /chat/completions", r.URL.Path)
-		}
-
-		if err := jsonv2.UnmarshalRead(r.Body, &payload); err != nil {
-			t.Fatalf("decode request: %v", err)
-		}
-
-		writeJSON(t, w, chatBody)
-	}))
-
-	defer server.Close()
-
-	client, err := openaipreset.New(server.URL, "test-key", "gpt-test", openaipreset.WithMaxRetries(0), openaipreset.WithChatCompletions())
-	if err != nil {
-		t.Fatalf("New error = %v", err)
-	}
-
-	out, err := client.GenerateJSONAs[answerPayload](t.Context(), "task", testPromptLayers(), map[string]any{testFieldType: testObject})
-	if err != nil {
-		t.Fatalf("GenerateJSONAs error = %v", err)
-	}
-
-	if out.Answer != "no" {
-		t.Fatalf("out.Answer = %q, want no", out.Answer)
-	}
-
-	assertFlattenedChatMessages(t, payload["messages"])
-}
-
-func TestGenerateJSONAsResponsesErrorDoesNotUseChat(t *testing.T) {
-	var paths []string
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		paths = append(paths, r.URL.Path)
-
-		http.Error(w, `{"error":{"message":"unsupported endpoint","type":"invalid_request_error","code":"unsupported_endpoint"}}`, http.StatusNotFound)
-	}))
-
-	defer server.Close()
-
-	client, err := openaipreset.New(server.URL, "test-key", "gpt-test", openaipreset.WithMaxRetries(0))
-	if err != nil {
-		t.Fatalf("New error = %v", err)
-	}
-
-	out, err := client.GenerateJSONAs[answerPayload](t.Context(), "task", testPromptLayers(), map[string]any{testFieldType: testObject})
-	if errors.Is(err, openaipreset.ErrResponsesJSONRequired) {
-		t.Fatalf("GenerateJSONAs runtime error = %v, must not be ErrResponsesJSONRequired", err)
-	}
-
-	if out.Answer != "" {
-		t.Fatalf("out.Answer = %q, want no fallback mutation", out.Answer)
-	}
-
-	if strings.Join(paths, ",") != testResponses {
-		t.Fatalf("paths = %v, want no fallback", paths)
-	}
-}
-
-func TestGenerateJSONAsGrokResponses(t *testing.T) {
-	var payload map[string]any
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := jsonv2.UnmarshalRead(r.Body, &payload); err != nil {
-			t.Fatalf("decode request: %v", err)
-		}
-
-		writeJSON(t, w, responsesBody)
-	}))
-
-	defer server.Close()
-
-	client, err := openaipreset.New(server.URL, "test-key", " grok-4.5 ", openaipreset.WithMaxRetries(0))
-	if err != nil {
-		t.Fatalf("New error = %v", err)
-	}
-
-	_, err = client.GenerateJSONAs[answerPayload](t.Context(), "task", testPromptLayers(), map[string]any{testFieldType: testObject})
-	if err != nil {
-		t.Fatalf("GenerateJSONAs error = %v", err)
-	}
-
-	messages := requestMessages(t, payload["input"])
-	if len(messages) != 2 {
-		t.Fatalf("input message count = %d, want 2", len(messages))
-	}
-
-	if got := messages[0]["role"]; got != testDeveloper {
-		t.Fatalf("input[0].role = %#v, want developer", got)
-	}
-
-	assertLayeredContent(t, messageContent(t, messages[0]))
-
-	if got := messages[1]["role"]; got != testUser {
-		t.Fatalf("input[1].role = %#v, want user", got)
-	}
-
-	if got := messageContent(t, messages[1]); got != testPromptLayers().User {
-		t.Fatalf("input[1].content = %q, want %q", got, testPromptLayers().User)
-	}
-}
-
-func TestGenerateJSONAsDecodeErrorOmitsProviderOutput(t *testing.T) {
-	t.Parallel()
-
-	const providerOutput = "PRIVATE_PROVIDER_OUTPUT_SENTINEL"
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(t, w, `{"id":"resp-1","object":"response","created_at":1,"status":"completed","model":"gpt-test","output":[{"id":"msg-1","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"`+providerOutput+`","annotations":[]}]}]}`)
-	}))
-
-	defer server.Close()
-
-	client, err := openaipreset.New(server.URL, "test-key", "gpt-test", openaipreset.WithMaxRetries(0))
-	if err != nil {
-		t.Fatalf("New error = %v", err)
-	}
-
-	_, err = client.GenerateJSONAs[answerPayload](t.Context(), "decode-test", testPromptLayers(), map[string]any{testFieldType: testObject})
-	if err == nil {
-		t.Fatal("GenerateJSONAs error = nil, want decode failure")
-	}
-
-	if strings.Contains(err.Error(), providerOutput) || strings.Contains(err.Error(), "output=") {
-		t.Fatalf("GenerateJSONAs error leaked provider output: %v", err)
-	}
-}
 
 func TestNewRejectsEmptyModel(t *testing.T) {
 	if _, err := openaipreset.New("https://example.invalid", "test-key", "   ", openaipreset.WithMaxRetries(0)); err == nil {
@@ -158,7 +26,7 @@ func TestNewRejectsEmptyAPIKey(t *testing.T) {
 
 func TestWithHTTPClientInjected(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(t, w, responsesBody)
+		writeResponsesCompleted(t, w, `{"id":"resp-injected","object":"response","created_at":1,"status":"completed","model":"gpt-test","output":[]}`)
 	}))
 	defer server.Close()
 
@@ -172,8 +40,8 @@ func TestWithHTTPClientInjected(t *testing.T) {
 		t.Fatalf("New error = %v", err)
 	}
 
-	if _, err := client.GenerateJSONAs[answerPayload](t.Context(), "task", testPromptLayers(), map[string]any{testFieldType: testObject}); err != nil {
-		t.Fatalf("GenerateJSONAs error = %v", err)
+	if _, err := client.GenerateLayeredResponsesJSON(t.Context(), "task", testPromptLayers(), map[string]any{testFieldType: testObject}); !errors.Is(err, sharedllm.ErrOpenAIEmptyOutput) {
+		t.Fatalf("GenerateLayeredResponsesJSON error = %v, want ErrOpenAIEmptyOutput", err)
 	}
 
 	if !used {
@@ -224,119 +92,4 @@ func testPromptLayers() openaipreset.PromptLayers {
 		Developer: "judge the Twenty Questions answer",
 		User:      `{"question":"사용자 입력"}`,
 	}
-}
-
-func requestMessages(t *testing.T, value any) []map[string]any {
-	t.Helper()
-
-	raw, ok := value.([]any)
-	if !ok {
-		t.Fatalf("messages = %#v, want list", value)
-	}
-
-	messages := make([]map[string]any, len(raw))
-	for i, item := range raw {
-		message, ok := item.(map[string]any)
-		if !ok {
-			t.Fatalf("messages[%d] = %#v, want object", i, item)
-		}
-
-		messages[i] = message
-	}
-
-	return messages
-}
-
-func messageContent(t *testing.T, message map[string]any) string {
-	t.Helper()
-
-	content, ok := message["content"].(string)
-	if !ok {
-		t.Fatalf("message content = %#v, want string", message["content"])
-	}
-
-	return content
-}
-
-func assertFlattenedChatMessages(t *testing.T, value any) {
-	t.Helper()
-
-	messages := requestMessages(t, value)
-	if len(messages) != 2 {
-		t.Fatalf("chat message count = %d, want 2", len(messages))
-	}
-
-	if got := messages[0]["role"]; got != testSystem {
-		t.Fatalf("messages[0].role = %#v, want system", got)
-	}
-
-	assertLayeredContent(t, messageContent(t, messages[0]))
-
-	if got := messages[1]["role"]; got != testUser {
-		t.Fatalf("messages[1].role = %#v, want user", got)
-	}
-
-	if got := messageContent(t, messages[1]); got != testPromptLayers().User {
-		t.Fatalf("messages[1].content = %q, want %q", got, testPromptLayers().User)
-	}
-}
-
-func assertLayeredRequestMessages(t *testing.T, input any, invariant, developer, user string) {
-	t.Helper()
-
-	messages := requestMessages(t, input)
-	if len(messages) != 3 {
-		t.Fatalf("input message count = %d, want 3", len(messages))
-	}
-
-	want := []struct {
-		role    string
-		content string
-	}{
-		{role: testDeveloper, content: "[APPLICATION INVARIANTS]\n" + invariant},
-		{role: testDeveloper, content: "[DEVELOPER INSTRUCTIONS]\n" + developer},
-		{role: testUser, content: user},
-	}
-	for i, expected := range want {
-		if got := messages[i]["role"]; got != expected.role {
-			t.Fatalf("input[%d].role = %#v, want %q", i, got, expected.role)
-		}
-
-		if got := messageContent(t, messages[i]); got != expected.content {
-			t.Fatalf("input[%d].content = %q, want %q", i, got, expected.content)
-		}
-	}
-
-	for i, sentinel := range []string{invariant, developer, user} {
-		for j, message := range messages {
-			got := strings.Contains(messageContent(t, message), sentinel)
-			if got != (i == j) {
-				t.Fatalf("sentinel %q presence in input[%d] = %v, want %v", sentinel, j, got, i == j)
-			}
-		}
-	}
-}
-
-func assertLayeredContent(t *testing.T, content string) {
-	t.Helper()
-
-	prompts := testPromptLayers()
-	invariant := "[APPLICATION INVARIANTS]\n" + prompts.Invariant
-	developer := "[DEVELOPER INSTRUCTIONS]\n" + prompts.Developer
-
-	if !strings.HasPrefix(content, invariant+"\n\n"+developer) {
-		t.Fatalf("layered content = %q, want invariant then developer sections", content)
-	}
-
-	if strings.Count(content, prompts.Invariant) != 1 || strings.Count(content, prompts.Developer) != 1 {
-		t.Fatalf("layered content duplicated a prompt sentinel: %q", content)
-	}
-
-	if strings.Contains(content, prompts.User) {
-		t.Fatalf("layered content contains user prompt: %q", content)
-	}
-}
-
-type answerPayload struct {
-	Answer string `json:"answer"`
 }
