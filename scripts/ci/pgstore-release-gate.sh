@@ -36,7 +36,10 @@ trap 'exit 143' TERM
 
 # 호스트 loopback의 임의 포트에만 노출한다. 인증은 이 일회용 서버 내부에서만 생략한다.
 # kapu에는 Docker가 없어 실행 사용자의 rootless podman을 쓴다. 관측 수집은 rootless(_UID≠0) journal을 제외한다.
-container_id="$(podman run --rm -d -p 127.0.0.1::5432 \
+# 같은 index digest의 다른 플랫폼 이미지(교차 빌드가 받은 것)가 로컬에 있으면 podman은 경고만 내고
+# 그 이미지를 에뮬레이션으로 실행한다. 호스트 플랫폼을 명시하면 맞는 이미지를 쓰거나 받는다.
+platform="$(podman info --format '{{.Host.OS}}/{{.Host.Arch}}')"
+container_id="$(podman run --rm -d --platform "${platform}" -p 127.0.0.1::5432 \
   -e POSTGRES_HOST_AUTH_METHOD=trust "${POSTGRES_IMAGE}")"
 port_binding="$(podman port "${container_id}" 5432/tcp)"
 if [[ ! "${port_binding}" =~ ^127\.0\.0\.1:([0-9]+)$ ]]; then
