@@ -19,9 +19,6 @@ var (
 
 type safeProviderError struct {
 	statusCode int
-	code       string
-	param      string
-	apiType    string
 	errType    string
 }
 
@@ -32,9 +29,6 @@ func (e safeProviderError) Error() string {
 		parts = append(parts, fmt.Sprintf("status_code=%d", e.statusCode))
 	}
 
-	parts = appendPart(parts, "code", e.code)
-	parts = appendPart(parts, "api_type", e.apiType)
-	parts = appendPart(parts, "param", e.param)
 	parts = appendPart(parts, "error_type", e.errType)
 
 	return strings.Join(parts, " ")
@@ -107,9 +101,6 @@ func SafeError(err error) error {
 	if apiErr, ok := errors.AsType[*openai.Error](err); ok && apiErr != nil {
 		return safeProviderError{
 			statusCode: apiErr.StatusCode,
-			code:       apiErr.Code,
-			param:      apiErr.Param,
-			apiType:    apiErr.Type,
 			errType:    ErrorClass(apiErr),
 		}
 	}

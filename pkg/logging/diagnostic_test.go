@@ -22,7 +22,7 @@ func TestRedactDiagnosticMasksCredentialForms(t *testing.T) {
 		"wrapped-colon-secret",
 		"wrapped-equals-secret",
 	}
-	raw := "Authorization: Bearer bearer-secret " +
+	raw := "Authorization: Bearer bearer-secret\n" +
 		"https://example.test/path?token=query-secret " +
 		"postgres://user:userinfo-secret@example.test/db " +
 		"API_TOKEN=env-secret " +
@@ -52,6 +52,62 @@ func TestRedactDiagnosticLeavesCleanTextUnchanged(t *testing.T) {
 
 	if got := RedactDiagnostic(clean); got != clean {
 		t.Fatalf("RedactDiagnostic() = %q, want %q", got, clean)
+	}
+}
+
+func TestRedactDiagnosticMasksAuthorizationHeaderValues(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "basic",
+			input: "Authorization: Basic dXNlcjpwYXNz",
+			want:  "Authorization: ***REDACTED***",
+		},
+		{
+			name:  "digest",
+			input: `Authorization: Digest username="user", realm="example", response="digest-secret"`,
+			want:  "Authorization: ***REDACTED***",
+		},
+		{
+			name:  "proxy negotiate with following record",
+			input: "Proxy-Authorization: Negotiate negotiate-secret\r\nstatus: denied",
+			want:  "Proxy-Authorization: ***REDACTED***\r\nstatus: denied",
+		},
+		{
+			name:  "custom scheme with following record",
+			input: "authorization=Custom custom-secret\nrequest_id=visible",
+			want:  "authorization=***REDACTED***\nrequest_id=visible",
+		},
+		{
+			name:  "auth header basic",
+			input: "auth_header: Basic dXNlcjpwYXNz\nrequest_id=visible",
+			want:  "auth_header: ***REDACTED***\nrequest_id=visible",
+		},
+		{
+			name:  "cookie with several pairs",
+			input: "cookie: session=session-secret; refresh=refresh-secret\nstatus: denied",
+			want:  "cookie: ***REDACTED***\nstatus: denied",
+		},
+		{
+			name:  "quoted structured value",
+			input: `{"authorization":"Basic quoted-secret","status":"denied"}`,
+			want:  `{"authorization":***REDACTED***,"status":"denied"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := RedactDiagnostic(tt.input); got != tt.want {
+				t.Fatalf("RedactDiagnostic(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
 	}
 }
 
