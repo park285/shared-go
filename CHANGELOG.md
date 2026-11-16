@@ -3,7 +3,7 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
-## 미출시
+## v2.22.0 - 2026-11-16
 
 - **내부 정리:** v2.21.0에서 유일한 사용처(OpenAI 호환 JSON 생성기)가 삭제된 뒤 호출자가 없던 `pkg/internal/jsonutil`을 지웠습니다. internal 패키지라 공개 API 변경은 없습니다.
 - **스택 소비자가 없는 export 삭제:** README 호환성 정책에 따라 스택 소비자(hololive-bot·chat-bot-go-kakao·twentyq-bot·iris-console)가 쓰지 않는 공개 API를 지웁니다. 공개 API 제거이므로 다음 릴리스는 minor입니다.
