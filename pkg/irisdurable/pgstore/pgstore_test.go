@@ -314,66 +314,72 @@ func TestPruneNoncePreservesConcurrentRefresh(t *testing.T) {
 		t.Fatalf("insert expired nonce: %v", err)
 	}
 
-	tx, err := pool.Begin(ctx)
+	tx := beginExpiredNonceRefresh(t, pool, store.Options(), key)
+
+	deleted, err := pruneNonceWithin(ctx, store, 5*time.Second)
 	if err != nil {
-		t.Fatalf("begin nonce refresh: %v", err)
-	}
-	t.Cleanup(func() {
-		if rollbackErr := pgxdb.Rollback(t.Context(), tx); rollbackErr != nil {
-			t.Errorf("rollback nonce refresh: %v", rollbackErr)
-		}
-	})
-
-	txStore, err := pgstore.New(tx, store.Options())
-	if err != nil {
-		t.Fatalf("new store on nonce refresh transaction: %v", err)
+		t.Fatalf("prune while nonce refresh is open: %v", err)
 	}
 
-	duplicate, err := txStore.IsDuplicate(ctx, key, time.Hour)
-	if err != nil {
-		t.Fatalf("refresh expired nonce: %v", err)
-	}
-	if duplicate {
-		t.Fatal("expired nonce refresh was reported as a duplicate")
-	}
-
-	type pruneResult struct {
-		deleted int64
-		err     error
-	}
-
-	pruned := make(chan pruneResult, 1)
-	pruneCtx, cancelPrune := context.WithTimeout(ctx, 5*time.Second)
-	defer cancelPrune()
-
-	go func() {
-		deleted, pruneErr := store.PruneNonce(pruneCtx, 1)
-		pruned <- pruneResult{deleted: deleted, err: pruneErr}
-	}()
-
-	select {
-	case result := <-pruned:
-		if result.err != nil {
-			t.Fatalf("prune while nonce refresh is open: %v", result.err)
-		}
-		if result.deleted != 0 {
-			t.Fatalf("pruned %d nonces; want the refreshing nonce skipped", result.deleted)
-		}
-	case <-pruneCtx.Done():
-		t.Fatalf("prune waited for the refreshing nonce instead of skipping its lock: %v", pruneCtx.Err())
+	if deleted != 0 {
+		t.Fatalf("pruned %d nonces; want the refreshing nonce skipped", deleted)
 	}
 
 	if commitErr := tx.Commit(ctx); commitErr != nil {
 		t.Fatalf("commit nonce refresh: %v", commitErr)
 	}
 
-	duplicate, err = store.IsDuplicate(ctx, key, time.Hour)
+	duplicate, err := store.IsDuplicate(ctx, key, time.Hour)
 	if err != nil {
 		t.Fatalf("observe refreshed nonce: %v", err)
 	}
+
 	if !duplicate {
 		t.Fatal("refreshed nonce was removed by pruning and accepted again")
 	}
+}
+
+func beginExpiredNonceRefresh(t *testing.T, pool *pgxpool.Pool, opts pgstore.Options, key string) pgx.Tx {
+	t.Helper()
+
+	tx, err := pool.Begin(t.Context())
+	if err != nil {
+		t.Fatalf("begin nonce refresh: %v", err)
+	}
+
+	t.Cleanup(func() {
+		if rollbackErr := pgxdb.Rollback(t.Context(), tx); rollbackErr != nil {
+			t.Errorf("rollback nonce refresh: %v", rollbackErr)
+		}
+	})
+
+	txStore, err := pgstore.New(tx, opts)
+	if err != nil {
+		t.Fatalf("new store on nonce refresh transaction: %v", err)
+	}
+
+	duplicate, err := txStore.IsDuplicate(t.Context(), key, time.Hour)
+	if err != nil {
+		t.Fatalf("refresh expired nonce: %v", err)
+	}
+
+	if duplicate {
+		t.Fatal("expired nonce refresh was reported as a duplicate")
+	}
+
+	return tx
+}
+
+func pruneNonceWithin(ctx context.Context, store *pgstore.Store, timeout time.Duration) (int64, error) {
+	pruneCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	deleted, err := store.PruneNonce(pruneCtx, 1)
+	if err != nil {
+		return 0, fmt.Errorf("prune nonce: %w", err)
+	}
+
+	return deleted, nil
 }
 
 func TestPruneNonceHonorsExpiryLimitAndScope(t *testing.T) {
@@ -403,6 +409,7 @@ func TestPruneNonceHonorsExpiryLimitAndScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prune expired nonces: %v", err)
 	}
+
 	if deleted != 2 {
 		t.Fatalf("pruned %d nonces; want the two oldest expired rows", deleted)
 	}
@@ -410,12 +417,15 @@ func TestPruneNonceHonorsExpiryLimitAndScope(t *testing.T) {
 	if nonceExists(t, pool, store.Options().Scope, oldestKey) || nonceExists(t, pool, store.Options().Scope, middleKey) {
 		t.Fatal("the two oldest expired nonces were not pruned")
 	}
+
 	if !nonceExists(t, pool, store.Options().Scope, newestKey) {
 		t.Fatal("pruning crossed its limit and removed a third expired nonce")
 	}
+
 	if !nonceExists(t, pool, store.Options().Scope, liveKey) {
 		t.Fatal("pruning removed a live nonce")
 	}
+
 	if !nonceExists(t, pool, neighbor.Options().Scope, oldestKey) {
 		t.Fatal("pruning removed an expired nonce from another scope")
 	}
@@ -425,6 +435,7 @@ func nonceExists(t *testing.T, pool *pgxpool.Pool, scope, key string) bool {
 	t.Helper()
 
 	var exists bool
+
 	if err := pool.QueryRow(t.Context(), `
 		SELECT EXISTS (
 			SELECT 1
