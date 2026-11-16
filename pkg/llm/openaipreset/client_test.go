@@ -156,3 +156,68 @@ func TestGenerateLayeredResponsesJSONSanitizesProviderError(t *testing.T) {
 		t.Fatalf("provider error marker leaked: %v", err)
 	}
 }
+
+func TestCompleteSanitizesProviderErrorMetadata(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		field  string
+		marker string
+	}{
+		{name: "message", field: "message", marker: "PRIVATE_PROVIDER_MESSAGE_MARKER"},
+		{name: "code", field: "code", marker: "PRIVATE_PROVIDER_CODE_MARKER"},
+		{name: testFieldType, field: testFieldType, marker: "PRIVATE_PROVIDER_TYPE_MARKER"},
+		{name: "param", field: "param", marker: "PRIVATE_PROVIDER_PARAM_MARKER"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			providerError := map[string]any{
+				"message":     "provider request failed",
+				"code":        "bad_request",
+				testFieldType: "invalid_request_error",
+				"param":       "prompt",
+			}
+
+			providerError[tt.field] = tt.marker + "\n\x1b" + strings.Repeat("x", 4096)
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				body, marshalErr := jsonv2.Marshal(map[string]any{"error": providerError})
+				if marshalErr != nil {
+					t.Fatalf("marshal provider error: %v", marshalErr)
+				}
+
+				http.Error(w, string(body), http.StatusBadRequest)
+			}))
+
+			defer server.Close()
+
+			client, err := openaipreset.New(server.URL, "test-key", "gpt-test", openaipreset.WithMaxRetries(0))
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+
+			_, err = client.Complete(t.Context(), openaipreset.CompletionRequest{
+				Messages: []sharedllm.Message{{Role: testUser, Content: testQuestion}},
+			})
+			if err == nil {
+				t.Fatal("Complete error = nil")
+			}
+
+			const want = "openaipreset: run request: run: openai responses API: llm provider request failed status_code=400 error_type=apierror.Error"
+
+			if got := err.Error(); got != want {
+				t.Fatalf("provider error = %q, want fixed diagnostics %q", got, want)
+			}
+
+			for _, unsafeValue := range []string{tt.marker, "\n", "\x1b"} {
+				if strings.Contains(err.Error(), unsafeValue) {
+					t.Fatalf("provider error value %q leaked: %v", unsafeValue, err)
+				}
+			}
+		})
+	}
+}
