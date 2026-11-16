@@ -13,12 +13,10 @@ import (
 	"github.com/park285/shared-go/v2/pkg/httputil"
 )
 
-var smokeTimezones = []string{"Asia/Seoul", "Asia/Tokyo", "UTC"}
-
 const cliTimeout = 4 * time.Second
 
 // RunMain은 헬스체크 CLI 진입점이다. Args는 os.Args(프로그램명 포함)이며 프로세스 종료 코드를 반환한다.
-// CLI는 운영자가 통제하는 자기 서비스 loopback/내부망 probe라 SSRF 기본 차단을 우회한다.
+// CLI는 운영자가 통제하는 자기 서비스 loopback/내부망 probe라 대상 IP 대역을 제한하지 않는다.
 // 다중 target은 외부 container timeout보다 짧은 하나의 deadline 안에서 병렬 검사한다.
 // 내부 TLS override(HEALTHCHECK_* env)는 여기서 한 번만 읽어 모든 target 검사에 같은 값을 쓴다.
 func RunMain(args []string, stdout, stderr io.Writer) int {
@@ -28,10 +26,6 @@ func RunMain(args []string, stdout, stderr io.Writer) int {
 type cliFetchFunc func(context.Context, string, map[string]string) ([]byte, error)
 
 func runCLI(args []string, stdout, stderr io.Writer, fetch cliFetchFunc) int {
-	if len(args) == 2 && args[1] == "--smoke" {
-		return runSmoke(stdout, stderr)
-	}
-
 	if len(args) < 2 {
 		return reportUsage(stderr)
 	}
@@ -143,7 +137,7 @@ func runBody(ctx context.Context, rawURL string, headers map[string]string, stdo
 }
 
 func reportUsage(stderr io.Writer) int {
-	if _, err := fmt.Fprintln(stderr, "usage: healthcheck <url> [url...]|--api-key-env <env> <url> [url...]|--body <url>|--body-api-key-env <env> <url>|--smoke"); err != nil {
+	if _, err := fmt.Fprintln(stderr, "usage: healthcheck <url> [url...]|--api-key-env <env> <url> [url...]|--body <url>|--body-api-key-env <env> <url>"); err != nil {
 		return 1
 	}
 
@@ -156,22 +150,4 @@ func reportFailure(stderr io.Writer, failure error) int {
 	}
 
 	return 1
-}
-
-func runSmoke(stdout, stderr io.Writer) int {
-	for _, name := range smokeTimezones {
-		if _, err := time.LoadLocation(name); err != nil {
-			if _, writeErr := fmt.Fprintf(stderr, "load location %s: %v\n", name, err); writeErr != nil {
-				return 1
-			}
-
-			return 1
-		}
-	}
-
-	if _, err := fmt.Fprintln(stdout, "smoke ok"); err != nil {
-		return 1
-	}
-
-	return 0
 }

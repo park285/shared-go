@@ -1,7 +1,6 @@
 package stringutil
 
 import (
-	"slices"
 	"strings"
 	"unicode/utf8"
 )
@@ -39,14 +38,6 @@ func TruncateString(s string, maxRunes int) string {
 	}
 
 	return s
-}
-
-func ContainsString(slice []string, item string) bool {
-	return slices.Contains(slice, item)
-}
-
-func TrimSpace(s string) string {
-	return strings.TrimSpace(s)
 }
 
 func Normalize(s string) string {

@@ -11,18 +11,6 @@ import (
 	"time"
 )
 
-func TestRunMainSmoke(t *testing.T) {
-	var out, errOut bytes.Buffer
-
-	if code := RunMain([]string{testHealthcheck, "--smoke"}, &out, &errOut); code != 0 {
-		t.Fatalf("smoke code = %d, want 0 (stderr=%q)", code, errOut.String())
-	}
-
-	if got := strings.TrimSpace(out.String()); got != "smoke ok" {
-		t.Fatalf("smoke stdout = %q, want %q", got, "smoke ok")
-	}
-}
-
 func TestRunMainUsage(t *testing.T) {
 	for _, args := range [][]string{{testHealthcheck}, {testHealthcheck, "--body", "a", "b"}} {
 		var out, errOut bytes.Buffer
@@ -96,7 +84,7 @@ func TestRunMainExitCodesWithCheckSeam(t *testing.T) {
 			name:       "usage",
 			args:       []string{testHealthcheck},
 			wantCode:   2,
-			wantStderr: "usage: healthcheck <url> [url...]|--api-key-env <env> <url> [url...]|--body <url>|--body-api-key-env <env> <url>|--smoke\n",
+			wantStderr: "usage: healthcheck <url> [url...]|--api-key-env <env> <url> [url...]|--body <url>|--body-api-key-env <env> <url>\n",
 		},
 	}
 
@@ -122,7 +110,7 @@ func TestRunMainExitCodesWithCheckSeam(t *testing.T) {
 				t.Fatalf("stderr = %q, want %q", got, tt.wantStderr)
 			}
 
-			if len(tt.args) == 2 && tt.args[1] != "--smoke" && checkCalls != 1 {
+			if len(tt.args) == 2 && checkCalls != 1 {
 				t.Fatalf("check calls = %d, want 1", checkCalls)
 			}
 		})

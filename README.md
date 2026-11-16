@@ -109,7 +109,7 @@ async 유실 요약은 파일에도 기록되며, 포화 큐에서는 복사 전
 | `EnforcementInteractive` | 허용 | 허용 | 거부 |
 | `EnforcementPersistent` | 허용 | 거부 | 거부 |
 
-지원 source는 `user_prompt`, `prompt_bundle`, `retrieved_memory`, `memory_candidate`, `session_patch`, `simulation_state`, `law_context`, `session_context`, `chat_log`, `web_search_result`, `image_prompt`로 고정됩니다. 저장·요약·재사용되는 데이터에는 `EnforcementPersistent`를 사용해야 합니다.
+지원 source는 `user_prompt`, `prompt_bundle`, `session_patch`, `session_context`, `chat_log`, `web_search_result`, `image_prompt`로 고정됩니다. 저장·요약·재사용되는 데이터에는 `EnforcementPersistent`를 사용해야 합니다.
 
 `UseEmbeddedDefaults=true`는 `pkg/promptguard/rulepacks`의 v3 baseline을 먼저 로드합니다. `RulepacksDir` 또는 `RulepackFS`를 함께 지정하면 v3 `kind: rules` overlay 하나만 추가할 수 있으며, policy 변경과 baseline rule ID 중복은 시작 단계에서 거부됩니다. `PolicyDigest()`는 engine version과 최종 유효 policy/rules의 결정론적 digest이며 사용자 입력을 포함하지 않습니다. Runtime override 없이 v3 policy 문서만 threshold를 소유합니다.
 

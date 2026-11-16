@@ -501,11 +501,7 @@ func validSource(source Source) bool {
 	switch source {
 	case SourceUserPrompt,
 		SourcePromptBundle,
-		SourceRetrievedMemory,
-		SourceMemoryCandidate,
 		SourceSessionPatch,
-		SourceSimulationState,
-		SourceLawContext,
 		SourceSessionContext,
 		SourceChatLog,
 		SourceWebSearchResult,

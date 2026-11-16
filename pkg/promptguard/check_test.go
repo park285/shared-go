@@ -20,11 +20,7 @@ func TestCheckEnforcementMatrixForEverySource(t *testing.T) {
 	sources := []Source{
 		SourceUserPrompt,
 		SourcePromptBundle,
-		SourceRetrievedMemory,
-		SourceMemoryCandidate,
 		SourceSessionPatch,
-		SourceSimulationState,
-		SourceLawContext,
 		SourceSessionContext,
 		SourceChatLog,
 		SourceWebSearchResult,
@@ -258,7 +254,7 @@ func TestCheckEmitsEventsForOversizeAndFallback(t *testing.T) {
 		return Evaluation{}, errors.New("SENSITIVE_DETECTOR_ERROR")
 	}
 
-	evaluation, err := guard.Check(CheckRequest{Text: "input", Source: SourceMemoryCandidate, Enforcement: EnforcementPersistent})
+	evaluation, err := guard.Check(CheckRequest{Text: "input", Source: SourceSessionPatch, Enforcement: EnforcementPersistent})
 
 	blocked, ok := errors.AsType[*BlockedError](err)
 	if !ok || !evaluation.FallbackBlocked || !slices.Contains(blocked.Rules, ruleEvaluationFallback) {

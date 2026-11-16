@@ -18,11 +18,7 @@ type Source string
 const (
 	SourceUserPrompt      Source = "user_prompt"
 	SourcePromptBundle    Source = "prompt_bundle"
-	SourceRetrievedMemory Source = "retrieved_memory"
-	SourceMemoryCandidate Source = "memory_candidate"
 	SourceSessionPatch    Source = "session_patch"
-	SourceSimulationState Source = "simulation_state"
-	SourceLawContext      Source = "law_context"
 	SourceSessionContext  Source = "session_context"
 	SourceChatLog         Source = "chat_log"
 	SourceWebSearchResult Source = "web_search_result"

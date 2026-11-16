@@ -11,7 +11,6 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/park285/shared-go/v2/pkg/h3"
@@ -33,13 +32,10 @@ const (
 
 var (
 	errBodyTooLarge         = errors.New("healthprobe: response body exceeds limit")
-	errHostNotAllowed       = errors.New("healthprobe: host not in allowlist")
-	errPrivateNetwork       = errors.New("healthprobe: target resolves to a private or loopback address")
 	errTooManyRedirects     = errors.New("healthprobe: too many redirects")
 	errCredentialedRedirect = errors.New("healthprobe: client certificate redirect changes origin")
 )
 
-// CLI 경로만 HEALTHCHECK_* env에서 한 번 읽어 넘기며, 외부 대상 검사(CheckURL)는 시스템 CA만 쓰고 클라이언트 인증서를 제시하지 않는다.
 type tlsOverrides struct {
 	CACertFile     string
 	ClientCertFile string
@@ -58,38 +54,17 @@ func tlsOverridesFromEnv() tlsOverrides {
 
 type fetchOptions struct {
 	TLS                      tlsOverrides
-	AllowedHosts             []string
-	AllowPrivateNetworks     bool
 	MaxBodyBytes             int64
 	FollowRedirects          bool
 	ForwardHeadersOnRedirect bool
 }
 
-func defaultFetchOptions() fetchOptions {
+func internalFetchOptions(tls tlsOverrides) fetchOptions {
 	return fetchOptions{
+		TLS:             tls,
 		MaxBodyBytes:    defaultMaxBodyBytes,
 		FollowRedirects: true,
 	}
-}
-
-func internalFetchOptions(tls tlsOverrides) fetchOptions {
-	opts := defaultFetchOptions()
-
-	opts.AllowPrivateNetworks = true
-	opts.TLS = tls
-
-	return opts
-}
-
-// CheckURL은 https는 H3(QUIC)로, http는 HTTP/1.1로 1회 GET 후 2xx 여부를 검사한다.
-// 대상이 private·loopback 주소로 풀리면 거부한다. 외부 대상용이라 HEALTHCHECK_* env를 읽지 않으며
-// 시스템 CA 번들로 검증하고 클라이언트 인증서를 제시하지 않는다.
-func CheckURL(ctx context.Context, rawURL string) error {
-	if _, err := fetchURL(ctx, rawURL, nil, defaultFetchOptions()); err != nil {
-		return fmt.Errorf("healthprobe: fetch URL: %w", err)
-	}
-
-	return nil
 }
 
 func fetchURL(parent context.Context, rawURL string, headers map[string]string, opts fetchOptions) ([]byte, error) {
@@ -102,7 +77,7 @@ func fetchURL(parent context.Context, rawURL string, headers map[string]string, 
 
 	defer cancel()
 
-	if authErr := authorizeTarget(ctx, parsed, opts); authErr != nil {
+	if authErr := authorizeTarget(ctx, parsed); authErr != nil {
 		return nil, fmt.Errorf("authorize target: %w", authErr)
 	}
 
@@ -146,12 +121,6 @@ func fetchURL(parent context.Context, rawURL string, headers map[string]string, 
 }
 
 func newClient(parsed *url.URL, opts fetchOptions) (*http.Client, func(), error) {
-	var guard func(net.IP) error
-
-	if !opts.AllowPrivateNetworks {
-		guard = dialGuard
-	}
-
 	if parsed.Scheme == "https" {
 		clientCertFile := opts.TLS.ClientCertFile
 		clientKeyFile := opts.TLS.ClientKeyFile
@@ -161,7 +130,6 @@ func newClient(parsed *url.URL, opts fetchOptions) (*http.Client, func(), error)
 			ClientCertFile: clientCertFile,
 			ClientKeyFile:  clientKeyFile,
 			ServerName:     opts.TLS.ServerName,
-			DialGuard:      guard,
 		})
 		if clientErr != nil {
 			return nil, nil, fmt.Errorf("client: %w", clientErr)
@@ -183,58 +151,13 @@ func newClient(parsed *url.URL, opts fetchOptions) (*http.Client, func(), error)
 		CheckRedirect: redirectPolicy(opts, nil),
 	}
 
-	if guard == nil {
-		// 공유 http.DefaultTransport의 pool은 다른 소비자 것이므로 여기서 닫지 않는다.
-		return client, func() {}, nil
-	}
-
-	transport := guardedHTTPTransport(guard)
-
-	client.Transport = transport
-
-	return client, transport.CloseIdleConnections, nil
-}
-
-func dialGuard(ip net.IP) error {
-	if netguard.IsBlockedIP(ip) {
-		return fmt.Errorf("%w: %w: dialed %s", errPrivateNetwork, netguard.ErrBlockedIP, ip)
-	}
-
-	return nil
-}
-
-func guardedHTTPTransport(guard func(net.IP) error) *http.Transport {
-	dialer := &net.Dialer{Timeout: requestTimeout}
-	protocols := new(http.Protocols)
-	protocols.SetHTTP1(true)
-
-	dialer.Control = func(_, address string, _ syscall.RawConn) error {
-		host, _, err := net.SplitHostPort(address)
-		if err != nil {
-			return fmt.Errorf("%w: parse dial addr %q: %w", errPrivateNetwork, address, err)
-		}
-
-		ip := net.ParseIP(host)
-		if ip == nil {
-			return fmt.Errorf("%w: unresolved dial addr %q", errPrivateNetwork, address)
-		}
-
-		return guard(ip)
-	}
-
-	return &http.Transport{
-		DialContext:           dialer.DialContext,
-		Protocols:             protocols,
-		MaxIdleConns:          10,
-		IdleConnTimeout:       30 * time.Second,
-		TLSHandshakeTimeout:   requestTimeout,
-		ExpectContinueTimeout: time.Second,
-	}
+	// 공유 http.DefaultTransport의 pool은 다른 소비자 것이므로 여기서 닫지 않는다.
+	return client, func() {}, nil
 }
 
 func redirectPolicy(opts fetchOptions, credentialOrigin *url.URL) func(req *http.Request, via []*http.Request) error {
 	policy := netguard.RedirectPolicy(netguard.RedirectConfig{
-		Policy:         networkPolicy(opts),
+		Policy:         networkPolicy(),
 		MaxRedirects:   maxRedirects - 1,
 		DisableFollow:  !opts.FollowRedirects,
 		ForwardHeaders: opts.ForwardHeadersOnRedirect,
@@ -289,42 +212,32 @@ func readCappedBody(body io.ReadCloser, maxBytes int64) ([]byte, error) {
 	return data, nil
 }
 
-func authorizeTarget(ctx context.Context, parsed *url.URL, opts fetchOptions) error {
-	if err := mapPolicyError(networkPolicy(opts).ValidateTarget(ctx, parsed)); err != nil {
+func authorizeTarget(ctx context.Context, parsed *url.URL) error {
+	if err := mapPolicyError(networkPolicy().ValidateTarget(ctx, parsed)); err != nil {
 		return fmt.Errorf("map policy error: %w", err)
 	}
 
 	return nil
 }
 
-func networkPolicy(opts fetchOptions) netguard.Policy {
-	policy := netguard.Policy{
-		Resolver:     healthprobeResolver{},
-		Timeout:      requestTimeout,
-		AllowedHosts: opts.AllowedHosts,
-		Schemes:      []string{"http", "https"},
-	}
-	if opts.AllowPrivateNetworks {
-		policy.AllowedIPPrefixes = []netip.Prefix{
+func networkPolicy() netguard.Policy {
+	return netguard.Policy{
+		Resolver: healthprobeResolver{},
+		Timeout:  requestTimeout,
+		Schemes:  []string{"http", "https"},
+		AllowedIPPrefixes: []netip.Prefix{
 			netip.MustParsePrefix("0.0.0.0/0"),
 			netip.MustParsePrefix("::/0"),
-		}
+		},
 	}
-
-	return policy
 }
 
 func mapPolicyError(err error) error {
-	switch {
-	case errors.Is(err, netguard.ErrBlockedIP):
-		return fmt.Errorf("%w: %w", errPrivateNetwork, err)
-	case errors.Is(err, netguard.ErrHostNotAllowed):
-		return fmt.Errorf("%w: %w", errHostNotAllowed, err)
-	case errors.Is(err, netguard.ErrTooManyRedirects):
+	if errors.Is(err, netguard.ErrTooManyRedirects) {
 		return fmt.Errorf("%w: %w", errTooManyRedirects, err)
-	default:
-		return err
 	}
+
+	return err
 }
 
 var lookupIPAddr = net.DefaultResolver.LookupIPAddr
