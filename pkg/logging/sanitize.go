@@ -57,26 +57,27 @@ var querySecretTokens = []string{
 }
 
 var sensitiveExactKeys = map[string]struct{}{
-	"token":            {},
-	"bot_token":        {},
-	"access_token":     {},
-	"refresh_token":    {},
-	tokenPassword:      {},
-	tokenPwd:           {},
-	tokenPasswd:        {},
-	tokenSecret:        {},
-	"client_secret":    {},
-	tokenAPIKey:        {},
-	tokenAPIKeyCompact: {},
-	tokenPrivateKey:    {},
-	tokenSecretKey:     {},
-	"authorization":    {},
-	"auth_header":      {},
-	"cookie":           {},
-	"webhook_url":      {},
-	"database_url":     {},
-	"postgres_dsn":     {},
-	"connection_url":   {},
+	"token":               {},
+	"bot_token":           {},
+	"access_token":        {},
+	"refresh_token":       {},
+	tokenPassword:         {},
+	tokenPwd:              {},
+	tokenPasswd:           {},
+	tokenSecret:           {},
+	"client_secret":       {},
+	tokenAPIKey:           {},
+	tokenAPIKeyCompact:    {},
+	tokenPrivateKey:       {},
+	tokenSecretKey:        {},
+	"authorization":       {},
+	"proxy_authorization": {},
+	"auth_header":         {},
+	"cookie":              {},
+	"webhook_url":         {},
+	"database_url":        {},
+	"postgres_dsn":        {},
+	"connection_url":      {},
 }
 
 // privacyKeys는 서비스가 Options.PrivacyKeys로 넘긴 업무 식별자 키(정규화된 정확 일치)다.
@@ -189,12 +190,17 @@ func redactSecretAssignments(s string) string {
 			continue
 		}
 
-		key := assignmentKeyBefore(s, separator)
-		if !isSensitiveKey(key) {
+		normalizedKey := normalizeSensitiveKey(assignmentKeyBefore(s, separator))
+		if !isSensitiveNormalizedKey(normalizedKey) {
 			continue
 		}
 
-		valueStart, valueEnd := assignmentValueAfter(s, separator+1)
+		var valueStart, valueEnd int
+		if isAuthorizationNormalizedKey(normalizedKey) {
+			valueStart, valueEnd = authorizationValueAfter(s, separator+1)
+		} else {
+			valueStart, valueEnd = assignmentValueAfter(s, separator+1)
+		}
 		if valueStart == valueEnd {
 			continue
 		}
@@ -268,6 +274,24 @@ func assignmentValueAfter(s string, start int) (int, int) {
 	}
 
 	return start, end
+}
+
+func authorizationValueAfter(s string, start int) (int, int) {
+	valueStart, valueEnd := assignmentValueAfter(s, start)
+	if valueStart == valueEnd || s[valueStart] == '"' || s[valueStart] == '\'' {
+		return valueStart, valueEnd
+	}
+
+	// Authorization values can contain spaces and commas, so only a record boundary ends an unquoted value.
+	for valueEnd < len(s) && s[valueEnd] != '\r' && s[valueEnd] != '\n' {
+		valueEnd++
+	}
+
+	return valueStart, valueEnd
+}
+
+func isAuthorizationNormalizedKey(normalized string) bool {
+	return normalized == "authorization" || normalized == "proxy_authorization"
 }
 
 func isAssignmentKeyByte(value byte) bool {
