@@ -167,7 +167,7 @@ func TestCompleteSanitizesProviderErrorMetadata(t *testing.T) {
 	}{
 		{name: "message", field: "message", marker: "PRIVATE_PROVIDER_MESSAGE_MARKER"},
 		{name: "code", field: "code", marker: "PRIVATE_PROVIDER_CODE_MARKER"},
-		{name: "type", field: "type", marker: "PRIVATE_PROVIDER_TYPE_MARKER"},
+		{name: testFieldType, field: testFieldType, marker: "PRIVATE_PROVIDER_TYPE_MARKER"},
 		{name: "param", field: "param", marker: "PRIVATE_PROVIDER_PARAM_MARKER"},
 	}
 
@@ -176,11 +176,12 @@ func TestCompleteSanitizesProviderErrorMetadata(t *testing.T) {
 			t.Parallel()
 
 			providerError := map[string]any{
-				"message": "provider request failed",
-				"code":    "bad_request",
-				"type":    "invalid_request_error",
-				"param":   "prompt",
+				"message":     "provider request failed",
+				"code":        "bad_request",
+				testFieldType: "invalid_request_error",
+				"param":       "prompt",
 			}
+
 			providerError[tt.field] = tt.marker + "\n\x1b" + strings.Repeat("x", 4096)
 
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -206,7 +207,8 @@ func TestCompleteSanitizesProviderErrorMetadata(t *testing.T) {
 				t.Fatal("Complete error = nil")
 			}
 
-			const want = "openaipreset: run request: run: openai responses API: llm provider request failed status_code=400 error_type=openai.Error"
+			const want = "openaipreset: run request: run: openai responses API: llm provider request failed status_code=400 error_type=apierror.Error"
+
 			if got := err.Error(); got != want {
 				t.Fatalf("provider error = %q, want fixed diagnostics %q", got, want)
 			}
