@@ -6,6 +6,8 @@ import (
 	"fmt"
 
 	"github.com/openai/openai-go/v3/responses"
+
+	"github.com/park285/shared-go/v2/pkg/llm/internal/openaidiag"
 )
 
 func (c *Client) completedResponsesStream(ctx context.Context, params responses.ResponseNewParams) (result *responses.Response, resultErr error) {
@@ -15,7 +17,7 @@ func (c *Client) completedResponsesStream(ctx context.Context, params responses.
 		// 연결 종료 실패도 부분 성공으로 반환하지 않으며 기존 요청 오류를 우선한다.
 		if err := stream.Close(); err != nil && resultErr == nil {
 			result = nil
-			resultErr = fmt.Errorf("close responses stream: %w", safeResponseError(err))
+			resultErr = fmt.Errorf("close responses stream: %w", openaidiag.SafeError(err))
 		}
 	}()
 
@@ -43,7 +45,7 @@ func (c *Client) completedResponsesStream(ctx context.Context, params responses.
 	}
 
 	if err := stream.Err(); err != nil {
-		return nil, fmt.Errorf("responses stream: %w", safeResponseError(err))
+		return nil, fmt.Errorf("responses stream: %w", openaidiag.SafeError(err))
 	}
 
 	if completed == nil {

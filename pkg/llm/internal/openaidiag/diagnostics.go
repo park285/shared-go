@@ -8,6 +8,8 @@ import (
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/responses"
+
+	"github.com/park285/shared-go/v2/pkg/httputil"
 )
 
 var (
@@ -96,6 +98,10 @@ func SafeError(err error) error {
 
 	if errors.Is(err, context.DeadlineExceeded) {
 		return context.DeadlineExceeded
+	}
+
+	if errors.Is(err, httputil.ErrResponseBodyTooLarge) {
+		return httputil.ErrResponseBodyTooLarge
 	}
 
 	if apiErr, ok := errors.AsType[*openai.Error](err); ok && apiErr != nil {

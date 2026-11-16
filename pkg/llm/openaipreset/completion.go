@@ -62,7 +62,7 @@ func (c *Client) Complete(ctx context.Context, req CompletionRequest) (Completio
 	out, err := runRequest(ctx, c.logger, attrs, func() (CompletionResponse, error) {
 		resp, respErr := c.openai.Responses.New(ctx, params)
 		if respErr != nil {
-			return CompletionResponse{}, fmt.Errorf("openai responses API: %w", safeResponseError(respErr))
+			return CompletionResponse{}, fmt.Errorf("openai responses API: %w", openaidiag.SafeError(respErr))
 		}
 
 		completion := CompletionFromResponse(resp, requestedModel)

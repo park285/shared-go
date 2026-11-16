@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	"github.com/park285/shared-go/v2/pkg/httputil"
-	"github.com/park285/shared-go/v2/pkg/llm/internal/openaidiag"
 )
 
 const (
@@ -15,10 +14,9 @@ const (
 	maxOutputTokens          int64 = 16 << 10
 )
 
-// responseLimitedHTTPClient clones client so the caller's transport remains untouched while
-// every provider response is bounded before the SDK can decode JSON or accumulate SSE events.
 func responseLimitedHTTPClient(client *http.Client, maxBytes int64) *http.Client {
 	cloned := *client
+
 	base := client.Transport
 	if base == nil {
 		base = http.DefaultTransport
@@ -37,10 +35,10 @@ type responseLimitRoundTripper struct {
 func (t responseLimitRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	resp, err := t.base.RoundTrip(req)
 	if err != nil {
-		return resp, err
+		return nil, err
 	}
 
-	if resp == nil || resp.Body == nil {
+	if resp.Body == nil {
 		return resp, nil
 	}
 
@@ -78,9 +76,7 @@ func (b *limitedResponseBody) Read(p []byte) (int, error) {
 
 		n, err := b.body.Read(probe[:])
 		if n > 0 {
-			_ = b.Close()
-
-			return 0, httputil.ErrResponseBodyTooLarge
+			return 0, errors.Join(httputil.ErrResponseBodyTooLarge, b.Close())
 		}
 
 		return 0, err
@@ -91,6 +87,7 @@ func (b *limitedResponseBody) Read(p []byte) (int, error) {
 	}
 
 	n, err := b.body.Read(p)
+
 	b.remaining -= int64(n)
 
 	return n, err
@@ -102,12 +99,4 @@ func (b *limitedResponseBody) Close() error {
 	})
 
 	return b.closeErr
-}
-
-func safeResponseError(err error) error {
-	if errors.Is(err, httputil.ErrResponseBodyTooLarge) {
-		return httputil.ErrResponseBodyTooLarge
-	}
-
-	return openaidiag.SafeError(err)
 }

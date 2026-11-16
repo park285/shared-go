@@ -16,6 +16,7 @@ import (
 
 type closeTrackingBody struct {
 	io.Reader
+
 	closed atomic.Bool
 }
 
@@ -122,6 +123,7 @@ func TestResponsesStreamRejectsCumulativeOversize(t *testing.T) {
 	var responseBody strings.Builder
 
 	delta := strings.Repeat("x", 32<<10)
+
 	for responseBody.Len() <= 1<<20 {
 		responseBody.WriteString(`data: {"type":"response.output_text.delta","delta":"`)
 		responseBody.WriteString(delta)
