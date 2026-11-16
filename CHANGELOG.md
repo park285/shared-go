@@ -3,7 +3,7 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
-## 미출시
+## v2.21.1 - 2026-11-16
 
 - **의존성 갱신:** pgx v5.13.0, openai-go v3.99.0, quic-go v0.65.0, goldmark v2.1.16, x/sync v0.25.0, x/sys v0.50.0, x/text v0.44.0과 간접 의존성(x/crypto, tidwall gjson·pretty·sjson)을 올렸습니다. API 변경은 없습니다.
 
