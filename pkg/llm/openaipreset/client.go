@@ -18,7 +18,6 @@ import (
 	"github.com/park285/shared-go/v2/pkg/httputil"
 	sharedllm "github.com/park285/shared-go/v2/pkg/llm"
 	"github.com/park285/shared-go/v2/pkg/llm/internal/openaicfg"
-	"github.com/park285/shared-go/v2/pkg/llm/internal/openaidiag"
 	"github.com/park285/shared-go/v2/pkg/logging"
 )
 
@@ -65,6 +64,7 @@ func New(baseURL, apiKey, model string, opts ...Option) (*Client, error) {
 	if httpClient == nil {
 		httpClient = defaultHTTPClient()
 	}
+	httpClient = responseLimitedHTTPClient(httpClient, maxProviderResponseBytes)
 
 	if cfg.maxRetries == nil {
 		return nil, errors.New("openaipreset: WithMaxRetries is required")
@@ -155,7 +155,7 @@ func (c *Client) GenerateLayeredResponsesJSON(ctx context.Context, task string, 
 	out, err := runRequest(ctx, c.logger, attrs, func() (string, error) {
 		resp, respErr := c.completedResponsesStream(ctx, params)
 		if respErr != nil {
-			return "", fmt.Errorf("openai responses API: %w", openaidiag.SafeError(respErr))
+			return "", fmt.Errorf("openai responses API: %w", safeResponseError(respErr))
 		}
 
 		responseModel := strings.TrimSpace(resp.Model)

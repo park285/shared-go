@@ -62,7 +62,7 @@ func (c *Client) Complete(ctx context.Context, req CompletionRequest) (Completio
 	out, err := runRequest(ctx, c.logger, attrs, func() (CompletionResponse, error) {
 		resp, respErr := c.openai.Responses.New(ctx, params)
 		if respErr != nil {
-			return CompletionResponse{}, fmt.Errorf("openai responses API: %w", openaidiag.SafeError(respErr))
+			return CompletionResponse{}, fmt.Errorf("openai responses API: %w", safeResponseError(respErr))
 		}
 
 		completion := CompletionFromResponse(resp, requestedModel)
@@ -121,7 +121,8 @@ func (c *Client) completionParams(req CompletionRequest) (responses.ResponseNewP
 	}
 
 	params := responses.ResponseNewParams{
-		Model: model,
+		Model:           model,
+		MaxOutputTokens: openai.Int(maxOutputTokens),
 		Input: responses.ResponseNewParamsInputUnion{
 			OfInputItemList: completionInput(messages),
 		},

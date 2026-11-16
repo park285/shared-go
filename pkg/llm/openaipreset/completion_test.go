@@ -247,6 +247,10 @@ func checkBasicPayload(t *testing.T, payload map[string]any) {
 		t.Fatalf("model = %#v, want gpt-test", got)
 	}
 
+	if got := payload["max_output_tokens"]; got != float64(testMaxOutputTokens) {
+		t.Fatalf("max_output_tokens = %#v, want %d", got, testMaxOutputTokens)
+	}
+
 	input := testsupport.AssertType[[]any](t, "payload['input']", payload["input"])
 	if len(input) != 3 {
 		t.Fatalf("input len = %d, want 3", len(input))
