@@ -46,7 +46,10 @@ func (t *flagTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	return resp, nil
 }
 
-const responsesBody = `{"id":"resp-1","object":"response","created_at":1,"status":"completed","model":"gpt-returned","output":[{"id":"msg-1","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"{\"answer\":\"yes\"}","annotations":[]}]}],"usage":{"input_tokens":12,"input_tokens_details":{"cached_tokens":2,"cache_write_tokens":7},"output_tokens":5,"output_tokens_details":{"reasoning_tokens":1},"total_tokens":17}}`
+const (
+	responsesBody       = `{"id":"resp-1","object":"response","created_at":1,"status":"completed","model":"gpt-returned","output":[{"id":"msg-1","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"{\"answer\":\"yes\"}","annotations":[]}]}],"usage":{"input_tokens":12,"input_tokens_details":{"cached_tokens":2,"cache_write_tokens":7},"output_tokens":5,"output_tokens_details":{"reasoning_tokens":1},"total_tokens":17}}`
+	testMaxOutputTokens = 16 << 10
+)
 
 func writeJSON(t *testing.T, w http.ResponseWriter, body string) {
 	t.Helper()
@@ -95,6 +98,10 @@ func TestGenerateLayeredResponsesJSONReturnsCompleteResponsesSurface(t *testing.
 
 	if payload["stream"] != true {
 		t.Fatalf("stream = %v, want true", payload["stream"])
+	}
+
+	if got := payload["max_output_tokens"]; got != float64(testMaxOutputTokens) {
+		t.Fatalf("max_output_tokens = %#v, want %d", got, testMaxOutputTokens)
 	}
 }
 

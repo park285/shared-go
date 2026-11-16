@@ -121,7 +121,8 @@ func (c *Client) completionParams(req CompletionRequest) (responses.ResponseNewP
 	}
 
 	params := responses.ResponseNewParams{
-		Model: model,
+		Model:           model,
+		MaxOutputTokens: openai.Int(maxOutputTokens),
 		Input: responses.ResponseNewParamsInputUnion{
 			OfInputItemList: completionInput(messages),
 		},

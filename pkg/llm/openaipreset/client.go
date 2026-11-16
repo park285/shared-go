@@ -66,6 +66,8 @@ func New(baseURL, apiKey, model string, opts ...Option) (*Client, error) {
 		httpClient = defaultHTTPClient()
 	}
 
+	httpClient = responseLimitedHTTPClient(httpClient, maxProviderResponseBytes)
+
 	if cfg.maxRetries == nil {
 		return nil, errors.New("openaipreset: WithMaxRetries is required")
 	}
