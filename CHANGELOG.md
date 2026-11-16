@@ -3,6 +3,14 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## 미출시
+
+- **내부 정리:** v2.21.0에서 유일한 사용처(OpenAI 호환 JSON 생성기)가 삭제된 뒤 호출자가 없던 `pkg/internal/jsonutil`을 지웠습니다. internal 패키지라 공개 API 변경은 없습니다.
+- **스택 소비자가 없는 export 삭제:** README 호환성 정책에 따라 스택 소비자(hololive-bot·chat-bot-go-kakao·twentyq-bot·iris-console)가 쓰지 않는 공개 API를 지웁니다. 공개 API 제거이므로 다음 릴리스는 minor입니다.
+  - **`stringutil`:** 표준 라이브러리를 그대로 부르던 래퍼 `TrimSpace`와 `ContainsString`을 삭제했습니다. `strings.TrimSpace`와 `slices.Contains`를 직접 씁니다. `Normalize`·`NormalizeKey`·`TruncateString`은 그대로입니다.
+  - **`healthprobe`:** 외부 대상 검사 `CheckURL`과 `RunMain`의 `--smoke` 모드(시간대 데이터 `Asia/Seoul`·`Asia/Tokyo`·`UTC` 확인 뒤 `smoke ok` 출력)를 삭제했습니다. 이 모드를 부르던 스크립트는 이미 없어졌고, hololive collector healthcheck도 같은 변경 묶음에서 `RunMain`만 부르게 바뀝니다. 이제 `--smoke`는 URL로 해석되어 `validate url: unsupported url scheme: ` 오류와 종료 코드 1로 끝나고, usage 문구에서 `|--smoke`가 빠집니다. `CheckURL` 전용이던 private·loopback 대상 차단 경로와 쓰이지 않던 host allowlist도 함께 지웠습니다. URL·`--api-key-env`·`--body`·`--body-api-key-env` 모드의 동작과 `HEALTHCHECK_*` TLS 설정은 그대로입니다.
+  - **`promptguard`:** 퇴역한 ChatBotGo 장기기억·시뮬레이션·법률 기능의 source `SourceRetrievedMemory`(`retrieved_memory`)·`SourceMemoryCandidate`(`memory_candidate`)·`SourceSimulationState`(`simulation_state`)·`SourceLawContext`(`law_context`)를 삭제했습니다. 이 값을 문자열로 넘긴 `Check`는 이제 `ErrInvalidCheckRequest`로 거절됩니다. 지원 source는 `user_prompt`·`prompt_bundle`·`session_patch`·`session_context`·`chat_log`·`web_search_result`·`image_prompt` 7개이고, 탐지 규칙과 판정은 그대로입니다. chat-bot-go-kakao는 같은 변경 묶음에서 지표 라벨 목록이 이 상수에 기대지 않게 바뀝니다.
+
 ## v2.21.1 - 2026-11-16
 
 - **의존성 갱신:** pgx v5.13.0, openai-go v3.99.0, quic-go v0.65.0, goldmark v2.1.16, x/sync v0.25.0, x/sys v0.50.0, x/text v0.44.0과 간접 의존성(x/crypto, tidwall gjson·pretty·sjson)을 올렸습니다. API 변경은 없습니다.

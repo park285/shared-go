@@ -108,7 +108,7 @@ func TestCheckURLRejectsMissingCAFile(t *testing.T) {
 	}
 }
 
-func TestCheckURLRejectsInvalidInputs(t *testing.T) {
+func TestFetchURLRejectsInvalidInputs(t *testing.T) {
 	tests := []struct {
 		name string
 		raw  string
@@ -120,8 +120,8 @@ func TestCheckURLRejectsInvalidInputs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := CheckURL(t.Context(), tt.raw); err == nil {
-				t.Fatalf("CheckURL(%q) error = nil, want error", tt.raw)
+			if _, err := fetchURL(t.Context(), tt.raw, nil, internalFetchOptions(tlsOverrides{})); err == nil {
+				t.Fatalf("fetchURL(%q) error = nil, want error", tt.raw)
 			}
 		})
 	}
@@ -313,29 +313,4 @@ func writeSelfSignedCert(t *testing.T, serverName string) (string, string) {
 	}
 
 	return certFile, keyFile
-}
-
-// 환경 변수를 읽던 이전 경로는 설정된 클라이언트 인증서를 외부 호스트에 제시하거나 내부 CA로 검증해 실패했다.
-func TestCheckURLOptionsIgnoreInternalTLSEnv(t *testing.T) {
-	missing := filepath.Join(t.TempDir(), "missing.pem")
-	t.Setenv(caCertFileEnv, missing)
-	t.Setenv(clientCertFileEnv, missing)
-	t.Setenv(clientKeyFileEnv, missing)
-	t.Setenv(serverNameEnv, "internal.invalid")
-
-	parsed, err := parseURL("https://example.com/ready")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, closeFn, err := newClient(parsed, defaultFetchOptions())
-	if err != nil {
-		t.Fatalf("newClient(external) error = %v, want env-independent client", err)
-	}
-
-	closeFn()
-
-	if got := tlsOverridesFromEnv(); got.CACertFile != missing || got.ServerName != "internal.invalid" {
-		t.Fatalf("tlsOverridesFromEnv() = %+v, want CLI path to read the env", got)
-	}
 }
