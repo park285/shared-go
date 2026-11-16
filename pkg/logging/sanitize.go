@@ -196,11 +196,13 @@ func redactSecretAssignments(s string) string {
 		}
 
 		var valueStart, valueEnd int
-		if isAuthorizationNormalizedKey(normalizedKey) {
-			valueStart, valueEnd = authorizationValueAfter(s, separator+1)
+
+		if isHeaderCredentialNormalizedKey(normalizedKey) {
+			valueStart, valueEnd = headerCredentialValueAfter(s, separator+1)
 		} else {
 			valueStart, valueEnd = assignmentValueAfter(s, separator+1)
 		}
+
 		if valueStart == valueEnd {
 			continue
 		}
@@ -276,13 +278,13 @@ func assignmentValueAfter(s string, start int) (int, int) {
 	return start, end
 }
 
-func authorizationValueAfter(s string, start int) (int, int) {
+func headerCredentialValueAfter(s string, start int) (int, int) {
 	valueStart, valueEnd := assignmentValueAfter(s, start)
 	if valueStart == valueEnd || s[valueStart] == '"' || s[valueStart] == '\'' {
 		return valueStart, valueEnd
 	}
 
-	// Authorization values can contain spaces and commas, so only a record boundary ends an unquoted value.
+	// 헤더 자격 증명 값은 공백·쉼표·세미콜론을 담을 수 있어 따옴표 없는 값은 레코드 경계(CR/LF)에서만 끝난다.
 	for valueEnd < len(s) && s[valueEnd] != '\r' && s[valueEnd] != '\n' {
 		valueEnd++
 	}
@@ -290,8 +292,13 @@ func authorizationValueAfter(s string, start int) (int, int) {
 	return valueStart, valueEnd
 }
 
-func isAuthorizationNormalizedKey(normalized string) bool {
-	return normalized == "authorization" || normalized == "proxy_authorization"
+func isHeaderCredentialNormalizedKey(normalized string) bool {
+	switch normalized {
+	case "authorization", "proxy_authorization", "auth_header", "cookie":
+		return true
+	default:
+		return false
+	}
 }
 
 func isAssignmentKeyByte(value byte) bool {

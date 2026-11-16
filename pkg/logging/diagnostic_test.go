@@ -84,6 +84,16 @@ func TestRedactDiagnosticMasksAuthorizationHeaderValues(t *testing.T) {
 			want:  "authorization=***REDACTED***\nrequest_id=visible",
 		},
 		{
+			name:  "auth header basic",
+			input: "auth_header: Basic dXNlcjpwYXNz\nrequest_id=visible",
+			want:  "auth_header: ***REDACTED***\nrequest_id=visible",
+		},
+		{
+			name:  "cookie with several pairs",
+			input: "cookie: session=session-secret; refresh=refresh-secret\nstatus: denied",
+			want:  "cookie: ***REDACTED***\nstatus: denied",
+		},
+		{
 			name:  "quoted structured value",
 			input: `{"authorization":"Basic quoted-secret","status":"denied"}`,
 			want:  `{"authorization":***REDACTED***,"status":"denied"}`,
@@ -92,6 +102,8 @@ func TestRedactDiagnosticMasksAuthorizationHeaderValues(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			if got := RedactDiagnostic(tt.input); got != tt.want {
 				t.Fatalf("RedactDiagnostic(%q) = %q, want %q", tt.input, got, tt.want)
 			}
