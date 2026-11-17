@@ -87,8 +87,11 @@ publish job만 `contents: write`, `id-token: write`, `attestations: write`를 �
 모든 asset의 provenance와 archive에 결합된 SPDX attestation을 생성하며,
 publish 스크립트가 repository·workflow·OIDC issuer·tag ref·commit·GitHub-hosted
 runner를 검증한 뒤 게시한다. 기존 릴리스나 조회 실패는 재게시 허용으로 바꾸지 않는다.
-게시 직후 `gh release verify`로 immutable release attestation을 검사하며 실패를
-숨기거나 재게시하지 않는다.
+게시 응답 뒤 GitHub가 자동 생성하는 release attestation의 조회가 비어 있으면
+정확한 tag object의 `predicate_type=release` 조회만 5초 간격·120초 기한으로 기다린다.
+조회 오류나 잘못된 응답은 즉시 실패하며, 기한 안에 증거가 없으면 게시됨·검증 불가로 실패한다.
+발견 뒤 `gh release verify`의 암호학적 검증은 한 번만 실행한다. 서명 실패를
+재시도로 숨기거나 릴리스를 재게시하지 않는다.
 하위 모듈은 `--latest=false`로 게시하여 repository의 Latest를 루트 릴리스로 유지한다.
 
 ## 다운로드 검증
