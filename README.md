@@ -8,12 +8,6 @@ Iris Stack의 Go 프로젝트들(`hololive-bot`, `chat-bot-go-kakao`, `twentyq-b
 
 ## 설치 (Installation)
 
-`llm/openaipreset.Client.GenerateLayeredResponsesJSON`은 Responses API 스트리밍을
-사용합니다. 중간 delta 대신 정상 종료된 `response.completed`의 전체 `output_text`를
-반환하므로 호출자는 기존 출력 검증과 JSON 디코딩을 그대로 적용할 수 있습니다.
-미완료·실패·취소·종료 후 오류에서는 부분 출력을 반환하지 않습니다.
-이 변경은 v2.6.1에 포함되며, 소비자는 해당 버전으로 의존성을 갱신해야 합니다.
-
 ```bash
 go get github.com/park285/shared-go/v2@latest
 ```
@@ -34,8 +28,8 @@ go get github.com/park285/shared-go/v2@latest
 | `pkg/irisdurable/contracttest` | irisdurable 계약을 봇별 저장소 구현에 적용하는 재사용 테스트 스위트(admission 멱등성, nonce set-once, outcome_unknown 보존, bounded reissue, 보존·지평) |
 | `pkg/irisdurable/pgstore` | irisdurable 계약의 PostgreSQL 구현(ordering key FIFO inbox, nonce set-once TTL, reply outbox claim fence·redrive·retire·prune). 정책 기본값이 없어 `Options`의 lease·시도 상한·백오프·보존·`IrisAdmissionRetention`·`IrisAutomaticReplayHorizon`을 호출자가 넘기고, 0인 값을 쓰는 연산은 오류를 반환한다. inbox 종단 보존은 Iris admission 보존보다 길어야 하고, 자동 replay 지평은 정본 지평 이하이며 정본 지평은 admission 보존보다 짧아야 한다. `ClaimBatch`가 결과 미상 오류(`*ClaimBatchError`)를 내거나 후속 처리가 실패하면 소비자가 계속 처리할 claim id를 keep으로 넘겨 `ReleaseClaimToken(ctx, token, keep)`으로 나머지 claim만 즉시 반납한다. 테이블 DDL은 소비 저장소 migration이 소유하고 `testdata/schema.sql`이 참조 스키마다 |
 | `pkg/kakaoformat` | Markdown 표현을 카카오 일반 채팅용 평문과 링크로 변환하는 formatter |
-| `pkg/llm` | LLM 공통 타입(`Message`, `Usage`, `UsageReporter`), 공급자 지시 계층 변환(`AdaptInstructionMessages`), OpenAI 출력 오류 값 |
-| `pkg/llm/openaipreset` | OpenAI 호환 Responses API 호출을 functional options로 구성하는 재사용 preset (`WithMaxRetries` 필수, 계층 JSON 생성은 `PromptLayers`로만 지시를 받음) |
+| `pkg/llm` | LLM 공통 타입(`Message`, `Usage`), 공급자 지시 계층 변환(`AdaptInstructionMessages`), OpenAI 빈 출력 오류 값 |
+| `pkg/llm/openaipreset` | OpenAI Responses API 응답을 공통 형태로 바꾸는 도우미(`CompletionFromResponse`, `CompletionRole`, `UsageFromResponseUsage`, `LooksLikeToolCallEnvelope`) |
 | `pkg/logging` | Slog 기반의 구조화된 로깅 모듈 (비동기 처리, credential 마스킹과 서비스가 `Options.PrivacyKeys`로 넘긴 개인 식별자 키 마스킹, 실시간 로그 로테이션 지원) |
 | `pkg/netguard` | 외부 HTTP 대상 URL 및 dial 주소를 fail-closed로 검증하는 네트워크 가드 (private/loopback/link-local/ULA 대역 차단, `Policy.AllowedHosts` allowlist 지원) |
 | `pkg/obsmetrics` | `client_golang` 의존성 없이 Prometheus 평문 텍스트 exposition을 생성하는 메트릭 키트 (webhook/런타임 메트릭, prefix 네임스페이스 분리) |
@@ -58,7 +52,7 @@ go get github.com/park285/shared-go/v2@latest
 
 새로 추가하거나 바꾸는 공개 API는 아래 규칙을 따릅니다. 기존 API의 미준수는 해당 패키지를 고칠 때 함께 맞춥니다.
 
-- 설정은 struct 옵션을 기본으로 하고, 선택지가 계속 늘어나는 열린 집합일 때만 functional option을 씁니다(`llm/openaipreset`은 열린 집합이라 option을 유지합니다).
+- 설정은 struct 옵션을 기본으로 하고, 선택지가 계속 늘어나는 열린 집합일 때만 functional option을 씁니다.
 - `*slog.Logger`를 받는 API는 nil이면 `slog.Default()`를 씁니다.
 - 반환 오류 문자열은 `<pkg>: ` 접두로 시작합니다. 콜백 오류를 그대로 돌려주는 것이 계약인 함수(`panicguard.RunE`·`logging.RunOperation`·`dbmigrate.WithAdvisoryLock`)의 콜백 오류와 `io.Reader` 계약상 그대로 전달하는 하위 reader 오류(`io.EOF` 등)는 감싸지 않습니다. 호출자가 접두를 정하는 helper(`logging.LogAndWrapError`·`httpserver.Shutdown`)는 그 접두를 씁니다.
 
