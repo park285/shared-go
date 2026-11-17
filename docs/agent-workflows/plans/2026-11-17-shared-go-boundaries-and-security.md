@@ -278,3 +278,22 @@ ChatBotGo의 `ValidateDecodedStructuredText`는 `decode_incomplete`만 있고 ru
 - root의 공식 checksum 검증은 게시 후 30분 이내에 통과했고 Origin이 `689a608a54097d7ebce086f2aeef4af7480b270e`와 일치했다. 임시 어댑터 modfile 세 개의 실제 `GOWORK=off` tidy가 모두 통과했으며 go.mod 변경 없이 root의 검증된 checksum 두 행만 추가됐다. 이 값만 각 canonical go.sum에 반영했다. 세 어댑터의 독립 release gate와 게시, 소비자 실제 pin 검증은 아직 남아 있다.
 - 게시된 core의 다운로드 번들·source commit/archive 바이트·네 asset provenance·SPDX·immutable release attestation을 모두 검증했고 repository Latest가 `v2.24.0`임을 확인했다. 공식 core checksum과 Origin의 `Subdir=core`, commit `7481503b4761d15baa3d0c5f8e32fd7051b977eb`도 확인했다. core의 원격 release run 실패 기록은 보존한다.
 - canonical checksum 반영 뒤 `GOWORK=off GOTOOLCHAIN=go1.27.4 GOMAXPROCS=4 bash scripts/ci/release-gate.sh postgres transport openai`를 한 번 실행해 세 모듈 모두 통과했다. tidy·SQL ownership·lint/build·race·govulncheck, PostgreSQL 필수 사례와 skip=0을 포함한다. 기록은 `/tmp/shared-go-published-adapter-gate.iGbD6Y.log`다. 404 분류 수정의 `bash -n`·ShellCheck도 통과했다.
+
+### 최종 게시·소비자 검증
+
+- 사용자가 후속 7파일 커밋에도 동일 후보의 정상 hooks 선실행 후 선택 도구의 `no_verify=True` 1회를 승인했다. private index에서 pre-commit·commit-msg 전체와 후보 불변 검사를 통과했으며 비밀 검사 7문서·메시지 1문서를 포함했다. `2bd14a0477f82434080ec2f8075fa1fbc1b86dff` 커밋에서 예외를 소진했고 임시 index 자료는 정리했다. PR #110의 필수 CI `44075278330` 통과 뒤 main `35a6bfbd01cc75ef71ffa5c8400aed50d2c27afa`로 병합했다.
+
+| 게시 태그 | 정확한 source commit | 검증 결과 |
+|---|---|---|
+| `v2.24.0` | `689a608a54097d7ebce086f2aeef4af7480b270e` | immutable·번들·서명·공식 checksum 통과 |
+| `core/v1.0.0` | `7481503b4761d15baa3d0c5f8e32fd7051b977eb` | immutable·번들·서명·공식 checksum 통과 |
+| `postgres/v1.0.0` | `35a6bfbd01cc75ef71ffa5c8400aed50d2c27afa` | release CI·immutable·번들·서명·공식 checksum 통과 |
+| `transport/v1.0.0` | `35a6bfbd01cc75ef71ffa5c8400aed50d2c27afa` | release CI·immutable·번들·서명·공식 checksum 통과 |
+| `openai/v1.0.0` | `35a6bfbd01cc75ef71ffa5c8400aed50d2c27afa` | release CI·immutable·번들·서명·공식 checksum 통과 |
+
+- 세 후속 release run은 postgres `44075963277`, transport `44075974309`, openai `44075984966`이며 모두 성공했다. main CI `44075745931`과 보안 검사 `44075746070`도 성공했다. transport의 실제 게시 단계에서 최초 HTTP 404 뒤 기다려 release attestation 검증에 성공한 것을 확인했다. root/core의 초기 release run 실패 기록은 그대로 보존하며 후속 로컬 암호학적 검증 성공과 구분한다.
+- 각 릴리스에서 다운로드한 정확한 네 파일 집합·checksum·manifest·SPDX·commit에서 재생성한 archive 바이트, 모든 asset의 provenance와 archive의 SPDX attestation을 검증했다. repository·workflow·OIDC issuer·source ref·commit·GitHub-hosted runner를 고정했고 immutable release attestation도 확인했다. 다섯 태그 게시 뒤 Latest는 `v2.24.0`이었다. 증거는 `/tmp/shared-go-release-evidence.7ZnauH/`에 있다.
+- ChatBotGo·TwentyQ·Console·Hololive 다섯 모듈의 임시 manifest에서 실제 `GOWORK=off` tidy를 실행했다. 기존 go.mod와 의존성 버전·업무 sibling replace는 바뀌지 않았으며 인증된 shared-go checksum 60행만 여덟 canonical go.sum에 반영했다.
+- 여덟 소비자 모두 `GOWORK=off GOTOOLCHAIN=go1.27.4 GOFLAGS=-mod=readonly GOMAXPROCS=4 go build -p=4 ./...`와 실제 module version·checksum 검증을 통과했다. shared-go replacement는 없었다. dbtest의 첫 임시 probe는 사용하지 않는 core/transport 그래프 노드에도 checksum이 있어야 한다고 잘못 가정해 실패했다. 생산·시험 package closure에는 postgres/root만 있음을 확인하고 전체 그래프의 version/replace와 실제 사용 모듈의 checksum을 각각 검증했다. 이미 통과한 build는 반복하지 않았고 제품 코드·manifest를 이 이유로 바꾸지 않았다.
+- ChatBotGo의 기존 `TestVerifyProductionModuleMetadataMatchesReviewedModules`·`TestVerifyProductionModuleMetadataWithoutGoCache` 두 시험을 실제 pin으로 race·count=1 실행해 통과했다. Dockerfile과 같은 CGO=0·linux/amd64/v1·timetzdata·trimpath·buildvcs=false·ldflags 조건으로 실제 bot을 빌드하고 PGO metadata 및 `verify_production_module_metadata`도 통과했다. 이 로컬 검증 산출물을 운영 이미지로 승급하거나 실행하지 않았다. 임시 bot과 검사 스크립트는 삭제했고 metadata·로그는 `/tmp/shared-go-consumer-proof.jCLaA0/`에 보존했다.
+- 소비자 저장소는 로컬 변경으로만 남기며 commit·push·원격 CI·운영 배포를 하지 않았다. 원본 shared-go checkout의 merge 시도에서 남은 index 4항목, 기존 별도 worktree, 사용자 `hololive-bot/go.work.sum`은 보존했다. 운영 endpoint·CA/SAN·권한·SNAT/HBA·rootful mount/idmap과 실제 배포/rollback은 미검증 범위다.
