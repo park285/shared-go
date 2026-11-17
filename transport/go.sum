@@ -1,3 +1,5 @@
+github.com/park285/shared-go/v2 v2.24.0 h1:MySE3GcnYfFXMs5H3IGho0AHM/B1srCW6N5+H7nfP9g=
+github.com/park285/shared-go/v2 v2.24.0/go.mod h1:nP1O/PEzHzPxazCEIN2ufa2zgn5kUNqExGhJnvDLmkA=
 github.com/quic-go/go-ossfuzz-seeds v0.1.0 h1:APacT+iIaNF6fd8AGEiN3bT/Jtkd2jz4v4TzM7MFjy0=
 github.com/quic-go/go-ossfuzz-seeds v0.1.0/go.mod h1:3IOHRbJIc+L6YKMwfDtJAM9Vj9k0YY4muhuyUYk5tbk=
 github.com/quic-go/qpack v0.6.0 h1:g7W+BMYynC1LbYLSqRt8PBg5Tgwxn214ZZR34VIOjz8=

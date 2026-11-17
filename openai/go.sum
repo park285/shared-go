@@ -2,6 +2,8 @@ github.com/coder/websocket v1.8.15 h1:6B2JPeOGlpff2Uz6vOEH1Vzpi0iUz20A+lPVhPHtNU
 github.com/coder/websocket v1.8.15/go.mod h1:NX3SzP+inril6yawo5CQXx8+fk145lPDC6pumgx0mVg=
 github.com/openai/openai-go/v3 v3.100.0 h1:A1Ugtrbvz0uBQC23UpQXjilhJjdTHG59O36Uif9R2aU=
 github.com/openai/openai-go/v3 v3.100.0/go.mod h1:rpJT0W8BAp3rmc3a4HpqeuwpBF6tB6OdUPTXB0rFLGE=
+github.com/park285/shared-go/v2 v2.24.0 h1:MySE3GcnYfFXMs5H3IGho0AHM/B1srCW6N5+H7nfP9g=
+github.com/park285/shared-go/v2 v2.24.0/go.mod h1:nP1O/PEzHzPxazCEIN2ufa2zgn5kUNqExGhJnvDLmkA=
 github.com/tidwall/gjson v1.20.4 h1:3A/Gmx6kyM902v2nepualaq7aYIGhF0eykJBTiIxryw=
 github.com/tidwall/gjson v1.20.4/go.mod h1:jV1Xkr7LRLVFhesDFU/nInoQ+MjVlnuqkUreTWMveUo=
 github.com/tidwall/match v1.2.0 h1:0pt8FlkOwjN2fPt4bIl4BoNxb98gGHN2ObFEDkrfZnM=
