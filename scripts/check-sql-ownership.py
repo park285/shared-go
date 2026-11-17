@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-from __future__ import annotations
 
 import re
 import sys
@@ -7,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+MODULES = (".", "core", "postgres", "transport", "openai")
 EXCLUDED_DIRS = {
     ".git",
     "dist",
@@ -104,26 +104,31 @@ def iter_go_literals(source: str):
         i += 1
 
 
-def scan_files(roots: tuple[Path, ...]):
-    for root in roots:
+def scan_files(modules: tuple[str, ...]):
+    for module in modules:
+        root = ROOT / module
         for directory, dirs, files in root.walk():
-            dirs[:] = [name for name in dirs if name not in EXCLUDED_DIRS]
+            dirs[:] = [
+                name for name in dirs
+                if name not in EXCLUDED_DIRS
+                and not (directory == ROOT and name in MODULES[1:])
+            ]
             for name in files:
                 path = directory / name
                 if path.is_file():
                     yield path
 
 
-def source_files() -> list[Path]:
+def source_files(modules: tuple[str, ...]) -> list[Path]:
     return [
-        path for path in scan_files((ROOT,))
+        path for path in scan_files(modules)
         if path.suffix == ".go" and not path.name.endswith("_test.go")
     ]
 
 
-def sql_asset_files() -> list[Path]:
+def sql_asset_files(modules: tuple[str, ...]) -> list[Path]:
     return [
-        path for path in scan_files((ROOT,))
+        path for path in scan_files(modules)
         if path.name.endswith((".sql", ".sql.tpl"))
     ]
 
@@ -145,9 +150,9 @@ def excerpt(value: str) -> str:
     return " ".join(value.strip().split())[:140]
 
 
-def check_source_literals() -> list[Finding]:
+def check_source_literals(modules: tuple[str, ...]) -> list[Finding]:
     findings: list[Finding] = []
-    for path in source_files():
+    for path in source_files(modules):
         source = path.read_text(encoding="utf-8")
         literals = iter_go_literals(source)
         for start, value in literals:
@@ -165,9 +170,9 @@ def check_source_literals() -> list[Finding]:
     return findings
 
 
-def check_sql_asset_locations() -> list[Finding]:
+def check_sql_asset_locations(modules: tuple[str, ...]) -> list[Finding]:
     findings: list[Finding] = []
-    for path in sql_asset_files():
+    for path in sql_asset_files(modules):
         text = path.read_text(encoding="utf-8")
         if not allowed_sql_asset(path):
             findings.append(Finding(path, 1, "SQL asset is outside allowed locations", ""))
@@ -178,7 +183,14 @@ def check_sql_asset_locations() -> list[Finding]:
 
 
 def main() -> int:
-    findings = check_source_literals() + check_sql_asset_locations()
+    modules = tuple(sys.argv[1:]) or MODULES
+    if any(module not in MODULES for module in modules):
+        print("SQL ownership: 허용되지 않은 모듈", file=sys.stderr)
+        return 2
+    if any(not (ROOT / module / "go.mod").is_file() for module in modules):
+        print("SQL ownership: 모듈 go.mod 없음", file=sys.stderr)
+        return 2
+    findings = check_source_literals(modules) + check_sql_asset_locations(modules)
     if not findings:
         print("SQL ownership check passed")
         return 0

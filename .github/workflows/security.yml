@@ -19,11 +19,18 @@ jobs:
   dependency-security:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [".", core, postgres, transport, openai]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Python runtime
+        uses: ./.github/actions/python-runtime
 
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -31,9 +38,14 @@ jobs:
           go-version-file: go.mod
           # govulncheck만 빌드하는 job이 lint job의 캐시 키를 먼저 차지하지 않도록 키를 나눈다.
           cache-dependency-path: |
-            go.sum
+            **/go.sum
             scripts/ci/go-tooling.sh
             .github/workflows/security.yml
 
+      - name: Source integration workspace
+        run: |
+          bash scripts/ci/go-tooling.sh source-workspace "$RUNNER_TEMP/shared-go.work"
+          printf 'GOWORK=%s/shared-go.work\n' "$RUNNER_TEMP" >>"$GITHUB_ENV"
+
       - name: govulncheck
-        run: bash scripts/ci/go-tooling.sh govulncheck ./...
+        run: make vulncheck MODULES="${{ matrix.module }}"

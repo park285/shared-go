@@ -1,10 +1,24 @@
 # shared-go
 
-Iris Stack의 Go 프로젝트들(`hololive-bot`, `chat-bot-go-kakao`, `twentyq-bot` 등)이 공통으로 사용하는 유틸리티 라이브러리 전용 Go 모듈입니다.
+Iris Stack의 Go 프로젝트들(`hololive-bot`, `chat-bot-go-kakao`, `twentyq-bot`, `iris-console`)이 공통으로 사용하는 라이브러리 저장소입니다.
 
-본 라이브러리는 `cmd/` 실행 진입점이 없는 순수 라이브러리(Library-only) 모듈로 설계되었으며, 이를 호출하는 서비스들을 위해 일관되고 안정적인 API 사양을 유지합니다.
+모든 모듈은 `cmd/` 실행 진입점이 없는 순수 라이브러리입니다. 공급자 중립 계약과 외부 어댑터를 별도 모듈로 선택합니다.
 
 > **호환성 정책**: 이 모듈의 호환성 보장 대상은 iris-stack 내부 소비자(`hololive-bot`, `chat-bot-go-kakao`, `twentyq-bot`, `iris-console`)로 한정됩니다. 외부 사용을 막지는 않지만 외부 importer 호환성은 보장하지 않으며, 스택 내 소비자가 0인 exported API는 major 승격 없이 minor 릴리스에서 제거될 수 있습니다.
+
+신규 `core`·`postgres`·`transport`·`openai` 모듈은 독립적인 안정 버전과 모듈별 태그를 사용하며, 사용 중 API의 파괴적 변경은 major 전환으로 관리합니다. 최초 경로 이전은 스택 소비자 8개 모듈의 동시 전환입니다. 구경로 forwarding·alias·영구 `replace`는 제공하지 않습니다.
+
+| 모듈 | 소유 패키지 | 최초 전환 대상 |
+|---|---|---|
+| `github.com/park285/shared-go/core` | `envutil`, `stringutil` | `core/v1.0.0` |
+| `github.com/park285/shared-go/v2` | logging·netguard·runtime·durable/worker·중립 llm·guard 등 | `v2.24.0` |
+| `github.com/park285/shared-go/postgres` | `pgxdb`, `pgstore` | `postgres/v1.0.0` |
+| `github.com/park285/shared-go/transport` | `h3`, `healthprobe` | `transport/v1.0.0` |
+| `github.com/park285/shared-go/openai` | `openaipreset` | `openai/v1.0.0` |
+
+위 전환 대상은 로컬 구현의 게시 예정 버전이며 게시 완료를 뜻하지 않습니다. 루트의 provider-free 계약을 먼저 게시하고, 이를 요구하는 어댑터와 소비자 pin을 순서대로 검증해야 합니다. 모듈 간 버전 숫자는 맞추지 않으며 무관한 비보안 변경 때문에 모든 소비자 pin을 갱신하지 않습니다.
+
+`core`의 생산 코드는 표준 라이브러리만 사용합니다. 테스트에는 testify와 그 의존성이 있습니다. 루트는 어댑터를 생산·테스트 의존성으로 요구하지 않고, 어댑터가 루트 계약을 사용합니다.
 
 ## 설치 (Installation)
 
@@ -17,19 +31,19 @@ go get github.com/park285/shared-go/v2@latest
 | 패키지 경로 | 기능 및 역할 |
 |---|---|
 | `pkg/backoff` | 시도 횟수 및 상태를 기반으로 한 지수 백오프(Exponential Backoff) 계산 유틸리티 (대기 및 재시도 루프 제어는 호출부에서 직접 처리) |
-| `pkg/db/pgxdb` | `jackc/pgx/v5` pgxpool 기반 PostgreSQL 연결 풀 생성 도구 (sslmode 명시 강제, sslrootcert는 `Config.SSLRootCert`로만 지정하고 env를 읽지 않음, 라이브러리 기본값 없이 시작 ping 기한(`Ping.PingTimeout`, 필수)·구조화 경로의 풀 크기·수명(`ConnMaxLifetime`·`ConnMaxIdleTime`, 필수, 지터 0은 지터 없음)을 호출자가 명시, 재시도는 호출자 소유) |
+| `postgres/pgxdb` | `jackc/pgx/v5` pgxpool 기반 PostgreSQL 연결 풀과 무접속 `Preflight`·`PreflightDSN`. sslmode 명시, 시작 Ping 기한과 구조화 경로의 풀 크기·수명을 호출자가 지정하며 재시도는 호출자가 소유 |
 | `pkg/dbmigrate` | embed.FS의 `manifest.txt` 순서대로 SQL 마이그레이션 파일을 실행하는 공통 처리 모듈 (pgx 실행 함수 주입 방식) |
-| `pkg/envutil` | 환경 변수 로드 및 `*_FILE` 형태의 파일 경로로 보안 토큰/시크릿 값을 주입하는 도구 (숫자·bool·duration은 잘못된 값을 오류로 돌려주는 `IntE`·`Int64E`·`BoolE`·`DurationE`만 제공, `StringOrSecretFile`은 `KEY`와 `KEY_FILE`이 함께 설정되면 오류) |
-| `pkg/h3` | HTTP/3 전송 프로토콜 설정 도구 (자체 CA 번들 등록, TLS 상세 사양 정의) |
+| `core/envutil` | 환경 변수와 `*_FILE` 비밀 파일 입력. 숫자·bool·duration의 잘못된 값과 `KEY`/`KEY_FILE` 충돌을 거부하며 Unix no-follow/nonblocking 열기와 미지원 플랫폼 거부를 유지 |
+| `transport/h3` | HTTP/3 전송, CA·TLS 설정과 인증서 snapshot 갱신 |
 | `pkg/health` | version·uptime·component 상태 스냅샷과 /health·/ready 응답 본문 계약을 보관하는 server 측 health 모듈 |
-| `pkg/healthprobe` | 서비스 헬스체크 및 프로브(Readiness / Liveness Probe) 도구 |
+| `transport/healthprobe` | 내부 서비스 헬스체크·프로브 CLI 라이브러리 |
 | `pkg/httputil` | HTTP 클라이언트 커넥션 풀링 및 프로파일 구성 도구, 관리 API key 인증(`X-API-Key` 헤더만 수용, `Authorization: Bearer`는 거부) |
 | `pkg/irisdurable` | Iris webhook durability 계약(admission·nonce·reply outbox 어휘, bounded reissue ladder). Iris admission 보존·replay 지평의 정본은 Iris 계약 파일과 iris-client-go 공개 상수이며 이 모듈은 사본을 두지 않음 |
 | `pkg/irisdurable/contracttest` | irisdurable 계약을 봇별 저장소 구현에 적용하는 재사용 테스트 스위트(admission 멱등성, nonce set-once, outcome_unknown 보존, bounded reissue, 보존·지평) |
-| `pkg/irisdurable/pgstore` | irisdurable 계약의 PostgreSQL 구현(ordering key FIFO inbox, nonce set-once TTL, reply outbox claim fence·redrive·retire·prune). 정책 기본값이 없어 `Options`의 lease·시도 상한·백오프·보존·`IrisAdmissionRetention`·`IrisAutomaticReplayHorizon`을 호출자가 넘기고, 0인 값을 쓰는 연산은 오류를 반환한다. inbox 종단 보존은 Iris admission 보존보다 길어야 하고, 자동 replay 지평은 정본 지평 이하이며 정본 지평은 admission 보존보다 짧아야 한다. `ClaimBatch`가 결과 미상 오류(`*ClaimBatchError`)를 내거나 후속 처리가 실패하면 소비자가 계속 처리할 claim id를 keep으로 넘겨 `ReleaseClaimToken(ctx, token, keep)`으로 나머지 claim만 즉시 반납한다. 테이블 DDL은 소비 저장소 migration이 소유하고 `testdata/schema.sql`이 참조 스키마다 |
+| `postgres/pgstore` | irisdurable 계약의 PostgreSQL 구현(ordering key FIFO inbox, nonce set-once TTL, reply outbox claim fence·redrive·retire·prune). 정책 기본값이 없어 `Options`의 lease·시도 상한·백오프·보존·`IrisAdmissionRetention`·`IrisAutomaticReplayHorizon`을 호출자가 넘기고, 0인 값을 쓰는 연산은 오류를 반환한다. inbox 종단 보존은 Iris admission 보존보다 길어야 하고, 자동 replay 지평은 정본 지평 이하이며 정본 지평은 admission 보존보다 짧아야 한다. `ClaimBatch`가 결과 미상 오류(`*ClaimBatchError`)를 내거나 후속 처리가 실패하면 소비자가 계속 처리할 claim id를 keep으로 넘겨 `ReleaseClaimToken(ctx, token, keep)`으로 나머지 claim만 즉시 반납한다. 테이블 DDL은 소비 저장소 migration이 소유하고 `testdata/schema.sql`이 참조 스키마다 |
 | `pkg/kakaoformat` | Markdown 표현을 카카오 일반 채팅용 평문과 링크로 변환하는 formatter |
-| `pkg/llm` | LLM 공통 타입(`Message`, `Usage`), 공급자 지시 계층 변환(`AdaptInstructionMessages`), OpenAI 빈 출력 오류 값 |
-| `pkg/llm/openaipreset` | OpenAI Responses API 응답을 공통 형태로 바꾸는 도우미(`CompletionFromResponse`, `CompletionRole`, `UsageFromResponseUsage`, `LooksLikeToolCallEnvelope`) |
+| `pkg/llm` | SDK 없이 사용하는 `Message`·`Usage`, 지시 계층 변환과 공개 empty/refusal 오류 값의 단일 정의 |
+| `openai/openaipreset` | OpenAI Responses API 응답을 공통 형태로 바꾸는 도우미(`CompletionFromResponse`, `CompletionRole`, `UsageFromResponseUsage`, `LooksLikeToolCallEnvelope`) |
 | `pkg/logging` | Slog 기반의 구조화된 로깅 모듈 (비동기 처리, credential 마스킹과 서비스가 `Options.PrivacyKeys`로 넘긴 개인 식별자 키 마스킹, 실시간 로그 로테이션 지원) |
 | `pkg/netguard` | 외부 HTTP 대상 URL 및 dial 주소를 fail-closed로 검증하는 네트워크 가드 (private/loopback/link-local/ULA 대역 차단, `Policy.AllowedHosts` allowlist 지원) |
 | `pkg/obsmetrics` | `client_golang` 의존성 없이 Prometheus 평문 텍스트 exposition을 생성하는 메트릭 키트 (webhook/런타임 메트릭, prefix 네임스페이스 분리) |
@@ -42,11 +56,11 @@ go get github.com/park285/shared-go/v2@latest
 | `pkg/runtime/httpserver` | HTTP server 생성(수신 한계)·본문 읽기 예산·시작·실행·graceful shutdown 소유권을 단일화하는 lifecycle helper. 서버 실행 정본: 종료 ctx로 수명을 닫는 프로세스는 `Run(ctx, server, timeout)`, `lifecycle.Run` 훅 안에서는 `StartServerWithPrefix`와 `Shutdown` |
 | `pkg/runtime/lifecycle` | 기동·주기 실행·종료 정리와 다중 close를 조정하는 runtime lifecycle helper |
 | `pkg/sqlutil` | embed FS의 SQL asset을 읽고 공백을 제거하며 누락·빈 query에서 panic하는 loader |
-| `pkg/stringutil` | 범용 문자열 처리 유틸리티 |
+| `core/stringutil` | 범용 문자열 처리 유틸리티 |
 | `pkg/workercontract` | strict worker profile 로드(env 경로, 소비 서비스가 소유한 `Identity`), service-owned settings decode·shape 검증, diagnostics registry, 공통 Prometheus exposition 모듈 |
 | `pkg/workerpool` | 큐(Queue) 기반의 동시성 제어 워커 풀 구현체 |
 
-새로운 공통 기능이 필요할 경우, `pkg/` 하위에 신규 패키지 형식으로 추가해 주십시오. 스택 소비자가 쓰지 않는 구현 세부는 `pkg/internal/` 아래에 둡니다(예: Prometheus text 표기 규칙을 obsmetrics·workercontract가 공유하는 `pkg/internal/promtext`).
+새 공통 계약은 루트 `pkg/`, 공급자 구현은 해당 어댑터가 소유합니다. 구현 세부와 작은 테스트 fixture는 소유 모듈의 `internal`에 두며 공개 testkit을 추가하지 않습니다. promptguard·outputguard의 공통 decoder는 루트 `pkg/internal/guardtext` 한 곳에 유지합니다.
 
 ### 공개 API 일관성 규칙
 
@@ -58,7 +72,7 @@ go get github.com/park285/shared-go/v2@latest
 
 ## 로그 마스킹 키
 
-보존·마스킹 키의 정본은 이 표입니다. key는 대소문자·`-`·`.`·공백을 정규화해 비교하며, 일치한 attr·group·중첩 `map[string]any`(깊이 8) 값을 `***REDACTED***`로 바꿉니다.
+보존·마스킹 키의 정본은 이 표입니다. key는 대소문자·`-`·`.`·공백을 정규화해 비교하며, 일치한 attr·group은 `LogValuer` 실행 전에 `***REDACTED***`로 바꿉니다.
 
 | 구분 | 키 | 소유 |
 |---|---|---|
@@ -67,6 +81,12 @@ go get github.com/park285/shared-go/v2@latest
 | 보존 | 위 두 행에 없는 키. `room_id`·`user_id`·`request_id`·`trace_id` 같은 상관관계 ID는 서비스가 넘기지 않는 한 보존하며 `*_id` 접미 일괄 마스킹은 하지 않음 | — |
 
 라이브러리는 업무 식별자 privacy 키를 내장하지 않습니다. `NewLogger()`와 `PrivacyKeys`를 비운 logger는 credential 규칙만 적용합니다.
+
+비민감 값은 native slog scalar·nil·group과 명시적 error 진단만 지원합니다. struct·일반 pointer·map·slice·named aggregate·custom marshaler는 탐색하거나 직렬화하지 않고 고정 차단 표시로 대체합니다. `LogValuer` 결과에도 같은 규칙을 적용하며, `unsupported_type`·`resolution_failed`·`group_depth_exceeded` 사유를 구분합니다.
+
+group은 `WithGroup`과 이름 없는 group을 포함해 8단계까지 허용합니다. 빈 `WithGroup`은 깊이를 늘리지 않으며, 초과 부분의 원본을 남기지 않습니다. 서비스는 필요한 필드·개수·식별자만 typed group으로 투영해야 합니다. 민감 키를 바꾸거나 JSON 문자열로 바꿔 마스킹을 우회하지 않습니다.
+
+문자열·메시지·직접 error 진단은 기존 credential 패턴으로 정제합니다. 무표식 비밀을 모두 탐지하거나 신뢰된 `LogValuer` 실행을 샌드박싱하지는 않습니다. 서비스는 안정적인 code/type와 승인된 설명을 우선합니다. sanitizer → JSON → 동기 파일/정제된 bytes의 비동기 stdout 순서를 유지합니다.
 
 ## stdout 사본과 유실 계측
 
@@ -92,6 +112,14 @@ async 유실 요약은 파일에도 기록되며, 포화 큐에서는 복사 전
 완료될 수 있으므로 종료 요약은 기록 시점에 알려진 결과만 나타냅니다.
 새 API를 사용하는 소비자는 같은 shared-go 소스로 workspace 검증한 뒤 실제 게시 버전으로
 의존성을 함께 갱신해야 합니다. 소스 구현은 운영 배포를 뜻하지 않습니다.
+
+## PostgreSQL 사전 점검
+
+`postgres/pgxdb.Preflight(cfg, opts)`와 `PreflightDSN(dsn, opts)`는 실제 `OpenPool`·`OpenPoolDSN`과 같은 준비 함수를 사용합니다. 구조화 설정·DSN overlay·시작 Ping 옵션·유효 풀 크기/제어 예약·로컬 CA 파일을 검증하고 연결하지 않습니다. 구조화 경로의 필수 양수와 DSN overlay의 `0=미지정` 의미는 다릅니다.
+
+서비스는 환경/profile decode와 관계 검증을 마친 지역 설정에 같은 DB 옵션을 구성해 preflight한 뒤 자원을 생성합니다. 사전 점검 성공은 원격 TLS/SAN·인증·권한·SQL·pooler 호환성의 성공이 아닙니다. `RuntimeParams`는 startup packet으로 전달하며 timeout을 삭제하거나 직접 DB로 우회하지 않습니다. 일반 acquire와 제어 예약은 로컬 풀 정책이지 backend 용량 보장이 아닙니다.
+
+로그 archive 이동·추가 pruning은 유지합니다. 기존 수집 경로·0750/0640 권한·age/count 보존·실패 관측을 인수할 근거 없이 삭제하지 않으며, `Close`가 lumberjack 압축 완료나 내구 저장을 보장하지 않는 한계도 유지합니다.
 
 ## Prompt guard 계약
 
@@ -189,12 +217,13 @@ processing token·정확한 lease snapshot을 대조하며, 빈 token은 token·
 
 ```bash
 make lint
-go test ./...
-go build ./...
+make test
+make build
+make source-tidy-check
 ```
 
-**CI 정책:** 본 리포지토리는 원격 깃허브 액션(GitHub Actions)이 실제 검증 주체입니다. `ci.yml`은 PR 및 `main` push마다 module tidy drift, 고정 Unicode 생성 테이블, SQL ownership 검사, `golangci-lint`(gofumpt·gci·goimports formatter와 govet 포함), 경합 조건 검사를 포함한 테스트 슈트(`go test -race -count=1 ./...`)를 수행하며, `security.yml`은 `main` push·주간 스케줄·수동 dispatch 시 `govulncheck` 취약점 분석을 수행합니다.
+**CI 정책:** `ci.yml`은 PR 및 `main` push마다 5개 모듈의 소스 workspace에서 tidy drift·lint·race를 검사합니다. 루트의 고정 Unicode 생성·할당 상한과 SQL ownership 검사를 유지하고, PostgreSQL 모듈은 일회용 실제 DB에서 pgxdb·pgstore를 skip 없이 검사합니다. `security.yml`의 `main` push·주간 스케줄·수동 dispatch 및 `govulncheck`를 유지합니다. `./...`만 실행하면 하위 모듈이 빠지므로 모듈별 작업 디렉터리를 명시합니다.
 
 파일 줄 수(800)와 함수 길이 상한은 `.golangci.yml`의 revive `file-length-limit`과 `funlen`이 검사합니다. 별도 구조 예산은 두지 않습니다. Workflow 보안 정책(action 전체 SHA 고정, `id-token`·`attestations` 권한은 `release.yml`만, PR의 secret 사용 금지)은 iris-stack의 `tools/checks/check-workflow-policy.py`가 검증합니다. 로컬 릴리스 게이트도 `make test-allocations`로 race 빌드에서 빠지는 할당 상한을 검증합니다.
 
-릴리스 검증(`bash scripts/ci/release-gate.sh`)은 rootless Podman이 준비된 환경에서 별도 일회용 PostgreSQL 컨테이너를 소유합니다. `pkg/irisdurable/...`의 race 테스트를 실제 DB로 실행하고 필수 pgstore 사례의 pass와 전체 skip=0을 확인합니다. 컨테이너를 준비할 수 없으면 릴리스 검증은 실패합니다.
+`bash scripts/ci/release-gate.sh [모듈...]`은 선택한 모듈을 실제 pin과 `GOWORK=off`로 검증하며, 인자를 생략하면 5개 모듈 모두 검사합니다. `postgres`는 rootless Podman의 일회용 PostgreSQL에서 pgxdb·pgstore race와 필수 사례 pass·전체 skip=0을 요구합니다. 소스 workspace의 성공은 게시 pin·서명·immutable release 성공을 대신하지 않습니다. 태그·SBOM·attestation 규칙은 [release provenance](docs/release-provenance.md)를 따릅니다.

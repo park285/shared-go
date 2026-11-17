@@ -1,0 +1,14 @@
+shared-go postgres
+
+이 모듈은 shared-go의 PostgreSQL 풀 및 durable 저장소 구현을 포함한다.
+프로젝트 라이선스는 동봉한 Apache License 2.0(LICENSE)을 따른다.
+
+직접 외부 의존성은 go.mod의 고정 버전으로 배포되며 각 원본 모듈의 라이선스를 따른다.
+- github.com/jackc/pgx/v5: MIT
+- github.com/stretchr/testify: MIT (테스트)
+- github.com/xdg-go/stringprep: Apache-2.0
+- golang.org/x/sync, golang.org/x/text: BSD-3-Clause
+- github.com/park285/shared-go/v2: Apache-2.0
+
+루트 guardtext의 Unicode 데이터와 생성 테이블은 이 모듈에 복제하지 않는다.
+서비스 DDL은 각 서비스가 소유하며 pgstore/testdata/schema.sql은 테스트 fixture다.

@@ -25,7 +25,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"maps"
 	"regexp"
 	"strings"
 )
@@ -316,6 +315,17 @@ func (h *sanitizeHandler) Handle(ctx context.Context, record slog.Record) error 
 	msg := redactSecrets(record.Message)
 	changed := msg != record.Message
 
+	if h.blockedGroup != "" {
+		blocked := slog.NewRecord(record.Time, record.Level, msg, record.PC)
+		blocked.AddAttrs(slog.String(h.blockedGroup, blockedDepth))
+
+		if err := h.inner.Handle(ctx, blocked); err != nil {
+			return fmt.Errorf("logging: handle: %w", err)
+		}
+
+		return nil
+	}
+
 	// 변경 감지 패스가 처음 바뀐 attr의 위치와 정제 결과를 남긴다. 그 앞의 attr들은
 	// changed=false로 판정됐으므로 정제해도 원본과 같은 값이라 재구축 때 원본을 그대로 쓴다.
 	firstChangedIndex := -1
@@ -326,7 +336,7 @@ func (h *sanitizeHandler) Handle(ctx context.Context, record slog.Record) error 
 		index := 0
 
 		record.Attrs(func(attr slog.Attr) bool {
-			out, attrChanged := h.privacy.sanitizeAttrChanged(attr)
+			out, attrChanged := h.privacy.sanitizeAttrDepth(attr, h.groupDepth)
 			if attrChanged {
 				changed = true
 				firstChangedIndex = index
@@ -375,23 +385,41 @@ func (h *sanitizeHandler) Handle(ctx context.Context, record slog.Record) error 
 }
 
 func (h *sanitizeHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	if len(attrs) == 0 || h.blockedGroup != "" {
+		return h
+	}
+
 	sanitized := make([]slog.Attr, 0, len(attrs))
 	for _, attr := range attrs {
 		sanitized = append(sanitized, h.sanitizeOwnedAttr(attr))
 	}
 
-	return &sanitizeHandler{inner: h.inner.WithAttrs(sanitized), inMaskedGroup: h.inMaskedGroup, privacy: h.privacy}
+	return &sanitizeHandler{
+		inner:         h.inner.WithAttrs(sanitized),
+		inMaskedGroup: h.inMaskedGroup,
+		privacy:       h.privacy,
+		groupDepth:    h.groupDepth,
+	}
 }
 
 // 열린 group 이름이 privacy·credential key면 그 아래 attr은 key가 무엇이든 값이 그 식별자나
 // credential의 구성 요소다.
 func (h *sanitizeHandler) WithGroup(name string) slog.Handler {
+	if name == "" || h.blockedGroup != "" {
+		return h
+	}
+
+	if h.groupDepth == maxSanitizeGroupDepth {
+		return &sanitizeHandler{inner: h.inner, blockedGroup: name}
+	}
+
 	normalizedName := normalizeSensitiveKey(name)
 
 	return &sanitizeHandler{
 		inner:         h.inner.WithGroup(name),
 		inMaskedGroup: h.inMaskedGroup || h.privacy.isMaskedNormalizedKey(normalizedName),
 		privacy:       h.privacy,
+		groupDepth:    h.groupDepth + 1,
 	}
 }
 
@@ -400,7 +428,9 @@ func (h *sanitizeHandler) sanitizeOwnedAttr(attr slog.Attr) slog.Attr {
 		return slog.String(attr.Key, redactedValue)
 	}
 
-	return h.privacy.sanitizeAttr(attr)
+	out, _ := h.privacy.sanitizeAttrDepth(attr, h.groupDepth)
+
+	return out
 }
 
 func (p privacyKeys) sanitizeAttr(attr slog.Attr) slog.Attr {
@@ -408,83 +438,123 @@ func (p privacyKeys) sanitizeAttr(attr slog.Attr) slog.Attr {
 	return out
 }
 
-// sanitizeAttrChanged는 sanitizeAttr와 동일한 정규화를 수행하되, 결과가 원본 attr과
-// byte-identical하게 같은지(changed=false) 여부를 함께 반환한다. Handle의 fast-path는
-// 이 신호로 변경이 전혀 없을 때 record 재구축을 건너뛴다.
-// Resolve 변경 판정에 Value.Equal을 쓰면 안 된다: KindAny끼리의 Equal은 내부 any를
-// ==로 비교해 []int 같은 uncomparable 타입에서 panic한다. Resolve가 값을 바꾸는 건
-// LogValuer뿐이므로 Kind 검사로 보수적으로(LogValuer면 항상 changed) 판정한다.
+// 변경 없는 scalar·group은 원본을 유지해 record 재구축과 할당을 생략한다.
 func (p privacyKeys) sanitizeAttrChanged(attr slog.Attr) (slog.Attr, bool) {
-	changed := attr.Value.Kind() == slog.KindLogValuer
+	return p.sanitizeAttrDepth(attr, 0)
+}
 
-	attr.Value = attr.Value.Resolve()
-	// key 기반 판정은 값을 읽지 않으므로 모든 값 분기(KindAny·KindGroup·KindString)보다 앞이어야
-	// 한다. 뒤에 두면 마스킹 여부가 값 타입이나 무관한 map 내용에 종속된다.
+const (
+	maxSanitizeGroupDepth = 8
+	maxSanitizeLogValues  = 100
+	blockedUnsupported    = "***BLOCKED:unsupported_type***"
+	blockedResolution     = "***BLOCKED:resolution_failed***"
+	blockedDepth          = "***BLOCKED:group_depth_exceeded***"
+)
+
+func (p privacyKeys) sanitizeAttrDepth(attr slog.Attr, depth int) (slog.Attr, bool) {
+	// 버릴 값의 LogValue·Error·marshal 메서드는 실행하지 않는다.
 	normalizedKey := normalizeSensitiveKey(attr.Key)
 	if p.isMaskedNormalizedKey(normalizedKey) {
 		return slog.String(attr.Key, redactedValue), true
 	}
 
-	if attr.Value.Kind() == slog.KindAny {
-		if out, masked := p.sanitizeAnyAttr(attr); masked {
-			return out, true
-		}
-	}
-
-	if attr.Value.Kind() == slog.KindGroup {
-		groupAttrs := attr.Value.Group()
-		for index, groupAttr := range groupAttrs {
-			out, childChanged := p.sanitizeAttrChanged(groupAttr)
-			if !childChanged {
-				continue
-			}
-
-			sanitized := make([]slog.Attr, len(groupAttrs))
-			copy(sanitized, groupAttrs[:index])
-
-			sanitized[index] = out
-			for next := index + 1; next < len(groupAttrs); next++ {
-				sanitized[next] = p.sanitizeAttr(groupAttrs[next])
-			}
-
-			attr.Value = slog.GroupValue(sanitized...)
-
-			return attr, true
+	changed := attr.Value.Kind() == slog.KindLogValuer
+	if changed {
+		resolved, ok := resolveLogValue(attr.Value)
+		if !ok {
+			return slog.String(attr.Key, blockedResolution), true
 		}
 
+		attr.Value = resolved
+	}
+
+	switch attr.Value.Kind() {
+	case slog.KindAny:
+		value := attr.Value.Any()
+		if value == nil {
+			return attr, changed
+		}
+
+		if err, ok := value.(error); ok {
+			return slog.String(attr.Key, sanitizeErrorDiagnostic(err)), true
+		}
+
+		return slog.String(attr.Key, blockedUnsupported), true
+	case slog.KindGroup:
+		return p.sanitizeGroupAttr(attr, depth, changed)
+	case slog.KindString:
+		if isBroadValueNormalizedKey(normalizedKey) && isSecretLikeValue(attr.Value.String()) {
+			return slog.String(attr.Key, redactedValue), true
+		}
+
+		redacted := redactSecrets(attr.Value.String())
+
+		return slog.String(attr.Key, redacted), changed || redacted != attr.Value.String()
+	case slog.KindBool, slog.KindDuration, slog.KindFloat64, slog.KindInt64, slog.KindTime, slog.KindUint64:
 		return attr, changed
+	case slog.KindLogValuer:
+		return slog.String(attr.Key, blockedResolution), true
+	default:
+		return slog.String(attr.Key, blockedUnsupported), true
 	}
-
-	if attr.Value.Kind() != slog.KindString {
-		return attr, changed
-	}
-
-	if isBroadValueNormalizedKey(normalizedKey) && isSecretLikeValue(attr.Value.String()) {
-		return slog.String(attr.Key, redactedValue), true
-	}
-
-	redacted := redactSecrets(attr.Value.String())
-	if redacted != attr.Value.String() {
-		changed = true
-	}
-
-	return slog.String(attr.Key, redacted), changed
 }
 
-// 두 번째 반환값은 sanitizeAttrChanged의 changed와 달리 "이 분기가 결과를 확정했다"는 신호다.
-func (p privacyKeys) sanitizeAnyAttr(attr slog.Attr) (slog.Attr, bool) {
-	value := attr.Value.Any()
-	if raw, ok := value.(map[string]any); ok {
-		if masked, mapChanged := p.maskPrivacyMap(raw); mapChanged {
-			return slog.Any(attr.Key, masked), true
+func (p privacyKeys) sanitizeGroupAttr(attr slog.Attr, depth int, changed bool) (slog.Attr, bool) {
+	if depth == maxSanitizeGroupDepth {
+		return slog.String(attr.Key, blockedDepth), true
+	}
+
+	groupAttrs := attr.Value.Group()
+	for index, groupAttr := range groupAttrs {
+		out, childChanged := p.sanitizeAttrDepth(groupAttr, depth+1)
+		if !childChanged {
+			continue
+		}
+
+		sanitized := make([]slog.Attr, len(groupAttrs))
+		copy(sanitized, groupAttrs[:index])
+
+		sanitized[index] = out
+		for next := index + 1; next < len(groupAttrs); next++ {
+			sanitized[next], _ = p.sanitizeAttrDepth(groupAttrs[next], depth+1)
+		}
+
+		attr.Value = slog.GroupValue(sanitized...)
+
+		return attr, true
+	}
+
+	return attr, changed
+}
+
+// slog.Value.Resolve의 오류 값은 사용자 error와 구분할 수 없으므로 여기서 실패를 분리한다.
+// 사용자 panic 값의 문자열화나 스택 출력 없이 고정 사유만 남긴다.
+func resolveLogValue(value slog.Value) (resolved slog.Value, ok bool) {
+	defer func() {
+		if recover() != nil {
+			resolved = slog.Value{}
+			ok = false
+		}
+	}()
+
+	for range maxSanitizeLogValues {
+		value = value.LogValuer().LogValue()
+		if value.Kind() != slog.KindLogValuer {
+			return value, true
 		}
 	}
 
-	if err, ok := value.(error); ok {
-		return slog.String(attr.Key, RedactDiagnostic(err.Error())), true
-	}
+	return slog.Value{}, false
+}
 
-	return attr, false
+func sanitizeErrorDiagnostic(err error) (text string) {
+	defer func() {
+		if recover() != nil {
+			text = blockedResolution
+		}
+	}()
+
+	return RedactDiagnostic(err.Error())
 }
 
 func isSensitiveKey(key string) bool {
@@ -535,61 +605,6 @@ func isBroadValueNormalizedKey(normalized string) bool {
 func (p privacyKeys) isPrivacyNormalizedKey(normalized string) bool {
 	_, ok := p[normalized]
 	return ok
-}
-
-const maxPrivacyMapDepth = 8
-
-// 호출자 map을 제자리에서 바꾸면 로깅이 호출자 상태를 변조하므로 privacy·credential hit일 때만 사본을 만든다.
-func (p privacyKeys) maskPrivacyMap(raw map[string]any) (map[string]any, bool) {
-	return p.maskPrivacyMapDepth(raw, 0)
-}
-
-func (p privacyKeys) maskPrivacyMapDepth(raw map[string]any, depth int) (map[string]any, bool) {
-	var masked map[string]any
-
-	for key, value := range raw {
-		if p.shouldMaskStructuredMapValue(key, value) {
-			if masked == nil {
-				masked = make(map[string]any, len(raw))
-				maps.Copy(masked, raw)
-			}
-
-			masked[key] = redactedValue
-
-			continue
-		}
-
-		nested, ok := value.(map[string]any)
-		// self-referential map도 유한 시간에 끝나도록 중첩 탐색을 제한한다.
-		if !ok || depth >= maxPrivacyMapDepth {
-			continue
-		}
-
-		nestedMasked, changed := p.maskPrivacyMapDepth(nested, depth+1)
-		if !changed {
-			continue
-		}
-
-		if masked == nil {
-			masked = make(map[string]any, len(raw))
-			maps.Copy(masked, raw)
-		}
-
-		masked[key] = nestedMasked
-	}
-
-	return masked, masked != nil
-}
-
-func (p privacyKeys) shouldMaskStructuredMapValue(key string, value any) bool {
-	normalizedKey := normalizeSensitiveKey(key)
-	if p.isMaskedNormalizedKey(normalizedKey) {
-		return true
-	}
-
-	text, ok := value.(string)
-
-	return ok && isBroadValueNormalizedKey(normalizedKey) && isSecretLikeValue(text)
 }
 
 var secretLikePrefixes = []string{

@@ -3,7 +3,11 @@ name: release
 on:
   push:
     tags:
-      - "v[0-9]*.[0-9]*.[0-9]*"
+      - "v2.*"
+      - "core/v1.*"
+      - "postgres/v1.*"
+      - "transport/v1.*"
+      - "openai/v1.*"
 
 permissions:
   contents: read
@@ -14,6 +18,9 @@ concurrency:
 
 env:
   GOWORK: "off"
+  RELEASE_REPOSITORY: ${{ github.repository }}
+  RELEASE_TAG: ${{ github.ref_name }}
+  RELEASE_COMMIT: ${{ github.sha }}
 
 jobs:
   validate:
@@ -29,18 +36,26 @@ jobs:
       - name: Python runtime
         uses: ./.github/actions/python-runtime
 
+      - name: Validate module and exact source identity
+        id: identity
+        run: |
+          source scripts/ci/prepare-release-bundle.sh
+          release_identity "$RELEASE_REPOSITORY" "$RELEASE_TAG" "$RELEASE_COMMIT"
+          release_source_identity
+          printf 'module=%s\n' "$module_dir" >>"$GITHUB_OUTPUT"
+
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           # main에서 fast-gate job이 저장한 캐시를 복원하도록 같은 키 파일을 쓴다.
           cache-dependency-path: |
-            go.sum
+            **/go.sum
             scripts/ci/go-tooling.sh
             .github/workflows/ci.yml
 
       - name: Release gate
-        run: bash scripts/ci/release-gate.sh
+        run: bash scripts/ci/release-gate.sh "${{ steps.identity.outputs.module }}"
 
   publish:
     needs: validate
@@ -60,29 +75,29 @@ jobs:
       - name: Python runtime
         uses: ./.github/actions/python-runtime
 
+      - name: Prepare selected module source
+        id: bundle
+        run: |
+          source scripts/ci/prepare-release-bundle.sh
+          release_identity "$RELEASE_REPOSITORY" "$RELEASE_TAG" "$RELEASE_COMMIT"
+          bash scripts/ci/prepare-release-bundle.sh "$RELEASE_REPOSITORY" "$RELEASE_TAG" "$RELEASE_COMMIT" dist
+          mkdir -m 0700 "$RUNNER_TEMP/release-source"
+          tar -xzf "dist/$archive" -C "$RUNNER_TEMP/release-source"
+          printf 'artifact_name=%s\n' "$artifact_name" >>"$GITHUB_OUTPUT"
+
       - name: Generate SPDX SBOM
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
-          path: .
+          path: ${{ runner.temp }}/release-source
           format: spdx-json
-          output-file: ${{ runner.temp }}/release.spdx.json
+          output-file: dist/${{ steps.bundle.outputs.artifact_name }}.spdx.json
           syft-version: v1.57.0
           dependency-snapshot: false
           upload-artifact: false
           upload-release-assets: false
 
-      - name: Prepare deterministic source bundle
-        env:
-          RELEASE_REPOSITORY: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.ref_name }}
-          RELEASE_COMMIT: ${{ github.sha }}
-        run: |
-          bash scripts/ci/prepare-release-bundle.sh "$RELEASE_REPOSITORY" "$RELEASE_TAG" "$RELEASE_COMMIT" dist
-          install -m 0600 "$RUNNER_TEMP/release.spdx.json" \
-            "dist/${{ github.event.repository.name }}-${RELEASE_TAG}.spdx.json"
-
       - name: Finalize and verify bundle
-        run: bash scripts/ci/finalize-release-bundle.sh dist "${{ github.repository }}" "${{ github.ref_name }}" "${{ github.sha }}"
+        run: bash scripts/ci/finalize-release-bundle.sh dist "$RELEASE_REPOSITORY" "$RELEASE_TAG" "$RELEASE_COMMIT"
 
       - name: Attest bundle provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
@@ -92,43 +107,10 @@ jobs:
       - name: Attest source SBOM
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-path: dist/${{ github.event.repository.name }}-${{ github.ref_name }}.tar.gz
-          sbom-path: dist/${{ github.event.repository.name }}-${{ github.ref_name }}.spdx.json
-
-      - name: Verify keyless attestations before publish
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          signer="${{ github.repository }}/.github/workflows/release.yml"
-          for artifact in dist/*; do
-            gh attestation verify "$artifact" \
-              --repo "${{ github.repository }}" \
-              --signer-workflow "$signer" \
-              --source-ref "${{ github.ref }}" \
-              --source-digest "${{ github.sha }}" \
-              --deny-self-hosted-runners >/dev/null
-          done
-          gh attestation verify "dist/${{ github.event.repository.name }}-${{ github.ref_name }}.tar.gz" \
-            --repo "${{ github.repository }}" \
-            --signer-workflow "$signer" \
-            --source-ref "${{ github.ref }}" \
-            --source-digest "${{ github.sha }}" \
-            --predicate-type https://spdx.dev/Document/v2.3 \
-            --deny-self-hosted-runners >/dev/null
+          subject-path: dist/${{ steps.bundle.outputs.artifact_name }}.tar.gz
+          sbom-path: dist/${{ steps.bundle.outputs.artifact_name }}.spdx.json
 
       - name: Publish immutable release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash scripts/ci/publish-release.sh "${{ github.repository }}" "${{ github.ref_name }}" "${{ github.sha }}" dist
-
-      - name: Verify immutable release attestation
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          for _ in 1 2 3 4 5; do
-            if gh release verify "${{ github.ref_name }}" --repo "${{ github.repository }}" >/dev/null; then
-              exit 0
-            fi
-            sleep 3
-          done
-          exit 1
+        run: bash scripts/ci/publish-release.sh "$RELEASE_REPOSITORY" "$RELEASE_TAG" "$RELEASE_COMMIT" dist

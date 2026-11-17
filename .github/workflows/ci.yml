@@ -18,6 +18,10 @@ jobs:
   fast-gate:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [".", core, postgres, transport, openai]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -34,24 +38,36 @@ jobs:
           # 캐시는 같은 키를 쓰는 job 중 먼저 끝난 job의 내용이 저장되고, 키가 이미 있으면 갱신되지 않는다.
           # golangci-lint를 빌드하는 이 job이 자기 캐시를 갖도록 workflow 파일을 키에 넣는다.
           cache-dependency-path: |
-            go.sum
+            **/go.sum
             scripts/ci/go-tooling.sh
             .github/workflows/ci.yml
 
-      - name: Module graph tidy drift
-        run: GOWORK=off go mod tidy -diff
+      - name: Source integration workspace
+        run: |
+          bash scripts/ci/go-tooling.sh source-workspace "$RUNNER_TEMP/shared-go.work"
+          printf 'GOWORK=%s/shared-go.work\n' "$RUNNER_TEMP" >>"$GITHUB_ENV"
+
+      - name: Source module graph tidy drift
+        run: make source-tidy-check MODULES="${{ matrix.module }}"
 
       - name: Pinned Unicode generated table
+        if: matrix.module == '.'
         run: GOWORK=off go run ./pkg/internal/guardtext/genconfusables.go -confusables-source ./pkg/internal/guardtext/testdata/confusables-17.0.0.txt.gz -unicode-data-baseline-source ./pkg/internal/guardtext/testdata/UnicodeData-15.0.0.txt.gz -unicode-data-source ./pkg/internal/guardtext/testdata/UnicodeData-17.0.0.txt.gz -output ./pkg/internal/guardtext/confusables_table_generated.go -check
 
       - name: SQL ownership
-        run: bash scripts/check-sql-ownership.sh
+        run: bash scripts/check-sql-ownership.sh "${{ matrix.module }}"
 
       - name: golangci-lint
-        run: bash scripts/ci/go-tooling.sh golangci-lint run -c .golangci.yml ./...
+        run: make lint MODULES="${{ matrix.module }}"
 
       - name: Deterministic allocation ceilings
+        if: matrix.module == '.'
         run: make test-allocations
 
       - name: go test race
-        run: go test -race -count=1 ./...
+        if: matrix.module != 'postgres'
+        run: make test-race MODULES="${{ matrix.module }}"
+
+      - name: PostgreSQL race contracts without skips
+        if: matrix.module == 'postgres'
+        run: bash scripts/ci/pgstore-release-gate.sh

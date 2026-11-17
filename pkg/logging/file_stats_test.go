@@ -2,6 +2,7 @@ package logging
 
 import (
 	"bytes"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,7 +25,18 @@ func TestEnableFileLoggingCountsFileLaneWriteFailures(t *testing.T) {
 	}
 
 	// lumberjack은 MaxSizeMB보다 큰 단일 쓰기를 (0, error)로 거절한다.
-	logger.Info("oversized_record", "detail", strings.Repeat("oversized ", 1<<17))
+	record := slog.NewRecord(testTime(), slog.LevelError, "oversized_record", 0)
+	record.AddAttrs(
+		slog.String("detail", strings.Repeat("oversized ", 1<<17)),
+		slog.String(stdoutTestRequestIDKey, boundaryRequestID),
+		slog.String("error_code", boundaryErrorCode),
+		slog.Any("response", boundaryPayload{Content: boundarySentinel}),
+	)
+
+	if handleErr := logger.Handler().Handle(t.Context(), record); handleErr == nil {
+		t.Fatal("파일 쓰기 실패가 Handler 오류로 전달되지 않음")
+	}
+
 	logger.Info("survivor")
 
 	if closeErr := closer.Close(); closeErr != nil {
@@ -52,5 +64,14 @@ func TestEnableFileLoggingCountsFileLaneWriteFailures(t *testing.T) {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("stdout copy missing %q", want)
 		}
+	}
+
+	if strings.Contains(stdout.String(), boundarySentinel) || strings.Contains(string(file), boundarySentinel) {
+		t.Fatal("파일 오류 경로에서 원문 sentinel 노출")
+	}
+
+	delivered := findJSONLogRecord(t, stdout.String(), "oversized_record", 0)
+	if delivered["response"] != blockedUnsupported || delivered[stdoutTestRequestIDKey] != boundaryRequestID || delivered["error_code"] != boundaryErrorCode {
+		t.Fatal("파일 쓰기 실패가 stdout 차단 사유 또는 식별자를 제거함")
 	}
 }

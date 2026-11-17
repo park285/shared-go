@@ -87,7 +87,7 @@ func TestSanitizeHandler_RebuildMasksSensitive(t *testing.T) {
 	}
 }
 
-// uncomparable any 값(slice 등)은 Value.Equal 경유 비교 시 panic하므로, fast-path 판정이 그 경로를 타지 않고 record를 그대로 통과시켜야 한다.
+// 비교할 수 없는 Any도 Value.Equal이나 원문 포맷 없이 차단해야 한다.
 func TestSanitizeHandler_UncomparableAnyAttrDoesNotPanic(t *testing.T) {
 	r := slog.NewRecord(testTime(), slog.LevelInfo, "Resolved target minutes", 0)
 	r.AddAttrs(
@@ -104,8 +104,8 @@ func TestSanitizeHandler_UncomparableAnyAttrDoesNotPanic(t *testing.T) {
 		return true
 	})
 
-	if got["resolved_target_minutes"] != "[5 15 30]" {
-		t.Errorf("resolved_target_minutes = %q, want [5 15 30]", got["resolved_target_minutes"])
+	if got["resolved_target_minutes"] != blockedUnsupported {
+		t.Errorf("resolved_target_minutes = %q, want %q", got["resolved_target_minutes"], blockedUnsupported)
 	}
 
 	if got["source"] != "persisted" {

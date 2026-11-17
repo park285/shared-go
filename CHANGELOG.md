@@ -1,7 +1,15 @@
 # 변경 이력
 
-이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
-옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
+출시 항목은 실제 Git tag를 기준으로 작성하며 미출시 항목은 로컬 변경을 뜻합니다.
+기존 상세 기록은 보존하고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
+
+## 미출시 — v2.24.0 모듈 경계·로그 안전성 전환
+
+- `core/{envutil,stringutil}`, `postgres/{pgxdb,pgstore}`, `transport/{h3,healthprobe}`, `openai/openaipreset`을 독립 모듈로 분리했습니다. 기존 생산·테스트 패키지는 제거하며 forwarding·alias·영구 replace는 제공하지 않습니다. 루트의 중립 `llm`이 오류 값을 단독 소유하고 refusal의 empty/refusal 이중 `errors.Is` 의미를 유지합니다.
+- 로그 sink는 민감 `LogValuer`를 실행 전에 가리고, 미지원 aggregate·해소 실패·8단계 초과 group을 원문 대신 고정 사유로 기록합니다. 문자열/error 정제·PrivacyKeys·파일/stdout 분리와 유실 계측은 유지합니다. archive 수집·보존을 인수할 증거가 없어 이동·pruning은 제거하지 않았습니다.
+- PostgreSQL `Preflight`·`PreflightDSN`과 실제 pool 생성이 모든 로컬 준비 검증을 공유합니다. 사전 점검은 네트워크를 사용하지 않으며 TLS 연결·인증·Ping·SQL의 실제 결과를 대신하지 않습니다.
+- CI는 하위 모듈의 tidy·race·lint·취약점·실제 PostgreSQL 검증을 분리하고, 릴리스는 허용된 모듈별 태그·산출물·SBOM·정확한 source ref·attestation을 사용합니다.
+- 최초 게시 대상은 루트 `v2.24.0`과 각 신규 모듈 `v1.0.0`입니다. 기존 immutable `v2.23.0`의 미사용 OpenAI 클라이언트 제거는 보존합니다. 새 ChatBotGo 소비자가 사용하는 `ErrOpenAIRefusalOutput`만 중립 오류 값으로 제공하며, 제거된 클라이언트·옵션·스트림 구현은 다시 제공하지 않습니다. 이 항목은 게시 준비 기록이며 배포 완료 기록이 아닙니다. Fallback delta: 없음.
 
 ## v2.23.0 - 2026-11-17
 

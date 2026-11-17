@@ -240,116 +240,42 @@ func TestSanitizeHandler_NonPrivacyGroupUnaffected(t *testing.T) {
 	}
 }
 
-func TestSanitizeHandler_AnyMapOperationalIDsPreserved(t *testing.T) {
-	payload := map[string]any{
-		testUserID:   kakaoSentinelID,
-		"room_id":    8842,
-		testVideoID:  testVid1,
-		"is_partial": true,
-	}
-	output := privacyOutput(t, slog.Any("payload", payload))
+func TestSanitizeHandler_AnyMapsBlockedWithoutMutation(t *testing.T) {
+	nested := map[string]any{testUserID: kakaoSentinelID, testVideoID: testVid1}
+	cycle := map[string]any{tokenUserName: kakaoSentinelID}
 
-	if !strings.Contains(output, kakaoSentinelID) || !strings.Contains(output, "8842") {
-		t.Fatalf("map[string]any operational IDs not preserved: %s", output)
-	}
+	cycle["self"] = cycle
 
-	if !strings.Contains(output, testVid1) {
-		t.Fatalf("map public id not preserved: %s", output)
+	deep := map[string]any{tokenUserName: kakaoSentinelID}
+
+	for range 9 {
+		deep = map[string]any{testNested: deep}
 	}
 
-	if got := payload[testUserID]; got != kakaoSentinelID {
-		t.Fatalf("caller map was mutated: payload[user_id] = %v", got)
+	cases := map[string]any{
+		"operational": nested,
+		"clean":       map[string]any{testVideoID: testVid1, testCount: 3},
+		"nested":      map[string]any{testNested: nested},
+		"cycle":       cycle,
+		"depth_nine":  deep,
+		"string_map":  map[string]string{testUserID: kakaoSentinelID},
+	}
+	for name, payload := range cases {
+		t.Run(name, func(t *testing.T) {
+			output := privacyOutput(t, slog.Any("payload", payload))
+			if strings.Contains(output, kakaoSentinelID) || strings.Contains(output, testVid1) {
+				t.Fatalf("미지원 map 원문 노출: %s", output)
+			}
+
+			if !strings.Contains(output, blockedUnsupported) {
+				t.Fatalf("map 차단 사유 누락: %s", output)
+			}
+		})
 	}
 
-	if got := payload["room_id"]; got != 8842 {
-		t.Fatalf("caller map was mutated: payload[room_id] = %v", got)
-	}
-}
-
-func TestSanitizeHandler_AnyMapWithoutPrivacyKeysUnchanged(t *testing.T) {
-	output := privacyOutput(t, slog.Any("payload", map[string]any{testVideoID: testVid1, testCount: 3}))
-
-	if strings.Contains(output, "***REDACTED***") {
-		t.Fatalf("clean map was masked: %s", output)
-	}
-}
-
-func TestSanitizeHandler_NestedAnyMapOperationalUserIDPreserved(t *testing.T) {
-	nested := map[string]any{
-		testUserID:  kakaoSentinelID,
-		testVideoID: testVid1,
-	}
-	payload := map[string]any{
-		"public":   "visible",
-		testNested: nested,
-	}
-	output := privacyOutput(t, slog.Any("payload", payload))
-
-	if !strings.Contains(output, kakaoSentinelID) {
-		t.Fatalf("nested map[string]any user_id not preserved: %s", output)
-	}
-
-	if !strings.Contains(output, testVid1) || !strings.Contains(output, "visible") {
-		t.Fatalf("nested map public values not preserved: %s", output)
-	}
-
-	if got := nested[testUserID]; got != kakaoSentinelID {
-		t.Fatalf("caller nested map was mutated: nested[user_id] = %v", got)
-	}
-}
-
-func TestMaskPrivacyMap_NestedCleanMapPreservesCopyOnHit(t *testing.T) {
-	nested := map[string]any{testVideoID: testVid1, testCount: 3}
-	payload := map[string]any{testNested: nested}
-
-	masked, changed := testPrivacy.maskPrivacyMap(payload)
-	if changed || masked != nil {
-		t.Fatalf("testPrivacy.maskPrivacyMap() = (%v, %t), want (nil, false)", masked, changed)
-	}
-}
-
-func TestMaskPrivacyMap_DepthCapStopsSelfReference(t *testing.T) {
-	payload := map[string]any{tokenUserName: kakaoSentinelID}
-
-	payload["self"] = payload
-
-	masked, changed := testPrivacy.maskPrivacyMap(payload)
-	if !changed {
-		t.Fatal("testPrivacy.maskPrivacyMap() changed = false, want true")
-	}
-
-	if got := masked[tokenUserName]; got != redactedValue {
-		t.Fatalf("masked[user_name] = %v, want %s", got, redactedValue)
-	}
-
-	if got := payload[tokenUserName]; got != kakaoSentinelID {
-		t.Fatalf("caller map was mutated: payload[user_name] = %v", got)
-	}
-}
-
-func TestMaskPrivacyMap_DepthNinePrivacyKeyIsNotTraversed(t *testing.T) {
-	payload := map[string]any{tokenUserName: kakaoSentinelID}
-
-	for range maxPrivacyMapDepth + 1 {
-		payload = map[string]any{testNested: payload}
-	}
-
-	masked, changed := testPrivacy.maskPrivacyMap(payload)
-	if changed || masked != nil {
-		t.Fatalf("testPrivacy.maskPrivacyMap() = (%v, %t), want (nil, false)", masked, changed)
-	}
-
-	output := privacyOutput(t, slog.Any("payload", payload))
-	if !strings.Contains(output, kakaoSentinelID) {
-		t.Fatalf("depth-nine privacy value was not preserved: %s", output)
-	}
-}
-
-func TestSanitizeHandler_StringMapIsNotPrivacyMasked(t *testing.T) {
-	output := privacyOutput(t, slog.Any("payload", map[string]string{testUserID: kakaoSentinelID}))
-
-	if !strings.Contains(output, kakaoSentinelID) || strings.Contains(output, redactedValue) {
-		t.Fatalf("map[string]string scope changed: %s", output)
+	if nested[testUserID] != kakaoSentinelID || nested[testVideoID] != testVid1 ||
+		cycle[tokenUserName] != kakaoSentinelID || len(cycle) != 2 {
+		t.Fatal("호출자 map 변경")
 	}
 }
 

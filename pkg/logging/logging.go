@@ -51,7 +51,7 @@ type Options struct {
 	// stdout fd 정체가 로깅 전체를 블로킹하지 않게 한다. 파일 lane은 동기 기록을 유지한다.
 	// 파일 lane이 없는 콘솔 전용 구성(Dir 빈 값)에서는 유일한 기록처를 잃을 수 있어 적용하지 않는다.
 	AsyncStdout bool
-	// PrivacyKeys는 이 서비스가 개인 식별자로 다루는 attr·group·map key다(예: room, sender). 일치하는
+	// PrivacyKeys는 이 서비스가 개인 식별자로 다루는 attr·group key다(예: room, sender). 일치하는
 	// 값은 credential과 같이 가린다. 키는 대소문자·`-`·`.`·공백을 정규화한 정확 일치이며 빈 키는 오류다.
 	// 라이브러리는 privacy 키를 내장하지 않으므로 비우면 credential 규칙만 적용한다.
 	PrivacyKeys []string
