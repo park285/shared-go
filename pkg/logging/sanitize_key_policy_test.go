@@ -33,20 +33,20 @@ func TestSanitizeHandlerGenericKeyRequiresSecretValueEvidence(t *testing.T) {
 	}
 }
 
-func TestSanitizeHandlerStructuredMapCredentialsUseExactOrValueEvidence(t *testing.T) {
+func TestSanitizeHandlerStructuredGroupCredentialsUseExactOrValueEvidence(t *testing.T) {
 	t.Parallel()
 
-	nested := map[string]any{
-		genericKeyField: accessTokenPlaceholder,
-		testUserID:      "user-42",
-		"room_id":       8842,
+	nested := []slog.Attr{
+		slog.String(genericKeyField, accessTokenPlaceholder),
+		slog.String(testUserID, "user-42"),
+		slog.Int("room_id", 8842),
 	}
-	payload := map[string]any{
-		"api_key":       "short-secret",
-		genericKeyField: "cache-shard-1",
-		testNested:      nested,
-	}
-	output := privacyOutput(t, slog.Any("payload", payload))
+	payload := slog.Group("payload",
+		slog.String("api_key", "short-secret"),
+		slog.String(genericKeyField, "cache-shard-1"),
+		slog.Attr{Key: testNested, Value: slog.GroupValue(nested...)},
+	)
+	output := privacyOutput(t, payload)
 
 	for _, leaked := range []string{"short-secret", accessTokenPlaceholder} {
 		if strings.Contains(output, leaked) {
@@ -64,9 +64,10 @@ func TestSanitizeHandlerStructuredMapCredentialsUseExactOrValueEvidence(t *testi
 		}
 	}
 
-	if payload["api_key"] != "short-secret" || payload[genericKeyField] != "cache-shard-1" ||
-		nested[genericKeyField] != accessTokenPlaceholder || nested[testUserID] != "user-42" || nested["room_id"] != 8842 {
-		t.Fatalf("caller-owned structured map was mutated: payload=%v nested=%v", payload, nested)
+	if payload.Value.Group()[0].Value.String() != "short-secret" ||
+		nested[0].Value.String() != accessTokenPlaceholder || nested[1].Value.String() != "user-42" ||
+		nested[2].Value.Int64() != 8842 {
+		t.Fatal("호출자 group 변경")
 	}
 }
 

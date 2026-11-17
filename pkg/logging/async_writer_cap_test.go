@@ -28,7 +28,7 @@ func oversizedJSON(t *testing.T) []byte {
 		"level":                "ERROR",
 		"msg":                  "diagnostic failed",
 		stdoutTestEventKey:     "diagnostic_failure",
-		"trace_id":             "0123456789abcdef0123456789abcdef",
+		boundaryTraceIDKey:     "0123456789abcdef0123456789abcdef",
 		"span_id":              "0123456789abcdef",
 		stdoutTestRequestIDKey: "request-42",
 		"diagnostic":           strings.Repeat("한\\\"\n", 20000),
@@ -128,7 +128,7 @@ func TestAsyncDropWriterTruncationKeepsJSONCorrelationAndNextRecord(t *testing.T
 	first := decodeLogLine(t, lines[0])
 	full := decodeLogLine(t, string(original))
 
-	for _, key := range []string{"time", "level", "msg", stdoutTestEventKey, "trace_id", "span_id", stdoutTestRequestIDKey} {
+	for _, key := range []string{"time", "level", "msg", stdoutTestEventKey, boundaryTraceIDKey, "span_id", stdoutTestRequestIDKey} {
 		if first[key] != full[key] {
 			t.Errorf("correlation %s = %v, want %v", key, first[key], full[key])
 		}
@@ -157,7 +157,7 @@ func TestAsyncDropWriterBoundsEveryRetainedField(t *testing.T) {
 	for _, value := range []string{strings.Repeat("\x00", 20000), strings.Repeat("한😀\\\"\n", 10000)} {
 		fields := make(map[string]string)
 
-		for _, key := range []string{"time", "level", "msg", stdoutTestEventKey, "trace_id", "span_id", stdoutTestRequestIDKey, "extra"} {
+		for _, key := range []string{"time", "level", "msg", stdoutTestEventKey, boundaryTraceIDKey, "span_id", stdoutTestRequestIDKey, "extra"} {
 			fields[key] = value
 		}
 
@@ -320,9 +320,11 @@ func TestEnableFileLoggingOversizePreservesSanitizedFileRecord(t *testing.T) {
 
 	diagnostic := strings.Repeat("diagnostic detail ", 5000)
 	logger.Error("diagnostic_failed", eventAttr("diagnostic_failed"), requestIDAttr("request-42"),
-		slog.String("trace_id", "0123456789abcdef0123456789abcdef"),
+		slog.String(boundaryTraceIDKey, "0123456789abcdef0123456789abcdef"),
 		slog.String("span_id", "0123456789abcdef"),
-		slog.Any("error", errors.New("API_TOKEN="+secret+" "+diagnostic)))
+		slog.Any(boundaryErrorKey, errors.New("API_TOKEN="+secret+" "+diagnostic)),
+		slog.String("error_code", boundaryErrorCode),
+		slog.Any("response", boundaryPayload{Content: boundarySentinel}))
 	logger.Info("survivor")
 
 	if closeErr := closer.Close(); closeErr != nil {
@@ -334,18 +336,25 @@ func TestEnableFileLoggingOversizePreservesSanitizedFileRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if bytes.Contains(file, []byte(secret)) || strings.Contains(stdout.String(), secret) {
+	if bytes.Contains(file, []byte(secret)) || strings.Contains(stdout.String(), secret) ||
+		bytes.Contains(file, []byte(boundarySentinel)) || strings.Contains(stdout.String(), boundarySentinel) {
 		t.Fatal("sanitization was bypassed")
 	}
 
 	full := findJSONLogRecord(t, string(file), "diagnostic_failed", 0)
 	capped := findJSONLogRecord(t, stdout.String(), "diagnostic_failed", asyncStdoutMaxLineBytes)
 	summary := findJSONLogRecord(t, string(file), "stdout lane write failed", 0)
-	fullError, ok := full["error"].(string)
+	fullError, ok := full[boundaryErrorKey].(string)
 
 	if !ok || !strings.Contains(fullError, diagnostic) {
 		t.Fatal("file diagnostic was truncated")
 	}
+
+	if full["response"] != blockedUnsupported || full["error_code"] != boundaryErrorCode {
+		t.Fatalf("파일 진단 또는 차단 사유 손실: %v", full)
+	}
+
+	assertBoundaryStdoutCap(t, full, capped)
 
 	if capped["stdout_truncated"] != true || capped[stdoutTestRequestIDKey] != "request-42" {
 		t.Fatalf("stdout missing bounded diagnostic/correlation: %v", capped)
@@ -353,5 +362,19 @@ func TestEnableFileLoggingOversizePreservesSanitizedFileRecord(t *testing.T) {
 
 	if summary == nil || summary["dropped"] != float64(0) || summary["truncated"] != float64(1) {
 		t.Fatalf("file truncation summary = %v", summary)
+	}
+}
+
+func assertBoundaryStdoutCap(t *testing.T, full, capped map[string]any) {
+	t.Helper()
+
+	for _, key := range []string{"time", "level", "msg", "event", boundaryTraceIDKey, "span_id", stdoutTestRequestIDKey} {
+		if capped[key] != full[key] {
+			t.Errorf("축약 stdout 식별자 %s = %v, 기대값 %v", key, capped[key], full[key])
+		}
+	}
+
+	if capped["response"] != nil || capped["error_code"] != nil {
+		t.Fatal("축약 stdout이 임의 진단 필드를 보존함")
 	}
 }

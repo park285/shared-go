@@ -5,6 +5,17 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${ROOT_DIR}"
+export GOWORK=off
+modules=("$@")
+if ((${#modules[@]} == 0)); then
+  modules=(. core postgres transport openai)
+fi
+for module in "${modules[@]}"; do
+  case "$module" in
+    .|core|postgres|transport|openai) ;;
+    *) echo "release-gate: unsupported module" >&2; exit 2 ;;
+  esac
+done
 
 echo "════════════════════════════════════════"
 echo "  shared-go release full gate"
@@ -15,33 +26,26 @@ run_stage() {
   "$@"
 }
 
-run_stage env GOWORK=off go mod tidy -diff
-run_stage env GOWORK=off go run ./pkg/internal/guardtext/genconfusables.go \
-  -confusables-source ./pkg/internal/guardtext/testdata/confusables-17.0.0.txt.gz \
-  -unicode-data-baseline-source ./pkg/internal/guardtext/testdata/UnicodeData-15.0.0.txt.gz \
-  -unicode-data-source ./pkg/internal/guardtext/testdata/UnicodeData-17.0.0.txt.gz \
-  -output ./pkg/internal/guardtext/confusables_table_generated.go \
-  -check
-
-run_stage bash scripts/check-sql-ownership.sh
-run_stage make lint
-run_stage make test-allocations
-run_stage bash scripts/ci/pgstore-release-gate.sh
-
-# irisdurable은 위 PostgreSQL 게이트에서 실제 DB와 함께 race로 실행했다.
-all_packages="$(GOWORK=off go list ./...)"
-race_packages=()
-while IFS= read -r package; do
-  case "${package}" in
-    */pkg/irisdurable|*/pkg/irisdurable/*) ;;
-    *) race_packages+=("${package}") ;;
-  esac
-done <<<"${all_packages}"
-if ((${#race_packages[@]} > 0)); then
-  run_stage env GOWORK=off go test -race -count=1 "${race_packages[@]}"
-fi
-
-run_stage make vulncheck
+for module in "${modules[@]}"; do
+  run_stage make tidy-check MODULES="$module"
+  if [[ "$module" == . ]]; then
+    run_stage go run ./pkg/internal/guardtext/genconfusables.go \
+      -confusables-source ./pkg/internal/guardtext/testdata/confusables-17.0.0.txt.gz \
+      -unicode-data-baseline-source ./pkg/internal/guardtext/testdata/UnicodeData-15.0.0.txt.gz \
+      -unicode-data-source ./pkg/internal/guardtext/testdata/UnicodeData-17.0.0.txt.gz \
+      -output ./pkg/internal/guardtext/confusables_table_generated.go \
+      -check
+    run_stage make test-allocations
+  fi
+  run_stage bash scripts/check-sql-ownership.sh "$module"
+  run_stage make build MODULES="$module"
+  if [[ "$module" == postgres ]]; then
+    run_stage bash scripts/ci/pgstore-release-gate.sh
+  else
+    run_stage make test-race MODULES="$module"
+  fi
+  run_stage make vulncheck MODULES="$module"
+done
 
 echo "════════════════════════════════════════"
 echo "  shared-go release full gate passed"

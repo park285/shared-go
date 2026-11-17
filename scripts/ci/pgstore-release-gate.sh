@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-cd "${ROOT_DIR}"
+cd "${ROOT_DIR}/postgres"
 
 for tool in podman jq go; do
   if ! command -v "${tool}" >/dev/null 2>&1; then
@@ -64,8 +64,8 @@ fi
 export TEST_DATABASE_URL="postgresql://postgres@127.0.0.1:${port}/postgres?sslmode=disable"
 export ALLOW_EXTERNAL_TEST_DB=true
 
-# test의 DB helper가 각 사례에 새 DB를 만들고 정리한다. JSON에서 pass/skip을 별도로 판정한다.
-if ! GOWORK=off go test -race -count=1 -timeout=5m -json ./pkg/irisdurable/... >"${result_file}"; then
+# pgstore는 위 서버를, pgxdb는 자체 일회용 서버를 사용한다. 두 패키지 모두 skip을 거부한다.
+if ! go test -race -count=1 -timeout=5m -json ./... >"${result_file}"; then
   echo 'pgstore-release-gate: PostgreSQL suite failed' >&2
   jq -r 'select(.Action == "fail" or .Action == "skip") | [.Action, (.Test // .Package)] | @tsv' "${result_file}" >&2 || true
   exit 1
@@ -74,7 +74,10 @@ fi
 if ! jq -e -s '
   . as $events |
   ([$events[] | select(.Action == "skip")] | length) == 0 and
-  all(["TestRunAgainstPostgres", "TestReferenceSchemaIsRepeatable"][];
+  all(["TestRunAgainstPostgres", "TestReferenceSchemaIsRepeatable",
+       "TestIntegration_OpenPool", "TestIntegration_OpenPoolDSN",
+       "TestIntegration_AcquirePolicyControlContention",
+       "TestIntegrationServerCancellationPreservesSQLStateAndConnection"][];
     . as $name | ([$events[] | select(.Action == "pass" and .Test == $name)] | length) == 1)
 ' "${result_file}" >/dev/null; then
   echo 'pgstore-release-gate: required PostgreSQL case did not pass or a test skipped' >&2

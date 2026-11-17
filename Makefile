@@ -2,23 +2,24 @@ GO ?= go
 GO_TOOLING ?= $(CURDIR)/scripts/ci/go-tooling.sh
 GOLANGCI_LINT ?= bash $(GO_TOOLING) golangci-lint
 GOVULNCHECK ?= bash $(GO_TOOLING) govulncheck
-GOLANGCI_CONFIG ?= .golangci.yml
+GOLANGCI_CONFIG ?= $(CURDIR)/.golangci.yml
+MODULES ?= . core postgres transport openai
 
 .PHONY: lint
 lint:
-	$(GOLANGCI_LINT) run -c $(GOLANGCI_CONFIG) ./...
+	@set -e; for module in $(MODULES); do (cd "$$module" && $(GOLANGCI_LINT) run -c $(GOLANGCI_CONFIG) ./...); done
 
 .PHONY: fmt
 fmt:
-	$(GOLANGCI_LINT) run -c $(GOLANGCI_CONFIG) --fix ./...
+	@set -e; for module in $(MODULES); do (cd "$$module" && $(GOLANGCI_LINT) run -c $(GOLANGCI_CONFIG) --fix ./...); done
 
 .PHONY: test
 test:
-	$(GO) test ./...
+	@set -e; for module in $(MODULES); do (cd "$$module" && $(GO) test ./...); done
 
 .PHONY: test-race
 test-race:
-	$(GO) test -race -count=1 ./...
+	@set -e; for module in $(MODULES); do (cd "$$module" && $(GO) test -race -count=1 ./...); done
 
 # race 계측은 할당 횟수를 바꾸므로 별도로 측정한다.
 .PHONY: test-allocations
@@ -27,12 +28,20 @@ test-allocations:
 
 .PHONY: vulncheck
 vulncheck:
-	$(GOVULNCHECK) ./...
+	@set -e; for module in $(MODULES); do (cd "$$module" && $(GOVULNCHECK) ./...); done
 
 .PHONY: build
 build: lint
-	$(GO) build ./...
+	@set -e; for module in $(MODULES); do (cd "$$module" && $(GO) build ./...); done
 
 .PHONY: tidy
 tidy:
-	$(GO) mod tidy
+	@set -e; for module in $(MODULES); do (cd "$$module" && $(GO) mod tidy); done
+
+.PHONY: tidy-check
+tidy-check:
+	@set -e; for module in $(MODULES); do (cd "$$module" && $(GO) mod tidy -diff); done
+
+.PHONY: source-tidy-check
+source-tidy-check:
+	bash $(GO_TOOLING) tidy-workspace $(MODULES)

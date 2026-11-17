@@ -2,7 +2,12 @@ package llm
 
 import "errors"
 
-var ErrOpenAIEmptyOutput = errors.New("llm: openai empty output")
+var (
+	// ErrOpenAIEmptyOutput은 사용할 수 있는 출력이 없음을 나타낸다.
+	ErrOpenAIEmptyOutput = errors.New("llm: openai empty output")
+	// ErrOpenAIRefusalOutput은 공급자 거절을 나타내며, 거절 오류는 ErrOpenAIEmptyOutput에도 일치한다.
+	ErrOpenAIRefusalOutput = errors.New("llm: openai refusal output")
+)
 
 type Message struct {
 	Role    string
