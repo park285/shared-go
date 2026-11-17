@@ -16,7 +16,7 @@ Iris Stack의 Go 프로젝트들(`hololive-bot`, `chat-bot-go-kakao`, `twentyq-b
 | `github.com/park285/shared-go/transport` | `h3`, `healthprobe` | `transport/v1.0.0` |
 | `github.com/park285/shared-go/openai` | `openaipreset` | `openai/v1.0.0` |
 
-위 전환 대상은 로컬 구현의 게시 예정 버전이며 게시 완료를 뜻하지 않습니다. 루트의 provider-free 계약을 먼저 게시하고, 이를 요구하는 어댑터와 소비자 pin을 순서대로 검증해야 합니다. 모듈 간 버전 숫자는 맞추지 않으며 무관한 비보안 변경 때문에 모든 소비자 pin을 갱신하지 않습니다.
+위 최초 전환 태그는 모두 게시했으며 공식 Go checksum, immutable 릴리스와 산출물 서명을 검증했습니다. 소비자 8개 모듈의 실제 공개 pin 검증도 완료했습니다. 상세 결과와 운영 검증 한계는 [실행 기록](docs/agent-workflows/plans/2026-11-17-shared-go-boundaries-and-security.md)에 있습니다. 모듈 간 버전 숫자는 맞추지 않으며 무관한 비보안 변경 때문에 모든 소비자 pin을 갱신하지 않습니다.
 
 `core`의 생산 코드는 표준 라이브러리만 사용합니다. 테스트에는 testify와 그 의존성이 있습니다. 루트는 어댑터를 생산·테스트 의존성으로 요구하지 않고, 어댑터가 루트 계약을 사용합니다.
 
