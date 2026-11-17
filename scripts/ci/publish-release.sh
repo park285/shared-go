@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/ci/prepare-release-bundle.sh
 . "${SCRIPT_DIR}/prepare-release-bundle.sh"
 
 if (( $# != 4 )); then

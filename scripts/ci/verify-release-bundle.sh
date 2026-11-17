@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 . "${SCRIPT_DIR}/python-runtime.sh"
 repo_python_init
+# shellcheck source=scripts/ci/prepare-release-bundle.sh
 . "${SCRIPT_DIR}/prepare-release-bundle.sh"
 
 if (( $# != 4 )); then
