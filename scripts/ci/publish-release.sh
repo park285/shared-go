@@ -54,4 +54,22 @@ gh release create "$tag" \
   "${latest_args[@]}" \
   --generate-notes
 
+# 게시 응답 직후에는 GitHub가 자동 생성한 릴리스 attestation 조회가 비어 있을 수 있다.
+# 조회 공백만 기다리며 게시·암호학적 검증 자체는 재시도하지 않는다.
+tag_object="$(git rev-parse --verify "refs/tags/${tag}")"
+attestation_deadline=$((SECONDS + 120))
+while true; do
+  attestation_count="$(gh api \
+    "repos/${repository}/attestations/sha1:${tag_object}?predicate_type=release" \
+    --jq '.attestations | if type == "array" then length else error("invalid attestation response") end')"
+  if [[ "$attestation_count" != 0 ]]; then
+    break
+  fi
+  if (( SECONDS >= attestation_deadline )); then
+    echo "release publish: ${tag} was published but its release attestation is unavailable" >&2
+    exit 1
+  fi
+  sleep 5
+done
+
 gh release verify "$tag" --repo "$repository"
