@@ -81,8 +81,8 @@
 // OpenPool·OpenPoolDSN은 재시도하지 않는다: 연결·ping 실패는 그대로 반환하므로 compose 기동
 // 레이스 등의 재시도 정책은 호출자가 소유한다. 연결 시 ping 타임아웃은
 // 필수인 Options.Ping.PingTimeout으로 정한다.
-// MinConns > 0이면 백그라운드 연결 생성·실패 정리를 제한하도록 ConnectTimeout을
-// 시작 예산 이하로 낮춘다. 이 제한은 재접속을 포함한 풀 수명 전체에 유지된다.
+// MinConns나 MinIdleConns가 양수이면 백그라운드 연결 생성·실패 정리를 제한하도록
+// ConnectTimeout을 시작 예산 이하로 낮춘다. 이 제한은 재접속을 포함한 풀 수명 전체에 유지된다.
 // 서버 취소 유예는 두 Ping 예산과 별개이며 중단된 작업이 해당 기한까지 이어질 수 있다.
 //
 // # 트랜잭션 정리
