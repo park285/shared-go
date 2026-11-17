@@ -54,14 +54,20 @@ gh release create "$tag" \
   "${latest_args[@]}" \
   --generate-notes
 
-# 게시 응답 직후에는 GitHub가 자동 생성한 릴리스 attestation 조회가 비어 있을 수 있다.
+# 게시 응답 직후 GitHub의 릴리스 attestation 조회는 404나 빈 배열일 수 있다.
 # 조회 공백만 기다리며 게시·암호학적 검증 자체는 재시도하지 않는다.
 tag_object="$(git rev-parse --verify "refs/tags/${tag}")"
 attestation_deadline=$((SECONDS + 120))
 while true; do
-  attestation_count="$(gh api \
+  if attestation_response="$(gh api --include \
     "repos/${repository}/attestations/sha1:${tag_object}?predicate_type=release" \
-    --jq '.attestations | if type == "array" then length else error("invalid attestation response") end')"
+    --jq '.attestations | if type == "array" then length else error("invalid attestation response") end')"; then
+    attestation_count="${attestation_response##*$'\n'}"
+  elif [[ "${attestation_response%%$'\n'*}" == HTTP/*" 404 "* ]]; then
+    attestation_count=0
+  else
+    exit 1
+  fi
   if [[ "$attestation_count" != 0 ]]; then
     break
   fi
