@@ -3,6 +3,10 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## v2.23.0 - 2026-11-17
+
+- **`openaipreset` 클라이언트 제거(호환성 파괴):** 스택에서 유일하게 쓰던 twentyq-bot이 cliproxy provider를 지워 소비자가 0이 된 클라이언트 쪽 export를 지웠습니다. 지운 것은 `Client`, `New`, `Client.GenerateLayeredResponsesJSON`, `Client.Complete`, `Client.Model`, `Option`과 `With*` 옵션 8개, `PromptLayers`, `ResponseFormat`, `CompletionRequest`, 그리고 이 경로만 쓰던 스트림 수신·응답 1 MiB 상한·재시도 구성입니다. chat-bot-go-kakao가 쓰는 응답 도우미 `CompletionFromResponse`, `CompletionRole`, `UsageFromResponseUsage`, `LooksLikeToolCallEnvelope`와 `CompletionResponse`는 그대로입니다. 남는 코드가 만들지 않고 소비자도 없는 `llm.UsageReporter`, `llm.NoopUsageReporter`, `llm.ErrOpenAIRefusalOutput`, `llm.ErrNilContext`도 지웠습니다. chat-bot이 반환하는 `llm.ErrOpenAIEmptyOutput`은 같은 문구로 남습니다. 내부 패키지 `llm/internal/openaicfg`·`openaidiag`도 쓰는 곳이 없어져 지웠습니다. 스택 소비자가 0인 export 제거라 호환성 정책에 따라 minor로 올립니다.
+
 ## v2.22.2 - 2026-11-17
 
 - **의존성 갱신:** openai-go v3.100.0, puddle v2.2.4(pgx 연결 풀), gjson v1.20.4로 올렸습니다. `go get -u -t ./...`로 빌드·시험에 쓰이는 모듈의 최신 minor·patch를 받았고, 그 밖의 모듈과 Go 1.27.4 지시어는 이미 최신입니다. 공개 API 변경은 없습니다.

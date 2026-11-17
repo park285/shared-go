@@ -1,17 +1,8 @@
 package llm
 
-import (
-	"context"
-	"errors"
+import "errors"
 
-	"github.com/park285/shared-go/v2/pkg/llm/internal/openaidiag"
-)
-
-var (
-	ErrNilContext          = errors.New("llm: context is nil")
-	ErrOpenAIEmptyOutput   = openaidiag.ErrEmptyOutput
-	ErrOpenAIRefusalOutput = openaidiag.ErrRefusalOutput
-)
+var ErrOpenAIEmptyOutput = errors.New("llm: openai empty output")
 
 type Message struct {
 	Role    string
@@ -30,11 +21,3 @@ type Usage struct {
 	CacheWriteTokens      int
 	ReasoningOutputTokens int
 }
-
-type UsageReporter interface {
-	RecordUsage(ctx context.Context, provider, model string, usage Usage)
-}
-
-type NoopUsageReporter struct{}
-
-func (NoopUsageReporter) RecordUsage(context.Context, string, string, Usage) {}
