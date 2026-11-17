@@ -3,9 +3,11 @@
 출시 항목은 실제 Git tag를 기준으로 작성하며 미출시 항목은 로컬 변경을 뜻합니다.
 기존 상세 기록은 보존하고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
-## 미출시
+## postgres/v1.0.1 - 2026-11-17
 
 - **`postgres/pgxdb` 시작 시간 제한:** `MinConns=0`이고 `MinIdleConns>0`인 풀도 백그라운드 연결 생성에 시작 Ping 예산을 적용합니다. DB가 응답하지 않을 때 실패 정리가 원래 연결 기한까지 지연되는 경로를 막고, 더 짧은 명시적 연결 기한은 보존합니다. Fallback delta: 없음.
+- 수정 PR #112의 source commit `70918cf28874eb0f5fa64bee4a8f1030ca8ec045`를 immutable 릴리스로 게시했습니다. 릴리스 CI `44085837312`, 공식 Go checksum, 다운로드 번들·provenance·SPDX·release attestation 검증이 통과했으며 Latest는 루트 `v2.24.0`으로 유지합니다.
+- PostgreSQL 소비자 7개 모듈의 로컬 pin을 `v1.0.1`로 갱신하고 `GOWORK=off`·readonly graph 빌드·공개 버전/checksum·shared-go replace 부재를 검증했습니다. ChatBotGo의 기존 production metadata 양성 시험 2개도 통과했습니다. 소비자 변경은 미커밋 로컬 상태이며 소비자 Git 게시·운영 배포는 하지 않았습니다.
 
 ## 하위 모듈 v1.0.0 - 2026-11-17
 
