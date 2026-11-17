@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  fast-gate:
+  module-gate:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -71,3 +71,14 @@ jobs:
       - name: PostgreSQL race contracts without skips
         if: matrix.module == 'postgres'
         run: bash scripts/ci/pgstore-release-gate.sh
+
+  fast-gate:
+    needs: module-gate
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require every module gate
+        env:
+          MODULE_GATE_RESULT: ${{ needs.module-gate.result }}
+        run: test "$MODULE_GATE_RESULT" = success

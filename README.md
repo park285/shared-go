@@ -224,6 +224,8 @@ make source-tidy-check
 
 **CI 정책:** `ci.yml`은 PR 및 `main` push마다 5개 모듈의 소스 workspace에서 tidy drift·lint·race를 검사합니다. 루트의 고정 Unicode 생성·할당 상한과 SQL ownership 검사를 유지하고, PostgreSQL 모듈은 일회용 실제 DB에서 pgxdb·pgstore를 skip 없이 검사합니다. `security.yml`의 `main` push·주간 스케줄·수동 dispatch 및 `govulncheck`를 유지합니다. `./...`만 실행하면 하위 모듈이 빠지므로 모듈별 작업 디렉터리를 명시합니다.
 
+보호된 main이 요구하는 상태 검사 이름은 `fast-gate`로 유지합니다. 다섯 `module-gate` matrix 작업의 결과가 모두 `success`일 때만 집계 job이 통과하며, 실패·취소·건너뜀을 성공으로 바꾸지 않습니다.
+
 파일 줄 수(800)와 함수 길이 상한은 `.golangci.yml`의 revive `file-length-limit`과 `funlen`이 검사합니다. 별도 구조 예산은 두지 않습니다. Workflow 보안 정책(action 전체 SHA 고정, `id-token`·`attestations` 권한은 `release.yml`만, PR의 secret 사용 금지)은 iris-stack의 `tools/checks/check-workflow-policy.py`가 검증합니다. 로컬 릴리스 게이트도 `make test-allocations`로 race 빌드에서 빠지는 할당 상한을 검증합니다.
 
 `bash scripts/ci/release-gate.sh [모듈...]`은 선택한 모듈을 실제 pin과 `GOWORK=off`로 검증하며, 인자를 생략하면 5개 모듈 모두 검사합니다. `postgres`는 rootless Podman의 일회용 PostgreSQL에서 pgxdb·pgstore race와 필수 사례 pass·전체 skip=0을 요구합니다. 소스 workspace의 성공은 게시 pin·서명·immutable release 성공을 대신하지 않습니다. 태그·SBOM·attestation 규칙은 [release provenance](docs/release-provenance.md)를 따릅니다.
