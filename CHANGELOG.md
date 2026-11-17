@@ -3,6 +3,10 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## v2.22.2 - 2026-11-17
+
+- **의존성 갱신:** openai-go v3.100.0, puddle v2.2.4(pgx 연결 풀), gjson v1.20.4로 올렸습니다. `go get -u -t ./...`로 빌드·시험에 쓰이는 모듈의 최신 minor·patch를 받았고, 그 밖의 모듈과 Go 1.27.4 지시어는 이미 최신입니다. 공개 API 변경은 없습니다.
+
 ## v2.22.1 - 2026-11-17
 
 - **`llm/openaipreset` 응답 상한:** `New`가 호출자의 transport를 복제해 provider 응답 body를 1 MiB로 제한합니다. 선언 길이가 상한을 넘으면 SDK 해석 전에 거부하고, 길이를 모르는 JSON·SSE body는 읽은 누적 바이트로 끊습니다. 초과는 `httputil.ErrResponseBodyTooLarge`로 돌아오며 부분 출력과 usage 보고는 없습니다. `Complete`·`GenerateLayeredResponsesJSON` 요청에는 `max_output_tokens` 16384를 보냅니다(reasoning token 포함).
