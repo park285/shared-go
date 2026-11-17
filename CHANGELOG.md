@@ -3,6 +3,14 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## v2.22.1 - 2026-11-17
+
+- **`llm/openaipreset` 응답 상한:** `New`가 호출자의 transport를 복제해 provider 응답 body를 1 MiB로 제한합니다. 선언 길이가 상한을 넘으면 SDK 해석 전에 거부하고, 길이를 모르는 JSON·SSE body는 읽은 누적 바이트로 끊습니다. 초과는 `httputil.ErrResponseBodyTooLarge`로 돌아오며 부분 출력과 usage 보고는 없습니다. `Complete`·`GenerateLayeredResponsesJSON` 요청에는 `max_output_tokens` 16384를 보냅니다(reasoning token 포함).
+- **`llm` provider 오류 정보 축소:** provider 오류를 감싼 반환 오류에 provider가 정한 `code`·`type`·`param` 문자열을 넣지 않습니다. HTTP status와 로컬 오류 분류(`error_type`)만 남습니다. 응답 크기 초과는 context 오류처럼 `httputil.ErrResponseBodyTooLarge`를 그대로 돌려줍니다.
+- **`logging` 헤더 자격 증명 마스킹:** `Authorization`·`Proxy-Authorization`·`auth_header`·`cookie`처럼 헤더 자격 증명을 담는 키의 따옴표 없는 값을 CR/LF 경계까지 가립니다. 이전에는 `Authorization: Basic <값>`에서 scheme 단어만 가려지고 자격 증명이 남았습니다. logfmt 한 줄에서 공백 있는 `Authorization` 값 뒤의 필드도 함께 가려집니다.
+- **`irisdurable/pgstore` nonce prune:** `PruneNonce`가 후보를 `FOR UPDATE SKIP LOCKED`로 잠근 뒤 DELETE에서 만료 시각을 다시 확인합니다. `IsDuplicate`가 같은 만료 행을 갱신하는 중이면 건너뛰어, 갱신된 nonce가 지워져 같은 메시지가 다시 받아들여지던 경로를 막습니다. prune을 실행하는 역할에는 `iris_nonce`의 UPDATE 권한이 필요합니다(`IsDuplicate`의 `ON CONFLICT DO UPDATE`가 이미 요구하는 권한입니다).
+- 공개 API 변경은 없습니다.
+
 ## v2.22.0 - 2026-11-16
 
 - **내부 정리:** v2.21.0에서 유일한 사용처(OpenAI 호환 JSON 생성기)가 삭제된 뒤 호출자가 없던 `pkg/internal/jsonutil`을 지웠습니다. internal 패키지라 공개 API 변경은 없습니다.
