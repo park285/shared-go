@@ -39,6 +39,7 @@ func TestBoundInitialConnectTimeout(t *testing.T) {
 	tests := []struct {
 		name       string
 		minConns   int32
+		minIdle    int32
 		current    time.Duration
 		pingBudget time.Duration
 		want       time.Duration
@@ -46,6 +47,9 @@ func TestBoundInitialConnectTimeout(t *testing.T) {
 		{name: "positive minimum derives budget", minConns: 1, pingBudget: 750 * time.Millisecond, want: 750 * time.Millisecond},
 		{name: "larger explicit timeout is bounded", minConns: 1, current: 5 * time.Second, pingBudget: time.Second, want: time.Second},
 		{name: "smaller explicit timeout is preserved", minConns: 1, current: 250 * time.Millisecond, pingBudget: time.Second, want: 250 * time.Millisecond},
+		{name: "positive idle minimum derives budget", minIdle: 1, pingBudget: 750 * time.Millisecond, want: 750 * time.Millisecond},
+		{name: "idle minimum bounds larger explicit timeout", minIdle: 1, current: 5 * time.Second, pingBudget: time.Second, want: time.Second},
+		{name: "idle minimum preserves smaller explicit timeout", minIdle: 1, current: 250 * time.Millisecond, pingBudget: time.Second, want: 250 * time.Millisecond},
 		{name: "zero minimum has no initial connect budget", current: 5 * time.Second, pingBudget: time.Second, want: 5 * time.Second},
 	}
 
@@ -56,6 +60,7 @@ func TestBoundInitialConnectTimeout(t *testing.T) {
 			cfg := mustParse(t, "postgres://u@127.0.0.1:5432/db?sslmode=disable")
 
 			cfg.MinConns = tc.minConns
+			cfg.MinIdleConns = tc.minIdle
 			cfg.ConnConfig.ConnectTimeout = tc.current
 			boundInitialConnectTimeout(cfg, tc.pingBudget)
 

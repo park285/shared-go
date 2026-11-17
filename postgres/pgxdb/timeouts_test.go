@@ -64,13 +64,17 @@ func TestStartupMinimumPoolBlackholeIsBounded(t *testing.T) {
 		workers.Wait()
 	}()
 
-	started := time.Now()
-	pool, err := OpenPoolDSN(t.Context(), "postgres://test@"+listener.Addr().String()+"/test?sslmode=disable&pool_min_conns=1&pool_max_conns=1&connect_timeout=30", Options{
-		Logger: quietLogger(), Ping: PingConfig{PingTimeout: 100 * time.Millisecond},
-	})
-	require.Error(t, err)
-	require.Nil(t, pool)
-	require.Less(t, time.Since(started), time.Second, "startup failure cleanup must not wait for the original connect timeout")
+	for _, minimum := range []string{"pool_min_conns", "pool_min_idle_conns"} {
+		t.Run(minimum, func(t *testing.T) {
+			started := time.Now()
+			pool, err := OpenPoolDSN(t.Context(), "postgres://test@"+listener.Addr().String()+"/test?sslmode=disable&"+minimum+"=1&pool_max_conns=2&connect_timeout=30", Options{
+				Logger: quietLogger(), Ping: PingConfig{PingTimeout: 100 * time.Millisecond},
+			})
+			require.Error(t, err)
+			require.Nil(t, pool)
+			require.Less(t, time.Since(started), time.Second, "startup failure cleanup must not wait for the original connect timeout")
+		})
+	}
 }
 
 type blackholeWriteConn struct {

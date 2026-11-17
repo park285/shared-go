@@ -224,10 +224,10 @@ func newPoolAndPing(ctx context.Context, poolCfg *pgxpool.Config, opts Options) 
 	return pool, nil
 }
 
-// pgx의 최소 연결 수 유지 작업은 시작 Ping보다 오래 실행될 수 있다.
+// pgx의 최소 전체·유휴 연결 수 유지 작업은 시작 Ping보다 오래 실행될 수 있다.
 // 제한은 재접속을 포함한 풀 수명 전체에 적용한다.
 func boundInitialConnectTimeout(poolCfg *pgxpool.Config, pingTimeout time.Duration) {
-	if poolCfg == nil || poolCfg.ConnConfig == nil || poolCfg.MinConns <= 0 || pingTimeout <= 0 {
+	if poolCfg == nil || poolCfg.ConnConfig == nil || max(poolCfg.MinConns, poolCfg.MinIdleConns) <= 0 || pingTimeout <= 0 {
 		return
 	}
 
