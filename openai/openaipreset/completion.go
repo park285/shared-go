@@ -54,7 +54,26 @@ func completionText(resp *responses.Response) string {
 		return text
 	}
 
-	text := strings.TrimSpace(resp.OutputText())
+	fallback := *resp
+
+	fallback.Output = nil
+
+	for index := range resp.Output {
+		item := &resp.Output[index]
+
+		if item.Type != "message" || item.Status != "" {
+			continue
+		}
+
+		text := messageContentText(item.Content)
+		if text == "" || LooksLikeToolCallEnvelope(text) {
+			continue
+		}
+
+		fallback.Output = append(fallback.Output, *item)
+	}
+
+	text := strings.TrimSpace(fallback.OutputText())
 	if LooksLikeToolCallEnvelope(text) {
 		return ""
 	}

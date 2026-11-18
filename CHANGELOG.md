@@ -3,6 +3,14 @@
 출시 항목은 실제 Git tag를 기준으로 작성하며 미출시 항목은 로컬 변경을 뜻합니다.
 기존 상세 기록은 보존하고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## v2.25.0 / postgres/v1.0.2 / openai/v1.0.1 - 2026-11-18
+
+- `httputil.ReadAllAndClose`와 `DrainAndClose`가 read·drain panic에서도 body를 정확히 한 번 닫고 원래 panic을 전파합니다. read·drain·close 오류의 원인은 함께 보존합니다.
+- 스택 내 호출자가 없는 `ReadAllAndCloseWithDrainLimit`를 비공개화합니다. 기본 close API와 close 소유권을 호출자가 유지하는 `ReadAllAndDrain`은 유지합니다.
+- 분리 모듈에 이관된 미사용 테스트 helper와 API 이름 존재 여부만 검사하던 reflection 시험을 제거합니다. 릴리스 스크립트는 ShellCheck가 source 파일의 위치를 해석하도록 경로를 명시합니다.
+- PostgreSQL SCRAM은 pgx의 Unicode 3.2 미할당 문자 원문 보존 규칙을 따릅니다. pool timeout의 두 설정 시험은 서로 다른 listener에서 실행합니다.
+- OpenAI 완료 텍스트 선택은 제외한 미완료 message를 fallback에서 다시 사용하지 않고, status 생략 응답의 집계와 tool envelope 제외 동작을 유지합니다. Fallback delta: 제외 대상의 재등장 제거.
+
 ## postgres/v1.0.1 - 2026-11-17
 
 - **`postgres/pgxdb` 시작 시간 제한:** `MinConns=0`이고 `MinIdleConns>0`인 풀도 백그라운드 연결 생성에 시작 Ping 예산을 적용합니다. DB가 응답하지 않을 때 실패 정리가 원래 연결 기한까지 지연되는 경로를 막고, 더 짧은 명시적 연결 기한은 보존합니다. Fallback delta: 없음.

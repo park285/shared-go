@@ -10,6 +10,11 @@ import (
 	sharedllm "github.com/park285/shared-go/v2/pkg/llm"
 )
 
+const (
+	testOutputMessageType = "message"
+	testOutputTextType    = "output_text"
+)
+
 func TestCompletionRole(t *testing.T) {
 	t.Parallel()
 
@@ -108,6 +113,73 @@ func TestCompletionFromResponseTextSelection(t *testing.T) {
 			got := openaipreset.CompletionFromResponse(&resp, "fallback")
 			if got.Text != tc.want {
 				t.Fatalf("Text = %q, want %q", got.Text, tc.want)
+			}
+		})
+	}
+}
+
+func TestCompletionDoesNotResurrectExcludedMessageStatus(t *testing.T) {
+	t.Parallel()
+
+	for _, status := range []string{"incomplete", "in_progress", "failed"} {
+		t.Run(status, func(t *testing.T) {
+			t.Parallel()
+
+			response := &responses.Response{Output: []responses.ResponseOutputItemUnion{{
+				Type: testOutputMessageType, Status: status, Content: []responses.ResponseOutputMessageContentUnion{{Type: testOutputTextType, Text: "partial"}},
+			}}}
+			if text := openaipreset.CompletionFromResponse(response, "").Text; text != "" {
+				t.Fatalf("excluded message text = %q, want empty", text)
+			}
+
+			response.Output = append(response.Output, responses.ResponseOutputItemUnion{
+				Type: testOutputMessageType, Status: "completed", Phase: "final_answer", Content: []responses.ResponseOutputMessageContentUnion{{Type: testOutputTextType, Text: "final"}},
+			})
+			if text := openaipreset.CompletionFromResponse(response, "").Text; text != "final" {
+				t.Fatalf("final message text = %q, want final", text)
+			}
+		})
+	}
+}
+
+func TestCompletionKeepsOmittedStatusTextAggregation(t *testing.T) {
+	t.Parallel()
+
+	response := &responses.Response{Output: []responses.ResponseOutputItemUnion{
+		{Type: testOutputMessageType, Content: []responses.ResponseOutputMessageContentUnion{{Type: testOutputTextType, Text: "first"}}},
+		{Type: testOutputMessageType, Content: []responses.ResponseOutputMessageContentUnion{{Type: testOutputTextType, Text: "second"}}},
+	}}
+	if text := openaipreset.CompletionFromResponse(response, "").Text; text != "firstsecond" {
+		t.Fatalf("omitted status text = %q, want firstsecond", text)
+	}
+}
+
+func TestCompletionFiltersToolEnvelopeBeforeAggregatingMessages(t *testing.T) {
+	t.Parallel()
+
+	const toolEnvelope = `{"tool_calls":[]}`
+
+	for _, test := range []struct {
+		name  string
+		texts []string
+	}{
+		{name: "tool before text", texts: []string{toolEnvelope, "first", "second"}},
+		{name: "tool between text", texts: []string{"first", toolEnvelope, "second"}},
+		{name: "tool after text", texts: []string{"first", "second", toolEnvelope}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			response := &responses.Response{}
+
+			for _, text := range test.texts {
+				response.Output = append(response.Output, responses.ResponseOutputItemUnion{
+					Type: testOutputMessageType, Content: []responses.ResponseOutputMessageContentUnion{{Type: testOutputTextType, Text: text}},
+				})
+			}
+
+			if text := openaipreset.CompletionFromResponse(response, "").Text; text != "firstsecond" {
+				t.Fatalf("message text = %q, want firstsecond", text)
 			}
 		})
 	}

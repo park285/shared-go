@@ -30,7 +30,7 @@ var postgresSASLprep = stringprep.Profile{
 
 // SCRAMVerifier는 PostgreSQL 18 기본 정책(4096회, 새 128-bit salt)의
 // SCRAM-SHA-256 verifier를 생성한다. 입력은 UTF-8 텍스트이며 DB 접속·역할 변경·로깅은 하지 않는다.
-// PostgreSQL/libpq SASLprep과 pgx 5.11 PRECIS의 준비 실패 시 원문 사용까지
+// PostgreSQL/libpq SASLprep과 pgx PRECIS의 준비 실패 시 원문 사용까지
 // 반영한 바이트가 다르거나 빈 값·NUL·잘못된 UTF-8이면 안전한 오류로 거부한다.
 // 호출자는 성공한 뒤에만 역할을 변경하고 반환한 verifier도 자격증명으로 보호해야 한다.
 func SCRAMVerifier(password string) (string, error) {
@@ -79,10 +79,7 @@ func compatibleSCRAMPassword(password string) (string, error) {
 
 	postgresPassword := postgresSCRAMPassword(password)
 
-	pgxPassword, err := precis.OpaqueString.String(password)
-	if err != nil {
-		pgxPassword = password
-	}
+	pgxPassword := pgxSCRAMPassword(password)
 
 	if postgresPassword != pgxPassword {
 		return "", errors.New("pgxdb: password is not compatible with PostgreSQL clients")
@@ -114,4 +111,19 @@ func postgresSCRAMPassword(password string) string {
 	}
 
 	return postgresNFKC(mapped)
+}
+
+func pgxSCRAMPassword(password string) string {
+	for _, r := range password {
+		if stringprep.TableA1.Contains(r) {
+			return password
+		}
+	}
+
+	normalized, err := precis.OpaqueString.String(password)
+	if err != nil {
+		return password
+	}
+
+	return normalized
 }
