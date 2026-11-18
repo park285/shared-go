@@ -101,13 +101,10 @@ func fetchURL(parent context.Context, rawURL string, headers map[string]string, 
 		req.Header.Set(name, value)
 	}
 
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:bodyclose // readCappedBody가 고정된 httputil close 소유자에 넘겨 일반 반환과 panic에서 한 번만 닫는다.
 	if err != nil {
 		return nil, fmt.Errorf("request %s: %w", rawURL, err)
 	}
-
-	// 실제 close는 readCappedBody가 수행하며, 이 defer는 중복 호출에 안전한 backstop이다.
-	defer func() { _ = resp.Body.Close() }()
 
 	body, err := readCappedBody(resp.Body, opts.MaxBodyBytes)
 	if err != nil {

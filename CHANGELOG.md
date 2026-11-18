@@ -3,6 +3,10 @@
 출시 항목은 실제 Git tag를 기준으로 작성하며 미출시 항목은 로컬 변경을 뜻합니다.
 기존 상세 기록은 보존하고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## transport/v1.0.1 - 2026-11-18
+
+- 루트 `v2.25.0`의 `httputil.ReadAllAndClose`가 healthprobe body 정리를 단독 소유합니다. 성공·실패·panic에서 body를 한 번만 닫으며 중복 backstop과 별도 정리 구현은 두지 않습니다. body 상한과 오류 분류는 유지합니다. Fallback delta: 없음.
+
 ## v2.25.0 / postgres/v1.0.2 / openai/v1.0.1 - 2026-11-18
 
 - `httputil.ReadAllAndClose`와 `DrainAndClose`가 read·drain panic에서도 body를 정확히 한 번 닫고 원래 panic을 전파합니다. read·drain·close 오류의 원인은 함께 보존합니다.
