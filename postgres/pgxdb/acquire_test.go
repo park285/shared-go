@@ -37,7 +37,6 @@ func TestAcquirePolicyValidation(t *testing.T) {
 		})
 	}
 
-	// DSN 검증은 0인 덮어쓰기 필드가 아닌 유효 최대값을 사용하며 접속 시도 전에 거부한다.
 	for _, opts := range []Options{
 		{Ping: testPing(), AcquirePolicy: &AcquirePolicy{ReservedConns: 1, Timeout: time.Second}},
 		{Ping: testPing(), Pool: PoolConfig{MaxConns: 1}, AcquirePolicy: &AcquirePolicy{ReservedConns: 1, Timeout: time.Second}},

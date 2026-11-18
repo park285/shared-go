@@ -3,6 +3,13 @@
 출시 항목은 실제 Git tag를 기준으로 작성하며 미출시 항목은 로컬 변경을 뜻합니다.
 기존 상세 기록은 보존하고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## 미출시
+
+- **주석 금지:** 기계 지시문을 뺀 Go·shell·Python 주석과 doc 주석을 지웠습니다. shell heredoc으로 실행하는 Python 본문도 같은 검사를 받으며, 파일별 MIT 머리글은 지우고 라이선스 고지는 루트 `LICENSE`가 유지합니다. 새 `scripts/ci/pre-push-gate.sh`와 `scripts/ci/release-gate.sh`가 `bash scripts/ci/verify-tools.sh scan`과 `formal`을 실행합니다.
+- **형식 검증:** `verification/tla/InboxClaim/`이 inbox claim·lease·완료를, `verification/lean/BoundedQueue/`가 bounded queue 연산을 증명하며 같은 명세를 `bounded_queue_trace_fuzz_test.go`가 구현에 대어 봅니다.
+- **테스트:** 실제 시간을 기다리던 `time.Sleep` 9곳을 synctest·잠금 관측 동기화로 바꾸고 `httputil` body 상한 fuzz 대상을 추가했습니다.
+- 결정 기록 목록을 폐기했습니다. 과거 결정은 Git 이력에서 확인할 수 있습니다.
+
 ## transport/v1.0.1 - 2026-11-18
 
 - 루트 `v2.25.0`의 `httputil.ReadAllAndClose`가 healthprobe body 정리를 단독 소유합니다. 성공·실패·panic에서 body를 한 번만 닫으며 중복 backstop과 별도 정리 구현은 두지 않습니다. body 상한과 오류 분류는 유지합니다. Fallback delta: 없음.

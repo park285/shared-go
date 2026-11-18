@@ -5,7 +5,6 @@ import (
 	"testing"
 )
 
-// UnsetEnvOnCleanup은 테스트 종료 시 지정한 환경 변수를 지운다.
 func UnsetEnvOnCleanup(tb testing.TB, key string) {
 	tb.Helper()
 

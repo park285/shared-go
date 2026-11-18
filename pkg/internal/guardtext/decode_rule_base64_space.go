@@ -48,9 +48,6 @@ func joinsSplitBase64Token(input string, index int) bool {
 		return false
 	}
 
-	// 왼쪽 길이가 4의 배수면 그 공백은 정상 토큰 경계다(양쪽이 각자 온전한 base64).
-	// 그런 분할은 기존 2조각 조합 경로가 이미 잡으므로, 여기서 합치면 그 탐지만 잃는다.
-	// 이 규칙이 메우는 구멍은 4자 그룹 정렬을 깨뜨려 어느 쪽도 단독 해독되지 않는 분할이다.
 	if (index-leftStart)%4 == 0 {
 		return false
 	}

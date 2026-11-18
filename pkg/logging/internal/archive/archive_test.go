@@ -156,7 +156,6 @@ func TestMoveAndPrune_DefersCompressedBackupUntilOriginalRemoved(t *testing.T) {
 		t.Fatalf("write original: %v", err)
 	}
 
-	// 원본이 남은 .gz는 옮기지 않으므로 archive 보존 개수 계산에도 들어가지 않는다.
 	if err := MoveAndPrune(logPath, 1, 0); err != nil {
 		t.Fatalf("MoveAndPrune() with original error = %v", err)
 	}
@@ -183,7 +182,6 @@ func TestMoveAndPrune_DefersCompressedBackupUntilOriginalRemoved(t *testing.T) {
 }
 
 func TestMoveAndPrune_ReturnsDirectoryReadErrors(t *testing.T) {
-	// readDirFn은 패키지 전역이므로 하위 테스트를 병렬 실행하지 않는다.
 	for _, directory := range []string{"source", "archive"} {
 		t.Run(directory, func(t *testing.T) {
 			logDir := t.TempDir()
@@ -717,7 +715,6 @@ func archiveEntryNames(t *testing.T, archiveDir string) []string {
 	return names
 }
 
-// afterArchiveEnumeration은 패키지 전역 함수를 교체하므로 호출자는 병렬 실행하지 않는다.
 func afterArchiveEnumeration(t *testing.T, archiveDir string, mutate func()) {
 	t.Helper()
 	t.Cleanup(setReadDirFn(func(dir string) ([]os.DirEntry, error) {

@@ -144,7 +144,6 @@ func newPrivacyMapRecord() slog.Record {
 	return r
 }
 
-// slog.Record는 attr 5개까지 inline이라 그 이하에서는 재구축 비용이 alloc으로 드러나지 않는다.
 func newWideRecord(privacy bool) slog.Record {
 	idKey := testVideoID
 

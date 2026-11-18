@@ -142,7 +142,6 @@ func FuzzMarkdownEscapedLiteral(f *testing.F) {
 		}
 
 		escaped := EscapeMarkdown(input)
-		// EscapeMarkdown은 코드 구간 밖에 삽입하는 계약이므로 들여쓰기 코드 문서는 제외한다.
 		for _, code := range CodeRanges(escaped) {
 			if code.Block {
 				t.Skip()

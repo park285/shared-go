@@ -2,7 +2,6 @@ package lifecycle
 
 import "sync"
 
-// 값으로 복사해도 같은 once를 공유한다.
 type cleanupCloser struct {
 	cleanup func()
 }

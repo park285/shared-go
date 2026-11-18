@@ -76,7 +76,6 @@ func TestSplitTextSegmentsDistinguishesDialogueFromFlatConfig(t *testing.T) {
 	}
 }
 
-// 수정 전에는 jamo.ComposeHangeul이 길이 1 슬라이스에서 combineHangulSyllables를 호출하여 jamos[i+1] index OOB panic을 일으킨다.
 func TestNormalizeViewsSingleJamoPanic(t *testing.T) {
 	t.Parallel()
 
@@ -96,7 +95,6 @@ func TestNormalizeViewsSingleJamoPanic(t *testing.T) {
 
 			var views guardtext.Views
 
-			// panic이 발생하면 recover()가 잡아 테스트 실패로 보고한다.
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
@@ -111,7 +109,6 @@ func TestNormalizeViewsSingleJamoPanic(t *testing.T) {
 				return
 			}
 
-			// 정상 경로: 결과가 빈 문자열이 아니거나 입력과 비교 가능한 형태여야 한다.
 			if views.Raw == "" && tc.input != "" {
 				t.Errorf("normalizeViews(%q).Raw is empty, want non-empty", tc.input)
 			}

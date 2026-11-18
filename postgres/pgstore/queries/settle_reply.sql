@@ -1,7 +1,3 @@
--- 더 보낼 것이 없는 상태는 payload와 room을 지우고, 결과 미상은 같은 clientRequestId로 다시
--- 보내야 하므로 둘 다 보존한다.
--- 전진한 시도는 재시도 예산을 쓰지 않는다. $10이 그 판정이고, 이유는 irisdurable.ReplyOutcome의
--- Progressed 주석이 적는다.
 UPDATE iris_reply_outbox AS outbox
 SET status = $6,
     client_request_id = COALESCE(NULLIF($7, ''), outbox.client_request_id),

@@ -18,17 +18,14 @@ import (
 )
 
 const (
-	// Overlay(Tailscale) MTU에서 fragmentation 없이 통과하는 보수값.
 	initialPacketSize = 1200
 
 	serverKeepAlivePeriod = 10 * time.Second
 	serverMaxIdleTimeout  = 60 * time.Second
 
-	// 죽은 피어에 묶이지 않도록 quic-go 기본(5s)보다 약간 관대한 핸드셰이크 상한.
 	clientHandshakeIdleTimeout = 10 * time.Second
 )
 
-// NewServer는 인증서 쌍을 읽어 HTTP/3 서버를 구성하며 실행과 종료는 호출자가 소유한다.
 func NewServer(addr string, handler http.Handler, certFile, keyFile string) (*http3.Server, error) {
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
@@ -41,8 +38,6 @@ func NewServer(addr string, handler http.Handler, certFile, keyFile string) (*ht
 	}), nil
 }
 
-// NewServerWithTLSConfig는 지정된 TLS 설정으로 HTTP/3 서버를 구성한다.
-// 서버의 실행과 종료 및 동적 인증서 갱신의 수명은 호출자가 소유한다.
 func NewServerWithTLSConfig(addr string, handler http.Handler, tlsConfig *tls.Config) *http3.Server {
 	if handler == nil {
 		handler = http.NotFoundHandler()
@@ -65,19 +60,14 @@ func newServerQUICConfig() *quic.Config {
 	}
 }
 
-// ClientOptions는 TLS 신뢰 설정과 선택적인 접속 주소 검사를 지정한다.
 type ClientOptions struct {
 	CACertFile     string
 	ClientCertFile string
 	ClientKeyFile  string
-	// SAN에 없는 주소(127.0.0.1, 컨테이너 network DNS)로 접속할 때 SAN에 있는 이름으로 검증한다.
-	ServerName string
-	// DialGuard는 설정된 경우 실제 접속에 선택된 IP를 검사한다. nil이면 주소 정책을 적용하지 않는다.
-	DialGuard func(net.IP) error
+	ServerName     string
+	DialGuard      func(net.IP) error
 }
 
-// NewClient는 HTTP/3 클라이언트와 호출자가 실행할 종료 함수를 반환한다.
-// DialGuard를 지정하지 않으면 사설망을 포함한 대상 주소를 제한하지 않는다.
 func NewClient(timeout time.Duration, opts ClientOptions) (*http.Client, func(), error) {
 	tlsConfig := &tls.Config{
 		MinVersion: tls.VersionTLS13,
@@ -132,9 +122,6 @@ func newGuardedDialer(guard func(net.IP) error) func(ctx context.Context, addr s
 			return nil, fmt.Errorf("h3: split dial addr %s: %w", addr, err)
 		}
 
-		// net.ResolveUDPAddr는 ctx를 받지 않는다. transport.Close()는 mutex를 쥔 채
-		// dial 취소를 기다리므로, 이름 해석이 ctx를 무시하면 종료와 그 client의 다른
-		// 요청이 resolver 타임아웃 전부를 함께 기다린다.
 		addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
 		if err != nil {
 			return nil, fmt.Errorf("h3: resolve dial addr %s: %w", addr, err)
@@ -146,8 +133,6 @@ func newGuardedDialer(guard func(net.IP) error) func(ctx context.Context, addr s
 
 		chosen := preferIPv4(addrs)
 
-		// net.IP의 판별 메서드는 nil/unspecified에서 전부 false라, 올바른 guard도
-		// 이 주소를 허용한다. guard에 넘기기 전에 거른다.
 		if len(chosen.IP) == 0 || chosen.IP.IsUnspecified() {
 			return nil, fmt.Errorf("h3: reject dial addr %s: unusable destination address", addr)
 		}
@@ -165,9 +150,6 @@ func newGuardedDialer(guard func(net.IP) error) func(ctx context.Context, addr s
 	}
 }
 
-// net.ResolveUDPAddr는 호스트명에 대해 addrList.first(isIPv4)로 IPv4를 우선 선택했다.
-// LookupIPAddr은 그 필터도 RFC 6724 정렬도 적용하지 않으므로, 여기서 복원하지 않으면
-// IPv6 egress가 없는 배포에서 AAAA를 골라 handshake 상한까지 매달린다.
 func preferIPv4(addrs []net.IPAddr) net.IPAddr {
 	for _, candidate := range addrs {
 		if candidate.IP.To4() != nil {
@@ -195,7 +177,6 @@ func newClientQUICConfig() *quic.Config {
 	}
 }
 
-// 인증서 외 블록, 손상된 블록, 앞뒤의 비공백 데이터는 모두 거부한다.
 func loadRootCAs(path string) (*x509.CertPool, error) {
 	pemBytes, err := os.ReadFile(path) //nolint:gosec // 운영자가 지정하는 CA 경로
 	if err != nil {

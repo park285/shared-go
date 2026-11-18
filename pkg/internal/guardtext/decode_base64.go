@@ -46,9 +46,6 @@ func base64SpansAtLeast(input string, minimum int) []encodedSpan {
 			seenValues[match.value] = struct{}{}
 		}
 
-		// 판정을 마친(디코드 불가·비가독) 스팬의 기각은 예산 소진이 아니라 완결이다:
-		// 소비 단계에서도 동일하게 버려질 스팬을 목록에 남기면 scan 예산만 태워
-		// 무해한 해시·숫자열 장문이 decode_incomplete로 오차단된다.
 		scratch = growBase64Scratch(scratch, match.value)
 
 		decoded, err := decodeBase64CandidateInto(scratch, match.value)
@@ -63,8 +60,6 @@ func base64SpansAtLeast(input string, minimum int) []encodedSpan {
 	return spans
 }
 
-// RawStdEncoding.DecodedLen이 네 후보 인코딩 중 항상 최대라 이 크기면 Decode가
-// 목적지 부족으로 넘치지 않는다. 스팬마다 재사용하므로 열거 1회당 할당도 1회다.
 func growBase64Scratch(scratch []byte, encoded string) []byte {
 	needed := base64.RawStdEncoding.DecodedLen(len(encoded))
 	if cap(scratch) >= needed {
@@ -241,8 +236,6 @@ var (
 	errBase64Number         = errors.New("base64 decode: number token")
 )
 
-// 이런 값은 근거를 더하지 못하고 원문 단어를 지워 규칙 간격만 좁힌다. 숫자만인 Base64는 3바이트마다 첫 바이트가 0xD0 이상이라 ASCII 글자·공백을 만들지 못하고, 결합 문자로 풀리면 주변 문맥까지
-// 다시 해석하게 만든다. 인코딩한 구분자(IA==, Cg==, LQ==)는 대문자·패딩을 포함하므로 그대로 해석한다.
 func base64Reading(input string, decoded []byte) ([]byte, error) {
 	if strings.TrimLeft(input, "0123456789") == "" {
 		return nil, errBase64Number
@@ -314,10 +307,6 @@ func decodeBase64CandidateInto(destination []byte, input string) ([]byte, error)
 	return nil, lastErr
 }
 
-// base64UnreadablePrefix는 같은 시작점의 Base64 스팬들이 공유하는 디코딩 접두를 4자 그룹 단위로 풀어
-// 잘못된 UTF-8이 확정되는 바이트 길이를 반환한다(없으면 0). 스팬의 완전한 그룹이 이 길이 이상을
-// 덮으면 실제 디코딩 결과도 같은 접두를 가지므로 IsReadableText가 거짓이다. 시작점마다 한 번만
-// 풀고, 처음 보는 그룹 접두일 때만 실제로 푼 문자 수만큼 과금하며, 예산이 없으면 false다.
 func base64UnreadablePrefix(input string, work *protectedDecodeWork, status *DecodeStatus) (int, bool) {
 	if len(input) < 4 {
 		return 0, true
@@ -365,9 +354,6 @@ func base64UnreadablePrefix(input string, work *protectedDecodeWork, status *Dec
 	return unreadable, true
 }
 
-// seenBase64Prefix는 이 요청에서 같은 그룹 접두를 이미 풀어 과금했는지 돌려준다. 판독 결과는 푼 그룹 접두만으로
-// 정해지므로, 행마다 숫자만 다른 식별자(value-000016)의 창도 판독 불가가 확정된 앞 그룹이 같으면 다시 과금하지
-// 않는다. 조회는 푼 접두 하나만 하므로 창 길이에 비례하는 비용만 든다.
 func (work *protectedDecodeWork) seenBase64Prefix(prefix string) bool {
 	if work == nil || work.base64PrefixMemo == nil {
 		return false
@@ -384,7 +370,6 @@ func (work *protectedDecodeWork) rememberBase64Prefix(prefix string) {
 	}
 }
 
-// 패딩은 마지막 그룹에만 오므로 그 앞까지가 공통 접두다.
 func base64AlphabetEnd(input string, whole encodedSpan) int {
 	end := whole.end
 	for end > whole.start && input[end-1] == '=' {
@@ -398,9 +383,6 @@ func base64PrefixExcludes(unreadable, alphabetLen int) bool {
 	return unreadable > 0 && 3*(alphabetLen/4) >= unreadable
 }
 
-// base64UnexcludedEnd는 start에서 시작하는 스팬 가운데 base64PrefixExcludes가 제외하지 않는 가장 큰 끝이다. 제외는
-// 덮는 알파벳 길이가 4*ceil(unreadable/3) 이상일 때이고 길이에 단조이므로, 끝을 줄여 가는 루프는 이 값부터 돌아도
-// 같은 스팬을 본다. 긴 판독 불가 토큰에서 제외될 끝을 하나씩 건너뛰는 제곱 비용을 없앤다.
 func base64UnexcludedEnd(unreadable, start, alphabetEnd int) int {
 	covering := 4 * ((unreadable + 2) / 3)
 	if unreadable <= 0 || alphabetEnd-start < covering {
@@ -410,7 +392,6 @@ func base64UnexcludedEnd(unreadable, start, alphabetEnd int) int {
 	return start + covering - 1
 }
 
-// 두 알파벳이 섞인 스팬은 실제 디코딩이 실패하므로 판독 불가 판정에 영향을 주지 않는다.
 func base64Digit(char byte) (uint32, bool) {
 	switch {
 	case char >= 'A' && char <= 'Z':
@@ -468,7 +449,6 @@ func IsReadableText(data []byte) bool {
 	return total > 0 && printable*100 > total*90
 }
 
-// IsReadableText와 판정이 같되 []byte 변환 복사를 피한다.
 func IsReadableString(data string) bool {
 	if data == "" {
 		return false
@@ -576,7 +556,6 @@ func decodeProtectedBase64Span(
 		return "", false
 	}
 
-	// 시도 예산을 실제로 사용한 변환만 저장하므로 메모 크기도 같은 예산에 묶인다.
 	if charge == chargePerAttempt && memo != nil {
 		defer func() { memo[value] = decodedText }()
 	}

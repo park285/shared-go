@@ -2,8 +2,6 @@ package kakaoformat
 
 import "strings"
 
-// EscapeMarkdown은 평문이 Markdown 구문으로 해석되지 않도록 문장 부호를 이스케이프한다.
-// 코드 구간 밖에 삽입하는 표시용 텍스트에 적용하며 원문은 변경하지 않는다.
 func EscapeMarkdown(input string) string {
 	var output strings.Builder
 
@@ -46,8 +44,6 @@ func needsMarkdownEscape(input string, index int, char rune, lineBlank, digits b
 		(index+1 == len(input) || input[index+1] == ' ' || input[index+1] == '\t')
 }
 
-// TransformEscapes는 Markdown 이스케이프 한 개마다 해제한 문자를 transform에 전달한다.
-// 호출자는 코드·주소를 먼저 보호하고 반환값으로 후속 서식 처리에서 문자를 보호할 수 있다.
 func TransformEscapes(input string, transform func(string) string) string {
 	var output strings.Builder
 

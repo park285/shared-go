@@ -11,7 +11,6 @@ import (
 	"time"
 )
 
-// RuntimeKind는 worker implementation runtime label이다.
 type RuntimeKind string
 
 const (
@@ -19,7 +18,6 @@ const (
 	RuntimeRust RuntimeKind = "rust"
 )
 
-// QueueBackend는 canonical queue backend label이다.
 type QueueBackend string
 
 const (
@@ -29,7 +27,6 @@ const (
 	QueueValkey   QueueBackend = "valkey"
 )
 
-// QueueScope는 central aggregation semantics를 고정한다.
 type QueueScope string
 
 const (
@@ -37,14 +34,12 @@ const (
 	QueueScopeShared  QueueScope = "shared"
 )
 
-// ExecutorSnapshot은 process-local executor의 non-blocking snapshot이다.
 type ExecutorSnapshot struct {
 	RunningWorkers      int64
 	InFlight            int64
 	OldestInFlightAgeMS int64
 }
 
-// Registration은 profile worker 하나와 실제 implementation adapter를 연결한다.
 type Registration struct {
 	WorkerID                string
 	Runtime                 RuntimeKind
@@ -58,7 +53,6 @@ type Registration struct {
 	TotalsSnapshot          func() WorkerTotals
 }
 
-// Registry는 process-local worker registration과 diagnostics를 소유한다.
 type Registry struct {
 	mu            sync.RWMutex
 	loaded        LoadedProfile
@@ -68,7 +62,6 @@ type Registry struct {
 	runtime       RuntimeKind
 }
 
-// NewRegistry는 검증된 profile을 기반으로 빈 instance-owned registry를 만든다.
 func NewRegistry(loaded LoadedProfile, checker *ProfileFileChecker) *Registry {
 	return &Registry{
 		loaded:        loaded,
@@ -149,7 +142,6 @@ func validateRegistrationMetadata(registration Registration) error {
 	return nil
 }
 
-// Seal은 exact worker set과 single-runtime identity를 검증한다.
 func (r *Registry) Seal() error {
 	if r == nil {
 		return errors.New("workercontract: worker registry: nil registry")
@@ -190,7 +182,6 @@ func (r *Registry) Seal() error {
 	return nil
 }
 
-// Diagnostics는 queue I/O 없이 current registry envelope를 만든다.
 func (r *Registry) Diagnostics(observedAt time.Time) (DiagnosticsEnvelope, error) {
 	if r == nil {
 		return DiagnosticsEnvelope{}, errors.New("workercontract: worker registry: nil registry")
@@ -329,7 +320,6 @@ func validQueueSnapshot(snapshot QueueSnapshot) bool {
 	}
 }
 
-// Handler는 sealed registry의 access-control-neutral HTTP handler를 반환한다.
 func (r *Registry) Handler() http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		envelope, err := r.Diagnostics(time.Now())

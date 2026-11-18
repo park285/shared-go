@@ -14,10 +14,8 @@ import (
 	"time"
 )
 
-// DefaultCertificateReloadInterval은 인증서 파일의 기본 갱신 확인 간격이다.
 const DefaultCertificateReloadInterval = 30 * time.Second
 
-// CertificateReloaderOptions는 갱신 확인 간격과 실패 진단 로거를 지정한다.
 type CertificateReloaderOptions struct {
 	ReloadInterval time.Duration
 	Logger         *slog.Logger
@@ -33,8 +31,6 @@ type certificateSnapshot struct {
 	fingerprint certificateFingerprint
 }
 
-// CertificateReloader는 TLS 인증서 쌍의 검증된 snapshot을 원자적으로 제공한다.
-// 갱신 실패 시 마지막 검증 성공 snapshot을 유지하고 동일 오류 진단은 중복 기록하지 않는다.
 type CertificateReloader struct {
 	certFile string
 	keyFile  string
@@ -48,8 +44,6 @@ type CertificateReloader struct {
 	lastError string
 }
 
-// NewCertificateReloader는 초기 인증서 쌍을 검증하고 불변 snapshot을 준비한다.
-// 인증서 쌍 파싱은 SAN, 신뢰 체인 또는 유효 수명 전체를 검증하지 않는다.
 func NewCertificateReloader(certFile, keyFile string, opts CertificateReloaderOptions) (*CertificateReloader, error) {
 	interval := opts.ReloadInterval
 	if interval <= 0 {
@@ -73,7 +67,6 @@ func NewCertificateReloader(certFile, keyFile string, opts CertificateReloaderOp
 	return r, nil
 }
 
-// Run은 취소될 때까지 인증서 갱신을 확인한다. 호출자가 goroutine의 join과 panic 처리를 소유한다.
 func (r *CertificateReloader) Run(ctx context.Context) {
 	if r == nil || ctx == nil {
 		return
@@ -91,8 +84,6 @@ func (r *CertificateReloader) Run(ctx context.Context) {
 	}
 }
 
-// GetCertificate는 갱신을 확인하고 마지막 검증 성공 snapshot을 반환한다.
-// 반환 인증서는 동시 handshake가 공유하므로 호출자가 변경하면 안 된다.
 func (r *CertificateReloader) GetCertificate(_ *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	if r == nil {
 		return nil, errors.New("h3: load certificate: nil reloader")

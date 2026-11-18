@@ -147,7 +147,6 @@ func (g *Guard) blockingOverflowSegments(raw Evaluation, scored, overflow []text
 		}
 	}
 
-	// 원문은 이미 규칙별 근거로 집계되어 있으므로 후보 최소화가 원문 크기만큼 재검사하지 않는다.
 	witnesses := make([]textSegment, start)
 	copy(witnesses, overflow[:start])
 
@@ -185,7 +184,6 @@ func (g *Guard) decodedCandidateMayContribute(candidate string) bool {
 	for i := range g.packs {
 		for j := range g.packs[i].Rules {
 			rule := &g.packs[i].Rules[j]
-			// 리터럴 없는 사용자 규칙은 이 사전 필터로 무해함을 증명할 수 없다.
 			if len(rule.RequiredLiteralGroups) == 0 {
 				return true
 			}

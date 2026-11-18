@@ -13,8 +13,6 @@ import (
 	"github.com/park285/shared-go/v2/pkg/irisdurable"
 )
 
-// StagedReply는 StageRow가 돌려주는, stage 직후의 저장된 행이다. Outcome이
-// ReplyOrdinalSuperseded면 행이 없으므로 나머지 항목은 0값이다.
 type StagedReply struct {
 	irisdurable.ReplyIdentity
 
@@ -27,17 +25,12 @@ type StagedReply struct {
 	Attempts        int
 }
 
-// Stage는 응답을 outbox에 멱등하게 기록한다. 같은 식별자에 다른 payload가 오면 저장본을 유지하고
-// ReplyPayloadDiverged를 반환한다.
 func (s *Store) Stage(ctx context.Context, record irisdurable.ReplyRecord) (irisdurable.ReplyStageOutcome, error) {
 	staged, err := s.StageRow(ctx, record)
 
 	return staged.Outcome, err
 }
 
-// 발송 여부를 저장본의 상태와 시도 횟수로 판단하는 호출자가 Stage 뒤에 Inspect를 한 번 더 하지 않게 한다. 같은 (scope, message_id, phase)의 stage는 advisory
-// transaction lock으로 직렬화한다. 잠금과 삽입은 반드시 서로 다른 문이어야 한다. 후속 ordinal 가드는 스냅샷 읽기인데 READ COMMITTED의 문 스냅샷은 잠금을 얻기 전에 잡히므로, 한
-// 문에 담으면 대기가 풀려도 방금 commit된 후속 행을 보지 못한다. 그래서 Querier가 이미 트랜잭션이 아니면 여기서 트랜잭션을 연다.
 func (s *Store) StageRow(ctx context.Context, record irisdurable.ReplyRecord) (StagedReply, error) {
 	if record.MessageID == "" || record.Phase == "" || record.RoomID == "" || record.ClientRequestID == "" {
 		return StagedReply{}, errors.New("pgstore: reply record requires messageID, phase, roomID and clientRequestID")
@@ -67,7 +60,6 @@ func (s *Store) StageRow(ctx context.Context, record irisdurable.ReplyRecord) (S
 	return staged, nil
 }
 
-// stageRow는 이미 열린 트랜잭션 안에서 순번열을 잠그고 stage한다.
 func (s *Store) stageRow(ctx context.Context, db Querier, record irisdurable.ReplyRecord) (StagedReply, error) {
 	if _, err := db.Exec(ctx, lockReplySequenceSQL, s.opts.Scope, record.MessageID, record.Phase); err != nil {
 		return StagedReply{}, fmt.Errorf("pgstore: lock reply sequence %s/%s: %w", record.MessageID, record.Phase, err)
@@ -90,7 +82,6 @@ func (s *Store) stageRow(ctx context.Context, db Querier, record irisdurable.Rep
 
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		// 삽입도 조회도 행을 내지 않는 유일한 경우는 후속 ordinal 가드가 새 행을 막은 것이다.
 		staged.Outcome = irisdurable.ReplyOrdinalSuperseded
 
 		return staged, nil
@@ -120,8 +111,6 @@ func (s *Store) stageRow(ctx context.Context, db Querier, record irisdurable.Rep
 	return staged, nil
 }
 
-// 종단, 활성 lease, MaxAttempts 또는 AutomaticReplayHorizon 경계로 발송이 금지되면 irisdurable.ErrReplyNotClaimable을, 행이 없으면
-// ErrNotFound를 반환한다.
 func (s *Store) BeginAttempt(ctx context.Context, identity irisdurable.ReplyIdentity) (irisdurable.ReplyAttempt, error) {
 	if err := s.requirePolicy("begin reply attempt", true, true, true); err != nil {
 		return irisdurable.ReplyAttempt{}, err
@@ -160,7 +149,6 @@ func (s *Store) BeginAttempt(ctx context.Context, identity irisdurable.ReplyIden
 	return irisdurable.ReplyAttempt{}, fmt.Errorf("pgstore: begin reply attempt %s/%s/%d: %w", identity.MessageID, identity.Phase, identity.Ordinal, irisdurable.ErrReplyNotClaimable)
 }
 
-// 시도 결과가 아닌 pending·submitting과, 사람이 판정할 사유가 필요한 manual_review는 Settle 결과로 받지 않는다.
 var settleableStatuses = map[irisdurable.ReplyStatus]bool{
 	irisdurable.ReplyStatusAccepted:             true,
 	irisdurable.ReplyStatusRetryablePreDispatch: true,
@@ -169,7 +157,6 @@ var settleableStatuses = map[irisdurable.ReplyStatus]bool{
 	irisdurable.ReplyStatusPermanentConflict:    true,
 }
 
-// Settle은 같은 ClaimToken을 쥔 시도만 상태를 바꾼다.
 func (s *Store) Settle(ctx context.Context, attempt irisdurable.ReplyAttempt, outcome irisdurable.ReplyOutcome) error {
 	if attempt.ClaimToken == "" {
 		return errors.New("pgstore: settle requires a claim token")
@@ -211,8 +198,6 @@ func (s *Store) Inspect(ctx context.Context, identity irisdurable.ReplyIdentity)
 	return state, nil
 }
 
-// BackoffFor는 attempt번째 시도 뒤 다음 시도까지의 대기 시간이다. 호출자가 ReplyOutcome.RetryAfter에
-// 그대로 넘겨 재시도 간격을 저장소 정책과 한 곳에서 맞출 수 있다. BackoffBase·BackoffMax가 없으면 오류다.
 func (s *Store) BackoffFor(attempt int) (time.Duration, error) {
 	if s.opts.BackoffBase <= 0 {
 		return 0, errors.New("pgstore: backoff requires Options.BackoffBase and BackoffMax")

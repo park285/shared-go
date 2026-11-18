@@ -1,7 +1,5 @@
 package guardtext
 
-// ruleDecodeProof는 입력의 모든 해석이 규칙에 무관함을 증명하는 순수 콜백이다.
-// 실패하거나 적용할 수 없으면 기존 디코딩을 그대로 수행한다.
 type ruleDecodeProof struct {
 	inputCannotContribute func(string) bool
 	work                  *protectedDecodeWork
@@ -12,7 +10,6 @@ func (proof ruleDecodeProof) excludes(input, normalized string) bool {
 		(normalized == "" || proof.inputCannotContribute(normalized))
 }
 
-// HasPotentialRuleDecodeSurface는 rule decode가 필요한 변환 문법의 존재 여부를 빠르게 판정한다.
 func HasPotentialRuleDecodeSurface(input string) bool {
 	potential, needsNormalization := ruleDecodePreflight(input)
 	if potential {
@@ -29,8 +26,6 @@ func HasPotentialRuleDecodeSurface(input string) bool {
 	return changed
 }
 
-// DecodeCandidatesWithContextForRules는 규칙에 영향을 줄 표준 변환과 짧은 Base64·hex 조각을 확장한다.
-// 모든 경로에 기존 디코딩 한도를 적용하고 실패 상태를 보존한다.
 func DecodeCandidatesWithContextForRules(input string, mayContribute func(string) bool) DecodeResult {
 	if mayContribute == nil {
 		return DecodeCandidatesWithContext(input)
@@ -46,8 +41,6 @@ func DecodeCandidatesWithContextForRules(input string, mayContribute func(string
 	return mergeSplitBase64Readings(result, decodeCandidatesForRules(joined, mayContribute))
 }
 
-// 공백 정규화본은 원본을 대체하지 않고 두 번째 읽기로 더한다. 대체하면 " "로 나뉜 두 토큰이
-// 하나로 합쳐져, 각각을 독립 조각으로 조합해 구를 만드는 기존 탐지가 사라진다.
 func mergeSplitBase64Readings(original, joined DecodeResult) DecodeResult {
 	if len(joined.Candidates) == 0 {
 		mergeDecodeStatus(&original.Status, joined.Status)
@@ -56,8 +49,6 @@ func mergeSplitBase64Readings(original, joined DecodeResult) DecodeResult {
 	}
 
 	merged := mergeSemanticCandidates(joined.Candidates, original)
-	// 원본의 fail-closed는 split 토큰을 못 읽어서 선 것이다. 결합 읽기가 그 토큰을 끝까지
-	// 해독했다면 미탐색 표면이 남지 않으므로 결합 읽기의 상태를 따른다.
 	if joined.Complete() {
 		merged.Status = joined.Status
 	}
@@ -175,10 +166,6 @@ func decodeForRuleOwner[T any](
 	return mergeSemanticCandidates(semantic.candidates, decoded)
 }
 
-// DecodeCandidatesWithContextForRuleOwnerAndBlockWitness는 일반 후보 admission과 별개로
-// 실제 owner 정책에서 Block인 bounded decode 후보 하나를 보존한다. Decode 한도 자체를
-// 공격 근거로 쓰지 않으면서 depth·candidate 예산 뒤의 확정 공격만 차단할 때 사용한다.
-// InputCannotContribute는 모든 해석이 규칙에 무관함을 증명하는 순수 콜백이며 nil이면 축약하지 않는다.
 func DecodeCandidatesWithContextForRuleOwnerAndBlockWitness[T any](
 	input string,
 	owner T,
@@ -266,7 +253,6 @@ func normalizedRuleDecodeInput(input string, needed bool) string {
 	return normalized
 }
 
-// DecodedCandidateFitsBudget은 단일 decode candidate가 admission 크기 한도 안에 있는지 보고한다.
 func DecodedCandidateFitsBudget(candidate string) bool {
 	return len(candidate) <= maxDecodedCandidateLen
 }

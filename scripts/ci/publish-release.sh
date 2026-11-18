@@ -54,8 +54,6 @@ gh release create "$tag" \
   "${latest_args[@]}" \
   --generate-notes
 
-# 게시 응답 직후 GitHub의 릴리스 attestation 조회는 404나 빈 배열일 수 있다.
-# 조회 공백만 기다리며 게시·암호학적 검증 자체는 재시도하지 않는다.
 tag_object="$(git rev-parse --verify "refs/tags/${tag}")"
 attestation_deadline=$((SECONDS + 120))
 while true; do

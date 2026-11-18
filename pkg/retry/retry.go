@@ -111,9 +111,6 @@ func retryContextError(ctx context.Context, lastErr error) error {
 	return fmt.Errorf("context error: %w", ctx.Err())
 }
 
-// joinContextCause는 취소·만료로 재시도를 멈출 때 직전 fn 에러와 ctx.Err()를 함께 보존해
-// 호출자가 errors.Is로 운영 에러와 context.Canceled/DeadlineExceeded를 모두 판별하게 한다.
-// 주입된 Sleep이 살아 있는 ctx에서 false를 반환한 경우에는 fn 에러만 반환한다.
 func joinContextCause(ctx context.Context, lastErr error) error {
 	ctxErr := ctx.Err()
 	if ctxErr == nil {
@@ -160,8 +157,6 @@ func retryDelay(opts RetryOptions, attempt int, err error) (time.Duration, error
 }
 
 func sleepWithContext(ctx context.Context, d time.Duration) bool {
-	// d가 0 이하면 timer가 즉시 발화해 select가 ctx.Done()과 무작위로 경합한다. 반환값은 호출자의
-	// 루프 계속 여부라, 취소를 약 절반의 확률로 놓치면 종료 중에도 다음 시도가 나간다.
 	if ctx.Err() != nil {
 		return false
 	}

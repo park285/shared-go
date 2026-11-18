@@ -21,7 +21,6 @@ const (
 	inboxRecoveryScope   = "recovery"
 )
 
-// 복구 판정은 ApplyInboxRecovery 테스트가 따로 검증한다.
 func TestInboxBatchKeepsFIFOAndRequiresExplicitRecovery(t *testing.T) {
 	pool := newMigratedPool(t)
 	store := newScopedStoreWithOptions(t, pool, pgstore.Options{
@@ -340,7 +339,6 @@ func TestApplyInboxRecoveryTerminalPayloadPolicy(t *testing.T) {
 				assertInboxRecoveryResult(t, pool, decision, appliedAt, discard)
 			}
 
-			// 종결된 행은 이전 획득 스냅샷으로 다시 변경할 수 없다.
 			again, retryTx := inboxRecoveryTransaction(t, pool, store.Options())
 			require.ErrorIs(t, again.ApplyInboxRecovery(t.Context(), decisions[1:2]), pgstore.ErrClaimLost)
 			require.NoError(t, pgxdb.Rollback(t.Context(), retryTx))

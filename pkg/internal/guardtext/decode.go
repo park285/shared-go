@@ -6,25 +6,19 @@ import (
 )
 
 const (
-	maxDecodeCandidates    = 24
-	minBase64CandidateLen  = 20
-	maxDecodedCandidateLen = 8 << 10
-	maxDecodedTotalBytes   = 64 << 10
-	maxDecodeDepth         = 2
-	maxDecodeScans         = 256
-	// 고유 suspect의 경계 열거는 스팬 길이 제곱으로 늘어난다.
-	// 정상 장문은 허용하되 대량 고유 junk가 예산을 소진하면 fail-closed로 끝낸다.
-	maxProtectedDecodeTries = 1 << 18
-	maxProtectedDecodeBytes = 4 << 20
-	// 최악 CPU는 시도 횟수가 아니라 이 예산이 정하므로 올리면 적대 입력의 처리 시간도 함께 늘어난다.
-	// 긴 구분자 run으로 작은 창을 쓸 수 없으면 재조합한 입력 전체가 문맥 비용으로 과금된다.
-	// 정상 장문의 문맥 확장 여유를 남기며 embedded 문맥 창도 같은 예산에 포함한다.
+	maxDecodeCandidates      = 24
+	minBase64CandidateLen    = 20
+	maxDecodedCandidateLen   = 8 << 10
+	maxDecodedTotalBytes     = 64 << 10
+	maxDecodeDepth           = 2
+	maxDecodeScans           = 256
+	maxProtectedDecodeTries  = 1 << 18
+	maxProtectedDecodeBytes  = 4 << 20
 	maxProtectedContextBytes = 16 << 20
 	maxHTMLEntityNameBytes   = 31
 	maxLegacyHTMLEntityBytes = 6
 )
 
-// DecodeStatus는 제한 안에서 완료하지 못한 decode 작업을 나타낸다.
 type DecodeStatus uint8
 
 const (
@@ -51,16 +45,12 @@ type decodeQueueEntry struct {
 type encodedSpan struct{ start, end int }
 
 type protectedDecodeWork struct {
-	tries        int
-	bytes        int
-	contextBytes int
-	// 영역 해석 사이의 동일 변환만 재사용하며 위치·문맥 판정은 캐시하지 않는다.
-	base64Memo map[string]string
-	// base64Memo가 있을 때만 이미 풀어 과금한 Base64 그룹 접두를 기록한다.
-	base64PrefixMemo map[string]struct{}
-	// prompt 영역 경로는 읽을 수 없는 Base64 값 내부의 짧은 창을 해석하지 않는다.
-	regionInteriors bool
-	// 0보다 크면 EmbeddedContextMatcher 호출마다 encoded 앞뒤 이 바이트까지의 창을 contextBytes에 과금한다.
+	tries                 int
+	bytes                 int
+	contextBytes          int
+	base64Memo            map[string]string
+	base64PrefixMemo      map[string]struct{}
+	regionInteriors       bool
 	embeddedContextRadius int
 }
 
@@ -81,7 +71,6 @@ type transformFamily struct {
 	next  int
 }
 
-// DecodeCandidates는 읽을 수 있는 지원 인코딩을 너비 우선으로 확장하고 미완료 원인을 Status에 남긴다.
 func DecodeCandidates(input string) DecodeResult {
 	potential, standaloneBase64 := classifyPotentialDecodeSurface(input)
 	if !potential {

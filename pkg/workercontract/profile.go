@@ -26,7 +26,6 @@ var (
 	workerIDPattern  = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
 )
 
-// DurationMode는 실행 시간 또는 queue age 정책의 표현 방식을 고정한다.
 type DurationMode string
 
 const (
@@ -35,7 +34,6 @@ const (
 	DurationModeNone   DurationMode = "none"
 )
 
-// CapacityMode는 queue가 bounded인지 명시한다.
 type CapacityMode string
 
 const (
@@ -43,18 +41,15 @@ const (
 	CapacityModeUnbounded CapacityMode = "unbounded"
 )
 
-// DurationPolicy는 fixed 또는 per-job duration을 표현한다.
 type DurationPolicy struct {
 	Mode         DurationMode `json:"mode"`
 	Milliseconds *int64       `json:"milliseconds"`
 }
 
-// Milliseconds는 service가 범위를 검증한 값을 기본값이나 보정 없이 변환한다.
 func Milliseconds(value int64) time.Duration {
 	return time.Duration(value) * time.Millisecond
 }
 
-// None/per_job은 별도 정책이다.
 func (p DurationPolicy) FixedDuration() (time.Duration, bool) {
 	if p.Mode != DurationModeFixed || p.Milliseconds == nil ||
 		*p.Milliseconds < 1 || *p.Milliseconds > MaxFixedDurationMS {
@@ -64,33 +59,28 @@ func (p DurationPolicy) FixedDuration() (time.Duration, bool) {
 	return Milliseconds(*p.Milliseconds), true
 }
 
-// CapacityPolicy는 bounded/unbounded queue 용량을 표현한다.
 type CapacityPolicy struct {
 	Mode  CapacityMode `json:"mode"`
 	Items *int64       `json:"items"`
 }
 
-// ExecutorProfile은 profile이 소유하는 executor 설정이다.
 type ExecutorProfile struct {
 	Enabled           bool           `json:"enabled"`
 	ConfiguredWorkers int            `json:"configured_workers"`
 	AttemptTimeout    DurationPolicy `json:"attempt_timeout"`
 }
 
-// QueueProfile은 canonical queue의 공통 정책이다.
 type QueueProfile struct {
 	Capacity CapacityPolicy `json:"capacity"`
 	MaxAge   DurationPolicy `json:"max_age"`
 }
 
-// WorkerProfile은 공통 정책과 service-owned settings 원문을 보존한다.
 type WorkerProfile struct {
 	Executor ExecutorProfile `json:"executor"`
 	Queue    QueueProfile    `json:"queue"`
 	Settings jsontext.Value  `json:"settings"`
 }
 
-// Profile은 Stack Worker Profile v1의 공통 표현이다.
 type Profile struct {
 	ContractVersion int                      `json:"contract_version"`
 	Service         string                   `json:"service"`
@@ -99,16 +89,12 @@ type Profile struct {
 	Workers         map[string]WorkerProfile `json:"workers"`
 }
 
-// Identity는 binary가 컴파일 시점에 소유하는 service, role, worker set이다.
-// 목록은 소비 서비스가 자기 worker ID 상수 옆에서 정의한다. LoadProfileFile은 WorkerIDs를 복제해 비교하므로
-// 호출자의 슬라이스를 바꾸지 않는다.
 type Identity struct {
 	Service   string
 	Role      string
 	WorkerIDs []string
 }
 
-// LoadedProfile은 검증된 profile과 exact-byte identity다.
 type LoadedProfile struct {
 	Profile    Profile
 	Hash       string
@@ -116,7 +102,6 @@ type LoadedProfile struct {
 	sourcePath string
 }
 
-// IdentitySummary는 preflight에서 설정 원문과 파일 경로 없이 공개하는 loaded identity다.
 type IdentitySummary struct {
 	ContractVersion int      `json:"contractVersion"`
 	Service         string   `json:"service"`

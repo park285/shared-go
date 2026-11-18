@@ -52,16 +52,13 @@ func walkEvaluationSegments(
 }
 
 type aggregateTail struct {
-	raw    rollingView
-	norm   rollingView
-	joined rollingView
-	chunks []aggregateTailChunk
-	// windowRawNorm은 현재 경계의 결합 원문 창을 정규화한 값이다. 사전 필터와 결합 세그먼트가 함께 쓰고
-	// 경계를 넘길 때 비운다.
+	raw                rollingView
+	norm               rollingView
+	joined             rollingView
+	chunks             []aggregateTailChunk
 	windowRawNorm      string
 	windowRawNormReady bool
-	// literals는 현재 경계의 결합 세그먼트 view에서 찾은 필수 리터럴이다. 결합 세그먼트를 만들 때마다 비운다.
-	literals segmentLiterals
+	literals           segmentLiterals
 }
 
 type aggregateTailChunk struct {
@@ -69,18 +66,15 @@ type aggregateTailChunk struct {
 	RawRunes    int
 	NormRunes   int
 	JoinedRunes int
-	// piece는 조각 전체의 view다. 조각이 tail에 남아 있는 동안 결합 경계 판정이 재사용한다.
-	piece *segmentPiece
+	piece       *segmentPiece
 }
 
-// 조각 평가와 결합 경계 판정이 같은 조각을 여러 번 보므로 가린 view와 raw 규칙용 정규화를 한 번만 만든다.
 type segmentPiece struct {
-	views        guardtext.Views
-	masked       []maskedPieceViews
-	rawNorm      string
-	rawNormReady bool
-	literals     segmentLiterals
-	// aggregateLiterals는 이 조각을 오른쪽에 둔 결합 세그먼트의 필수 리터럴 캐시다. 그 결합 세그먼트를 방문하는 동안만 유효하다.
+	views             guardtext.Views
+	masked            []maskedPieceViews
+	rawNorm           string
+	rawNormReady      bool
+	literals          segmentLiterals
 	aggregateLiterals *segmentLiterals
 }
 
@@ -91,7 +85,6 @@ type maskedPieceViews struct {
 	changed bool
 }
 
-// 가림 설정이 같은 규칙은 같은 view를 쓰고, 설정이 달라도 가린 원문이 같으면(조각에 예외 문맥이 없어 문장 경계만 가린 경우) 정규화한 view를 다시 쓴다.
 func (piece *segmentPiece) maskedViews(rule *compiledRule) (guardtext.Views, bool) {
 	for _, cached := range piece.masked {
 		if cached.key == rule.MaskKey {
@@ -138,7 +131,6 @@ func (tail *aggregateTail) initialize(segment textSegment) {
 	})
 }
 
-// 인자는 tail 원문 창과 오른쪽 조각 앞부분을 이은 값이어야 하며, 같은 경계에서는 처음 만든 값을 쓴다.
 func (tail *aggregateTail) normalizedRawWindow(raw string) string {
 	if !tail.windowRawNormReady {
 		tail.windowRawNorm, tail.windowRawNormReady = normalizeText(raw), true

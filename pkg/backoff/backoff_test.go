@@ -239,8 +239,6 @@ func TestNextExponentialBackoffDoesNotOverflow(t *testing.T) {
 	}
 }
 
-// maxInterval은 지수 항만 제한하고 jitter는 그 위에 더해지므로 실효 상한은 maxInterval+jitter-1이다.
-// 이 경계가 조용히 커지면 소비자의 재전송 지평 계산이 어긋난다.
 func TestComputeExponentialBackoffCapBoundsOnlyTheExponentialTerm(t *testing.T) {
 	t.Parallel()
 

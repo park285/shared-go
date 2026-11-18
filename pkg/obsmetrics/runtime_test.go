@@ -28,7 +28,6 @@ func TestReadResidentMemoryBytes(t *testing.T) {
 func TestParseProcessCPUSeconds(t *testing.T) {
 	t.Parallel()
 
-	// comm에 공백과 괄호가 들어가도 마지막 ')' 뒤에서 utime(250)·stime(50) tick을 읽어야 한다.
 	const stat = "4242 (bot (worker) 1) S 1 4242 4242 0 -1 4194560 1000 0 0 0 250 50 0 0 20 0 8 0 12345 1000000 2000 18446744073709551615\n"
 
 	got, ok := parseProcessCPUSeconds(stat)
@@ -59,7 +58,6 @@ func TestReadProcessCPUSeconds(t *testing.T) {
 		t.Skip("requires /proc/self/stat")
 	}
 
-	// tick은 10ms 단위라 막 시작한 프로세스는 0일 수 있으므로 값이 오를 때까지만 CPU를 쓴다.
 	deadline := time.Now().Add(5 * time.Second)
 
 	for {

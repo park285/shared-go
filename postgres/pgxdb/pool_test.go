@@ -129,7 +129,6 @@ func TestOverlayPoolConfig_OverridesWhenSet(t *testing.T) {
 	}
 }
 
-// Pgx가 default_query_exec_mode 지원을 끊으면 이 테스트가 먼저 실패해야 한다.
 func TestBuildConfigPool_AppliesQueryExecModeThroughDSNOnly(t *testing.T) {
 	tests := []struct {
 		name string
@@ -180,7 +179,6 @@ func TestApplyPoolConfig_HealthCheckPeriod(t *testing.T) {
 		}
 	})
 
-	// 0을 그대로 대입하면 pgxpool이 time.NewTicker(0)로 panic한다.
 	t.Run("zero preserves parsed default", func(t *testing.T) {
 		pc := mustParse(t, "postgres://u@127.0.0.1:5432/db?sslmode=disable")
 		parsed := pc.HealthCheckPeriod

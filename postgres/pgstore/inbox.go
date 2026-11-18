@@ -16,7 +16,6 @@ import (
 	"github.com/park285/shared-go/v2/pkg/workercontract"
 )
 
-// InboxClaim은 처리 소유권을 잡은 inbox 행이다. ClaimToken은 Complete·Release의 fence다.
 type InboxClaim struct {
 	ID          int64
 	MessageID   string
@@ -25,15 +24,9 @@ type InboxClaim struct {
 	ClaimToken  string
 	Attempts    int
 	CreatedAt   time.Time
-	// EligibleAt은 이번 획득 전 예약·임대 만료 기준이며, 입장 경과 시간·FIFO의 CreatedAt을 대체하지 않는다.
-	EligibleAt time.Time
+	EligibleAt  time.Time
 }
 
-// Admit은 HTTP 200 전에 메시지를 inbox에 commit한다.
-//
-// 같은 ordering key의 삽입은 advisory transaction lock으로 직렬화한다. Querier가 pool이면
-// 이 문의 암묵 트랜잭션이 끝날 때 lock이 풀리고, 호출자가 자기 트랜잭션을 넘겼으면 그
-// 트랜잭션이 끝날 때까지 같은 key의 다른 Admit이 막힌다.
 func (s *Store) Admit(ctx context.Context, input irisdurable.AdmissionInput) (workercontract.AdmissionResult, error) {
 	if input.MessageID == "" || input.OrderingKey == "" || len(input.Payload) == 0 {
 		return workercontract.AdmissionRejected, errors.New("pgstore: admission input requires messageID, orderingKey and payload")
@@ -53,13 +46,6 @@ func (s *Store) Admit(ctx context.Context, input irisdurable.AdmissionInput) (wo
 	return admissionFailure(err), fmt.Errorf("pgstore: admit %s: %w", input.MessageID, err)
 }
 
-// admissionFailure는 실패한 admit의 commit 여부를 판정한다.
-//
-// 서버가 SQLSTATE를 돌려줬다면 단일 문의 암묵 트랜잭션이 rollback된 것이므로 commit되지 않은 것이
-// 확실하다. 그중 22(data exception)와 23(integrity constraint violation)은 같은 payload를 다시 보내도
-// 같은 결과라 재전송이 무의미하므로 Rejected이고, 나머지 서버 오류는 재전송이 성공할 수 있어
-// Failed다. 응답 자체가 없으면(네트워크 단절·취소·타임아웃) commit 여부를 알 수 없으므로
-// OutcomeUnknown이고, 호출자가 503으로 매핑해 Iris 재전송을 유도한다.
 func admissionFailure(err error) workercontract.AdmissionResult {
 	pgErr, ok := errors.AsType[*pgconn.PgError](err)
 	if !ok {
@@ -74,7 +60,6 @@ func admissionFailure(err error) workercontract.AdmissionResult {
 	}
 }
 
-// 같은 ordering key에 더 오래된 미종단 행이 있으면 그 행이 먼저 끝나야 하므로 FIFO가 유지된다.
 func (s *Store) Claim(ctx context.Context) (claim InboxClaim, ok bool, err error) {
 	if policyErr := s.requirePolicy("claim inbox", true, false, false); policyErr != nil {
 		return InboxClaim{}, false, policyErr
@@ -103,15 +88,12 @@ func (s *Store) Claim(ctx context.Context) (claim InboxClaim, ok bool, err error
 	return claim, true, nil
 }
 
-// 인자 reason은 "재시도해도 같은 결과인 입력 결함"처럼 성공이 아닌 완료의 사유를 남기는 자리이고, 빈 값이면 기록하지 않는다. Fence는 claim token에 더해 message_id와 살아 있는
-// lease를 대조한다. 그 이유는 queries/complete_inbox.sql이 적는다.
 func (s *Store) Complete(ctx context.Context, claim InboxClaim, reason string) error {
 	return s.execFenced(ctx, "complete inbox", completeInboxSQL,
 		s.opts.Scope, claim.ID, claim.ClaimToken, reason, claim.MessageID,
 	)
 }
 
-// 처리 시간이 lease보다 긴 호출자가 heartbeat로 소유권을 유지하는 경로다. 이미 lease를 잃었으면 ErrClaimLost다.
 func (s *Store) RenewInbox(ctx context.Context, claim InboxClaim) error {
 	if err := s.requirePolicy("renew inbox lease", true, false, false); err != nil {
 		return err
@@ -120,7 +102,6 @@ func (s *Store) RenewInbox(ctx context.Context, claim InboxClaim) error {
 	return s.execFenced(ctx, "renew inbox lease", renewInboxLeaseSQL, s.opts.Scope, claim.ID, claim.ClaimToken, s.opts.Lease.Seconds())
 }
 
-// 표준 지수 백오프는 호출자가 BackoffFor(claim.Attempts)로 얻고, 0은 즉시 재처리를 뜻한다.
 func (s *Store) Release(ctx context.Context, claim InboxClaim, retryAfter time.Duration) error {
 	if retryAfter < 0 {
 		retryAfter = 0
@@ -129,8 +110,6 @@ func (s *Store) Release(ctx context.Context, claim InboxClaim, retryAfter time.D
 	return s.execFenced(ctx, "release inbox", releaseInboxSQL, s.opts.Scope, claim.ID, claim.ClaimToken, retryAfter.Seconds(), nil)
 }
 
-// Defer는 처리를 시작하지 못한 행의 소유권만 반납하고 Claim이 올린 attempts를 되돌린다.
-// 처리 결과가 아니므로 재시도 예산을 쓰지 않는 점이 Release와 다르다.
 func (s *Store) Defer(ctx context.Context, claim InboxClaim, retryAfter time.Duration) error {
 	if retryAfter < 0 {
 		retryAfter = 0
@@ -141,7 +120,6 @@ func (s *Store) Defer(ctx context.Context, claim InboxClaim, retryAfter time.Dur
 	)
 }
 
-// 기본적으로 payload를 남기며 DiscardInboxManualReviewPayload인 소비자는 본문만 지운다.
 func (s *Store) ManualReviewInbox(ctx context.Context, claim InboxClaim, reason string) error {
 	if reason == "" {
 		return errors.New("pgstore: manual review requires a reason")
@@ -151,27 +129,20 @@ func (s *Store) ManualReviewInbox(ctx context.Context, claim InboxClaim, reason 
 		s.opts.Scope, claim.ID, claim.ClaimToken, reason, s.opts.DiscardInboxManualReviewPayload)
 }
 
-// 두 갈래의 보존은 따로이고, completed는 Options.InboxTerminalRetention을, manual_review는 Options.InboxManualReviewRetention을 따른다.
-// 후자가 0이면 사람이 처리할 때까지 남긴다.
 func (s *Store) PruneInbox(ctx context.Context, limit int) (int64, error) {
 	return s.pruneInbox(ctx, "prune inbox", nil, limit)
 }
 
-// InboxRuntimeSnapshot은 inbox의 상태별 적재와 밀린 정도다.
 type InboxRuntimeSnapshot struct {
 	Pending      int64
 	Processing   int64
 	ManualReview int64
-	// Due는 지금 손이 가야 하는 행 수다. pending은 available_at이, processing은 만료된 lease가 기준이다.
-	Due int64
-	// OldestDueAge는 가장 오래 밀린 행이 밀린 시간이다. 밀린 행이 없으면 0이다.
+	Due          int64
 	OldestDueAge time.Duration
 }
 
-// ReadySnapshot은 일시적으로 잠긴 행을 포함해 논리적으로 획득 가능한 행을 센다.
 type ReadySnapshot struct {
-	Ready int64
-	// OldestAge는 적격 행의 가장 오래된 예약·임대 만료 기준부터의 시간이며 입장·선행 행 해제 시각과 다르다.
+	Ready     int64
 	OldestAge time.Duration
 }
 
@@ -192,7 +163,6 @@ func (s *Store) RuntimeSnapshot(ctx context.Context) (InboxRuntimeSnapshot, erro
 	return snapshot, nil
 }
 
-// InboxReadySnapshot은 잠금·개수 제한 없이 Claim의 적격 조건을 적용한다.
 func (s *Store) InboxReadySnapshot(ctx context.Context) (ReadySnapshot, error) {
 	return s.readySnapshot(ctx, "inbox ready snapshot", inboxReadySnapshotSQL, s.opts.Scope, s.opts.InboxExplicitRecovery)
 }

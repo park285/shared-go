@@ -81,8 +81,6 @@ const (
 	maxExactNodes       = 1 << exactFirstBits
 )
 
-// trie 노드는 패턴 바이트당 최대 1개이므로 노드 수는 maxProtectedTotalBytes+1을 넘지 않는다.
-// 이 상수 선언은 그 상한이 노드 인덱스 필드 폭(maxExactNodes)을 넘으면 음수가 되어 컴파일을 막는다.
 const _ = uint(maxExactNodes - maxProtectedTotalBytes - 1)
 
 func validateProtectedTexts(input []string) ([]string, bool, bool) {

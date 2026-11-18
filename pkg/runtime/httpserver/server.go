@@ -5,20 +5,12 @@ import (
 	"time"
 )
 
-// ServerOptions는 NewServer가 만드는 http.Server의 수신 한계다.
 type ServerOptions struct {
-	// ReadHeaderTimeout은 요청 헤더 읽기 상한이다. 0이면 상한을 두지 않는다.
 	ReadHeaderTimeout time.Duration
-	// IdleTimeout은 keep-alive 연결의 유휴 상한이다. 0이면 http.Server 기본값을 따른다.
-	IdleTimeout time.Duration
-	// MaxHeaderBytes는 요청 헤더 최대 크기다. 0이면 http.Server 기본값을 따른다.
-	MaxHeaderBytes int
+	IdleTimeout       time.Duration
+	MaxHeaderBytes    int
 }
 
-// NewServer는 handler를 감싼 http.Server를 만든다.
-//
-// ReadTimeout은 두지 않는다. 본문 읽기 예산은 WithBodyReadTimeout이 handler 진입 시점부터
-// 세므로 느린 헤더가 본문 예산을 갉아먹지 않는다. 빈 handler(nil)는 빈 ServeMux로 대체한다.
 func NewServer(addr string, handler http.Handler, opts ServerOptions) *http.Server {
 	if handler == nil {
 		handler = http.NewServeMux()

@@ -13,7 +13,6 @@ func validProfilePath() string {
 	return filepath.Join("testdata", "stack-worker-contract", "v1", "valid-profile-chatbotgo.json")
 }
 
-// chatbotIdentity는 valid-profile-chatbotgo.json fixture와 짝인 identity다. Worker 목록은 소비 서비스가 소유한다.
 func chatbotIdentity() Identity {
 	return Identity{
 		Service:   "chatbotgo",
@@ -69,7 +68,6 @@ func TestReleaseProfileObservesDesiredSourceWithoutLoadingIt(t *testing.T) {
 	require.True(t, status.Match)
 	require.Nil(t, status.ErrorCode)
 
-	// 원본이 다음 버전 형식으로 바뀌어도 이전 release 설정만으로 기동한다.
 	require.NoError(t, os.WriteFile(source, []byte("a different, undecodable desired profile"), 0o600))
 
 	reloaded, err := LoadProfileFromEnv(chatbotIdentity())

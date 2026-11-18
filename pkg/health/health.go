@@ -1,6 +1,3 @@
-// Package health는 프로세스의 version·uptime·component 상태 스냅샷을 보관하고 /health·/ready 응답 본문을 만든다.
-//
-// HTTP handler는 framework마다 다르므로 호출부가 소유하고, 이 패키지는 상태와 응답 계약만 공용화한다.
 package health
 
 import (

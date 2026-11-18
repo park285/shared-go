@@ -1,23 +1,3 @@
-// Copyright (c) 2025 Kapu
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
 package logging
 
 import (
@@ -47,9 +27,6 @@ const (
 	tokenSecretKey     = "secret_key"
 )
 
-// querySecretTokens는 querySecretRegex가 매치할 수 있는 키 이름 집합으로,
-// 정규식 실행 전 싼 substring pre-check 게이트에 쓰인다. 정규식이 매치하는
-// 입력은 반드시 이 토큰 중 하나를 case-insensitive로 포함하므로 게이트는 안전하다.
 var querySecretTokens = []string{
 	"key", tokenAPIKey, tokenAPIKeyCompact, "token", tokenPassword, tokenPwd, tokenPasswd,
 	"client_secret", tokenSecret, tokenPrivateKey, tokenSecretKey,
@@ -79,14 +56,8 @@ var sensitiveExactKeys = map[string]struct{}{
 	"connection_url":      {},
 }
 
-// privacyKeys는 서비스가 Options.PrivacyKeys로 넘긴 업무 식별자 키(정규화된 정확 일치)다.
-// 어떤 키가 개인 식별자인지는 서비스 어휘라 라이브러리는 privacy 키를 내장하지 않고 credential 규칙만
-// 소유한다. *_id suffix 규칙은 두지 않는다. 더하면 channel_id 같은 공개 콘텐츠 ID까지 가려진다.
-// 값이 nil이면 credential 규칙만 적용한다.
 type privacyKeys map[string]struct{}
 
-// newPrivacyKeys는 서비스가 넘긴 privacy 키를 credential 키와 같은 규칙으로 정규화한다.
-// 빈 키는 설정 실수이므로 거부한다.
 func newPrivacyKeys(keys []string) (privacyKeys, error) {
 	out := make(privacyKeys, len(keys))
 
@@ -120,14 +91,8 @@ func mightContainQuerySecret(s string) bool {
 	return false
 }
 
-// containsFold는 ASCII-only 입력에서만 고정 폭 윈도우로 substr를 fold-검색한다.
-// (?i) 정규식·EqualFold는 ſ(U+017F)↔s, K(U+212A)↔k처럼 토큰과 바이트 폭이 다른
-// 멀티바이트 룬을 fold-equivalent로 보므로, non-ASCII 바이트가 있으면 윈도우가
-// 정렬되지 않아 superset 불변식이 깨진다. 이 경우 true를 반환해 정규식이 직접
-// 판정하도록 위임한다(게이트는 정규식 매치의 superset이어야 한다).
 func containsFold(s, substr string) bool {
 	if len(substr) > len(s) {
-		// 짧은 입력이라도 non-ASCII가 있으면 게이트를 통과시켜 정규식에 위임한다.
 		return hasNonASCII(s)
 	}
 
@@ -162,7 +127,6 @@ func mightContainCredentialURL(s string) bool {
 	return strings.Contains(s, "://") && strings.Contains(s, "@")
 }
 
-// RedactDiagnostic은 로그나 stderr에 출력할 진단 문자열에서 credential을 마스킹한다.
 func RedactDiagnostic(s string) string {
 	if mightContainBearer(s) {
 		s = bearerTokenRegex.ReplaceAllString(s, "${1}***REDACTED***")
@@ -283,7 +247,6 @@ func headerCredentialValueAfter(s string, start int) (int, int) {
 		return valueStart, valueEnd
 	}
 
-	// 헤더 자격 증명 값은 공백·쉼표·세미콜론을 담을 수 있어 따옴표 없는 값은 레코드 경계(CR/LF)에서만 끝난다.
 	for valueEnd < len(s) && s[valueEnd] != '\r' && s[valueEnd] != '\n' {
 		valueEnd++
 	}
@@ -326,8 +289,6 @@ func (h *sanitizeHandler) Handle(ctx context.Context, record slog.Record) error 
 		return nil
 	}
 
-	// 변경 감지 패스가 처음 바뀐 attr의 위치와 정제 결과를 남긴다. 그 앞의 attr들은
-	// changed=false로 판정됐으므로 정제해도 원본과 같은 값이라 재구축 때 원본을 그대로 쓴다.
 	firstChangedIndex := -1
 
 	var firstChangedAttr slog.Attr
@@ -402,8 +363,6 @@ func (h *sanitizeHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	}
 }
 
-// 열린 group 이름이 privacy·credential key면 그 아래 attr은 key가 무엇이든 값이 그 식별자나
-// credential의 구성 요소다.
 func (h *sanitizeHandler) WithGroup(name string) slog.Handler {
 	if name == "" || h.blockedGroup != "" {
 		return h
@@ -438,7 +397,6 @@ func (p privacyKeys) sanitizeAttr(attr slog.Attr) slog.Attr {
 	return out
 }
 
-// 변경 없는 scalar·group은 원본을 유지해 record 재구축과 할당을 생략한다.
 func (p privacyKeys) sanitizeAttrChanged(attr slog.Attr) (slog.Attr, bool) {
 	return p.sanitizeAttrDepth(attr, 0)
 }
@@ -452,7 +410,6 @@ const (
 )
 
 func (p privacyKeys) sanitizeAttrDepth(attr slog.Attr, depth int) (slog.Attr, bool) {
-	// 버릴 값의 LogValue·Error·marshal 메서드는 실행하지 않는다.
 	normalizedKey := normalizeSensitiveKey(attr.Key)
 	if p.isMaskedNormalizedKey(normalizedKey) {
 		return slog.String(attr.Key, redactedValue), true
@@ -527,8 +484,6 @@ func (p privacyKeys) sanitizeGroupAttr(attr slog.Attr, depth int, changed bool) 
 	return attr, changed
 }
 
-// slog.Value.Resolve의 오류 값은 사용자 error와 구분할 수 없으므로 여기서 실패를 분리한다.
-// 사용자 panic 값의 문자열화나 스택 출력 없이 고정 사유만 남긴다.
 func resolveLogValue(value slog.Value) (resolved slog.Value, ok bool) {
 	defer func() {
 		if recover() != nil {

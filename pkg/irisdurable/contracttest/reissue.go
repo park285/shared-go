@@ -8,15 +8,11 @@ import (
 	"github.com/park285/shared-go/v2/pkg/irisdurable"
 )
 
-// ReissueFixture는 구현의 reissue ladder와 그 구현이 재발급 트리거로 쓰는 오류 판정이다.
 type ReissueFixture struct {
-	Ladder irisdurable.ReissueLadder
-	// PreHandoffConflict는 CLIENT_REQUEST_ID_FAILED 409에서만 참이어야 하는 판정이다.
-	PreHandoffConflict func(error) bool
-	// NewPreHandoffConflict는 판정이 참이 되는 오류를 만든다.
+	Ladder                irisdurable.ReissueLadder
+	PreHandoffConflict    func(error) bool
 	NewPreHandoffConflict func() error
-	// NewTerminalConflict는 판정이 거짓이어야 하는 오류(outcome unknown, payload mismatch 등)를 만든다.
-	NewTerminalConflict func() error
+	NewTerminalConflict   func() error
 }
 
 func (f ReissueFixture) complete() bool {

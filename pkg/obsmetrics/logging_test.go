@@ -14,7 +14,6 @@ import (
 func exerciseLoggingOutcomes(t *testing.T) (logging.StdoutStats, logging.FileStats) {
 	t.Helper()
 
-	// 생성자가 os.Stdout을 보관하므로 교체 중에는 다른 테스트를 병렬 실행하지 않는다.
 	originalStdout := os.Stdout
 
 	t.Cleanup(func() { os.Stdout = originalStdout })
@@ -50,7 +49,6 @@ func exerciseLoggingOutcomes(t *testing.T) (logging.StdoutStats, logging.FileSta
 		t.Fatal(closeErr)
 	}
 
-	// 닫힌 fd와 MaxSizeMB 초과 레코드로 표준 출력·파일 쓰기를 각각 실패시킨다.
 	config.MaxSizeMB = 1
 	os.Stdout = capture
 	logger, closer, err = logging.EnableFileLoggingWithOptions(config, "failure.log", logging.Options{})
@@ -130,8 +128,6 @@ func (w *failLoggingMetricWrite) Write(p []byte) (int, error) {
 func TestWriteLoggingMetricsStopsOnExpositionFailure(t *testing.T) {
 	t.Parallel()
 
-	// 카운터별 header·샘플 쓰기 중 어느 위치에서 실패해도 출력을 중단해야 한다.
-	// 쓰기 횟수는 exposition 구현에 따라 달라지므로 실패 없는 전체 출력에서 먼저 센다.
 	complete := &failLoggingMetricWrite{}
 	if !WriteLoggingMetrics(complete) {
 		t.Fatal("WriteLoggingMetrics() = false without write failure")

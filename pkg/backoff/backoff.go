@@ -6,7 +6,6 @@ import (
 	"time"
 )
 
-// NextExponentialBackoff는 현재 backoff 값을 두 배로 늘리고 step과 maxInterval 경계를 적용합니다.
 func NextExponentialBackoff(current, maxInterval, step time.Duration) time.Duration {
 	if current <= 0 {
 		return capInterval(step, maxInterval)
@@ -15,7 +14,6 @@ func NextExponentialBackoff(current, maxInterval, step time.Duration) time.Durat
 	return capInterval(max(doubleWithCap(current, maxInterval), step), maxInterval)
 }
 
-// ComputeExponentialBackoff는 attempt 번호를 기반으로 base*2^attempt 지연값을 계산합니다.
 func ComputeExponentialBackoff(attempt int, base, maxInterval, jitter time.Duration) time.Duration {
 	if invalidAttempt(attempt, base) {
 		return 0

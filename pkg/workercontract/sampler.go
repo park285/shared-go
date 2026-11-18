@@ -11,7 +11,6 @@ const (
 	QueueSampleTimeout  = 2 * time.Second
 )
 
-// QueueSnapshotStatus는 latest observation의 가용성을 나타낸다.
 type QueueSnapshotStatus string
 
 const (
@@ -19,7 +18,6 @@ const (
 	QueueSnapshotUnavailable QueueSnapshotStatus = "unavailable"
 )
 
-// QueueSnapshotErrorCode는 diagnostics에 공개 가능한 bounded code다.
 type QueueSnapshotErrorCode string
 
 const (
@@ -28,13 +26,11 @@ const (
 	QueueSnapshotStale  QueueSnapshotErrorCode = "queue_snapshot_stale"
 )
 
-// QueueValues는 source가 한 번에 관측한 ready backlog다.
 type QueueValues struct {
 	Depth           int64
 	OldestQueuedAge time.Duration
 }
 
-// QueueSnapshot은 latest attempt와 last-success metadata를 분리한다.
 type QueueSnapshot struct {
 	Status               QueueSnapshotStatus
 	Depth                *int64
@@ -43,17 +39,14 @@ type QueueSnapshot struct {
 	ErrorCode            *QueueSnapshotErrorCode
 }
 
-// QueueSnapshotSource는 하나의 canonical queue를 bounded context로 조회한다.
 type QueueSnapshotSource func(context.Context) (QueueValues, error)
 
-// QueueSampler는 HTTP 요청과 분리된 fixed-cadence queue sampler다.
 type QueueSampler struct {
 	mu     sync.RWMutex
 	source QueueSnapshotSource
 	latest QueueSnapshot
 }
 
-// NewQueueSampler는 아직 관측되지 않은 sampler를 만든다.
 func NewQueueSampler(source QueueSnapshotSource) *QueueSampler {
 	code := QueueNotSampled
 
@@ -63,7 +56,6 @@ func NewQueueSampler(source QueueSnapshotSource) *QueueSampler {
 	}
 }
 
-// Sample은 한 번만 조회하고 실패 시 current value를 제거한다.
 func (s *QueueSampler) Sample(ctx context.Context, now time.Time) QueueSnapshot {
 	if s == nil || s.source == nil {
 		code := QueueSnapshotFailed
@@ -103,7 +95,6 @@ func (s *QueueSampler) Sample(ctx context.Context, now time.Time) QueueSnapshot 
 	return cloneQueueSnapshot(s.latest)
 }
 
-// Latest는 queue query 없이 마지막 attempt 결과를 반환한다.
 func (s *QueueSampler) Latest() QueueSnapshot {
 	if s == nil {
 		code := QueueNotSampled
@@ -117,7 +108,6 @@ func (s *QueueSampler) Latest() QueueSnapshot {
 	return cloneQueueSnapshot(s.latest)
 }
 
-// Run은 immediate first attempt 뒤 fixed cadence로 sampling한다.
 func (s *QueueSampler) Run(ctx context.Context) {
 	if s == nil {
 		return
@@ -139,7 +129,6 @@ func (s *QueueSampler) Run(ctx context.Context) {
 	}
 }
 
-// CurrentQueueSnapshot은 memory/SQLite owner가 이미 보유한 non-blocking 값을 만든다.
 func CurrentQueueSnapshot(depth int64, oldestQueuedAge time.Duration, observedAt time.Time) QueueSnapshot {
 	if depth < 0 || oldestQueuedAge < 0 || (depth == 0 && oldestQueuedAge != 0) {
 		code := QueueSnapshotFailed

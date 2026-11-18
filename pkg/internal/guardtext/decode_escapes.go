@@ -12,13 +12,11 @@ import (
 	"unicode"
 )
 
-// hex: 표지 뒤의 바이트 쌍은 구분자 없이 붙여 써도 같은 값이다.
 var (
 	hexPayloadPattern      = regexp.MustCompile(`(?i)(?:^|\b)hex\s*:\s*((?:[0-9a-f]{2}[\s,:-]*){3,}[0-9a-f]{2})(?:[^0-9a-f]|$)`)
 	shortHexPayloadPattern = regexp.MustCompile(`(?i)(?:^|\b)hex\s*:\s*([0-9a-f]{2}(?:[\s,:-]*[0-9a-f]{2})*)(?:[^0-9a-f]|$)`)
 )
 
-// 더 짧은 색상값·짧은 ID는 원문으로만 본다.
 const minBareHexDigits = 16
 
 func percentSpans(input string) []encodedSpan {
@@ -169,7 +167,6 @@ func hexSpansForPattern(input string, pattern *regexp.Regexp) []encodedSpan {
 	return spans
 }
 
-// 시작 위치 start는 0x 접두를 포함하고, digits는 hex 숫자가 시작하는 위치다.
 type bareHexToken struct{ start, digits, end int }
 
 func markReadableBareHex(text string) string {
@@ -198,7 +195,6 @@ func markReadableBareHex(text string) string {
 	return builder.String()
 }
 
-// 해시·ID 같은 무작위 바이트와 글자 없는 값은 읽을 수 없거나 규칙에 기여하지 않으므로 원문으로만 본다.
 func nextReadableBareHex(text string, from int) (bareHexToken, bool) {
 	for start := from; start < len(text); {
 		if !isHexTokenByte(text[start]) {

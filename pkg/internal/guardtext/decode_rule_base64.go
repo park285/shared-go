@@ -77,7 +77,6 @@ func appendShortRuleBase64Whole(
 		wholeReadable = readableBase64Span(input, whole, work, status)
 	}
 
-	// 읽을 수 있는 전체 토큰은 권위 있는 인코딩 경계이므로 내부를 재해석하지 않는다.
 	if wholeReadable || !looksLikeEmbeddedBase64(value) || !decodeWorkComplete(status) {
 		return spans, seen
 	}
@@ -91,7 +90,6 @@ func appendShortRuleBase64Whole(
 	return appendShortRuleBase64Interiors(spans, seen, input, whole, mayContribute, embeddedContextMayContribute, work, status), seen
 }
 
-// 시작점마다 공통 디코딩 접두가 이미 읽을 수 없으면 그 시작점의 더 긴 구간은 디코딩하지 않는다.
 func appendShortRuleBase64Interiors(
 	spans []encodedSpan,
 	seen map[encodedSpan]struct{},
@@ -215,9 +213,6 @@ func nestedShortContextMayContribute(
 		}
 	}
 
-	// 이 경로는 한 겹만 더 푼다. 남은 겹이 여전히 decode 가능하면 미탐색 층이 있는
-	// 것이므로 status를 세워 fail-closed로 넘긴다 — 세우지 않으면 3겹 이상 short
-	// 체인이 "완전히 탐색된 무해 입력"으로 보고된다.
 	if unexploredNesting {
 		mergeDecodeStatus(status, DecodeDepthLimit)
 	}
@@ -276,9 +271,6 @@ func appendMatchingShortBase64Span(
 		return updated
 	}
 
-	// whole-run 앞뒤에 base64 문자 1개만 붙어도 전체 decode가 깨져 이 sub-span 열거가
-	// 유일한 탐지 경로가 된다. 여기서도 whole 경로와 동일하게 중첩 층을 검사해야
-	// 노이즈 문자로 fail-closed를 우회하지 못한다.
 	decoded, err := DecodeBase64Candidate(input[span.start:span.end])
 	if err != nil || !IsReadableText(decoded) {
 		return updated
@@ -291,9 +283,6 @@ func appendMatchingShortBase64Span(
 	return updated
 }
 
-// hasPlausibleShortRuleDecodeSurface와 달리 "그럴듯함"(소문자+숫자)이 아니라 실제 readable
-// 복호 성공만 미탐색 층으로 인정한다. 넓은 술어를 쓰면 숫자가 섞인 무해한 2겹 중첩
-// (예: base64^2("hi Bob2"))까지 fail-closed로 차단된다.
 func hasDecodableShortRuleDecodeSurface(input string) bool {
 	if containsHexFold(input) {
 		for _, span := range shortRuleHexSpans(input) {

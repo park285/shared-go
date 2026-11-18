@@ -1,7 +1,5 @@
 package promptguard
 
-// segmentRuleHits는 입력 길이가 아니라 각 규칙의 occurrence 한도만큼 근거를 보존한다.
-// 원문이 경계 aggregate보다 우선하는 기존 평가 순서를 유지한다.
 type segmentRuleHits struct {
 	rule      *compiledRule
 	raw       []Match
@@ -16,7 +14,6 @@ func (g *Guard) evaluateTextSegments(input string) Evaluation {
 		ruleCount += len(pack.Rules)
 	}
 
-	// 내장 규칙을 모두 담는 크기여야 평가마다 힙에 할당하지 않는다.
 	var storage [64]segmentRuleHits
 
 	rules := storage[:0]
@@ -73,8 +70,6 @@ func (g *Guard) evaluateTextSegments(input string) Evaluation {
 	return state.evaluation(policy)
 }
 
-// evaluateSegmentsWithBase는 원문을 재검사하지 않고 남은 규칙별 한도에만 decode 근거를 더한다.
-// 기존 평가인 base는 같은 Guard가 규칙 순서로 생성한 결과여야 한다.
 func (g *Guard) evaluateSegmentsWithBase(policy compiledPolicy, base Evaluation, segments []textSegment) Evaluation {
 	state := evaluationState{hits: make([]Match, 0, len(base.Hits))}
 	baseIndex := 0

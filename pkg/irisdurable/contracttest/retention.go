@@ -5,20 +5,12 @@ import (
 	"time"
 )
 
-// RetentionFixture는 구현이 실제로 쓰는 보존·지평 값이다. IrisAdmissionRetention은 필수이고
-// IrisAutomaticReplayHorizon은 AutomaticReplayHorizon을 넘길 때 필수이며, 둘 다 정본(iris-client-go 공개
-// 상수)을 넘긴다. 나머지 0인 항목은 검사하지 않는다.
 type RetentionFixture struct {
-	// IrisAdmissionRetention은 Iris reply admission 원장의 보존이다.
-	IrisAdmissionRetention time.Duration
-	// IrisAutomaticReplayHorizon은 스택이 허용하는 자동 재발송 지평이다.
+	IrisAdmissionRetention     time.Duration
 	IrisAutomaticReplayHorizon time.Duration
-	// ReplyOutboxRetention은 reply outbox 행의 보존이다.
-	ReplyOutboxRetention time.Duration
-	// AutomaticReplayHorizon은 저장된 clientRequestId로 자동 재발송하는 상한이다.
-	AutomaticReplayHorizon time.Duration
-	// InboxTerminalRetention은 inbox 종단 행의 보존이다.
-	InboxTerminalRetention time.Duration
+	ReplyOutboxRetention       time.Duration
+	AutomaticReplayHorizon     time.Duration
+	InboxTerminalRetention     time.Duration
 }
 
 func runRetention(t *testing.T, fixture RetentionFixture) {
@@ -43,8 +35,6 @@ func runRetention(t *testing.T, fixture RetentionFixture) {
 		}
 	})
 
-	// 정본 지평과 admission 보존의 차이는 지평 끝 재발송에 더해지는 backoff·attempt timeout·claim 주기를
-	// 흡수하는 여유다. 구현 지평이 정본 지평을 넘으면 늦게 나간 재발송이 Iris dedup 창 밖에 닿을 수 있다.
 	t.Run("AutomaticReplayHorizonStaysInsideIrisHorizon", func(t *testing.T) {
 		if fixture.AutomaticReplayHorizon == 0 {
 			t.Skip("no automatic replay horizon")

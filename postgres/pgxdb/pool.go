@@ -17,20 +17,15 @@ import (
 )
 
 type Options struct {
-	Logger       *slog.Logger
-	Pool         PoolConfig
-	Ping         PingConfig
-	AfterConnect func(ctx context.Context, conn *pgx.Conn) error
-	// RuntimeParams는 세션 시작 매개변수를 덮어쓰며 전달받은 맵을 보관하지 않는다.
+	Logger        *slog.Logger
+	Pool          PoolConfig
+	Ping          PingConfig
+	AfterConnect  func(ctx context.Context, conn *pgx.Conn) error
 	RuntimeParams map[string]string
-	// nil이면 pgx 기본 취소 처리를 유지한다.
 	CancelRequest *CancelRequestConfig
-	// nil이면 pgxpool 기본 획득 동작을 유지하며, 값이 있으면 생성 시 복사한다.
 	AcquirePolicy *AcquirePolicy
 }
 
-// CancelRequestConfig는 소켓 기한을 제한한 서버 취소를 선택적으로 활성화한다.
-// 취소 응답을 받아도 응답이 유실된 COMMIT의 결과는 확정되지 않는다.
 type CancelRequestConfig struct {
 	CancelRequestDelay time.Duration
 	DeadlineDelay      time.Duration
@@ -44,23 +39,18 @@ func (o Options) withDefaults() Options {
 	return o
 }
 
-// Preflight는 OpenPool과 같은 로컬 준비를 수행하며 DNS 조회나 접속을 하지 않는다.
-// CA 파일은 파싱하지만 원격 TLS·인증·권한·시작 Ping 성공은 보장하지 않는다.
 func Preflight(cfg Config, opts Options) error {
 	_, err := preparePool(&cfg, "", opts)
 
 	return err
 }
 
-// PreflightDSN은 OpenPoolDSN과 같은 로컬 준비를 수행하며 DNS 조회나 접속을 하지 않는다.
-// DSN·환경에서 파싱한 풀 값에 양수 옵션을 덮어쓴 뒤 유효 예약 용량까지 검사한다.
 func PreflightDSN(rawDSN string, opts Options) error {
 	_, err := preparePool(nil, rawDSN, opts)
 
 	return err
 }
 
-// OpenPool은 구조화 설정을 사전 검증한 뒤 풀을 만들고 별도 시작 예산으로 Ping한다.
 func OpenPool(ctx context.Context, cfg Config, opts Options) (*pgxpool.Pool, error) {
 	poolCfg, err := preparePool(&cfg, "", opts)
 	if err != nil {
@@ -75,7 +65,6 @@ func OpenPool(ctx context.Context, cfg Config, opts Options) (*pgxpool.Pool, err
 	return out, nil
 }
 
-// OpenPoolDSN은 DSN과 옵션을 사전 검증한 뒤 풀을 만들고 별도 시작 예산으로 Ping한다.
 func OpenPoolDSN(ctx context.Context, rawDSN string, opts Options) (*pgxpool.Pool, error) {
 	poolCfg, err := preparePool(nil, rawDSN, opts)
 	if err != nil {
@@ -224,8 +213,6 @@ func newPoolAndPing(ctx context.Context, poolCfg *pgxpool.Config, opts Options) 
 	return pool, nil
 }
 
-// pgx의 최소 전체·유휴 연결 수 유지 작업은 시작 Ping보다 오래 실행될 수 있다.
-// 제한은 재접속을 포함한 풀 수명 전체에 적용한다.
 func boundInitialConnectTimeout(poolCfg *pgxpool.Config, pingTimeout time.Duration) {
 	if poolCfg == nil || poolCfg.ConnConfig == nil || max(poolCfg.MinConns, poolCfg.MinIdleConns) <= 0 || pingTimeout <= 0 {
 		return
@@ -245,7 +232,6 @@ func applyPoolConfig(poolCfg *pgxpool.Config, pool PoolConfig) error {
 		return errors.New("pgxdb: structured pool requires positive max conns")
 	}
 
-	// 구조화 경로에는 DSN 값이 없으므로 수명을 호출자가 정한다. 지터 0은 지터 없음이다.
 	if pool.ConnMaxLifetime <= 0 || pool.ConnMaxIdleTime <= 0 {
 		return errors.New("pgxdb: structured pool requires positive conn max lifetime and idle time")
 	}
@@ -269,7 +255,6 @@ func applyPoolConfig(poolCfg *pgxpool.Config, pool PoolConfig) error {
 	return nil
 }
 
-// 0 대입은 pgxpool의 time.NewTicker(0)를 panic시키므로, 미설정이면 ParseConfig가 채운 값을 남긴다.
 func applyHealthCheckPeriod(poolCfg *pgxpool.Config, pool PoolConfig) {
 	if pool.HealthCheckPeriod > 0 {
 		poolCfg.HealthCheckPeriod = pool.HealthCheckPeriod
@@ -299,7 +284,6 @@ func overlayPoolConfig(poolCfg *pgxpool.Config, pool PoolConfig) error {
 		maxConns = overlayMax
 	}
 
-	// pgx는 MinConns > MaxConns를 거부하지 않고 health check 틱마다 초과분 생성을 재시도한다.
 	if minConns > maxConns {
 		return fmt.Errorf("pgxdb: pool min conns %d exceeds max conns %d", minConns, maxConns)
 	}
@@ -345,7 +329,6 @@ func connCountsInt32(pool PoolConfig) (int32, int32, error) {
 		return 0, 0, fmt.Errorf("pgxdb: pool connection count out of int32 range: min=%d max=%d", minConns, maxConns)
 	}
 
-	// overlay 경로에서 0은 "미설정"이므로 역전 검사는 둘 다 명시된 경우에만 성립한다.
 	if minConns > 0 && maxConns > 0 && minConns > maxConns {
 		return 0, 0, fmt.Errorf("pgxdb: pool min conns %d exceeds max conns %d", minConns, maxConns)
 	}

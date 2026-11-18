@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# 내려받은 byte를 실행 전에 고정 SHA-256으로 검증한다.
 case "${RUNNER_OS:?}/${RUNNER_ARCH:?}" in
   Linux/ARM64) archive_url="https://releases.astral.sh/github/uv/releases/download/0.13.7/uv-aarch64-unknown-linux-gnu.tar.gz"; expected_sha="71279f8d3c67241e807b9d8db872d1bf541579fb9f08b7d1eb1682196d1e57dc" ;;
   Linux/X64) archive_url="https://releases.astral.sh/github/uv/releases/download/0.13.7/uv-x86_64-unknown-linux-gnu.tar.gz"; expected_sha="c5221ff41b7892bfc223543883600125f6a47fe845093e0f5bdff4f359196d83" ;;

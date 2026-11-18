@@ -15,10 +15,6 @@ import (
 
 const cliTimeout = 4 * time.Second
 
-// RunMain은 헬스체크 CLI 진입점이다. Args는 os.Args(프로그램명 포함)이며 프로세스 종료 코드를 반환한다.
-// CLI는 운영자가 통제하는 자기 서비스 loopback/내부망 probe라 대상 IP 대역을 제한하지 않는다.
-// 다중 target은 외부 container timeout보다 짧은 하나의 deadline 안에서 병렬 검사한다.
-// 내부 TLS override(HEALTHCHECK_* env)는 여기서 한 번만 읽어 모든 target 검사에 같은 값을 쓴다.
 func RunMain(args []string, stdout, stderr io.Writer) int {
 	return runCLI(args, stdout, stderr, newCLIFetch(tlsOverridesFromEnv()))
 }

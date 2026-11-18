@@ -22,7 +22,6 @@ func (w *brokenStdout) Write(_ []byte) (int, error) {
 	return 0, errStdoutBroken
 }
 
-// Io.MultiWriter는 첫 실패 이후 나머지 writer를 건너뛰므로, 순서만으로는 이 불변식이 지켜지지 않는다.
 func TestEnableFileLogging_StdoutFailureDoesNotBlockFileLane(t *testing.T) {
 	t.Parallel()
 
@@ -75,7 +74,6 @@ func TestBestEffortWriter_ReportsFullWriteOnTargetError(t *testing.T) {
 		t.Fatalf("Write() error = %v, want nil so io.MultiWriter continues", err)
 	}
 
-	// n < len(p)를 반환하면 io.MultiWriter가 ErrShortWrite로 다음 lane을 끊는다.
 	if n != len(payload) {
 		t.Fatalf("Write() n = %d, want %d", n, len(payload))
 	}

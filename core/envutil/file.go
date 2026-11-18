@@ -7,7 +7,6 @@ import (
 	"strings"
 )
 
-// no-follow 파일 열기를 지원하지 않는 플랫폼에서는 오류를 반환합니다.
 func secretFile(key string) (string, error) {
 	filePath := strings.TrimSpace(os.Getenv(key + "_FILE"))
 	if filePath == "" {
@@ -69,9 +68,6 @@ func secretFile(key string) (string, error) {
 	return value, nil
 }
 
-// StringOrSecretFile은 key의 평문 값 또는 key_FILE이 가리키는 비밀 파일 값을 읽는다.
-// 둘 다 비어 있으면 빈 문자열을 반환한다. 둘 다 설정되면 어느 값이 쓰였는지 운영에서 알 수 없으므로
-// 오류를 반환한다(비밀을 파일로 옮기는 중 남은 평문 env가 조용히 쓰이지 않게 한다).
 func StringOrSecretFile(key string) (string, error) {
 	value := strings.TrimSpace(os.Getenv(key))
 	fileSet := strings.TrimSpace(os.Getenv(key+"_FILE")) != ""

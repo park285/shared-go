@@ -51,7 +51,6 @@ func testStartupMinimumPoolBlackhole(t *testing.T, minimum string) {
 			workers.Go(func() {
 				defer closeTestSocket(t, conn)
 
-				// 클라이언트 제한이 깨져도 테스트 정리는 기한 내 끝나야 한다.
 				if deadlineErr := conn.SetDeadline(time.Now().Add(2 * time.Second)); deadlineErr != nil {
 					t.Errorf("set test connection deadline: %v", deadlineErr)
 
@@ -124,7 +123,6 @@ func TestIntegrationAcquireHealthPingBoundsHalfOpenIdleConnection(t *testing.T) 
 		t.Fatal("health ping did not close the half-open connection within its budget")
 	}
 
-	// pgx의 별도 정리 유예가 슬롯을 점유해도 획득 기한은 정리를 기다리지 않고 만료돼야 한다.
 	select {
 	case acquireErr := <-acquired:
 		require.ErrorIs(t, acquireErr, context.DeadlineExceeded)

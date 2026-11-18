@@ -399,7 +399,6 @@ func TestWithRetry_ContextCancelBeforeNextAttemptPreservesBothErrors(t *testing.
 		MaxAttempts: 5,
 		BaseDelay:   time.Millisecond,
 		Sleep: func(_ context.Context, _ time.Duration) bool {
-			// sleep이 끝난 직후 다음 시도 전에 취소가 관찰되는 경로를 고정한다.
 			cancel()
 
 			return true
@@ -429,7 +428,6 @@ func TestWithRetry_ContextDeadlineDuringSleepPreservedWithLastError(t *testing.T
 	targetErr := errors.New("transient")
 	callCount := 0
 
-	// 기본 sleep은 BaseDelay(1h)보다 먼저 도착하는 ctx deadline에서 중단된다.
 	err := WithRetry(ctx, RetryOptions{
 		MaxAttempts: 3,
 		BaseDelay:   time.Hour,

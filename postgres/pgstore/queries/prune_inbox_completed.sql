@@ -1,8 +1,3 @@
--- completed 갈래만 지운다. 술어가 idx_iris_webhook_inbox_prune의 (scope, terminal_at, id) 순서와 같아
--- 기한이 지난 행을 앞에서부터 LIMIT개만 읽는다. $4가 NULL이면 LEAST가 보존 기준만 쓴다.
--- 후보는 한 번만 계산해 고정한다. `id IN (... LIMIT ... SKIP LOCKED)`는 planner가 부분 질의를
--- nested loop 안쪽에서 바깥 행마다 다시 실행할 수 있고, 그때마다 이번 문이 이미 지운 행을
--- 건너뛰고 다음 행을 내주므로 한 호출이 LIMIT보다 많이 지운다.
 WITH candidates AS MATERIALIZED (
     SELECT id
     FROM iris_webhook_inbox

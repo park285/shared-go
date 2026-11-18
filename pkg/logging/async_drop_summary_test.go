@@ -224,8 +224,6 @@ func TestAsyncDropWriter_CloseIsIdempotent(t *testing.T) {
 	}
 }
 
-// target은 이 파일의 syncBuffer가 아니라 동기화 없는 buffer여야 한다. SyncBuffer로 바꾸면
-// 요약 경로의 동시 진입이 mutex에 가려 -race가 아무것도 잡지 못한다.
 func TestAsyncDropWriter_ConcurrentCloseDoesNotRaceOnTarget(t *testing.T) {
 	t.Parallel()
 
@@ -336,7 +334,6 @@ func TestAsyncDropWriter_BlockedSummaryKeepsConcurrentCloseBounded(t *testing.T)
 	waitForSummarySignal(t, target.started, asyncDropWriterCloseTimeout+time.Second, "loss summary did not reach target")
 	waitForSummarySignal(t, closed, asyncDropWriterCloseTimeout+time.Second, "Close blocked on the loss summary")
 
-	// 대기 기한 만료는 취소·종료가 아니다. 대상이 허용할 때까지 쓰기 작업은 계속 요약을 소유한다.
 	select {
 	case <-w.stopped:
 		t.Fatal("writer reported stopped while its summary was blocked")

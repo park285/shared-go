@@ -16,12 +16,10 @@ type OperationOptions struct {
 	SuccessEvent string
 	FailureEvent string
 	SkipStartLog bool
-	// Level은 started/succeeded 로그 레벨이다. failed는 항상 Error로 기록한다.
-	Level slog.Level
-	Attrs []slog.Attr
+	Level        slog.Level
+	Attrs        []slog.Attr
 }
 
-// RunOperation은 fn 실행을 시작·성공·실패 로그로 감싼다. 콜백 fn의 오류는 호출자 소유이므로 감싸지 않고 그대로 반환한다.
 func RunOperation(ctx context.Context, logger *slog.Logger, opts OperationOptions, fn func(context.Context) error) error {
 	ctx = operationContext(ctx, opts)
 

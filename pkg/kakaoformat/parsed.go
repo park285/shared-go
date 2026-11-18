@@ -48,7 +48,6 @@ func render(input string) string {
 }
 
 func (d *plainDocument) measure(node ast.Node) spanShape {
-	// 중첩 강조마다 본문을 다시 복사하지 않도록 변환 가능 여부를 한 번씩 계산한다.
 	shape := spanShape{true, true}
 
 	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
@@ -66,7 +65,6 @@ func (d *plainDocument) measure(node ast.Node) spanShape {
 	case *ast.Link, *ast.Image, *ast.AutoLink, *ast.CodeSpan, *ast.RawHTML, *literalURL:
 		shape = spanShape{}
 	case *ast.Emphasis, *ast.Strong:
-		// 결과는 emphasis()가 강조 노드에서만 읽으므로 강조가 있을 때만 맵을 만든다.
 		if d.shapes == nil {
 			d.shapes = make(map[ast.Node]spanShape)
 		}
@@ -83,7 +81,6 @@ func (d *plainDocument) blocks(parent ast.Node, level int) string {
 		previous ast.Node
 	)
 
-	// 문서 최상위 결과는 원문과 비슷한 크기이므로 한 번에 잡는다. 중첩 블록은 작아서 그대로 둔다.
 	if parent.Kind() == ast.KindDocument {
 		output.Grow(len(d.source))
 	}
@@ -138,7 +135,6 @@ func (d *plainDocument) block(node ast.Node, level int) string {
 
 		return strings.TrimSpace(codeBox("", language, body))
 	case *ast.HTMLBlock:
-		// HTML 주석은 화면에 보일 내용이 없으므로 원문 표식을 남기지 않는다.
 		if n.HTMLBlockKind == ast.HTMLBlockKind2 {
 			return ""
 		}
@@ -388,7 +384,6 @@ func (d *plainDocument) table(node *extast.Table) string {
 	}
 
 	if columns > maxTableColumns || rows > maxTableRows || columns*(rows+2) > maxTableOutputLines-d.tableLines {
-		// 표시 확장 예산을 넘겨도 행·열을 버리지 않고 표 원문 전체를 남긴다.
 		return source
 	}
 
@@ -398,7 +393,6 @@ func (d *plainDocument) table(node *extast.Table) string {
 			end++
 		}
 
-		// 행의 위치는 인용·목록 접두사를 제외하며, 파서가 생략한 추가 셀도 원문에서 확인한다.
 		if tableColumnCount(string(d.source[start:end])) > columns {
 			return source
 		}
@@ -412,7 +406,6 @@ func (d *plainDocument) table(node *extast.Table) string {
 		cells := make([]string, 0, columns)
 
 		for cell := row.FirstChild(); cell != nil; cell = cell.NextSibling() {
-			// 칸 안 <br> 줄바꿈은 다음 줄을 칸 값 위치에 맞춰 같은 행으로 읽히게 한다.
 			cells = append(cells, strings.ReplaceAll(d.inline(cell, 0), "\n", "\n        "))
 		}
 

@@ -4,14 +4,12 @@ import (
 	"slices"
 )
 
-// WorkerShape는 worker 하나의 attempt timeout·queue capacity·max age mode 기대값이다.
 type WorkerShape struct {
 	AttemptTimeout DurationMode
 	Capacity       CapacityMode
 	MaxAge         DurationMode
 }
 
-// ShapeProblems는 worker/shape 키와 mode 불일치를 worker ID·문제 순으로 돌려준다.
 func ShapeProblems(workers map[string]WorkerProfile, shapes map[string]WorkerShape) []string {
 	problems := make([]string, 0)
 

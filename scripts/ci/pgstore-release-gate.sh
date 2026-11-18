@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# release의 실제 PostgreSQL 계약은 이 스크립트가 소유한 일회용 서버에서만 검증한다.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -34,10 +33,6 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-# 호스트 loopback의 임의 포트에만 노출한다. 인증은 이 일회용 서버 내부에서만 생략한다.
-# kapu에는 Docker가 없어 실행 사용자의 rootless podman을 쓴다. 관측 수집은 rootless(_UID≠0) journal을 제외한다.
-# 같은 index digest의 다른 플랫폼 이미지(교차 빌드가 받은 것)가 로컬에 있으면 podman은 경고만 내고
-# 그 이미지를 에뮬레이션으로 실행한다. 호스트 플랫폼을 명시하면 맞는 이미지를 쓰거나 받는다.
 platform="$(podman info --format '{{.Host.OS}}/{{.Host.Arch}}')"
 container_id="$(podman run --rm -d --platform "${platform}" -p 127.0.0.1::5432 \
   -e POSTGRES_HOST_AUTH_METHOD=trust "${POSTGRES_IMAGE}")"
@@ -64,7 +59,6 @@ fi
 export TEST_DATABASE_URL="postgresql://postgres@127.0.0.1:${port}/postgres?sslmode=disable"
 export ALLOW_EXTERNAL_TEST_DB=true
 
-# pgstore는 위 서버를, pgxdb는 자체 일회용 서버를 사용한다. 두 패키지 모두 skip을 거부한다.
 if ! go test -race -count=1 -timeout=5m -json ./... >"${result_file}"; then
   echo 'pgstore-release-gate: PostgreSQL suite failed' >&2
   jq -r 'select(.Action == "fail" or .Action == "skip") | [.Action, (.Test // .Package)] | @tsv' "${result_file}" >&2 || true

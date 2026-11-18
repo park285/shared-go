@@ -149,7 +149,6 @@ func newClient(parsed *url.URL, opts fetchOptions) (*http.Client, func(), error)
 		CheckRedirect: redirectPolicy(opts, nil),
 	}
 
-	// 공유 http.DefaultTransport의 pool은 다른 소비자 것이므로 여기서 닫지 않는다.
 	return client, func() {}, nil
 }
 
@@ -192,7 +191,6 @@ func effectivePort(target *url.URL) string {
 	return ""
 }
 
-// body의 close 소유권은 httputil.ReadAllAndClose에 있다. 호출부는 따로 닫지 않는다.
 func readCappedBody(body io.ReadCloser, maxBytes int64) ([]byte, error) {
 	if maxBytes <= 0 {
 		maxBytes = defaultMaxBodyBytes

@@ -5,7 +5,6 @@ import (
 	"strings"
 )
 
-// DecodeCandidatesWithContext는 주변 평문을 보존한 채 지원 인코딩을 확장한다.
 func DecodeCandidatesWithContext(input string) DecodeResult {
 	standalone := DecodeCandidates(input)
 	if !standalone.Complete() || standalone.standaloneBase64 && len(standalone.Candidates) > 0 {
@@ -15,7 +14,6 @@ func DecodeCandidatesWithContext(input string) DecodeResult {
 	return decodeCandidatesWithContext(input, false, nil, nil)
 }
 
-// DecodeCandidatesWithContextForProtected는 protected text에 기여할 수 있는 짧은 Base64·hex 조각만 bounded BFS에 추가한다.
 func DecodeCandidatesWithContextForProtected(
 	input string,
 	mayContribute func(string) bool,
@@ -31,10 +29,8 @@ func DecodeCandidatesWithContextForProtected(
 	return mergeSemanticCandidates(semantic.candidates, decoded)
 }
 
-// EmbeddedContextRadiusBytes는 보호 경로의 EmbeddedContextMatcher가 encoded 구간 앞뒤로 읽는 최대 바이트다.
 const EmbeddedContextRadiusBytes = 384
 
-// EmbeddedContextMatcher는 모호한 Base64 내부 경계를 디코딩한 값이 원래 문맥에서도 기여하는지 판정한다.
 type EmbeddedContextMatcher func(input string, encodedStart, encodedEnd int, decoded string) bool
 
 func embeddedContextContributes(
@@ -55,7 +51,6 @@ func embeddedContextContributes(
 	})
 }
 
-// embeddedContextMatches는 예산을 넘으면 matcher를 부르지 않고 미완료(DecodeByteLimit)로 남긴다.
 func embeddedContextMatches(
 	input string,
 	span encodedSpan,
@@ -211,10 +206,6 @@ func (d *contextDecoder) admit(current decodeQueueEntry, candidate string) {
 	d.queue = append(d.queue, decodeQueueEntry{text: candidate, depth: current.depth + 1})
 }
 
-// 규칙·protected 매칭은 splice 경계 국소이되 구분자 run이 projection에서 접히므로,
-// 승격 후보는 collapse-인식 경계 윈도우 splice로 충분하다. 반복 본문에서는 동일
-// 윈도우가 visited dedup으로 접혀 후보 한도를 위치 변형이 소진하지 않는다. 전체
-// splice를 승격하면 큰 정상 답변에서 크기·후보 한도가 소진되어 fail-closed 오차단이 된다.
 func (d *contextDecoder) admitContextual(current decodeQueueEntry, span encodedSpan, decoded string) {
 	contextual, bounded := contextualAdmissionCandidate(current.text, span, decoded)
 	if !bounded {

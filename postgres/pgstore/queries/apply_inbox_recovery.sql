@@ -1,4 +1,3 @@
--- 호출자는 같은 트랜잭션에서 선택·업무 잠금을 유지하며 변경 행 수와 결정 수가 다르면 롤백한다.
 UPDATE iris_webhook_inbox AS inbox
 SET status = decision.status,
     payload = CASE

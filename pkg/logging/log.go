@@ -29,20 +29,14 @@ func Log(ctx context.Context, logger *slog.Logger, level slog.Level, event, mess
 }
 
 const (
-	// 스킵 단계는 runtime.Callers → logWith → log → exported wrapper → 실제 호출자 순이다.
 	callerSkipViaWrapper = 4
-	// 스킵 단계는 runtime.Callers → logWith → 호출한 helper → 실제 호출자 순이다.
-	callerSkipViaHelper = 3
+	callerSkipViaHelper  = 3
 )
 
 func log(ctx context.Context, logger *slog.Logger, level slog.Level, event, message string, attrs ...slog.Attr) {
 	logWith(ctx, logger, level, event, message, callerSkipViaWrapper, attrs, nil)
 }
 
-// logWith는 level gate 뒤 Record를 직접 구성해 전달한다. Logger.LogAttrs의 두 번째 Enabled
-// 호출과 임시 attr 병합 slice를 피하고, Record의 inline attr 저장소를 그대로 활용한다.
-// 두 attr 묶음을 primary와 secondary로 나눠 받는 것도 같은 이유다. 호출자가 미리 합치면
-// 그 병합 slice가 record마다 할당된다.
 func logWith(ctx context.Context, logger *slog.Logger, level slog.Level, event, message string, skip int, primary, secondary []slog.Attr) {
 	if logger == nil {
 		logger = slog.Default()

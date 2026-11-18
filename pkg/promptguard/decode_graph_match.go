@@ -181,8 +181,6 @@ func (matcher *decodeGraphMatcher) advance(run *decodeNodeRun, previous rune, ed
 		matcher.left.add(thread)
 	}
 
-	// 해석 선택이 없는 경로에서 새로 시작한 스레드는 해석 간선을 지나기 전까지 경로가 없어 일치를 내도 observeGraph가
-	// 버린다. 정규식은 최대 maxRunes rune만 읽으므로 간선 끝에서 그보다 앞에서 시작한 스레드는 다음 간선에 닿지 못한다.
 	startFrom := 0
 
 	if prefix == nil && matcher.pattern.maxRunes >= 0 {
@@ -195,7 +193,6 @@ func (matcher *decodeGraphMatcher) advance(run *decodeNodeRun, previous rune, ed
 		startThread := index >= startFrom
 		index++
 
-		// 살아 있는 스레드가 없고 새 스레드도 시작하지 않으면 step은 빈 집합만 맞바꾸므로 부르지 않는다.
 		if len(matcher.left.threads) == 0 && (!startThread || !matcher.pattern.startMayAccept(value)) {
 			previous = value
 

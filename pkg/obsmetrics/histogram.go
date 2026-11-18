@@ -5,8 +5,6 @@ import (
 	"sync/atomic"
 )
 
-// Histogram은 고정 버킷 경계를 가진 thread-safe 비누적 히스토그램입니다.
-// Observe는 관측값이 속한 landing bucket 하나만 증가시키며, 누적 bucket은 Snapshot에서 계산합니다.
 type Histogram struct {
 	upperBounds []float64
 	counts      []atomic.Uint64
@@ -29,8 +27,6 @@ func (h *Histogram) Observe(v float64) {
 		return
 	}
 
-	// total을 landing bucket보다 먼저 증가시키면 동시 Snapshot에서도 cumulative <= total
-	// 불변식을 유지할 수 있다. Snapshot은 point-in-time 일관성 대신 scrape-safe 원자 스냅샷을 제공한다.
 	h.total.Add(1)
 	atomicAddFloat64(&h.sumBits, v)
 

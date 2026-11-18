@@ -6,11 +6,6 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-// WalkFlatBase64Readings는 독립된 Base64 구간마다 원문과 모든 국소 해석을 전달한다.
-// 구간 내부는 기존 디코더의 후보·깊이·스캔 한도를 그대로 적용하고 실제 변환 작업
-// 예산은 전체 입력에서 공유한다. 구간 사이의 조합은 visit 소유자가 증명해야 한다.
-// 증명할 수 없는 인코딩이나 정규화 경계에서는 false이며 원래 검사를 생략하면 안 된다.
-// 콜백 visit은 증명 전용이며 입력 평가나 공격 근거 기록에 사용하면 안 된다.
 func WalkFlatBase64Readings(input string, visit func(readings []string) bool) bool {
 	if !flatReadingInputSupported(input) {
 		return false
@@ -112,8 +107,6 @@ func flatReadingStable(reading string) bool {
 		return false
 	}
 
-	// 선행 자모·결합 문자는 왼쪽 구간과 합성될 수 있다. 오른쪽 고정 문자도
-	// 정규화 경계인지 확인하므로 내부·후행 결합 문자는 구간 안에서 처리할 수 있다.
 	return norm.NFKC.PropertiesString(reading).BoundaryBefore()
 }
 

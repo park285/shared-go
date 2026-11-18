@@ -7,10 +7,6 @@ import (
 	"time"
 )
 
-// SessionConfig는 migration 세션에 거는 lock_timeout·statement_timeout이다. 0 이하 값은 설정하지 않는다.
-// 설정은 set_config(..., false)로 거는 session scope라 connection 수명 동안 유지된다 — exec는
-// 마이그레이션 전용 pinned connection이어야 하며, pool 바인딩 exec에 적용하면
-// 설정이 임의의 conn 하나에만 남아 이후 세션으로 샌다.
 type SessionConfig struct {
 	LockTimeout      time.Duration
 	StatementTimeout time.Duration

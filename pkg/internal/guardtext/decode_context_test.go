@@ -174,8 +174,6 @@ func TestContextualAdmissionDeduplicatesBeforeBudgetEnforcement(t *testing.T) {
 	}
 }
 
-// 패딩 없는 읽기 가능 Base64 토큰은 하위 구간마다 embedded 문맥 창을 평가한다. 그 창도 문맥 예산에 과금해야
-// 최악 비용이 maxProtectedContextBytes에서 끝난다.
 func TestDecodeCandidatesWithContextForProtectedChargesEmbeddedContextWindows(t *testing.T) {
 	t.Parallel()
 

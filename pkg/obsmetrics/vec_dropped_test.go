@@ -74,7 +74,6 @@ func TestWriteExposition_EmitsDroppedSeriesCounter(t *testing.T) {
 	})
 }
 
-// 드롭이 0일 때도 series를 내보내야 "0"과 "메트릭 없음"이 구분된다.
 func TestWriteExposition_EmitsZeroDroppedSeries(t *testing.T) {
 	t.Parallel()
 

@@ -1,0 +1,46 @@
+id: no-real-sleep-in-go-tests
+language: Go
+severity: error
+message: 테스트에서 실제 시간을 기다리는 time.Sleep은 금지됩니다. testing/synctest bubble 안에서 가짜 시계로 진행하거나 채널·WaitGroup·synctest.Wait로 동기화하세요.
+note: |
+  실제 시간 대기는 느리고, 부하가 걸린 CI에서 순서를 보장하지 못해 간헐 실패를 만듭니다.
+  synctest.Test bubble 안의 time.Sleep은 가짜 시계를 결정적으로 진행시키므로 허용됩니다.
+  bubble 밖 helper에서 시간을 진행해야 하면 helper를 bubble 안 함수 리터럴로 옮기세요.
+rule:
+  pattern:
+    context: 'func f() { time.Sleep($$$) }'
+    selector: call_expression
+  not:
+    inside:
+      stopBy: end
+      pattern:
+        context: 'func f() { synctest.Test($$$) }'
+        selector: call_expression
+files:
+  - '**/*_test.go'
+ignores:
+  - 'docs/**'
+  - '**/testdata/**'
+  - '**/fixtures/**'
+  - '**/vendor/**'
+---
+id: no-renamed-time-import-in-go-tests
+language: Go
+severity: error
+message: 테스트에서 time과 testing/synctest는 별칭 없이 import합니다. 별칭은 no-real-sleep-in-go-tests가 호출을 식별하지 못하게 합니다.
+rule:
+  kind: import_spec
+  all:
+    - has:
+        field: name
+        regex: '.'
+    - has:
+        field: path
+        regex: '^["`](time|testing/synctest)["`]$'
+files:
+  - '**/*_test.go'
+ignores:
+  - 'docs/**'
+  - '**/testdata/**'
+  - '**/fixtures/**'
+  - '**/vendor/**'

@@ -10,8 +10,6 @@ import (
 	"github.com/park285/shared-go/v2/pkg/runtime/lifecycle"
 )
 
-// DefaultShutdownTimeout 은 shutdownTimeout 이 0 이하일 때 적용하는 보수적 기본 종료 예산입니다.
-// Process 종료 예산과 같은 값이라 lifecycle 패키지의 상수를 그대로 씁니다.
 const DefaultShutdownTimeout = lifecycle.DefaultShutdownTimeout
 
 const maxForceCloseReserve = time.Second
@@ -20,8 +18,6 @@ type forceCloser interface {
 	Close() error
 }
 
-// Run 은 ctx 취소 시 server 를 종료합니다. ShutdownTimeout 이 0 이하이면 무기한 대기 대신
-// DefaultShutdownTimeout 을 적용해 process 종료가 멈추지 않도록 합니다.
 func Run(ctx context.Context, server Server, shutdownTimeout time.Duration) error {
 	errCh := make(chan error, 1)
 
@@ -111,9 +107,7 @@ func forceCloseAndWait(
 
 		closeCh = resultCh
 		closeDone = false
-		// Close 에는 context 경계가 없으므로, 이 호출이 소유하는 단일 goroutine과
-		// 버퍼링한 결과 채널로 hard deadline을 기다리는 경로를 분리합니다. Close가
-		// 반환하지 않아도 Run은 deadline에 반환하고, 이후 결과 전달도 막히지 않습니다.
+
 		go func() {
 			resultCh <- closer.Close()
 		}()

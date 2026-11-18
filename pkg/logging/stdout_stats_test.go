@@ -12,7 +12,6 @@ import (
 )
 
 func TestSnapshotStdoutCountsOutcomesExactlyOnce(t *testing.T) {
-	// 프로세스 전체 집계이므로 패키지의 병렬 테스트와 격리한다.
 	before := SnapshotStdout()
 	payload := oversizedJSON(t)
 

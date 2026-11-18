@@ -6,14 +6,10 @@ import (
 	"time"
 )
 
-// WebhookLatencyBuckets는 ms~분 범위를 덮는 초 단위 히스토그램 경계입니다.
 var WebhookLatencyBuckets = []float64{
 	0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120,
 }
 
-// WebhookMetrics는 iris-client-go webhook.Metrics 관측 포인트를 prefix 네임스페이스
-// 단위로 구현한 공통 구현체입니다. 메서드 집합이 webhook.Metrics와 구조적으로 일치하므로
-// iris-client-go를 import하지 않고도 webhook.WithMetrics에 주입할 수 있습니다.
 type WebhookMetrics struct {
 	prefix string
 
@@ -28,7 +24,6 @@ type WebhookMetrics struct {
 	decodeLatency   *Histogram
 }
 
-// NewWebhookMetrics는 prefix 네임스페이스(예: "chat_bot", "twentyq")로 webhook 메트릭을 만듭니다.
 func NewWebhookMetrics(prefix string) *WebhookMetrics {
 	return &WebhookMetrics{
 		prefix:          prefix,

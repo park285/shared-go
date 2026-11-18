@@ -93,8 +93,6 @@ func TestGuardDoesNotRecountWindowedEvidenceWithoutExclusionContext(t *testing.T
 
 	g := newTestGuardFromRulepacks(t)
 
-	// 공백이 많은 문단은 결합 원문 창보다 결합 view 창이 더 멀리 남는다. 원문 창 밖으로 밀려난
-	// 식별자의 근거를 예외 문맥 없이 다음 경계에서 다시 세면 안 된다.
 	input := "운영 ADC는 `GOOGLE_APPLICATION_CREDENTIALS`로 지정합니다. " + strings.Repeat("값 ", 150) + "기본값은 `cliproxy`로 유지합니다."
 
 	evaluation, err := checkPersistentForTest(t, g, input)
@@ -123,7 +121,6 @@ func TestGuardCompletesLogWithDistinctIdentifiers(t *testing.T) {
 
 	g := newTestGuardFromRulepacks(t)
 
-	// 행마다 끝 번호만 다른 식별자는 내부 Base64 창의 앞 그룹이 같으므로 작업 예산 안에서 끝나야 한다.
 	var log strings.Builder
 
 	for index := range 8000 {
@@ -134,7 +131,6 @@ func TestGuardCompletesLogWithDistinctIdentifiers(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, evaluation.DecodeIncomplete)
 
-	// 숫자만인 행 번호는 Base64로 읽지 않으므로, 행 번호와 읽을 수 있는 hex 값이 반복되는 덤프도 예산 안에서 끝나야 한다.
 	var dump strings.Builder
 
 	for index := range 8000 {

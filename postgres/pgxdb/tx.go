@@ -13,8 +13,6 @@ type Rollbacker interface {
 	Rollback(ctx context.Context) error
 }
 
-// Rollback은 호출자 취소와 독립된 5초 기한으로 트랜잭션을 정리한다.
-// 이미 커밋·롤백된 트랜잭션은 성공으로 처리하고 다른 오류의 원인은 보존한다.
 func Rollback(ctx context.Context, tx Rollbacker) error {
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()

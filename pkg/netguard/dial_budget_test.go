@@ -255,7 +255,6 @@ func TestPolicyNormalizesAllowlistOnceAtGuardConstruction(t *testing.T) {
 		t.Fatalf("dial attempts = %d, want 1", dialed)
 	}
 
-	// unicode 형태는 allowlist를 통과하고 resolve 단계에서 갈린다(ErrHostNotAllowed가 아니다).
 	if err := callGuardedDial(dial, "bücher.example:443"); errors.Is(err, ErrHostNotAllowed) {
 		t.Fatalf("guarded dial error = %v, want allowlist match for the unicode form", err)
 	}

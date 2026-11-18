@@ -110,7 +110,7 @@ func TestAsyncDropWriterTruncationKeepsJSONCorrelationAndNextRecord(t *testing.T
 		t.Fatal("stdout truncation mutated original file record")
 	}
 
-	clear(payload) // Write 반환 뒤에는 쓰기 작업이 큐에 넣은 사본을 소유한다.
+	clear(payload)
 
 	if _, err := writer.Write([]byte("{\"msg\":\"survivor\"}\n")); err != nil {
 		t.Fatal(err)
@@ -201,7 +201,6 @@ func TestAsyncDropWriterMalformedOversizeDoesNotExposeRawPrefix(t *testing.T) {
 }
 
 func TestAsyncDropWriterFullQueueDoesNotAllocate(t *testing.T) {
-	// AllocsPerRun이 GOMAXPROCS를 바꾸므로 병렬 실행하지 않는다.
 	target := &stallingWriter{started: make(chan struct{}), release: make(chan struct{})}
 	release := sync.OnceFunc(func() { close(target.release) })
 	t.Cleanup(release)

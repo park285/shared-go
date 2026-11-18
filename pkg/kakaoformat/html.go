@@ -28,7 +28,6 @@ func rawHTMLText(value string) string {
 	}
 }
 
-// 짝이 없거나 첨자로 표시할 수 없는 문자는 ^(...)·_(...)로 남겨 지수 의미를 잃지 않게 한다.
 func (d *plainDocument) scriptTag(node ast.Node, style int) (ast.Node, string, bool) {
 	open, ok := node.(*ast.RawHTML)
 	if !ok {

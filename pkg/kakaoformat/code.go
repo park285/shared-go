@@ -11,7 +11,6 @@ var reCodeBlock = regexp.MustCompile("(?s)\\A([ \t]*)```([^\n`]*)\n(.*?)\n```[ \
 func protectCodeRanges(input string, dst *store) string {
 	var output strings.Builder
 
-	// 코드가 없어도 입력 전체를 옮겨 쓰므로 결과의 하한인 입력 크기만큼 미리 잡는다.
 	output.Grow(len(input))
 
 	last := 0
@@ -61,7 +60,6 @@ func formatCodeRange(input string, code CodeRange) string {
 
 	body := strings.TrimSuffix(strings.TrimSuffix(input[code.BodyStart:code.BodyEnd], "\n"), "\r")
 	if code.Width >= 4 {
-		// 본문 전체가 fence 하나일 때만 겹친 포장을 벗겨 앞뒤 코드가 누락되지 않게 한다.
 		if inner := reCodeBlock.FindStringSubmatch(body); len(inner) > 0 {
 			if name := strings.TrimSpace(inner[2]); name != "" {
 				lang = name

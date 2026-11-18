@@ -5,7 +5,6 @@ import (
 	"testing"
 )
 
-// CloseNow는 자원을 닫고 실패하면 테스트 오류로 기록한다.
 func CloseNow(tb testing.TB, name string, closeFn func() error) {
 	tb.Helper()
 
@@ -14,7 +13,6 @@ func CloseNow(tb testing.TB, name string, closeFn func() error) {
 	}
 }
 
-// WriteResponse는 응답 문자열을 쓰고 실패하면 테스트 오류로 기록한다.
 func WriteResponse(tb testing.TB, w io.Writer, body string) {
 	tb.Helper()
 
@@ -23,7 +21,6 @@ func WriteResponse(tb testing.TB, w io.Writer, body string) {
 	}
 }
 
-// WriteBytes는 응답 바이트를 쓰고 실패하면 테스트 오류로 기록한다.
 func WriteBytes(tb testing.TB, w io.Writer, body []byte) {
 	tb.Helper()
 

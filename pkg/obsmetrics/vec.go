@@ -13,7 +13,6 @@ import (
 	"github.com/park285/shared-go/v2/pkg/internal/promtext"
 )
 
-// Labels는 Prometheus label name/value 집합입니다. 렌더링 시 label name 기준으로 정렬됩니다.
 type Labels map[string]string
 
 type seriesEntry[T any] struct {
@@ -23,11 +22,8 @@ type seriesEntry[T any] struct {
 }
 
 const (
-	// DefaultMaxMetricSeries는 기존 생성자로 만든 벡터가 보유할 시계열 수를 제한한다.
-	DefaultMaxMetricSeries = 1024
-	// 시계열 하나의 라벨 수 상한이다.
-	defaultMaxMetricLabels = 16
-	// 외부 라벨 정규화 시 할당을 제한하는 라벨 이름·값 바이트 상한이다.
+	DefaultMaxMetricSeries          = 1024
+	defaultMaxMetricLabels          = 16
 	defaultMaxMetricLabelNameBytes  = 128
 	defaultMaxMetricLabelValueBytes = 256
 )
@@ -38,7 +34,6 @@ const (
 	droppedSeriesHelp          = "Total series dropped because a cardinality or label limit was reached."
 )
 
-// VecOptions는 메트릭 벡터의 자원 상한이다. 0 이하이면 기본 상한을 적용하며 무제한 모드는 없다.
 type VecOptions struct {
 	MaxSeries          int
 	MaxLabels          int
@@ -181,7 +176,6 @@ func (s *seriesStore) collect[T any]() []*seriesEntry[T] {
 	return entries
 }
 
-// CounterVec는 동일 metric name/help를 공유하는 label-set별 counter 집합입니다.
 type CounterVec struct {
 	seriesStore
 
@@ -193,7 +187,6 @@ type counter struct {
 	value atomic.Uint64
 }
 
-// NewCounterVec는 기본 자원 상한(VecOptions 0값)으로 counter 벡터를 만듭니다.
 func NewCounterVec(name, help string) *CounterVec {
 	return newCounterVecWithOptions(name, help, VecOptions{})
 }
@@ -263,7 +256,6 @@ func (c *counter) Value() uint64 {
 	return c.value.Load()
 }
 
-// GaugeVec는 동일 metric name/help를 공유하는 label-set별 float64 gauge 집합입니다.
 type GaugeVec struct {
 	seriesStore
 
@@ -271,7 +263,6 @@ type GaugeVec struct {
 	help string
 }
 
-// Gauge는 원자적으로 설정되는 단일 gauge series입니다.
 type Gauge struct {
 	bits atomic.Uint64
 }
@@ -337,7 +328,6 @@ func (g *Gauge) Value() float64 {
 	return math.Float64frombits(g.bits.Load())
 }
 
-// HistogramVec는 동일 metric name/help/bucket을 공유하는 label-set별 histogram 집합입니다.
 type HistogramVec struct {
 	seriesStore
 
@@ -423,8 +413,6 @@ func (v *HistogramVec) WriteExposition(w io.Writer) bool {
 	return writeDroppedSeries(w, v.name, v.limiter.droppedSeries())
 }
 
-// 캡에 걸려 버려진 series는 exposition에 아예 나타나지 않으므로, 드롭 자체를 별도 family로
-// 내보내지 않으면 관측 측에서 "값이 0"과 "메트릭이 잘렸음"을 구분할 수 없다.
 func writeDroppedSeries(w io.Writer, name string, dropped uint64) bool {
 	droppedName := name + droppedSeriesSuffix
 	if !writeMetricHeader(w, droppedName, droppedSeriesHelp, "counter") {
@@ -434,8 +422,6 @@ func writeDroppedSeries(w io.Writer, name string, dropped uint64) bool {
 	return writeMetricSample(w, droppedName, nil, strconv.FormatUint(dropped, 10))
 }
 
-// 길이 접두사는 name/value에 구분자가 섞여도 키가 겹치지 않게 하는 장치다. 형식을 바꾸면
-// 프로세스 재시작 없이도 기존 series와 새 series가 갈라지므로 유지해야 한다.
 func canonicalLabels(labels Labels) (string, []promtext.Label) {
 	pairs := promtext.SortedLabels(labels)
 	if len(pairs) == 0 {

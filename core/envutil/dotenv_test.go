@@ -198,7 +198,6 @@ func (tc loadDotenvCase) assertFailure(t *testing.T, err error) {
 		return
 	}
 
-	// 설정 오류로 멈춘 경우 어떤 dotenv 파일도 적용되지 않아야 한다.
 	if got, ok := os.LookupEnv(tc.wantKey); ok {
 		t.Fatalf("%s = %q after LoadDotenv() error, want unset", tc.wantKey, got)
 	}
@@ -287,7 +286,6 @@ func writeDotenvFile(t *testing.T, path, content string, perm os.FileMode) {
 		t.Fatalf("write dotenv %s: %v", path, err)
 	}
 
-	// umask와 관계없이 의도한 권한을 고정한다.
 	if err := os.Chmod(path, perm); err != nil {
 		t.Fatalf("chmod dotenv %s: %v", path, err)
 	}
@@ -338,7 +336,6 @@ func TestLoadDotenvLocalEnableFlag(t *testing.T) {
 			wantVal: "",
 		},
 		{
-			// service env file이 처리되는 경로에서도 LocalEnableKey 값을 먼저 판정해야 한다.
 			name: "unacceptable value fails before service env file",
 			opts: twentyqServiceOptions(DotenvOptions{LocalEnableKey: testChatbotgoLoadDotenv}),
 			setup: func(t *testing.T, dir string) {
@@ -354,7 +351,6 @@ func TestLoadDotenvLocalEnableFlag(t *testing.T) {
 			wantErrIs: strconv.ErrSyntax,
 		},
 		{
-			// 받아들일 수 있는 false는 service env file 적용을 막지 않는다.
 			name: "accepted false keeps service env file",
 			opts: twentyqServiceOptions(DotenvOptions{LocalEnableKey: testChatbotgoLoadDotenv}),
 			setup: func(t *testing.T, dir string) {
@@ -377,7 +373,6 @@ func TestLoadDotenvLocalEnableFlag(t *testing.T) {
 	}
 }
 
-// 오타 값이 false로 접히면 local dotenv로 넘어가거나 world-readable env file을 strict 검사 없이 적용하게 된다.
 func TestLoadDotenvStaticSecretsGuard(t *testing.T) {
 	tests := []loadDotenvCase{
 		{

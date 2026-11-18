@@ -138,7 +138,6 @@ func TestEnableFileLoggingWithOptionsKeepsFileLoggingWhenStdoutStalls(t *testing
 		t.Fatalf("file stall_probe lines = %d, want 64", got)
 	}
 
-	// stall 해제 후 동기 Close: async로 두면 closer의 마지막 파일 flush가 t.TempDir 정리와 레이스한다.
 	releaseStdout()
 
 	_ = closer.Close()

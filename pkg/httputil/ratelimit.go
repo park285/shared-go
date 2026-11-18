@@ -18,28 +18,21 @@ const (
 	defaultFixedWindowEntryTTL      = 2 * time.Minute
 )
 
-// ClientIPOptions는 forwarded header 신뢰 경계를 지정한다. 신뢰 proxy에서 온 요청은
-// X-Forwarded-For의 오른쪽에서 첫 비신뢰 hop을 client IP로 고른다. 왼쪽 값은 클라이언트가
-// 임의로 정할 수 있어 identity로 쓰지 않는다. X-Real-IP도 신뢰 proxy 주소면 버린다.
 type ClientIPOptions struct {
 	TrustForwarded bool
 	TrustedProxies []netip.Prefix
 }
 
-// IdentityFunc는 요청에서 rate-limit identity를 만든다.
 type IdentityFunc func(*http.Request) string
 
-// RateLimitRejectFunc는 rate-limit 초과 응답을 쓴다.
 type RateLimitRejectFunc func(http.ResponseWriter, *http.Request, string)
 
-// FixedWindowOptions는 fixed-window limiter 선택 동작을 지정한다. MaxIdentities와 EntryTTL의 zero value는 안전 기본값을 사용하며, EntryTTL은 window보다 짧아지지 않는다.
 type FixedWindowOptions struct {
 	MaxIdentities int
 	EntryTTL      time.Duration
 	Now           func() time.Time
 }
 
-// FixedWindowRateLimiter는 identity별 fixed-window 요청 수를 제한한다.
 type FixedWindowRateLimiter struct {
 	mu            sync.Mutex
 	limit         int
@@ -59,7 +52,6 @@ type fixedWindowEntry struct {
 	element     *list.Element
 }
 
-// RateLimitMiddlewareConfig는 fixed-window HTTP middleware 설정이다.
 type RateLimitMiddlewareConfig struct {
 	Limiter  *FixedWindowRateLimiter
 	Identity IdentityFunc
@@ -67,7 +59,6 @@ type RateLimitMiddlewareConfig struct {
 	Skip     func(*http.Request) bool
 }
 
-// ParseTrustedProxies는 IP/CIDR 문자열을 trusted proxy prefix 목록으로 변환한다.
 func ParseTrustedProxies(values []string) ([]netip.Prefix, error) {
 	if len(values) == 0 {
 		return nil, nil
@@ -108,8 +99,6 @@ func ParseTrustedProxies(values []string) ([]netip.Prefix, error) {
 	return result, nil
 }
 
-// clientIP는 trusted proxy 경계 안에서만 forwarded header를 반영한 client IP를 반환한다.
-// 신뢰 경계를 한 진입점에 묶기 위해 외부에는 RateLimitIdentity만 공개한다.
 func clientIP(r *http.Request, opts ClientIPOptions) string {
 	if r == nil {
 		return ""
@@ -129,7 +118,6 @@ func clientIP(r *http.Request, opts ClientIPOptions) string {
 	return remoteIP.String()
 }
 
-// RateLimitIdentity는 API key가 있으면 key hash, 아니면 client IP 기반 identity를 반환한다.
 func RateLimitIdentity(r *http.Request, apiKey string, opts ClientIPOptions) string {
 	if key := strings.TrimSpace(apiKey); key != "" {
 		return "key:" + rateLimitKeyHash(key)
@@ -153,7 +141,6 @@ func rateLimitKeyHash(value string) string {
 	return hex.EncodeToString(sum[:8])
 }
 
-// NewFixedWindowRateLimiter는 fixed-window limiter를 생성한다.
 func NewFixedWindowRateLimiter(limit int, window time.Duration, opts FixedWindowOptions) *FixedWindowRateLimiter {
 	if limit <= 0 || window <= 0 {
 		return nil
@@ -231,7 +218,6 @@ func (l *FixedWindowRateLimiter) Allow(identity string) bool {
 	return true
 }
 
-// FixedWindowRateLimitMiddleware는 fixed-window limiter를 net/http middleware로 감싼다.
 func FixedWindowRateLimitMiddleware(cfg RateLimitMiddlewareConfig) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -315,7 +301,6 @@ func forwardedClientIP(r *http.Request, opts ClientIPOptions) string {
 	return realIP.String()
 }
 
-// zone이 붙은 IPv6 주소는 netip.Prefix.Contains가 포함하지 않으므로 신뢰 proxy로 보지 않는다.
 func isTrustedProxy(addr netip.Addr, trustedProxies []netip.Prefix) bool {
 	for _, prefix := range trustedProxies {
 		if prefix.Contains(addr) {
@@ -348,8 +333,6 @@ func rightmostNonTrustedForwardedFor(headerValue string, trustedProxies []netip.
 	}
 }
 
-// parsePlainIPCandidate는 net.ParseIP 문법만 받는다. 이전 구현의 net.IP.String()이 IPv4 매핑 주소를
-// 점 표기로 쓰던 것과 같은 문자열이 나오도록 4바이트 표현으로 줄인 뒤 netip로 옮긴다.
 func parsePlainIPCandidate(value string) (netip.Addr, bool) {
 	raw := strings.TrimSpace(value)
 	if raw == "" {
