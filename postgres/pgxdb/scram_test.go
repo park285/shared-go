@@ -24,6 +24,7 @@ func TestSCRAMPasswordCompatibility(t *testing.T) {
 		{"ascii control fallback", "control\a", "control\a", true},
 		{"private use fallback", "private-\ue000", "private-\ue000", true},
 		{"prohibited before normalization", "a\u0340", "a\u0340", false},
+		{"unassigned preserves decomposed prefix", "A\u030a\u0221", "A\u030a\u0221", true},
 		{"unassigned before normalization", "a\u1d2c", "a\u1d2c", true},
 		{"fullwidth", "pass-Ｆ", "pass-F", false},
 		{"soft hyphen", "soft\u00adhyphen", "softhyphen", false},

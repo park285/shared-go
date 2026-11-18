@@ -108,10 +108,10 @@ func TestReadAllAndCloseWithDrainLimitPreservesCallerBudget(t *testing.T) {
 	t.Parallel()
 
 	body := &countingBody{reader: strings.NewReader(strings.Repeat("a", 4096))}
-	_, err := ReadAllAndCloseWithDrainLimit(body, 16, 64)
+	_, err := readAllAndCloseWithDrainLimit(body, 16, 64)
 
 	if !errors.Is(err, ErrResponseBodyTooLarge) {
-		t.Fatalf("ReadAllAndCloseWithDrainLimit() error = %v, want ErrResponseBodyTooLarge", err)
+		t.Fatalf("readAllAndCloseWithDrainLimit() error = %v, want ErrResponseBodyTooLarge", err)
 	}
 
 	if body.read > 16+1+64+1 {
@@ -131,11 +131,11 @@ func TestReadAllAndCloseWithDrainLimitJoinsReadDrainAndCloseErrors(t *testing.T)
 	closeErr := errors.New("close boom")
 	body := &phasedErrorBody{errors: []error{readErr, drainErr}, closeE: closeErr}
 
-	_, err := ReadAllAndCloseWithDrainLimit(body, 64, 64)
+	_, err := readAllAndCloseWithDrainLimit(body, 64, 64)
 
 	for _, want := range []error{readErr, drainErr, closeErr} {
 		if !errors.Is(err, want) {
-			t.Fatalf("ReadAllAndCloseWithDrainLimit() error = %v, want joined %v", err, want)
+			t.Fatalf("readAllAndCloseWithDrainLimit() error = %v, want joined %v", err, want)
 		}
 	}
 

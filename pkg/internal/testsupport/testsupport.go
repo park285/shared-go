@@ -4,7 +4,6 @@ import (
 	"io"
 	"log"
 	"log/slog"
-	"os"
 	"testing"
 )
 
@@ -51,16 +50,6 @@ func AssertType[T any](tb testing.TB, name string, value any) T {
 	}
 
 	return typed
-}
-
-func UnsetEnvOnCleanup(tb testing.TB, key string) {
-	tb.Helper()
-
-	tb.Cleanup(func() {
-		if err := os.Unsetenv(key); err != nil {
-			tb.Errorf("Unsetenv(%q) error = %v", key, err)
-		}
-	})
 }
 
 // UseDefaultLogger는 테스트 동안 slog.Default()를 handler로 바꾸고 cleanup에서 되돌린다.
