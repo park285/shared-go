@@ -292,8 +292,8 @@ func expectFreshFinalizer(t *testing.T, secondStarted <-chan finalizerCallState,
 		t.Fatalf("second Finalize state = %+v, want success with live context", second)
 	}
 
-	if second.remaining < finalizeTimeout/2 {
-		t.Fatalf("second Finalize deadline remaining = %v, want fresh start-time budget", second.remaining)
+	if second.remaining != finalizeTimeout {
+		t.Errorf("second Finalize deadline remaining = %v, want %v", second.remaining, finalizeTimeout)
 	}
 }
 
