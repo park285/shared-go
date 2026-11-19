@@ -1,7 +1,3 @@
--- irisdurable 공용 PostgreSQL durability 저장소의 테이블이다.
--- inbox·nonce·reply outbox는 봇마다 같은 상태 기계를 쓰고, 봇별 확장은 이 행 id를 참조하는
--- 봇 소유 side table이나 phase 값으로 표현한다.
-
 CREATE TABLE IF NOT EXISTS iris_webhook_inbox (
     id bigserial PRIMARY KEY,
     scope text NOT NULL,
@@ -28,9 +24,6 @@ CREATE TABLE IF NOT EXISTS iris_webhook_inbox (
         CHECK (attempts >= 0),
     CONSTRAINT chk_iris_webhook_inbox_status
         CHECK (status IN ('pending', 'processing', 'completed', 'manual_review')),
-    -- manual_review는 사람이 볼 사유가 반드시 있어야 하고, completed는 "재시도해도 같은 결과인
-    -- 입력 결함"처럼 성공이 아닌 완료의 사유를 남길 수 있다. 사유 어휘는 소비자가 자기 migration의
-    -- CHECK로 좁힌다.
     CONSTRAINT chk_iris_webhook_inbox_terminal_reason
         CHECK (
             (status = 'manual_review' AND length(btrim(coalesce(terminal_reason, ''))) > 0)
@@ -45,7 +38,6 @@ CREATE TABLE IF NOT EXISTS iris_webhook_inbox (
         )
 );
 
--- claim 후보 탐색과 ordering key head 판정이 같은 부분 인덱스를 쓴다.
 CREATE INDEX IF NOT EXISTS idx_iris_webhook_inbox_claim
     ON iris_webhook_inbox (scope, available_at, created_at, id)
     WHERE status IN ('pending', 'processing');
@@ -54,9 +46,10 @@ CREATE INDEX IF NOT EXISTS idx_iris_webhook_inbox_head
     ON iris_webhook_inbox (scope, ordering_key, created_at, id)
     WHERE status IN ('pending', 'processing');
 
--- prune의 두 갈래는 보존이 다르므로 인덱스도 나눈다. 하나로 합치면
--- InboxManualReviewRetention이 0인 구성에서 지워지지 않는 manual_review 행이 스캔 앞머리에
--- 영구히 쌓인다.
+CREATE INDEX IF NOT EXISTS idx_iris_webhook_inbox_head_by_id
+    ON iris_webhook_inbox (scope, ordering_key, id)
+    WHERE status IN ('pending', 'processing');
+
 CREATE INDEX IF NOT EXISTS idx_iris_webhook_inbox_prune
     ON iris_webhook_inbox (scope, terminal_at, id)
     WHERE status = 'completed';
@@ -124,7 +117,6 @@ CREATE TABLE IF NOT EXISTS iris_reply_outbox (
             'permanent_conflict',
             'manual_review'
         )),
-    -- 재발송 가능한 상태는 payload와 room을 보존해야 하고, 더 보낼 것이 없는 상태만 지운다.
     CONSTRAINT chk_iris_reply_outbox_payload_replayable
         CHECK (payload IS NOT NULL OR status IN ('accepted', 'dead', 'permanent_conflict')),
     CONSTRAINT chk_iris_reply_outbox_room_scrub
@@ -139,9 +131,6 @@ CREATE TABLE IF NOT EXISTS iris_reply_outbox (
 CREATE INDEX IF NOT EXISTS idx_iris_reply_outbox_claimable
     ON iris_reply_outbox (scope, available_at, created_at, id)
     WHERE status IN ('pending', 'submitting', 'retryable_pre_dispatch', 'outcome_unknown');
-
--- (scope, message_id, phase, ordinal) 조회는 uq_iris_reply_outbox_identity가 만드는 unique
--- 인덱스가 이미 받으므로 같은 열의 인덱스를 더 두지 않는다.
 
 CREATE INDEX IF NOT EXISTS idx_iris_reply_outbox_prune
     ON iris_reply_outbox (scope, expires_at, id)

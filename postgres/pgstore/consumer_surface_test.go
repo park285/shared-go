@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
@@ -587,67 +586,92 @@ func TestRetireReturnsTheRowsItClosed(t *testing.T) {
 	}
 }
 
-func TestClaimPlanUsesThePartialIndexes(t *testing.T) {
+func TestInboxPollDoesNotScanTheBacklog(t *testing.T) {
+	const scope = "chatbotgo"
+
 	pool := newMigratedPool(t)
-	store := newScopedStore(t, pool)
 	ctx := t.Context()
 
-	conn, err := pool.Acquire(ctx)
+	_, err := pool.Exec(ctx, `INSERT INTO iris_webhook_inbox (scope, message_id, ordering_key, payload, status, terminal_at, terminal_reason)
+SELECT $1, 'sha256:' || lpad(to_hex(n), 64, '0'), 'sha256:' || repeat('a', 64), '{}',
+       CASE WHEN n = 1 THEN 'manual_review' ELSE 'completed' END, now(), CASE WHEN n = 1 THEN 'callback_timeout_uncertain' END
+FROM generate_series(1, 16384) n`, scope)
 	if err != nil {
-		t.Fatalf("acquire plan connection: %v", err)
-	}
-	defer conn.Release()
-
-	if _, err := conn.Exec(ctx, `SET enable_seqscan=off`); err != nil {
-		t.Fatalf("disable sequential scans: %v", err)
+		t.Fatal(err)
 	}
 
-	scope := store.Options().Scope
-
-	claimPlan := explainQuery(ctx, t, conn, "claim", pgstore.ClaimInboxQueryForTest, scope, "plan-token", float64(60), 1, false)
-
-	for _, node := range []string{"Recursive Union", "idx_iris_webhook_inbox_head"} {
-		if !strings.Contains(claimPlan, node) {
-			t.Fatalf("claim plan does not use %s:\n%s", node, claimPlan)
-		}
+	_, err = pool.Exec(ctx, `INSERT INTO iris_webhook_inbox (scope, message_id, ordering_key, payload)
+SELECT $1, 'sha256:' || repeat(k, 64), 'sha256:' || repeat(k, 64), '{}' FROM unnest(ARRAY['a','b']) k`, scope)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	runtimePlan := explainQuery(ctx, t, conn, "runtime snapshot", pgstore.InboxRuntimeSnapshotQueryForTest, scope)
-	if !strings.Contains(runtimePlan, "idx_iris_webhook_inbox_prune_manual_review") {
-		t.Fatalf("runtime snapshot plan does not use the manual-review index:\n%s", runtimePlan)
+	if _, err = pool.Exec(ctx, "ANALYZE iris_webhook_inbox"); err != nil {
+		t.Fatal(err)
 	}
 
-	if !strings.Contains(runtimePlan, "idx_iris_webhook_inbox_claim") && !strings.Contains(runtimePlan, "idx_iris_webhook_inbox_head") {
-		t.Fatalf("runtime snapshot plan does not use an active-row partial index:\n%s", runtimePlan)
+	checkInboxPlan(t, pool, "runtime snapshot", pgstore.InboxRuntimeSnapshotQueryForTest, scope)
+
+	_, err = pool.Exec(ctx, `INSERT INTO iris_webhook_inbox (scope, message_id, ordering_key, payload, created_at)
+SELECT $1, 'sha256:' || lpad(to_hex(16384+n), 64, '0'), 'sha256:' || repeat(CASE WHEN n % 2 = 0 THEN 'a' ELSE 'b' END, 64),
+       '{}', now() - n * interval '1 second'
+FROM generate_series(1, 16384) n`, scope)
+	if err != nil {
+		t.Fatal(err)
 	}
+
+	if _, err = pool.Exec(ctx, "ANALYZE iris_webhook_inbox"); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("ready", func(t *testing.T) {
+		checkInboxPlan(t, pool, "ready snapshot", pgstore.InboxReadySnapshotQueryForTest, scope, false)
+	})
+	t.Run("claim", func(t *testing.T) {
+		checkInboxPlan(t, pool, "claim", pgstore.ClaimInboxQueryForTest, scope, "plan-token", float64(60), 1, false)
+	})
 }
 
-func explainQuery(ctx context.Context, t *testing.T, conn *pgxpool.Conn, label, query string, args ...any) string {
+type inboxPlanNode struct {
+	Rows     float64         `json:"Actual Rows"`
+	Loops    float64         `json:"Actual Loops"`
+	Filtered float64         `json:"Rows Removed by Filter"`
+	Hits     int             `json:"Shared Hit Blocks"`
+	Reads    int             `json:"Shared Read Blocks"`
+	Plans    []inboxPlanNode `json:"Plans"`
+}
+
+func (p inboxPlanNode) maxRowsVisited() float64 {
+	rows := (p.Rows + p.Filtered) * p.Loops
+	for _, child := range p.Plans {
+		rows = max(rows, child.maxRowsVisited())
+	}
+
+	return rows
+}
+
+func checkInboxPlan(t *testing.T, pool *pgxpool.Pool, label, query string, args ...any) {
 	t.Helper()
 
-	rows, err := conn.Query(ctx, "EXPLAIN (COSTS OFF) "+query, args...)
-	if err != nil {
+	var raw []byte
+
+	if err := pool.QueryRow(t.Context(), "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) "+query, args...).Scan(&raw); err != nil {
 		t.Fatalf("EXPLAIN %s: %v", label, err)
 	}
-	defer rows.Close()
 
-	var lines []string
+	var result []struct{ Plan inboxPlanNode }
 
-	for rows.Next() {
-		var line string
-
-		if err := rows.Scan(&line); err != nil {
-			t.Fatalf("scan %s plan row: %v", label, err)
-		}
-
-		lines = append(lines, line)
+	if err := jsonv2.Unmarshal(raw, &result); err != nil {
+		t.Fatalf("decode %s plan: %v", label, err)
 	}
 
-	if err := rows.Err(); err != nil {
-		t.Fatalf("read %s plan: %v", label, err)
-	}
+	plan := result[0].Plan
+	rows, blocks := plan.maxRowsVisited(), plan.Hits+plan.Reads
+	t.Logf("%s: max rows visited by one node=%.2f, shared blocks=%d", label, rows, blocks)
 
-	return strings.Join(lines, "\n")
+	if rows <= 0 || rows > 32 || blocks <= 0 || blocks > 128 {
+		t.Errorf("%s: max rows=%.2f (want 1..32), shared blocks=%d (want 1..128)", label, rows, blocks)
+	}
 }
 
 func TestCountRepliesByStatusLeavesOutTerminalRows(t *testing.T) {

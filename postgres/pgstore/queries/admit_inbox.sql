@@ -1,4 +1,4 @@
-WITH ordering_lock AS (
+WITH ordering_lock AS MATERIALIZED (
     SELECT pg_advisory_xact_lock(hashtext($1::text), hashtext($3::text))
 )
 INSERT INTO iris_webhook_inbox (scope, message_id, ordering_key, payload, status, attempts, available_at, created_at, updated_at)
