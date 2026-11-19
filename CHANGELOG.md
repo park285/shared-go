@@ -5,14 +5,18 @@
 
 ## 미출시
 
-- **Inbox 수락 순서(`postgres` 모듈):** 같은 `(scope, ordering_key)`의 선두를 수락 시각이 아니라 키 잠금 아래에서 발급한 수락 순번(id)으로 고릅니다. DB 시계가 역행해도 뒤에 수락한 행이 앞 행의 정산 전에 처리권을 얻지 못합니다. 서로 다른 키 사이의 선발 순서 `(available_at, created_at, id)`와 공개 Go API는 그대로입니다. Fallback delta: none.
-  - 소비자는 전환 전에 부분 인덱스 `idx_iris_webhook_inbox_head_by_id (scope, ordering_key, id) WHERE status IN ('pending', 'processing')`를 추가합니다. 기존 `idx_iris_webhook_inbox_head`는 유지합니다.
-  - 구·신 claim 구현을 동시에 실행하지 않습니다. 전환과 롤백은 수락·claim·만료 복구를 멈춘 상태에서 README "Inbox 수락 순서"의 확인 SQL이 0행일 때만 합니다. 이 조회는 만료 복구로 `pending`이 된 재시도 행까지 포함해 두 순서의 선두가 다른 파티션을 찾습니다.
-  - 참조 스키마(`postgres/pgstore/testdata/schema.sql`)의 주석을 지웠습니다.
 - **주석 금지:** 기계 지시문을 뺀 Go·shell·Python 주석과 doc 주석을 지웠습니다. shell heredoc으로 실행하는 Python 본문도 같은 검사를 받으며, 파일별 MIT 머리글은 지우고 라이선스 고지는 루트 `LICENSE`가 유지합니다. 새 `scripts/ci/pre-push-gate.sh`와 `scripts/ci/release-gate.sh`가 `bash scripts/ci/verify-tools.sh scan`과 `formal`을 실행합니다.
 - **형식 검증:** `verification/tla/InboxClaim/`이 inbox claim·lease·완료와 수락 순번 선두, 같은 파티션의 단일 처리권, 재예약 뒤 키 간 선발 순서를 불변식 8개로 검사합니다. `verification/lean/BoundedQueue/`가 bounded queue 연산을 증명하며 같은 명세를 `bounded_queue_trace_fuzz_test.go`가 구현에 대어 봅니다.
 - **테스트:** 실제 시간을 기다리던 `time.Sleep` 9곳을 synctest·잠금 관측 동기화로 바꾸고 `httputil` body 상한 fuzz 대상을 추가했습니다.
 - 결정 기록 목록을 폐기했습니다. 과거 결정은 Git 이력에서 확인할 수 있습니다.
+
+## postgres/v1.0.3 - 2026-11-19
+
+- **Inbox 수락 순서(`postgres` 모듈):** 같은 `(scope, ordering_key)`의 선두를 수락 시각이 아니라 키 잠금 아래에서 발급한 수락 순번(id)으로 고릅니다. DB 시계가 역행해도 뒤에 수락한 행이 앞 행의 정산 전에 처리권을 얻지 못합니다. 서로 다른 키 사이의 선발 순서 `(available_at, created_at, id)`와 공개 Go API는 그대로입니다. Fallback delta: none.
+  - 소비자는 전환 전에 부분 인덱스 `idx_iris_webhook_inbox_head_by_id (scope, ordering_key, id) WHERE status IN ('pending', 'processing')`를 추가합니다. 기존 `idx_iris_webhook_inbox_head`는 유지합니다.
+  - 구·신 claim 구현을 동시에 실행하지 않습니다. 전환과 롤백은 수락·claim·만료 복구를 멈춘 상태에서 README "Inbox 수락 순서"의 확인 SQL이 0행일 때만 합니다. 이 조회는 만료 복구로 `pending`이 된 재시도 행까지 포함해 두 순서의 선두가 다른 파티션을 찾습니다.
+  - 참조 스키마(`postgres/pgstore/testdata/schema.sql`)의 주석을 지웠습니다.
+- `postgres` 모듈의 Go·SQL 소스에서 기계 지시문을 뺀 주석과 doc 주석을 지웠습니다. 동작 변경은 위 항목뿐입니다.
 
 ## transport/v1.0.1 - 2026-11-18
 
