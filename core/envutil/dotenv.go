@@ -9,22 +9,13 @@ import (
 	"strings"
 )
 
-// DotenvOptions는 service env file과 local dotenv 로딩 규칙을 지정한다.
-//
-// 서비스 단계는 EnvFileKey·RequireStaticSecretsKey·DefaultPath를 모두 지정할 때만 켜지며, 일부만
-// 지정하면 LoadDotenv가 설정 오류를 반환한다. 환경 변수 이름과 기본 경로는 소비 서비스가 소유하며
-// shared-go는 서비스 이름에서 파생하지 않는다.
 type DotenvOptions struct {
-	// EnvFileKey는 명시 service env file 경로를 담는 env 이름이다(예: TWENTYQ_ENV_FILE).
-	EnvFileKey string
-	// RequireStaticSecretsKey는 strict service env file 적용을 강제하는 bool env 이름이다.
+	EnvFileKey              string
 	RequireStaticSecretsKey string
-	// DefaultPath는 RequireStaticSecretsKey가 참이고 EnvFileKey가 비었을 때 읽는 service env file 경로다.
-	// 명시 경로가 이 파일의 디렉터리 아래에 있으면 strict 규칙을 적용한다.
-	DefaultPath    string
-	LocalEnableKey string
-	LocalPathKey   string
-	LocalPaths     []string
+	DefaultPath             string
+	LocalEnableKey          string
+	LocalPathKey            string
+	LocalPaths              []string
 }
 
 type serviceDotenv struct {
@@ -58,17 +49,12 @@ func (opts DotenvOptions) serviceDotenv() (serviceDotenv, bool, error) {
 	}
 }
 
-// LoadDotenv는 service env file과 local dotenv 후보를 옵션에 맞춰 로드한다.
-// LocalEnableKey와 RequireStaticSecretsKey는 BoolE 규칙으로 읽으며, 빈 값은 미설정(false)이고
-// 받아들일 수 없는 값은 어떤 파일도 읽기 전에 설정 오류로 반환한다.
 func LoadDotenv(opts DotenvOptions) error {
 	service, serviceEnabled, err := opts.serviceDotenv()
 	if err != nil {
 		return fmt.Errorf("envutil: dotenv options: %w", err)
 	}
 
-	// service env file이 처리되어 local 단계에 이르지 않는 경우에도 받아들일 수 없는 값을 드러내도록
-	// service 단계보다 먼저 판정한다. service 단계가 처리하지 않았다면 아무 파일도 읽지 않았으므로 값은 같다.
 	localEnabled := true
 
 	if opts.LocalEnableKey != "" {
@@ -115,7 +101,6 @@ func LoadDotenv(opts DotenvOptions) error {
 	return nil
 }
 
-// 전체 줄 주석(#로 시작)만 인식하며 따옴표 없는 값의 inline #는 주석이 아니라 값의 일부로 남는다.
 func loadDotenvFile(path string, required, strict bool) error {
 	path = strings.TrimSpace(path)
 	if path == "" {

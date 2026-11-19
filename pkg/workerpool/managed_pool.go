@@ -11,13 +11,10 @@ import (
 	"time"
 )
 
-// ErrJobTimeout은 dequeue 이후 job budget이 소진된 원인이다.
 var ErrJobTimeout = errors.New("workerpool: managed worker job timeout")
 
-// ErrPoolShutdown은 pool shutdown으로 in-flight job이 취소된 원인이다.
 var ErrPoolShutdown = errors.New("workerpool: managed worker pool shutdown")
 
-// JobOutcome은 managed job이 종료된 이유를 나타낸다.
 type JobOutcome string
 
 const (
@@ -30,37 +27,24 @@ const (
 	JobOutcomeCanceled JobOutcome = "canceled"
 )
 
-// JobSpec은 queue admission 이후 dequeue 시점에 실행 budget을 만드는 작업 계약이다.
 type JobSpec struct {
-	// Context는 값(trace, logger 등)만 전달한다. pool이 취소 신호를 끊고 자체 budget을 붙이므로
-	// 이 context를 취소해도 Run이나 Finalize는 중단되지 않는다.
 	Context     context.Context //nolint:containedctx // JobSpec은 queue에 적재된 뒤 dequeue 시점에 실행되는 작업 명세라, 값 전용 context를 필드로 운반해야 한다.
 	Kind        string
 	Timeout     time.Duration
 	MaxQueueAge time.Duration
 	Run         func(context.Context)
-	// Finalize의 FinalizeTimeout은 관측 전용이다. 초과해도 callback은 중단되지 않고
-	// reservation capacity는 callback이 실제로 반환할 때까지 회수되지 않는다.
-	Finalize func(context.Context, JobOutcome)
+	Finalize    func(context.Context, JobOutcome)
 }
 
-// ManagedConfig는 ManagedPool의 고정 worker, queue, finalizer scheduler budget을 설정한다.
 type ManagedConfig struct {
-	Workers   int
-	QueueSize int
-	// FinalizeTimeout은 callback 실제 시작 시점부터 적용하는 관측용 예산이다. 초과는 TimedOut과
-	// OverdueInFlight로 드러날 뿐이며 callback을 중단하거나 reservation을 회수하지 않는다.
-	FinalizeTimeout time.Duration
-	// FinalizeConcurrency는 동시에 실행할 수 있는 callback 수다.
+	Workers             int
+	QueueSize           int
+	FinalizeTimeout     time.Duration
 	FinalizeConcurrency int
-	// FinalizeQueueSize는 accepted job의 pending reservation, queued callback,
-	// in-flight callback을 합한 총 reservation capacity다. FinalizeConcurrency 이상
-	// 1_048_576 이하의 값을 명시해야 하며, 0 이하 값은 자동 보정하지 않는다.
-	FinalizeQueueSize int
-	Logger            *slog.Logger
+	FinalizeQueueSize   int
+	Logger              *slog.Logger
 }
 
-// ManagedSubmitReason은 TrySubmitResult의 admission 또는 callback ownership 결론이다.
 type ManagedSubmitReason string
 
 const (
@@ -68,36 +52,24 @@ const (
 	ManagedSubmitRejected                   ManagedSubmitReason = "rejected"
 	ManagedSubmitRejectedFinalizerScheduled ManagedSubmitReason = "rejected_finalizer_scheduled"
 	ManagedSubmitRejectedFinalizerCapacity  ManagedSubmitReason = "rejected_finalizer_capacity"
-	// ManagedSubmitRejectedFinalizerClosed는 capacity 부족이 아니라 shutdown으로 거부된 경우다.
-	ManagedSubmitRejectedFinalizerClosed ManagedSubmitReason = "rejected_finalizer_closed"
+	ManagedSubmitRejectedFinalizerClosed    ManagedSubmitReason = "rejected_finalizer_closed"
 )
 
-// ManagedSubmitResult는 admission과 pool의 Finalize callback ownership을 함께 제공한다.
-// FinalizerClaimed가 true이면 callback lifecycle은 pool이 소유하며 호출자는 직접 Finalize하지 않는다.
-// False인 rejected 결과는 callback이 전혀 예약되지 않았으므로 호출자가 durable claim을 직접 복구해야 한다.
 type ManagedSubmitResult struct {
 	Accepted         bool
 	FinalizerClaimed bool
 	Reason           ManagedSubmitReason
 }
 
-// ManagedFinalizerSnapshot은 finalizer reservation, scheduler lifecycle, callback 누계를 제공한다.
-// FinalizeTimeout은 callback 시작 시점부터 적용되며 이미 발생한 외부 효과나 goroutine을 중단시키지 못한다.
 type ManagedFinalizerSnapshot struct {
-	Concurrency  int
-	QueueSize    int
-	QueueDepth   int
-	InFlight     int
-	Reservations int
-	// Accepting은 finalizer가 새 reservation을 받을 수 있는 lifecycle 상태다.
-	Accepting bool
-	// DispatchDrained는 Close 이후 pending reservation과 callback queue가 모두 dispatch됐음을 뜻한다.
-	// 이미 시작된 callback의 실제 반환 완료는 뜻하지 않는다.
-	DispatchDrained bool
-	// Quiesced는 Close 이후 모든 callback이 실제로 반환하고 reservation이 해제됐음을 뜻한다.
-	Quiesced bool
-	// OverdueInFlight는 FinalizeTimeout이 지났는데도 아직 반환하지 않은 callback 수다.
-	// 이 slot들의 reservation은 회수되지 않으므로 값이 지속되면 admission 고갈로 이어진다.
+	Concurrency         int
+	QueueSize           int
+	QueueDepth          int
+	InFlight            int
+	Reservations        int
+	Accepting           bool
+	DispatchDrained     bool
+	Quiesced            bool
 	OverdueInFlight     int
 	Claimed             uint64
 	Started             uint64
@@ -109,7 +81,6 @@ type ManagedFinalizerSnapshot struct {
 	Panicked            uint64
 }
 
-// ManagedSnapshot은 pool의 현재 queue, 실행, outcome 상태를 복사해 제공한다.
 type ManagedSnapshot struct {
 	ConfiguredWorkers  int
 	RunningWorkers     int
@@ -139,7 +110,6 @@ type managedInFlight struct {
 	startedAt time.Time
 }
 
-// ManagedPool은 dequeue-time budget과 단일 finalization을 소유하는 worker pool이다.
 type ManagedPool struct {
 	mu                 sync.Mutex
 	queue              boundedQueue[*managedJob]
@@ -163,7 +133,6 @@ type ManagedPool struct {
 	logger             *slog.Logger
 }
 
-// NewManagedPool은 explicit config를 검증한 뒤 ManagedPool을 시작한다.
 func NewManagedPool(config ManagedConfig) (*ManagedPool, error) {
 	if config.Workers < 1 || config.Workers > 4096 {
 		return nil, errors.New("workerpool: managed worker pool: workers must be in 1..4096")
@@ -262,7 +231,6 @@ func (p *ManagedPool) Snapshot() ManagedSnapshot {
 	return snapshot
 }
 
-// TrySubmitResult는 작업을 기다리지 않고 queue에 admission하고 Finalize callback의 ownership을 반환한다.
 func (p *ManagedPool) TrySubmitResult(spec JobSpec) ManagedSubmitResult {
 	return p.trySubmit(spec)
 }
@@ -329,8 +297,6 @@ func (p *ManagedPool) shuttingDown() bool {
 	}
 }
 
-// shutdown은 closed를 먼저 세우고 in-flight job을 모두 기다린 뒤에야 finalizer를 닫는다. 이 경로가 없으면
-// 그 사이 제출이 아직 열린 finalizer의 reservation을 소진한 뒤 재시도 가능한 capacity 신호를 돌려준다.
 func (p *ManagedPool) rejectClosedSubmission(job *managedJob) ManagedSubmitResult {
 	p.finalizeJob(job, JobOutcomeRejected)
 
@@ -364,7 +330,6 @@ func submitReasonForReserve(reason finalizerReserveReason) ManagedSubmitReason {
 		return ManagedSubmitRejectedFinalizerCapacity
 	case finalizerReserveRejectedClosed:
 		return ManagedSubmitRejectedFinalizerClosed
-	// Reserve가 성공한 경로는 이 함수를 호출하지 않으므로, accepted는 알 수 없는 값과 같은 일반 거부로 떨어뜨린다.
 	case finalizerReserveAccepted:
 		return ManagedSubmitRejected
 	default:
@@ -372,10 +337,6 @@ func submitReasonForReserve(reason finalizerReserveReason) ManagedSubmitReason {
 	}
 }
 
-// CloseContext는 admission을 닫고 queued job을 drop하며 in-flight job을 취소한다.
-// Nil을 반환하면 pool이 소유한 accepted/rejected Finalize callback이 모두 실제로 반환했고
-// finalizer reservation도 모두 해제된 상태다. Callback이 context를 무시하면 호출자 context로
-// bounded하게 반환하되 성공을 보고하지 않는다.
 func (p *ManagedPool) CloseContext(ctx context.Context) error {
 	if p == nil {
 		return nil
@@ -658,7 +619,6 @@ func (p *ManagedPool) finalizeJob(job *managedJob, outcome JobOutcome) {
 				p.admissionsRejected++
 			case JobOutcomeStale, JobOutcomeShutdown:
 				p.discarded[outcome]++
-			// 아래 outcome들은 run이 job.started를 세운 뒤에만 나오므로 이 분기에 도달하지 않는다.
 			case JobOutcomeSuccess, JobOutcomePanic, JobOutcomeTimeout, JobOutcomeCanceled:
 			}
 		}

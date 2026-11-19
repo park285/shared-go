@@ -69,7 +69,6 @@ func CheckStatus(resp *http.Response) error {
 		}
 	}
 
-	// keep-alive 재사용을 위해 에러 경로에서도 남은 body를 상한까지 비우고 닫습니다. 실패는 무시합니다.
 	_ = DrainAndClose(resp.Body, DefaultDrainLimit) //nolint:errcheck // best-effort drain, 실패해도 body는 닫힌다
 
 	return newAPIError(resp.StatusCode, strings.TrimSpace(string(body)))

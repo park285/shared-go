@@ -105,7 +105,6 @@ func TestOpenSecretFileNoFollowDoesNotBlockOnFifo(t *testing.T) {
 
 	select {
 	case err := <-done:
-		// O_NONBLOCK open은 FIFO에서도 바로 성공하고, regular file 거부는 호출자의 fstat 검사가 맡습니다.
 		if err != nil {
 			t.Fatalf("openSecretFileNoFollow(fifo) error = %v, want immediate open", err)
 		}

@@ -16,8 +16,6 @@ import (
 
 const webhookInboxWorker = "webhook_inbox"
 
-// chatbotIdentity는 valid-profile-chatbotgo.json fixture와 짝인 identity다. Worker 목록은 소비 서비스가
-// 소유하므로 테스트는 fixture에 맞춘 리터럴을 직접 두고, 불일치는 fixture 로드가 검출한다.
 func chatbotIdentity() workercontract.Identity {
 	return workercontract.Identity{
 		Service:   "chatbotgo",
@@ -83,7 +81,6 @@ func TestLoadTwentyQProfileRequiresThreeWorkers(t *testing.T) {
 	t.Parallel()
 
 	wantIDs := []string{"pending_queue", "reply_outbox", webhookInboxWorker}
-	// 정렬되지 않은 호출자 슬라이스를 넘겨 LoadProfileFile이 identity를 바꾸지 않는지도 함께 본다.
 	callerIDs := []string{webhookInboxWorker, "pending_queue", "reply_outbox"}
 	identity := workercontract.Identity{Service: "twentyq", Role: "bot", WorkerIDs: callerIDs}
 

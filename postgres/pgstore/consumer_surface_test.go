@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
@@ -19,7 +18,6 @@ import (
 	"github.com/park285/shared-go/v2/pkg/irisdurable"
 )
 
-// 전진한 시도까지 세면 한 응답을 여러 조각으로 나눠 보내는 호출자에서 조각 수가 (상한 / 조각당 왕복)을 넘는 순간 상한이 먼저 소진돼 응답의 꼬리가 영구 유실된다.
 func TestSettleCountsOnlyStalledAttemptsAgainstTheCap(t *testing.T) {
 	pool := newMigratedPool(t)
 	store := newScopedStore(t, pool)
@@ -66,7 +64,6 @@ func settleOnce(t *testing.T, store *pgstore.Store, identity irisdurable.ReplyId
 	return state.Attempts
 }
 
-// 받으면 이미 보낸 응답 뒤에 앞 순번이 다시 나간다.
 func TestStageRejectsALateLowerOrdinal(t *testing.T) {
 	pool := newMigratedPool(t)
 	store := newScopedStore(t, pool)
@@ -105,7 +102,6 @@ func TestStageRejectsALateLowerOrdinal(t *testing.T) {
 		t.Fatalf("inspect the rejected ordinal = %v; want ErrNotFound, no row may be written", inspectErr)
 	}
 
-	// 이미 있는 행의 재stage는 가드와 무관하게 멱등해야 한다.
 	if outcome, restageErr := store.Stage(ctx, second); restageErr != nil || outcome != irisdurable.ReplyAlreadyStaged {
 		t.Fatalf("restage ordinal 1 = (%q, %v); want already_staged", outcome, restageErr)
 	}
@@ -174,7 +170,6 @@ func TestStageRowReturnsTheStoredRow(t *testing.T) {
 	requireSameJSON(t, divergedRow.Payload, record.Payload, "diverging stage keeps the stored payload")
 }
 
-// requireSameJSON은 jsonb 왕복이 키 순서와 공백을 정규화하므로 바이트가 아니라 값을 비교한다.
 func requireSameJSON(t *testing.T, got, want []byte, label string) {
 	t.Helper()
 
@@ -193,7 +188,6 @@ func requireSameJSON(t *testing.T, got, want []byte, label string) {
 	}
 }
 
-// 토큰만 대조하면 lease가 만료된 뒤 재claim·복구 전의 창에서 complete이 성공하고, 같은 순간 그 경로가 행을 되돌리면 같은 메시지가 두 번 처리된다.
 func TestCompleteRequiresTheMessageIdAndALiveLease(t *testing.T) {
 	pool := newMigratedPool(t)
 	store := newScopedStore(t, pool)
@@ -340,7 +334,6 @@ func TestManualReviewRetentionMayNotUndercutTerminalRetention(t *testing.T) {
 	}
 }
 
-// 술어가 어긋나면 밀린 건수와 실제 처리 가능한 행 수가 달라져 워커 수 판단이 틀어진다.
 func TestSnapshotsMatchTheClaimPredicates(t *testing.T) {
 	pool := newMigratedPool(t)
 	store := newScopedStore(t, pool)
@@ -445,7 +438,6 @@ func backdateTerminalAt(t *testing.T, pool *pgxpool.Pool, id int64, age time.Dur
 	}
 }
 
-// 직렬화가 없으면 두 stage가 서로의 미commit 행을 보지 못해 후속 ordinal 가드를 양쪽 다 통과하고, 늦게 도착한 낮은 순번이 행으로 남아 이미 보낸 응답 뒤에 앞 순번이 다시 나간다.
 func TestStageSerializesTheOrdinalSequence(t *testing.T) {
 	pool := newMigratedPool(t)
 	store := newScopedStore(t, pool)
@@ -525,12 +517,10 @@ func beginStagedTx(t *testing.T, pool *pgxpool.Pool, scope string, record irisdu
 	return tx
 }
 
-// 같은 순번열의 앞 트랜잭션이 열려 있는 동안 이 호출은 막혀 있어야 한다.
 func stageAsync(store *pgstore.Store, record irisdurable.ReplyRecord) <-chan stageResult {
 	done := make(chan stageResult, 1)
 
 	go func() {
-		// 이 goroutine은 앞 트랜잭션이 끝날 때까지 살아 있어야 하므로 테스트 컨텍스트를 쓰지 않는다.
 		staged, err := store.Stage(context.Background(), record)
 		done <- stageResult{staged: staged, err: err}
 	}()
@@ -538,7 +528,6 @@ func stageAsync(store *pgstore.Store, record irisdurable.ReplyRecord) <-chan sta
 	return done
 }
 
-// 전송을 시작하지 못한 행에서 text 대체본을 파생하는 호출자는 이 둘이 없으면 이미 전달됐을 수 있는 행까지 다시 보내거나, payload가 지워진 뒤라 아무것도 파생하지 못한다.
 func TestRetireReturnsTheRowsItClosed(t *testing.T) {
 	pool := newMigratedPool(t)
 	store := newScopedStore(t, pool)
@@ -597,73 +586,94 @@ func TestRetireReturnsTheRowsItClosed(t *testing.T) {
 	}
 }
 
-// 인덱스를 놓치면 inbox가 커질수록 claim이 순차 스캔으로 내려앉는다. 이 claim은 key별 head를 head 인덱스의 재귀 건너뛰기로 꺼내므로 비용이 활성 key 수에 비례한다.
-func TestClaimPlanUsesThePartialIndexes(t *testing.T) {
+func TestInboxPollDoesNotScanTheBacklog(t *testing.T) {
+	const scope = "chatbotgo"
+
 	pool := newMigratedPool(t)
-	store := newScopedStore(t, pool)
 	ctx := t.Context()
 
-	conn, err := pool.Acquire(ctx)
+	_, err := pool.Exec(ctx, `INSERT INTO iris_webhook_inbox (scope, message_id, ordering_key, payload, status, terminal_at, terminal_reason)
+SELECT $1, 'sha256:' || lpad(to_hex(n), 64, '0'), 'sha256:' || repeat('a', 64), '{}',
+       CASE WHEN n = 1 THEN 'manual_review' ELSE 'completed' END, now(), CASE WHEN n = 1 THEN 'callback_timeout_uncertain' END
+FROM generate_series(1, 16384) n`, scope)
 	if err != nil {
-		t.Fatalf("acquire plan connection: %v", err)
-	}
-	defer conn.Release()
-
-	// 빈 테이블에서는 순차 스캔이 언제나 더 싸므로, 인덱스를 쓸 수 있는지 자체를 본다.
-	if _, err := conn.Exec(ctx, `SET enable_seqscan=off`); err != nil {
-		t.Fatalf("disable sequential scans: %v", err)
+		t.Fatal(err)
 	}
 
-	scope := store.Options().Scope
-
-	claimPlan := explainQuery(ctx, t, conn, "claim", pgstore.ClaimInboxQueryForTest, scope, "plan-token", float64(60), 1, false)
-
-	for _, node := range []string{"Recursive Union", "idx_iris_webhook_inbox_head"} {
-		if !strings.Contains(claimPlan, node) {
-			t.Fatalf("claim plan does not use %s:\n%s", node, claimPlan)
-		}
+	_, err = pool.Exec(ctx, `INSERT INTO iris_webhook_inbox (scope, message_id, ordering_key, payload)
+SELECT $1, 'sha256:' || repeat(k, 64), 'sha256:' || repeat(k, 64), '{}' FROM unnest(ARRAY['a','b']) k`, scope)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	runtimePlan := explainQuery(ctx, t, conn, "runtime snapshot", pgstore.InboxRuntimeSnapshotQueryForTest, scope)
-	if !strings.Contains(runtimePlan, "idx_iris_webhook_inbox_prune_manual_review") {
-		t.Fatalf("runtime snapshot plan does not use the manual-review index:\n%s", runtimePlan)
+	if _, err = pool.Exec(ctx, "ANALYZE iris_webhook_inbox"); err != nil {
+		t.Fatal(err)
 	}
 
-	// 활성 행 부분 인덱스는 claim과 head 둘 다이고, 어느 쪽을 고르는지는 planner의 몫이다.
-	if !strings.Contains(runtimePlan, "idx_iris_webhook_inbox_claim") && !strings.Contains(runtimePlan, "idx_iris_webhook_inbox_head") {
-		t.Fatalf("runtime snapshot plan does not use an active-row partial index:\n%s", runtimePlan)
+	checkInboxPlan(t, pool, "runtime snapshot", pgstore.InboxRuntimeSnapshotQueryForTest, scope)
+
+	_, err = pool.Exec(ctx, `INSERT INTO iris_webhook_inbox (scope, message_id, ordering_key, payload, created_at)
+SELECT $1, 'sha256:' || lpad(to_hex(16384+n), 64, '0'), 'sha256:' || repeat(CASE WHEN n % 2 = 0 THEN 'a' ELSE 'b' END, 64),
+       '{}', now() - n * interval '1 second'
+FROM generate_series(1, 16384) n`, scope)
+	if err != nil {
+		t.Fatal(err)
 	}
+
+	if _, err = pool.Exec(ctx, "ANALYZE iris_webhook_inbox"); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("ready", func(t *testing.T) {
+		checkInboxPlan(t, pool, "ready snapshot", pgstore.InboxReadySnapshotQueryForTest, scope, false)
+	})
+	t.Run("claim", func(t *testing.T) {
+		checkInboxPlan(t, pool, "claim", pgstore.ClaimInboxQueryForTest, scope, "plan-token", float64(60), 1, false)
+	})
 }
 
-func explainQuery(ctx context.Context, t *testing.T, conn *pgxpool.Conn, label, query string, args ...any) string {
+type inboxPlanNode struct {
+	Rows     float64         `json:"Actual Rows"`
+	Loops    float64         `json:"Actual Loops"`
+	Filtered float64         `json:"Rows Removed by Filter"`
+	Hits     int             `json:"Shared Hit Blocks"`
+	Reads    int             `json:"Shared Read Blocks"`
+	Plans    []inboxPlanNode `json:"Plans"`
+}
+
+func (p inboxPlanNode) maxRowsVisited() float64 {
+	rows := (p.Rows + p.Filtered) * p.Loops
+	for _, child := range p.Plans {
+		rows = max(rows, child.maxRowsVisited())
+	}
+
+	return rows
+}
+
+func checkInboxPlan(t *testing.T, pool *pgxpool.Pool, label, query string, args ...any) {
 	t.Helper()
 
-	rows, err := conn.Query(ctx, "EXPLAIN (COSTS OFF) "+query, args...)
-	if err != nil {
+	var raw []byte
+
+	if err := pool.QueryRow(t.Context(), "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) "+query, args...).Scan(&raw); err != nil {
 		t.Fatalf("EXPLAIN %s: %v", label, err)
 	}
-	defer rows.Close()
 
-	var lines []string
+	var result []struct{ Plan inboxPlanNode }
 
-	for rows.Next() {
-		var line string
-
-		if err := rows.Scan(&line); err != nil {
-			t.Fatalf("scan %s plan row: %v", label, err)
-		}
-
-		lines = append(lines, line)
+	if err := jsonv2.Unmarshal(raw, &result); err != nil {
+		t.Fatalf("decode %s plan: %v", label, err)
 	}
 
-	if err := rows.Err(); err != nil {
-		t.Fatalf("read %s plan: %v", label, err)
-	}
+	plan := result[0].Plan
+	rows, blocks := plan.maxRowsVisited(), plan.Hits+plan.Reads
+	t.Logf("%s: max rows visited by one node=%.2f, shared blocks=%d", label, rows, blocks)
 
-	return strings.Join(lines, "\n")
+	if rows <= 0 || rows > 32 || blocks <= 0 || blocks > 128 {
+		t.Errorf("%s: max rows=%.2f (want 1..32), shared blocks=%d (want 1..128)", label, rows, blocks)
+	}
 }
 
-// 종단 행까지 세면 그 값은 backlog가 아니게 되고, 술어가 부분 인덱스를 벗어나 보존 기간 전체를 훑는다.
 func TestCountRepliesByStatusLeavesOutTerminalRows(t *testing.T) {
 	pool := newMigratedPool(t)
 	store := newScopedStore(t, pool)

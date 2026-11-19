@@ -99,9 +99,6 @@ func assertJSONProbe(t *testing.T, label, out string) {
 	}
 }
 
-// 프로세스 전역 os.Stdout을 갈아끼우므로 이 helper를 쓰는 테스트는 t.Parallel을 쓸 수 없다
-// (sanitize_sg05_test.go의 os.Stdout 교체와도 서로 배타적이다). 파이프는 fn 실행과 동시에
-// 비워야 한다 — 출력이 파이프 버퍼(리눅스 64 KiB)를 넘으면 fn이 쓰기에서 교착한다.
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
 
@@ -114,7 +111,6 @@ func captureStdout(t *testing.T, fn func()) string {
 
 	os.Stdout = w
 
-	// fn 안의 t.Fatalf는 runtime.Goexit이므로 복구·close는 defer로만 보장된다.
 	defer func() {
 		if err := r.Close(); err != nil {
 			t.Errorf("close pipe reader: %v", err)
@@ -317,9 +313,6 @@ func TestFormatHandlers_MaskSensitiveKeysRegardlessOfValueKind(t *testing.T) {
 	}
 }
 
-// json은 프로덕션 출하 lane이다. Level 배선이 풀리면 수집기에 DEBUG가 그대로 쏟아진다.
-// Console 분기와 file 분기는 서로 다른 handler 생성 지점이라, Dir이 빈 구성만 밟으면
-// 프로덕션이 실제로 쓰는 file 분기의 배선은 어떤 단언도 지나지 않는다.
 func TestJSONFormat_LevelPinned(t *testing.T) {
 	const debugProbe = "json_debug_probe_must_be_filtered"
 
@@ -356,8 +349,6 @@ func TestJSONFormat_LevelPinned(t *testing.T) {
 		})
 	}
 
-	// 이 읽기는 루프 밖에 있어야 한다. 안으로 옮기면 lanes에서 file lane이 사라진 순간
-	// 조용히 건너뛰어져, 프로덕션 file 분기의 level 배선이 다시 무단언 상태가 된다.
 	fileBytes, err := os.ReadFile(filepath.Join(fileLaneDir, "probe.log")) //nolint:gosec // 테스트가 만든 임시 디렉터리 경로만 읽는다.
 	if err != nil {
 		t.Fatalf("file lane wrote no log file under %s: %v", fileLaneDir, err)
@@ -399,7 +390,6 @@ func TestNewLogger_LevelPinned(t *testing.T) {
 	}
 }
 
-// JSON source.file이 빌드 머신 절대 경로면 디렉터리 구조가 모든 record에 실린다.
 func TestJSONFormat_ShortensSourcePath(t *testing.T) {
 	var buf bytes.Buffer
 

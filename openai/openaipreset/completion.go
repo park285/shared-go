@@ -119,9 +119,6 @@ func messageContentText(content []responses.ResponseOutputMessageContentUnion) s
 	return strings.TrimSpace(builder.String())
 }
 
-// LooksLikeToolCallEnvelope는 최상위 키만 순차 스캔해 tool-call envelope를 판정한다.
-// 전체 파싱과 달리 키를 만난 시점에 종료하므로, envelope 뒤쪽이 잘려 있어도 true다
-// (tool-call 잔재를 사용자 텍스트로 흘리지 않는 쪽이 보수적).
 func LooksLikeToolCallEnvelope(text string) bool {
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" || trimmed[0] != '{' {

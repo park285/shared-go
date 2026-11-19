@@ -11,19 +11,13 @@ import (
 )
 
 type compiledDecodePattern struct {
-	program *syntax.Prog
-	start   uint32
-	// first는 시작 상태에서 빈 전이만으로 닿는 글자 명령이고 firstASCII는 그중 하나라도 받는 ASCII 글자 집합이다.
-	// 빈 전이 조건을 모두 통과한다고 보고 모았으므로, 어느 명령도 받지 않는 글자에서 시작 closure는 스레드를
-	// 만들지 않는다. matchEmpty는 시작 상태에서 일치에 닿을 수 있어 건너뛸 수 없다는 뜻이다.
-	first      []uint32
-	firstASCII [2]uint64
-	// firstHangul은 first 명령이 받는 한글 음절 집합이다. 한글 음절은 대소문자 접기 짝이 없어 명령의 rune
-	// 범위와 겹치는 음절만 받으므로 MatchRune과 같은 판정을 표로 한다. 받는 음절이 없으면 nil이다.
+	program     *syntax.Prog
+	start       uint32
+	first       []uint32
+	firstASCII  [2]uint64
 	firstHangul []uint64
 	matchEmpty  bool
-	// maxRunes는 정규식이 일치할 수 있는 최대 rune 수다. 반복 상한이 없으면 -1이다.
-	maxRunes int
+	maxRunes    int
 }
 
 const (
@@ -113,7 +107,6 @@ func newCompiledDecodePattern(program *syntax.Prog, start uint32, maxRunes int) 
 	return pattern
 }
 
-// 한 글자 리터럴의 접기 짝은 한글 음절이 아니므로 그 글자만, 문자 클래스는 범위 쌍만 본다.
 func (pattern *compiledDecodePattern) addFirstHangul(instruction *syntax.Inst) {
 	var ranges []rune
 
@@ -141,7 +134,6 @@ func (pattern *compiledDecodePattern) addFirstHangul(instruction *syntax.Inst) {
 	}
 }
 
-// startMayAccept는 시작 closure가 value를 읽는 스레드를 만들거나 일치를 낼 수 있는지 돌려준다.
 func (pattern *compiledDecodePattern) startMayAccept(value rune) bool {
 	if pattern.matchEmpty {
 		return true
@@ -173,10 +165,8 @@ func (pattern *compiledDecodePattern) startMayAccept(value rune) bool {
 type decodeSourcePart struct {
 	start, end int
 	values     []string
-	// raws와 fragments는 values를 그래프 view용으로 합성하고 정규화한 값이다. view와 앞 상태에 따라 달라지지 않으므로
-	// 루트 하나에서 처음 만든 값을 모든 view 그래프가 함께 쓴다.
-	raws      []string
-	fragments []string
+	raws       []string
+	fragments  []string
 }
 
 func (part *decodeSourcePart) viewTexts(view string) []string {

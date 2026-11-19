@@ -14,6 +14,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/park285/shared-go/v2/pkg/httputil"
@@ -167,72 +168,75 @@ func (b *observedReadCloser) Close() error {
 }
 
 func TestWithBodyReadTimeoutStopsAtEOFWithoutCappingServiceWork(t *testing.T) {
-	const timeout = 40 * time.Millisecond
+	synctest.Test(t, func(t *testing.T) {
+		const timeout = 40 * time.Millisecond
 
-	body := &observedReadCloser{Reader: strings.NewReader(`{"ok":true}`)}
-	contextHadDeadline := false
-	handler := WithBodyReadTimeout(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if _, err := io.ReadAll(r.Body); err != nil {
-			t.Fatalf("ReadAll() error = %v", err)
+		body := &observedReadCloser{Reader: strings.NewReader(`{"ok":true}`)}
+		contextHadDeadline := false
+		handler := WithBodyReadTimeout(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if _, err := io.ReadAll(r.Body); err != nil {
+				t.Fatalf("ReadAll() error = %v", err)
+			}
+
+			_, contextHadDeadline = r.Context().Deadline()
+
+			time.Sleep(2 * timeout)
+			w.WriteHeader(http.StatusNoContent)
+		}), timeout)
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/", body)
+		recorder := httptest.NewRecorder()
+
+		handler.ServeHTTP(recorder, req)
+
+		if recorder.Code != http.StatusNoContent {
+			t.Fatalf("status = %d, want 204", recorder.Code)
 		}
 
-		_, contextHadDeadline = r.Context().Deadline()
+		if contextHadDeadline {
+			t.Fatal("request context acquired a deadline")
+		}
 
-		time.Sleep(2 * timeout)
-		w.WriteHeader(http.StatusNoContent)
-	}), timeout)
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/", body)
-	recorder := httptest.NewRecorder()
+		if got := body.closeCalls.Load(); got != 1 {
+			t.Fatalf("completed body close calls = %d, want 1 after handler completion", got)
+		}
+	})
+}
 
-	handler.ServeHTTP(recorder, req)
+type pipeListener struct {
+	conn    net.Conn
+	pending chan net.Conn
+	closed  chan struct{}
+}
 
-	if recorder.Code != http.StatusNoContent {
-		t.Fatalf("status = %d, want 204", recorder.Code)
-	}
+func newPipeListener() (*pipeListener, net.Conn) {
+	server, client := net.Pipe()
+	l := &pipeListener{conn: server, pending: make(chan net.Conn, 1), closed: make(chan struct{})}
 
-	if contextHadDeadline {
-		t.Fatal("request context acquired a deadline")
-	}
+	l.pending <- server
 
-	if got := body.closeCalls.Load(); got != 1 {
-		t.Fatalf("completed body close calls = %d, want 1 after handler completion", got)
+	return l, client
+}
+
+func (l *pipeListener) Addr() net.Addr { return l.conn.LocalAddr() }
+
+func (l *pipeListener) Accept() (net.Conn, error) {
+	select {
+	case conn := <-l.pending:
+		return conn, nil
+	case <-l.closed:
+		return nil, net.ErrClosed
 	}
 }
 
-type closeObservedListener struct {
-	net.Listener
-
-	connectionCloseCalls atomic.Int32
-}
-
-func (l *closeObservedListener) Accept() (net.Conn, error) {
-	conn, err := l.Listener.Accept()
-	if err != nil {
-		return nil, fmt.Errorf("accept observed connection: %w", err)
-	}
-
-	return &closeObservedConn{Conn: conn, closeCalls: &l.connectionCloseCalls}, nil
-}
-
-type closeObservedConn struct {
-	net.Conn
-
-	closeCalls *atomic.Int32
-}
-
-func (c *closeObservedConn) Close() error {
-	c.closeCalls.Add(1)
-
-	if err := c.Conn.Close(); err != nil {
-		return fmt.Errorf("close observed connection: %w", err)
-	}
+func (l *pipeListener) Close() error {
+	close(l.closed)
 
 	return nil
 }
 
 type runningHTTPServer struct {
+	client   net.Conn
 	server   *http.Server
-	listener *closeObservedListener
 	serveErr chan error
 }
 
@@ -245,14 +249,7 @@ func startHTTP1BodyTimeoutServer(t *testing.T, timeout time.Duration, serviceCal
 func startHTTP1Server(t *testing.T, timeout time.Duration, handler http.Handler) *runningHTTPServer {
 	t.Helper()
 
-	listenConfig := net.ListenConfig{}
-
-	baseListener, err := listenConfig.Listen(t.Context(), "tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen on loopback: %v", err)
-	}
-
-	listener := &closeObservedListener{Listener: baseListener}
+	listener, client := newPipeListener()
 	server := NewServer(
 		listener.Addr().String(),
 		WithBodyReadTimeout(handler, timeout),
@@ -268,7 +265,13 @@ func startHTTP1Server(t *testing.T, timeout time.Duration, handler http.Handler)
 		}
 	})
 
-	return &runningHTTPServer{server: server, listener: listener, serveErr: serveErr}
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+
+	return &runningHTTPServer{client: client, server: server, serveErr: serveErr}
 }
 
 func newBodyTimeoutJSONHandler(serviceCalls *atomic.Int32) http.Handler {
@@ -291,25 +294,6 @@ func newBodyTimeoutJSONHandler(serviceCalls *atomic.Int32) http.Handler {
 		serviceCalls.Add(1)
 		w.WriteHeader(http.StatusNoContent)
 	})
-}
-
-func dialHTTP1BodyTimeoutServer(t *testing.T, address string) net.Conn {
-	t.Helper()
-
-	dialer := net.Dialer{}
-
-	conn, err := dialer.DialContext(t.Context(), "tcp", address)
-	if err != nil {
-		t.Fatalf("dial loopback server: %v", err)
-	}
-
-	t.Cleanup(func() {
-		if closeErr := conn.Close(); closeErr != nil {
-			t.Errorf("conn.Close() error = %v", closeErr)
-		}
-	})
-
-	return conn
 }
 
 func writeHTTP1Part(t *testing.T, conn net.Conn, content string) {
@@ -340,120 +324,116 @@ func readHTTP1Status(t *testing.T, conn net.Conn) int {
 }
 
 func TestHTTP1SocketReadTimeoutMapsToBodyDeadlineBeforeIngressTimer(t *testing.T) {
-	const (
-		readTimeout = 150 * time.Millisecond
-		headerDelay = 80 * time.Millisecond
-	)
+	synctest.Test(t, func(t *testing.T) {
+		const (
+			readTimeout = 150 * time.Millisecond
+			headerDelay = 80 * time.Millisecond
+		)
 
-	serviceCalls := atomic.Int32{}
-	running := startHTTP1BodyTimeoutServer(t, readTimeout, &serviceCalls)
-	conn := dialHTTP1BodyTimeoutServer(t, running.listener.Addr().String())
+		serviceCalls := atomic.Int32{}
+		running := startHTTP1BodyTimeoutServer(t, readTimeout, &serviceCalls)
+		conn := running.client
 
-	started := time.Now()
+		started := time.Now()
 
-	time.Sleep(headerDelay)
-	writeHTTP1Part(t, conn, "POST / HTTP/1.1\r\nHost: loopback\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n10\r\n{")
+		time.Sleep(headerDelay)
+		writeHTTP1Part(t, conn, "POST / HTTP/1.1\r\nHost: loopback\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n10\r\n{")
 
-	statusCode := readHTTP1Status(t, conn)
+		statusCode := readHTTP1Status(t, conn)
 
-	if elapsed := time.Since(started); elapsed >= time.Second {
-		t.Fatalf("HTTP/1 slow body elapsed = %v, want <1s", elapsed)
-	}
-
-	if statusCode != http.StatusRequestTimeout {
-		t.Fatalf("HTTP/1 slow body status = %d, want 408", statusCode)
-	}
-
-	if got := serviceCalls.Load(); got != 0 {
-		t.Fatalf("service calls = %d, want 0", got)
-	}
-
-	deadline := time.Now().Add(time.Second)
-	for running.listener.connectionCloseCalls.Load() == 0 && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
-	}
-
-	if got := running.listener.connectionCloseCalls.Load(); got == 0 {
-		t.Fatal("server-side connection was not closed")
-	}
-
-	if err := running.server.Close(); err != nil {
-		t.Fatalf("server.Close() error = %v", err)
-	}
-
-	select {
-	case serveErr := <-running.serveErr:
-		if !errors.Is(serveErr, http.ErrServerClosed) {
-			t.Fatalf("server.Serve() error = %v", serveErr)
+		if elapsed := time.Since(started); elapsed >= time.Second {
+			t.Fatalf("HTTP/1 slow body elapsed = %v, want <1s", elapsed)
 		}
-	case <-time.After(time.Second):
-		t.Fatal("server.Serve() did not stop")
-	}
+
+		if statusCode != http.StatusRequestTimeout {
+			t.Fatalf("HTTP/1 slow body status = %d, want 408", statusCode)
+		}
+
+		if got := serviceCalls.Load(); got != 0 {
+			t.Fatalf("service calls = %d, want 0", got)
+		}
+
+		if _, err := io.Copy(io.Discard, conn); err != nil {
+			t.Fatalf("await server-side connection close: %v", err)
+		}
+
+		if err := running.server.Close(); err != nil {
+			t.Fatalf("server.Close() error = %v", err)
+		}
+
+		select {
+		case serveErr := <-running.serveErr:
+			if !errors.Is(serveErr, http.ErrServerClosed) {
+				t.Fatalf("server.Serve() error = %v", serveErr)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("server.Serve() did not stop")
+		}
+	})
 }
 
 func TestHTTP1EarlyRejectClosesIncompleteBodyUnderDeadline(t *testing.T) {
-	const timeout = 75 * time.Millisecond
+	synctest.Test(t, func(t *testing.T) {
+		const timeout = 75 * time.Millisecond
 
-	serviceCalls := atomic.Int32{}
-	running := startHTTP1Server(t, timeout, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusTooManyRequests)
-	}))
-	conn := dialHTTP1BodyTimeoutServer(t, running.listener.Addr().String())
-	started := time.Now()
+		serviceCalls := atomic.Int32{}
+		running := startHTTP1Server(t, timeout, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusTooManyRequests)
+		}))
+		conn := running.client
+		started := time.Now()
 
-	writeHTTP1Part(t, conn, "POST / HTTP/1.1\r\nHost: loopback\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n10000\r\n{")
+		writeHTTP1Part(t, conn, "POST / HTTP/1.1\r\nHost: loopback\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n10000\r\n{")
 
-	statusCode := readHTTP1Status(t, conn)
-	if statusCode != http.StatusTooManyRequests {
-		t.Fatalf("early reject status = %d, want 429", statusCode)
-	}
+		statusCode := readHTTP1Status(t, conn)
+		if statusCode != http.StatusTooManyRequests {
+			t.Fatalf("early reject status = %d, want 429", statusCode)
+		}
 
-	if serviceCalls.Load() != 0 {
-		t.Fatalf("service calls = %d, want 0", serviceCalls.Load())
-	}
+		if serviceCalls.Load() != 0 {
+			t.Fatalf("service calls = %d, want 0", serviceCalls.Load())
+		}
 
-	if elapsed := time.Since(started); elapsed >= time.Second {
-		t.Fatalf("early reject incomplete body elapsed = %v, want <1s", elapsed)
-	}
+		if elapsed := time.Since(started); elapsed >= time.Second {
+			t.Fatalf("early reject incomplete body elapsed = %v, want <1s", elapsed)
+		}
 
-	deadline := time.Now().Add(time.Second)
-	for running.listener.connectionCloseCalls.Load() == 0 && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
-	}
-
-	if got := running.listener.connectionCloseCalls.Load(); got == 0 {
-		t.Fatal("server-side early-reject connection was not closed")
-	}
+		if _, err := io.Copy(io.Discard, conn); err != nil {
+			t.Fatalf("await server-side connection close: %v", err)
+		}
+	})
 }
 
 func TestHTTP1BodyBudgetStartsAfterDelayedHeaders(t *testing.T) {
-	const (
-		bodyTimeout = 150 * time.Millisecond
-		headerDelay = 90 * time.Millisecond
-		bodyDelay   = 90 * time.Millisecond
-	)
+	synctest.Test(t, func(t *testing.T) {
+		const (
+			bodyTimeout = 150 * time.Millisecond
+			headerDelay = 90 * time.Millisecond
+			bodyDelay   = 90 * time.Millisecond
+		)
 
-	serviceCalls := atomic.Int32{}
-	running := startHTTP1BodyTimeoutServer(t, bodyTimeout, &serviceCalls)
-	conn := dialHTTP1BodyTimeoutServer(t, running.listener.Addr().String())
+		serviceCalls := atomic.Int32{}
+		running := startHTTP1BodyTimeoutServer(t, bodyTimeout, &serviceCalls)
+		conn := running.client
 
-	started := time.Now()
+		started := time.Now()
 
-	writeHTTP1Part(t, conn, "POST / HTTP/1.1\r\nHost: loopback\r\nContent-Type: application/json\r\nContent-Length: 11\r\n")
+		writeHTTP1Part(t, conn, "POST / HTTP/1.1\r\nHost: loopback\r\nContent-Type: application/json\r\nContent-Length: 11\r\n")
 
-	time.Sleep(headerDelay)
-	writeHTTP1Part(t, conn, "\r\n")
+		time.Sleep(headerDelay)
+		writeHTTP1Part(t, conn, "\r\n")
 
-	time.Sleep(bodyDelay)
-	writeHTTP1Part(t, conn, `{"ok":true}`)
+		time.Sleep(bodyDelay)
+		writeHTTP1Part(t, conn, `{"ok":true}`)
 
-	statusCode := readHTTP1Status(t, conn)
+		statusCode := readHTTP1Status(t, conn)
 
-	if elapsed := time.Since(started); elapsed <= bodyTimeout {
-		t.Fatalf("request elapsed = %v, want greater than total timeout to prove fresh body budget", elapsed)
-	}
+		if elapsed := time.Since(started); elapsed <= bodyTimeout {
+			t.Fatalf("request elapsed = %v, want greater than total timeout to prove fresh body budget", elapsed)
+		}
 
-	if statusCode != http.StatusNoContent || serviceCalls.Load() != 1 {
-		t.Fatalf("response = status %d service calls %d, want 204/1", statusCode, serviceCalls.Load())
-	}
+		if statusCode != http.StatusNoContent || serviceCalls.Load() != 1 {
+			t.Fatalf("response = status %d service calls %d, want 204/1", statusCode, serviceCalls.Load())
+		}
+	})
 }

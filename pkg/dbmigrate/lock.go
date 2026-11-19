@@ -13,36 +13,23 @@ const (
 	defaultLockRelease = 5 * time.Second
 )
 
-// LockSession은 PostgreSQL advisory lock 최소 동작이다.
 type LockSession interface {
-	// TryAdvisoryLock은 advisory lock 획득을 한 번 시도한다.
 	TryAdvisoryLock(ctx context.Context, key int64) (bool, error)
-	// AdvisoryUnlock은 advisory lock 해제를 시도한다.
 	AdvisoryUnlock(ctx context.Context, key int64) (bool, error)
 }
 
-// WithAdvisoryLock은 unlock이 에러이거나 released=false(lock 미보유)로 끝나면 세션 lock
-// 상태가 불확실하다고 보고 이 메서드를 호출한다. Pooled conn 구현체는 여기서 conn을 hijack 후
-// close해, lock을 쥔 채 풀로 반환·재사용되는 것을 막아야 한다.
 type UnlockFailureEvicter interface {
 	EvictAfterUnlockFailure() error
 }
 
-// LockConfig는 migration advisory lock 획득과 해제 설정이다.
 type LockConfig struct {
-	// Key는 PostgreSQL advisory lock key다.
-	Key int64
-	// Acquire는 lock 획득 최대 대기 시간이다.
-	Acquire time.Duration
-	// Poll은 lock 획득 재시도 간격이다.
-	Poll time.Duration
-	// Release는 lock 해제 최대 대기 시간이다.
-	Release time.Duration
-	// OnUnlockError는 unlock 실패를 return 대신 전달받는 callback이다.
+	Key           int64
+	Acquire       time.Duration
+	Poll          time.Duration
+	Release       time.Duration
 	OnUnlockError func(error)
 }
 
-// WithAdvisoryLock은 advisory lock을 잡은 동안 fn을 실행한다. 콜백 fn의 오류는 감싸지 않고 그대로 반환한다.
 func WithAdvisoryLock(ctx context.Context, s LockSession, cfg LockConfig, fn func(context.Context) error) (err error) {
 	if s == nil {
 		return errors.New("dbmigrate: lock session is required")
@@ -86,8 +73,6 @@ func WithAdvisoryLock(ctx context.Context, s LockSession, cfg LockConfig, fn fun
 	return fn(ctx)
 }
 
-// fn의 panic unwinding 중 defer 안에서 evict가 다시 panic하면 원 panic을 대체하고
-// OnUnlockError·errors.Join을 건너뛴다 — 오류로 변환해 unlock 오류 의미를 보존한다.
 func evictAfterUnlockFailure(e UnlockFailureEvicter) (err error) {
 	defer func() {
 		if r := recover(); r != nil {

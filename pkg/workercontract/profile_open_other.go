@@ -7,7 +7,6 @@ import (
 	"os"
 )
 
-// 이 플랫폼에는 공통 no-follow open API가 없어 기존 inode 검사를 유지한다.
 func openRegularProfile(path string) (*os.File, error) {
 	before, err := os.Lstat(path)
 	if err != nil {

@@ -87,7 +87,6 @@ func TestSanitizeHandler_RebuildMasksSensitive(t *testing.T) {
 	}
 }
 
-// 비교할 수 없는 Any도 Value.Equal이나 원문 포맷 없이 차단해야 한다.
 func TestSanitizeHandler_UncomparableAnyAttrDoesNotPanic(t *testing.T) {
 	r := slog.NewRecord(testTime(), slog.LevelInfo, "Resolved target minutes", 0)
 	r.AddAttrs(
@@ -113,7 +112,6 @@ func TestSanitizeHandler_UncomparableAnyAttrDoesNotPanic(t *testing.T) {
 	}
 }
 
-// LogValuer는 Resolve로 값이 바뀌므로 fast-path를 타선 안 되고, 해소된 값이 마스킹 판정을 받아야 한다.
 func TestSanitizeHandler_ResolvesLogValuer(t *testing.T) {
 	r := slog.NewRecord(testTime(), slog.LevelInfo, "msg", 0)
 	r.AddAttrs(

@@ -14,8 +14,6 @@ type decodeLiteralFilter struct {
 	owners    []*compiledRule
 }
 
-// 필수 리터럴을 찾지 못한 경우에만 디코딩을 생략한다. 구분자를 모두 제거한 표면은
-// raw/norm/joined보다 넓은 해석이므로 매치는 공격 근거가 아니라 증명 불가를 뜻한다.
 func compileDecodeLiteralProof(packs []compiledPack) decodeLiteralFilter {
 	var (
 		literals []string
@@ -130,7 +128,6 @@ func (proof *decodeLiteralProof) visit(readings []string) bool {
 		proof.advanceReading(reading, &next)
 	}
 
-	// 선택지 수가 아니라 기존 리터럴 오토마톤의 상태 수만큼만 보존한다.
 	proof.states = next
 
 	return !proof.mayContribute()
@@ -140,8 +137,6 @@ func (proof *decodeLiteralProof) advanceReading(text string, next *decodeProofSt
 	normalized := guardtext.NormalizeView(text)
 	proof.advance(decodeProofWordText(normalized), next)
 
-	// raw 규칙의 대소문자 동치와 정규화의 confusable 치환 순서가 다를 수 있다.
-	// 소문자화 후 정규화한 해석도 더해 증명 범위를 보수적으로 넓힌다.
 	lower := strings.ToLower(text)
 	if lower == text {
 		return

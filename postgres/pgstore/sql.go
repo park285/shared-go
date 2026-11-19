@@ -10,8 +10,6 @@ import (
 //go:embed queries/*.sql
 var queryFS embed.FS
 
-// 초기화 때 한 번 조합한다. PostgreSQL이 잠근 최신 행을 재검사하도록
-// 획득 쿼리의 직접 행 잠금·UPDATE 조건은 유지한다.
 func inboxQuery(name, explicitRecovery string) string {
 	query := strings.NewReplacer(
 		"{{heads}}", sqlutil.MustQuery(queryFS, "queries/inbox_heads.sql"),

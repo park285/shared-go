@@ -86,7 +86,6 @@ func DurationE(key string, def time.Duration) (time.Duration, error) {
 	return parsed, nil
 }
 
-// 미수용 값은 모두 에러로 돌려주며 기본값으로 접는 경로는 없다.
 func lookupBool(value string) (parsed, ok bool) {
 	switch strings.ToLower(value) {
 	case "1", boolTrue, boolYes, "y", boolOn:

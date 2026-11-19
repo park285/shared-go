@@ -251,7 +251,6 @@ func TestRedirectPolicyStripsHeadersRestoredOnLaterHop(t *testing.T) {
 			"relay.test": {net.ParseIP("93.184.216.35")},
 		},
 	}
-	// net/http가 hop마다 최초 header를 복원하므로 hop2 요청도 credential을 들고 들어온다.
 	req := &http.Request{
 		URL:    mustURL(t, "https://relay.test/3"),
 		Header: http.Header{testAuthorization: []string{testBearerToken}},

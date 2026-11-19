@@ -10,7 +10,6 @@ import (
 )
 
 func TestEnableFileLoggingCountsFileLaneWriteFailures(t *testing.T) {
-	// 프로세스 counter의 정확한 증가분을 보므로 package의 parallel test와 분리한다.
 	beforeFile := SnapshotFile()
 	beforeStdout := SnapshotStdout()
 
@@ -24,7 +23,6 @@ func TestEnableFileLoggingCountsFileLaneWriteFailures(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// lumberjack은 MaxSizeMB보다 큰 단일 쓰기를 (0, error)로 거절한다.
 	record := slog.NewRecord(testTime(), slog.LevelError, "oversized_record", 0)
 	record.AddAttrs(
 		slog.String("detail", strings.Repeat("oversized ", 1<<17)),

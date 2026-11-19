@@ -11,7 +11,6 @@ import (
 	"time"
 )
 
-// DefaultShutdownTimeout은 Options.ShutdownTimeout이 0 이하일 때 적용하는 보수적 기본 종료 예산이다.
 const DefaultShutdownTimeout = 30 * time.Second
 
 type SignalNotifier func(signals ...os.Signal) (<-chan os.Signal, func())
@@ -158,7 +157,6 @@ func beforeShutdown(fn func()) {
 	}
 }
 
-// 종료 절차는 baseCtx가 이미 취소된 뒤에 실행되므로 취소만 끊고 값은 그대로 물려받는다.
 func shutdownContext(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
 	if timeout <= 0 {
 		timeout = DefaultShutdownTimeout

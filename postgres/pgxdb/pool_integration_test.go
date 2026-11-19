@@ -66,16 +66,13 @@ func startPostgres() (string, string, error) {
 	runCtx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
-	// 교차 빌드의 캐시가 테스트 DB를 다른 아키텍처의 에뮬레이션 이미지로 바꾸지 않게 한다.
 	const platform = "linux/" + runtime.GOARCH
 
-	// 이미지 pull·platform 경고는 stderr로 나온다. stdout의 container ID만 읽어야 시작한 컨테이너를
-	// 정리할 수 있고, 경고가 섞인 ID로 inspect가 실패해 테스트가 조용히 skip되지 않는다.
 	out, err := exec.CommandContext(runCtx, "podman", "run", "-d", "--rm",
 		"--platform", platform,
 		"-e", "POSTGRES_PASSWORD=sharedgo-local-test-placeholder",
 		"-e", "POSTGRES_DB=sharedgo_test",
-		"-P", "docker.io/library/postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873",
+		"-p", "127.0.0.1::5432", "docker.io/library/postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873",
 	).Output()
 	if err != nil {
 		return "", "", fmt.Errorf("podman run: %w: %s", err, commandStderr(err))
@@ -91,10 +88,18 @@ func startPostgres() (string, string, error) {
 	}
 
 	dsn := fmt.Sprintf("postgres://postgres:sharedgo-local-test-placeholder@127.0.0.1:%s/sharedgo_test?sslmode=disable", port)
-	if err := waitReady(dsn); err != nil {
-		removeContainer(id)
 
-		return "", "", fmt.Errorf("wait ready: %w", err)
+	for {
+		err := exec.CommandContext(runCtx, "podman", "exec", id, "pg_isready", "-q", "-h", "127.0.0.1", "-d", "sharedgo_test").Run() //nolint:gosec // 방금 시작한 일회용 컨테이너 ID만 고정된 인자로 전달한다.
+		if err == nil {
+			break
+		}
+
+		if exit, ok := errors.AsType[*exec.ExitError](err); !ok || runCtx.Err() != nil || (exit.ExitCode() != 1 && exit.ExitCode() != 2) {
+			removeContainer(id)
+
+			return "", "", fmt.Errorf("postgres readiness: %w", err)
+		}
 	}
 
 	return id, dsn, nil
@@ -117,31 +122,6 @@ func mappedPort(id string) (string, error) {
 	}
 
 	return port, nil
-}
-
-func waitReady(dsn string) error {
-	deadline := time.Now().Add(60 * time.Second)
-
-	var lastErr error
-
-	for time.Now().Before(deadline) {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		pool, err := OpenPoolDSN(ctx, dsn, Options{Logger: quietLogger(), Ping: PingConfig{PingTimeout: time.Second}})
-
-		cancel()
-
-		if err == nil {
-			pool.Close()
-
-			return nil
-		}
-
-		lastErr = err
-
-		time.Sleep(500 * time.Millisecond)
-	}
-
-	return fmt.Errorf("postgres not ready: %w", lastErr)
 }
 
 func removeContainer(id string) {

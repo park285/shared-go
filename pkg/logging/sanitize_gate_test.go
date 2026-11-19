@@ -55,16 +55,14 @@ func TestRedactSecrets_NoMatchUnchanged(t *testing.T) {
 	}
 }
 
-// (?i) 정규식·EqualFold는 ſ(U+017F)↔s, K(U+212A, Kelvin)↔k를 fold-equivalent로 보지만, 멀티바이트 룬은 토큰과 바이트 폭이 달라 고정 폭 게이트가 skip할 수
-// 있다. 게이트 출력은 정규식 직접 호출 결과와 byte-identical이어야 한다 (superset 불변식).
 func TestRedactSecrets_UnicodeFoldTrap(t *testing.T) {
 	cases := []string{
-		"?paſsword=LEAKEDPW",        // long-s ſ ↔ "password"의 s
-		"?toKen=LEAKEDTOK",          // Kelvin K ↔ "token"의 k
-		"?ſecret=LEAKEDSEC",         // long-s ſ ↔ "secret"의 s
-		"?api_Key=LEAKEDAK",         // Kelvin K ↔ "api_key"의 k
-		";paſswd=LEAKEDPW",          // "passwd" 내 long-s, semicolon 구분자
-		"prefixſ ?password=PLAINPW", // non-ASCII 있으나 ASCII token도 매칭됨
+		"?paſsword=LEAKEDPW",
+		"?toKen=LEAKEDTOK",
+		"?ſecret=LEAKEDSEC",
+		"?api_Key=LEAKEDAK",
+		";paſswd=LEAKEDPW",
+		"prefixſ ?password=PLAINPW",
 	}
 	for _, in := range cases {
 		want := redactDiagnosticWithoutGates(in)

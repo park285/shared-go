@@ -8,11 +8,9 @@ import (
 	"github.com/park285/shared-go/v2/pkg/irisdurable"
 )
 
-// ReplyOutboxFixture는 구현의 reply outbox와, 그 구현이 받아들이는 형식의 레코드 생성기다.
 type ReplyOutboxFixture interface {
 	irisdurable.ReplyOutbox
 
-	// NewRecord는 유일한 식별자·방·base clientRequestId를 가진 새 레코드를 만든다.
 	NewRecord(t *testing.T, payload []byte) irisdurable.ReplyRecord
 }
 

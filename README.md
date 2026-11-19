@@ -196,6 +196,35 @@ Blocking CI는 머신별 baseline이나 상대 wall-clock 비교를 사용하지
 
 Prompt guard는 v3 rulepack과 source/enforcement를 명시하는 `Check`만 지원합니다.
 
+## Inbox 수락 순서
+
+`Store.Admit`은 같은 `(scope, ordering_key)`의 트랜잭션 잠금을 얻은 뒤 기본 `bigserial` ID를 발급합니다.
+소비자는 증가폭 1, `CACHE 1`, `NO CYCLE`인 시퀀스를 유지하고 실행 중 직접 ID를 넣거나 `setval`을 호출하지 않습니다.
+`Claim`, `ClaimBatch`, `InboxReadySnapshot`은 키마다 미종단 행 중 ID가 가장 작은 행만 검사합니다.
+`available_at`과 임대는 실행 가능 시점을 결정하며 `created_at`은 수락 시각으로 보존합니다. 따라서 시각이 역행해도 앞 행을 추월하지 않습니다.
+여러 키가 동시에 준비되면 각 키의 head 사이에서 `(available_at, created_at, id)`가 이른 순서로 한도를 적용합니다. 다른 키 간 커밋 순서나 반환 슬라이스 순서는 보장하지 않습니다.
+밀린 행 수와 무관하게 키별 head를 찾으려면 소비자는 전환 전에 [참조 스키마](postgres/pgstore/testdata/schema.sql)의 부분 인덱스 `idx_iris_webhook_inbox_head_by_id`를 추가합니다. 시각순 인덱스 `idx_iris_webhook_inbox_head`를 대체하지 않습니다.
+
+**pgstore 전환·롤백 조건:** 두 claim 구현을 동시에 실행하지 않습니다. 전환과 롤백 모두 새 수락, claim, 만료 복구를 멈추고 진행 중인 트랜잭션이 끝난 뒤 아래 조회를 실행합니다. 조회는 미종단 행의 시각순 head와 ID순 head가 다르거나, 두 head가 같아도 다른 행이 `processing`인 파티션을 반환합니다. 임대가 만료됐거나 복구로 모든 행이 `pending`이 되었더라도 검사 대상입니다.
+
+```sql
+WITH heads AS (
+    SELECT scope, ordering_key, id, status,
+           first_value(id) OVER (
+               PARTITION BY scope, ordering_key ORDER BY created_at, id
+           ) AS time_head_id,
+           min(id) OVER (PARTITION BY scope, ordering_key) AS id_head_id
+    FROM iris_webhook_inbox
+    WHERE status IN ('pending', 'processing')
+)
+SELECT DISTINCT scope, ordering_key, time_head_id, id_head_id
+FROM heads
+WHERE time_head_id <> id_head_id
+   OR (status = 'processing' AND id <> id_head_id);
+```
+
+결과가 있으면 수락은 닫아 둔 채 **현재 구현으로** 해당 파티션을 정산합니다. 처리 중인 행은 기존 소유자 또는 기존 만료 복구 절차로 정산합니다. 다시 claim·복구를 멈추고 진행 중 트랜잭션이 끝난 뒤 재검사합니다. 조회가 0행인 정지 상태에서만 구현을 교체하고 수락·claim·복구를 재개합니다. ID가 보존되지 않은 이관분(예: TwentyQ `0026`의 미종단 행)은 조회 결과와 무관하게 전환 전에 기존 순서로 모두 정산합니다. 롤백 후에는 수락 시각 역행에 대한 보호가 없습니다.
+
 ## Inbox 업무 복구 transaction
 
 `pgstore.InboxRecoveryDecision`과 `Store.ApplyInboxRecovery`는 소비자가 잠근 inbox·업무 행을

@@ -90,7 +90,6 @@ func TestRunOperationLogsFailureWithErrorAttrs(t *testing.T) {
 	err := RunOperation(t.Context(), logger, OperationOptions{Name: testSync}, func(context.Context) error {
 		return wantErr
 	})
-	// fn의 오류는 호출자 소유이므로 감싸지 않고 그대로 돌려준다.
 	if !errors.Is(err, wantErr) || err.Error() != wantErr.Error() {
 		t.Fatalf("RunOperation error = %v, want unwrapped %v", err, wantErr)
 	}

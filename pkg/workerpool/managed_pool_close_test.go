@@ -61,224 +61,240 @@ func TestManagedPoolCloseContextReturnsWhenQueuedFinalizerDoesNotReturn(t *testi
 }
 
 func TestManagedPoolCloseContextWaitsForQueuedFinalizerCompletion(t *testing.T) {
-	started := make(chan struct{})
-	releaseFinalize := make(chan struct{})
-	pool := newManagedPoolForTest(t, workerpool.ManagedConfig{Workers: 1, QueueSize: 2})
+	synctest.Test(t, func(t *testing.T) {
+		started := make(chan struct{})
+		releaseFinalize := make(chan struct{})
+		pool := newManagedPoolForTest(t, workerpool.ManagedConfig{Workers: 1, QueueSize: 2})
 
-	if !trySubmit(pool, workerpool.JobSpec{Run: func(ctx context.Context) {
-		close(started)
-		<-ctx.Done()
-	}}) {
-		t.Fatal("TrySubmit(running) = false")
-	}
+		if !trySubmit(pool, workerpool.JobSpec{Run: func(ctx context.Context) {
+			close(started)
+			<-ctx.Done()
+		}}) {
+			t.Fatal("TrySubmit(running) = false")
+		}
 
-	if !trySubmit(pool, workerpool.JobSpec{
-		Run: func(context.Context) {},
-		Finalize: func(context.Context, workerpool.JobOutcome) {
-			<-releaseFinalize
-		},
-	}) {
-		t.Fatal("TrySubmit(queued) = false")
-	}
+		if !trySubmit(pool, workerpool.JobSpec{
+			Run: func(context.Context) {},
+			Finalize: func(context.Context, workerpool.JobOutcome) {
+				<-releaseFinalize
+			},
+		}) {
+			t.Fatal("TrySubmit(queued) = false")
+		}
 
-	awaitClosed(t, started, "running job start")
+		awaitClosed(t, started, "running job start")
 
-	closed := make(chan error, 1)
+		closed := make(chan error, 1)
 
-	go func() { closed <- pool.CloseContext(t.Context()) }()
+		go func() { closed <- pool.CloseContext(t.Context()) }()
 
-	awaitManagedSnapshot(t, pool, "queued finalizer start", func(snapshot workerpool.ManagedSnapshot) bool {
-		return snapshot.Finalizer.InFlight == 1 && snapshot.Finalizer.Started == 1
+		awaitManagedSnapshot(t, pool, "queued finalizer start", func(snapshot workerpool.ManagedSnapshot) bool {
+			return snapshot.Finalizer.InFlight == 1 && snapshot.Finalizer.Started == 1
+		})
+
+		select {
+		case err := <-closed:
+			t.Fatalf("CloseContext() returned before finalizer completion: %v", err)
+		default:
+		}
+
+		close(releaseFinalize)
+
+		if err := awaitValue(t, closed, "background CloseContext completion"); err != nil {
+			t.Fatalf("CloseContext() error = %v", err)
+		}
 	})
-
-	select {
-	case err := <-closed:
-		t.Fatalf("CloseContext() returned before finalizer completion: %v", err)
-	default:
-	}
-
-	close(releaseFinalize)
-
-	if err := awaitValue(t, closed, "background CloseContext completion"); err != nil {
-		t.Fatalf("CloseContext() error = %v", err)
-	}
 }
 
 func TestManagedPoolFinalizerDispatchDrainsAfterCloseWhileCallbackStillRuns(t *testing.T) {
-	pool := newManagedPoolForTest(t, workerpool.ManagedConfig{
-		Workers:             1,
-		QueueSize:           2,
-		FinalizeConcurrency: 1,
-		FinalizeQueueSize:   2,
-	})
+	synctest.Test(t, func(t *testing.T) {
+		pool := newManagedPoolForTest(t, workerpool.ManagedConfig{
+			Workers:             1,
+			QueueSize:           2,
+			FinalizeConcurrency: 1,
+			FinalizeQueueSize:   2,
+		})
 
-	firstStarted, releaseFirst := submitGatedFinalizeJob(t, pool, "first")
+		firstStarted, releaseFirst := submitGatedFinalizeJob(t, pool, "first")
 
-	awaitClosed(t, firstStarted, "first finalizer start")
+		awaitClosed(t, firstStarted, "first finalizer start")
 
-	secondStarted, releaseSecond := submitGatedFinalizeJob(t, pool, "second")
+		secondStarted, releaseSecond := submitGatedFinalizeJob(t, pool, "second")
 
-	awaitManagedSnapshot(t, pool, "second finalizer queue", func(snapshot workerpool.ManagedSnapshot) bool {
-		return snapshot.Finalizer.QueueDepth == 1 && snapshot.Finalizer.InFlight == 1
-	})
+		awaitManagedSnapshot(t, pool, "second finalizer queue", func(snapshot workerpool.ManagedSnapshot) bool {
+			return snapshot.Finalizer.QueueDepth == 1 && snapshot.Finalizer.InFlight == 1
+		})
 
-	closed := make(chan error, 1)
+		closed := make(chan error, 1)
 
-	go func() { closed <- pool.CloseContext(t.Context()) }()
+		go func() { closed <- pool.CloseContext(t.Context()) }()
 
-	awaitManagedSnapshot(t, pool, "closed finalizer lifecycle", func(snapshot workerpool.ManagedSnapshot) bool {
-		return !snapshot.Finalizer.Accepting && !snapshot.Finalizer.DispatchDrained
-	})
-	requireCloseBlocked(t, closed, "first finalizer completion")
+		awaitManagedSnapshot(t, pool, "closed finalizer lifecycle", func(snapshot workerpool.ManagedSnapshot) bool {
+			return !snapshot.Finalizer.Accepting && !snapshot.Finalizer.DispatchDrained
+		})
+		requireCloseBlocked(t, closed, "first finalizer completion")
 
-	releaseFirst()
-	awaitClosed(t, secondStarted, "second finalizer start")
-	awaitManagedSnapshot(t, pool, "finalizer dispatch drain", func(snapshot workerpool.ManagedSnapshot) bool {
-		return !snapshot.Finalizer.Accepting && snapshot.Finalizer.DispatchDrained && snapshot.Finalizer.InFlight == 1
-	})
-	requireCloseBlocked(t, closed, "second finalizer completion")
+		releaseFirst()
+		awaitClosed(t, secondStarted, "second finalizer start")
+		awaitManagedSnapshot(t, pool, "finalizer dispatch drain", func(snapshot workerpool.ManagedSnapshot) bool {
+			return !snapshot.Finalizer.Accepting && snapshot.Finalizer.DispatchDrained && snapshot.Finalizer.InFlight == 1
+		})
+		requireCloseBlocked(t, closed, "second finalizer completion")
 
-	releaseSecond()
+		releaseSecond()
 
-	if err := awaitValue(t, closed, "finalizer close completion"); err != nil {
-		t.Fatalf("CloseContext() error = %v", err)
-	}
+		if err := awaitValue(t, closed, "finalizer close completion"); err != nil {
+			t.Fatalf("CloseContext() error = %v", err)
+		}
 
-	awaitManagedSnapshot(t, pool, "late callback completion", func(snapshot workerpool.ManagedSnapshot) bool {
-		return snapshot.Finalizer.InFlight == 0 && snapshot.Finalizer.Reservations == 0
+		awaitManagedSnapshot(t, pool, "late callback completion", func(snapshot workerpool.ManagedSnapshot) bool {
+			return snapshot.Finalizer.InFlight == 0 && snapshot.Finalizer.Reservations == 0
+		})
 	})
 }
 
 func TestManagedPoolAcceptedJobsRetainFinalizerReservation(t *testing.T) {
-	releaseFinalize := make(chan struct{})
+	synctest.Test(t, func(t *testing.T) {
+		releaseFinalize := make(chan struct{})
 
-	var (
-		runCalls      atomic.Int32
-		finalizeCalls atomic.Int32
-	)
+		var (
+			runCalls      atomic.Int32
+			finalizeCalls atomic.Int32
+		)
 
-	pool := newManagedPoolForTest(t, workerpool.ManagedConfig{
-		Workers:             1,
-		QueueSize:           8,
-		FinalizeConcurrency: 1,
-		FinalizeQueueSize:   2,
-		FinalizeTimeout:     time.Second,
-	})
+		pool := newManagedPoolForTest(t, workerpool.ManagedConfig{
+			Workers:             1,
+			QueueSize:           8,
+			FinalizeConcurrency: 1,
+			FinalizeQueueSize:   2,
+			FinalizeTimeout:     time.Second,
+		})
 
-	for index := range 2 {
-		if !trySubmit(pool, workerpool.JobSpec{
-			Kind: fmt.Sprintf("reserved-%d", index),
+		for index := range 2 {
+			if !trySubmit(pool, workerpool.JobSpec{
+				Kind: fmt.Sprintf("reserved-%d", index),
+				Run: func(context.Context) {
+					runCalls.Add(1)
+				},
+				Finalize: func(context.Context, workerpool.JobOutcome) {
+					finalizeCalls.Add(1)
+					<-releaseFinalize
+				},
+			}) {
+				t.Fatalf("TrySubmit(%d) = false", index)
+			}
+		}
+
+		awaitManagedSnapshot(t, pool, "initial finalizer reservation", func(snapshot workerpool.ManagedSnapshot) bool {
+			return snapshot.Finalizer.InFlight == 1 && snapshot.Finalizer.QueueDepth == 1
+		})
+		expectFinalizerCapacityRejection(t, pool, "unreserved", workerpool.JobSpec{
+			Kind: "unreserved",
 			Run: func(context.Context) {
 				runCalls.Add(1)
 			},
 			Finalize: func(context.Context, workerpool.JobOutcome) {
 				finalizeCalls.Add(1)
-				<-releaseFinalize
 			},
-		}) {
-			t.Fatalf("TrySubmit(%d) = false", index)
-		}
-	}
+		})
 
-	awaitManagedSnapshot(t, pool, "initial finalizer reservation", func(snapshot workerpool.ManagedSnapshot) bool {
-		return snapshot.Finalizer.InFlight == 1 && snapshot.Finalizer.QueueDepth == 1
-	})
-	expectFinalizerCapacityRejection(t, pool, "unreserved", workerpool.JobSpec{
-		Kind: "unreserved",
-		Run: func(context.Context) {
-			runCalls.Add(1)
-		},
-		Finalize: func(context.Context, workerpool.JobOutcome) {
-			finalizeCalls.Add(1)
-		},
-	})
+		awaitManagedSnapshot(t, pool, "finalizer reservation overload", func(snapshot workerpool.ManagedSnapshot) bool {
+			return snapshot.Finalizer.InFlight == 1 &&
+				snapshot.Finalizer.QueueDepth == 1 &&
+				snapshot.Finalizer.Overloaded == 1 &&
+				snapshot.Finalizer.ReservationRejected == 1
+		})
+		close(releaseFinalize)
+		awaitManagedSnapshot(t, pool, "reserved finalizer completion", func(snapshot workerpool.ManagedSnapshot) bool {
+			return snapshot.Finalizer.Completed == 2 && snapshot.Finalizer.InFlight == 0
+		})
 
-	awaitManagedSnapshot(t, pool, "finalizer reservation overload", func(snapshot workerpool.ManagedSnapshot) bool {
-		return snapshot.Finalizer.InFlight == 1 &&
-			snapshot.Finalizer.QueueDepth == 1 &&
-			snapshot.Finalizer.Overloaded == 1 &&
-			snapshot.Finalizer.ReservationRejected == 1
-	})
-	close(releaseFinalize)
-	awaitManagedSnapshot(t, pool, "reserved finalizer completion", func(snapshot workerpool.ManagedSnapshot) bool {
-		return snapshot.Finalizer.Completed == 2 && snapshot.Finalizer.InFlight == 0
-	})
+		assertCallCount(t, &runCalls, "Run calls", 2)
+		assertCallCount(t, &finalizeCalls, "Finalize calls", 2)
 
-	assertCallCount(t, &runCalls, "Run calls", 2)
-	assertCallCount(t, &finalizeCalls, "Finalize calls", 2)
-
-	closeManagedPool(t, pool)
+		closeManagedPool(t, pool)
+	})
 }
 
 func TestManagedPoolAcceptedQueuedFinalizerStartsAfterSlotReturns(t *testing.T) {
-	const finalizeTimeout = 100 * time.Millisecond
+	synctest.Test(t, func(t *testing.T) {
+		const finalizeTimeout = 100 * time.Millisecond
 
-	releaseFirst := make(chan struct{})
-	secondStarted := make(chan finalizerCallState, 1)
+		releaseFirst := make(chan struct{})
+		secondStarted := make(chan finalizerCallState, 1)
 
-	var (
-		firstCalls  atomic.Int32
-		secondCalls atomic.Int32
-	)
+		var (
+			firstCalls  atomic.Int32
+			secondCalls atomic.Int32
+		)
 
-	pool := newManagedPoolForTest(t, workerpool.ManagedConfig{
-		Workers:             1,
-		QueueSize:           2,
-		FinalizeConcurrency: 1,
-		FinalizeQueueSize:   2,
-		FinalizeTimeout:     finalizeTimeout,
+		pool := newManagedPoolForTest(t, workerpool.ManagedConfig{
+			Workers:             1,
+			QueueSize:           2,
+			FinalizeConcurrency: 1,
+			FinalizeQueueSize:   2,
+			FinalizeTimeout:     finalizeTimeout,
+		})
+
+		if !trySubmit(pool, workerpool.JobSpec{
+			Run: func(context.Context) {},
+			Finalize: func(ctx context.Context, _ workerpool.JobOutcome) {
+				firstCalls.Add(1)
+				<-ctx.Done()
+				<-releaseFirst
+			},
+		}) {
+			t.Fatal("TrySubmit(first finalizer) = false")
+		}
+
+		if !trySubmit(pool, workerpool.JobSpec{
+			Run: func(context.Context) {},
+			Finalize: func(ctx context.Context, outcome workerpool.JobOutcome) {
+				secondCalls.Add(1)
+
+				secondStarted <- captureFinalizerCallState(ctx, outcome)
+			},
+		}) {
+			t.Fatal("TrySubmit(second finalizer) = false")
+		}
+
+		synctest.Sleep(finalizeTimeout)
+
+		awaitManagedSnapshot(t, pool, "timed-out first and queued second finalizer", func(snapshot workerpool.ManagedSnapshot) bool {
+			return snapshot.Finalizer.TimedOut == 1 &&
+				snapshot.Finalizer.InFlight == 1 &&
+				snapshot.Finalizer.QueueDepth == 1 &&
+				snapshot.Finalizer.Reservations == 2
+		})
+		assertCallCount(t, &secondCalls, "second Finalize calls before slot release", 0)
+
+		close(releaseFirst)
+
+		expectFreshFinalizer(t, secondStarted, finalizeTimeout)
+
+		awaitManagedSnapshot(t, pool, "accepted finalizer completion", func(snapshot workerpool.ManagedSnapshot) bool {
+			return snapshot.Finalizer.CompletedLate == 1 &&
+				snapshot.Finalizer.Completed == 1 &&
+				snapshot.Finalizer.Reservations == 0
+		})
+		assertCallCount(t, &firstCalls, "first Finalize calls", 1)
+		assertCallCount(t, &secondCalls, "second Finalize calls", 1)
+
+		closeManagedPool(t, pool)
 	})
+}
 
-	if !trySubmit(pool, workerpool.JobSpec{
-		Run: func(context.Context) {},
-		Finalize: func(ctx context.Context, _ workerpool.JobOutcome) {
-			firstCalls.Add(1)
-			<-ctx.Done()
-			<-releaseFirst
-		},
-	}) {
-		t.Fatal("TrySubmit(first finalizer) = false")
-	}
-
-	if !trySubmit(pool, workerpool.JobSpec{
-		Run: func(context.Context) {},
-		Finalize: func(ctx context.Context, outcome workerpool.JobOutcome) {
-			secondCalls.Add(1)
-
-			secondStarted <- captureFinalizerCallState(ctx, outcome)
-		},
-	}) {
-		t.Fatal("TrySubmit(second finalizer) = false")
-	}
-
-	awaitManagedSnapshot(t, pool, "timed-out first and queued second finalizer", func(snapshot workerpool.ManagedSnapshot) bool {
-		return snapshot.Finalizer.TimedOut == 1 &&
-			snapshot.Finalizer.InFlight == 1 &&
-			snapshot.Finalizer.QueueDepth == 1 &&
-			snapshot.Finalizer.Reservations == 2
-	})
-	assertCallCount(t, &secondCalls, "second Finalize calls before slot release", 0)
-
-	close(releaseFirst)
+func expectFreshFinalizer(t *testing.T, secondStarted <-chan finalizerCallState, finalizeTimeout time.Duration) {
+	t.Helper()
 
 	second := awaitValue(t, secondStarted, "accepted queued finalizer start")
 	if second.outcome != workerpool.JobOutcomeSuccess || second.ctxErr != nil {
 		t.Fatalf("second Finalize state = %+v, want success with live context", second)
 	}
 
-	if second.remaining < finalizeTimeout/2 {
-		t.Fatalf("second Finalize deadline remaining = %v, want fresh start-time budget", second.remaining)
+	if second.remaining != finalizeTimeout {
+		t.Errorf("second Finalize deadline remaining = %v, want %v", second.remaining, finalizeTimeout)
 	}
-
-	awaitManagedSnapshot(t, pool, "accepted finalizer completion", func(snapshot workerpool.ManagedSnapshot) bool {
-		return snapshot.Finalizer.CompletedLate == 1 &&
-			snapshot.Finalizer.Completed == 1 &&
-			snapshot.Finalizer.Reservations == 0
-	})
-	assertCallCount(t, &firstCalls, "first Finalize calls", 1)
-	assertCallCount(t, &secondCalls, "second Finalize calls", 1)
-
-	closeManagedPool(t, pool)
 }
 
 func TestManagedPoolFinalizerReportsLateCompletionOnce(t *testing.T) {
@@ -300,6 +316,8 @@ func TestManagedPoolFinalizerReportsLateCompletionOnce(t *testing.T) {
 		}) {
 			t.Fatal("TrySubmit(late finalizer) = false")
 		}
+
+		synctest.Sleep(20 * time.Millisecond)
 
 		awaitManagedSnapshot(t, pool, "finalizer timeout", func(snapshot workerpool.ManagedSnapshot) bool {
 			return snapshot.Finalizer.TimedOut == 1 &&
@@ -341,31 +359,33 @@ func TestManagedPoolFinalizerReportsLateCompletionOnce(t *testing.T) {
 }
 
 func TestManagedPoolFinalizerContainsPanic(t *testing.T) {
-	pool := newManagedPoolForTest(t, workerpool.ManagedConfig{Workers: 1, QueueSize: 1})
-	if !trySubmit(pool, workerpool.JobSpec{
-		Run: func(context.Context) {},
-		Finalize: func(context.Context, workerpool.JobOutcome) {
-			panic("finalizer panic")
-		},
-	}) {
-		t.Fatal("TrySubmit(panicking finalizer) = false")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		pool := newManagedPoolForTest(t, workerpool.ManagedConfig{Workers: 1, QueueSize: 1})
+		if !trySubmit(pool, workerpool.JobSpec{
+			Run: func(context.Context) {},
+			Finalize: func(context.Context, workerpool.JobOutcome) {
+				panic("finalizer panic")
+			},
+		}) {
+			t.Fatal("TrySubmit(panicking finalizer) = false")
+		}
 
-	awaitManagedSnapshot(t, pool, "finalizer panic", func(snapshot workerpool.ManagedSnapshot) bool {
-		return snapshot.Finalizer.Panicked == 1 && snapshot.Finalizer.InFlight == 0
+		awaitManagedSnapshot(t, pool, "finalizer panic", func(snapshot workerpool.ManagedSnapshot) bool {
+			return snapshot.Finalizer.Panicked == 1 && snapshot.Finalizer.InFlight == 0
+		})
+
+		if !trySubmit(pool, workerpool.JobSpec{Run: func(context.Context) {}}) {
+			t.Fatal("TrySubmit(after finalizer panic) = false")
+		}
+
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+
+		defer cancel()
+
+		if err := pool.CloseContext(ctx); err != nil {
+			t.Fatalf("CloseContext() error = %v", err)
+		}
 	})
-
-	if !trySubmit(pool, workerpool.JobSpec{Run: func(context.Context) {}}) {
-		t.Fatal("TrySubmit(after finalizer panic) = false")
-	}
-
-	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
-
-	defer cancel()
-
-	if err := pool.CloseContext(ctx); err != nil {
-		t.Fatalf("CloseContext() error = %v", err)
-	}
 }
 
 func awaitClosed(t *testing.T, ch <-chan struct{}, name string) {
@@ -395,19 +415,10 @@ func awaitValue[T any](t *testing.T, ch <-chan T, name string) T {
 
 func awaitManagedSnapshot(t *testing.T, pool *workerpool.ManagedPool, name string, ready func(workerpool.ManagedSnapshot) bool) {
 	t.Helper()
+	synctest.Wait()
 
-	deadline := time.Now().Add(time.Second)
-
-	for {
-		if snapshot := pool.Snapshot(); ready(snapshot) {
-			return
-		}
-
-		if !time.Now().Before(deadline) {
-			t.Fatalf("timed out waiting for %s: %+v", name, pool.Snapshot())
-		}
-
-		time.Sleep(time.Millisecond)
+	if snapshot := pool.Snapshot(); !ready(snapshot) {
+		t.Fatalf("%s: unexpected snapshot: %+v", name, snapshot)
 	}
 }
 

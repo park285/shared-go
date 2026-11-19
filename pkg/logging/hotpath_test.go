@@ -88,7 +88,6 @@ func TestLog_CapturesWrapperCaller(t *testing.T) {
 func TestBroadValueKeyNormalizesRawKeys(t *testing.T) {
 	const highEntropy = "aB3dE7fG9hJ2kL5mN8pQ1rS4tU6vW0xYzAbCdEfGhIj"
 
-	// 값 자체의 redaction이 아니라 broad-value key 정책이 가렸음을 보이려면 같은 값이 일반 key에서는 남아야 한다.
 	if out := testPrivacy.sanitizeAttr(slog.String("label", highEntropy)); out.Value.String() != highEntropy {
 		t.Fatalf("plain key value = %q, want preserved control value", out.Value.String())
 	}

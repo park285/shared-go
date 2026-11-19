@@ -15,7 +15,6 @@ func openRegularProfile(path string) (*os.File, error) {
 		return nil, profileOpenError(err)
 	}
 
-	// Reparse point 자체를 열어 최종 symlink/junction을 따라가지 않는다.
 	handle, err := windows.CreateFile(name, windows.GENERIC_READ,
 		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
 		nil, windows.OPEN_EXISTING,

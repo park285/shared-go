@@ -241,6 +241,8 @@ func TestManagedPoolConcurrentShutdownKeepsFinalizerOwnershipBalanced(t *testing
 	var claimed, finalized atomic.Int64
 
 	stop := make(chan struct{})
+	firstClaim := make(chan struct{})
+	signalClaim := sync.OnceFunc(func() { close(firstClaim) })
 
 	var submitters sync.WaitGroup
 
@@ -261,12 +263,13 @@ func TestManagedPoolConcurrentShutdownKeepsFinalizerOwnershipBalanced(t *testing
 				})
 				if result.FinalizerClaimed {
 					claimed.Add(1)
+					signalClaim()
 				}
 			}
 		})
 	}
 
-	time.Sleep(10 * time.Millisecond)
+	<-firstClaim
 
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 
@@ -279,9 +282,9 @@ func TestManagedPoolConcurrentShutdownKeepsFinalizerOwnershipBalanced(t *testing
 	close(stop)
 	submitters.Wait()
 
-	awaitManagedSnapshot(t, pool, "finalizer ownership balanced", func(snapshot workerpool.ManagedSnapshot) bool {
-		return snapshot.Finalizer.Reservations == 0 && claimed.Load() == finalized.Load()
-	})
+	if reservations := pool.Snapshot().Finalizer.Reservations; reservations != 0 || claimed.Load() != finalized.Load() {
+		t.Fatalf("after shutdown: %d reservations, %d claimed, %d finalized", reservations, claimed.Load(), finalized.Load())
+	}
 
 	if result := pool.TrySubmitResult(workerpool.JobSpec{
 		Run:      func(context.Context) {},

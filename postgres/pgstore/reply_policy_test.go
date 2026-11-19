@@ -43,7 +43,6 @@ func TestBeginAttemptChecksReplayPolicyAtClaim(t *testing.T) {
 			_, err = store.Stage(t.Context(), record)
 			require.NoError(t, err)
 
-			// 같은 트랜잭션의 now()로 지평의 직전·동일·직후를 시간 대기 없이 비교한다.
 			_, err = tx.Exec(t.Context(), `UPDATE iris_reply_outbox SET status='outcome_unknown', attempts=$2, created_at=now()-make_interval(secs=>$3), first_attempt_at=CASE WHEN $4 THEN now()-make_interval(secs=>$3) ELSE NULL END WHERE scope=$1`, tc.name, tc.attempts, tc.age.Seconds(), tc.firstAttempt)
 			require.NoError(t, err)
 

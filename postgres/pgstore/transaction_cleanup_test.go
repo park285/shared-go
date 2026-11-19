@@ -54,7 +54,6 @@ func (*stageCleanupTx) QueryRow(context.Context, string, ...any) pgx.Row {
 	return stageCleanupRow{}
 }
 
-// 행 부재는 StageRow의 순번 대체 성공 분기이므로 별도 응답 데이터 없이 커밋에 도달한다.
 type stageCleanupRow struct{}
 
 func (stageCleanupRow) Scan(...any) error {

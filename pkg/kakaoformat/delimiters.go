@@ -11,12 +11,6 @@ import (
 	"github.com/yuin/goldmark/v2/util"
 )
 
-// parseEmphasisDelimiter는 CommonMark 구분자 판정을 따르되 한국어 답변에서 흔한 세 경우만 조정한다.
-// 문장부호로 끝난 강조 뒤에 조사가 붙은 `**50%**까지`는 닫히고, 숫자 사이 `3*4*5`의 곱셈 기호와
-// `__init__.py`처럼 이름 안에서 끝나는 밑줄은 강조로 보지 않는다.
-//
-// 기본 구현인 parser.ParseDelimiter는 단순 강조를 보정 전에 완성 노드로 반환하는 fast path가 있어 위임하지 않는다.
-// CommonMark 판정과 보정을 마친 구분자를 직접 등록하며, 짝이 없는 구분자는 goldmark가 텍스트로 되돌린다.
 func parseEmphasisDelimiter(block text.Reader, minimum int, processor parser.DelimiterProcessor, pc parser.Context) ast.Node {
 	before := block.PrecedingCharacter()
 	line, segment := block.PeekLine()
@@ -89,7 +83,6 @@ func adjustStarDelimiter(delimiter *parser.Delimiter, before, after rune) {
 		return
 	}
 
-	// CommonMark은 문장부호 뒤 구분자가 글자 앞에서 닫히지 못하게 하지만 한국어 조사는 공백 없이 붙는다.
 	if !delimiter.CanClose && !util.IsSpaceRune(before) && util.IsPunctRune(before) && eastAsianLetter(after) {
 		delimiter.CanClose = true
 	}
@@ -119,7 +112,6 @@ func (tildeDelimiterProcessor) CanOpenCloser(opener, closer *parser.Delimiter) b
 
 func (tildeDelimiterProcessor) OnMatch(int) ast.Node { return extast.NewStrikethrough() }
 
-// GFM은 물결표 하나도 허용하지만 한국어의 `3~5일`·`10~20만 원` 범위 표기가 둘 이상이면 사이 문장이 지워진다.
 type strikethroughParser struct{}
 
 func (strikethroughParser) Trigger() []byte { return []byte{'~'} }

@@ -162,7 +162,6 @@ func TestBoolE(t *testing.T) {
 }
 
 func TestBoolAcceptanceSetIsShared(t *testing.T) {
-	// LoadDotenv의 LocalEnableKey도 같은 수용 집합을 쓰는지 확인한다. 존재하지 않는 선택 경로라 true여도 읽을 파일은 없다.
 	dotenvOpts := DotenvOptions{
 		LocalEnableKey: "TEST_BOOL_TABLE",
 		LocalPaths:     []string{filepath.Join(t.TempDir(), "missing.env")},

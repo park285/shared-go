@@ -87,7 +87,7 @@ func checkStoredSCRAMAuthentication(ctx context.Context, t *testing.T, admin *pg
 
 	role := fmt.Sprintf("pgxdb_scram_test_%d", index)
 	identifier := pgx.Identifier{role}.Sanitize()
-	// verifier는 고정 알고리즘·base64 문자만 사용한다. 원문은 SQL로 보내지 않는다.
+
 	if _, createErr := admin.Exec(ctx, "CREATE ROLE "+identifier+" LOGIN PASSWORD '"+verifier+"'"); createErr != nil {
 		t.Fatal("create verifier-backed test role failed")
 	}

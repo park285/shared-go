@@ -13,7 +13,6 @@ var errMissingRuleID = errors.New("invalid rule: missing id")
 
 const maxRuleOccurrences = 64
 
-// 경계마다 원문이 그만큼 늘어나므로 overlay 규칙이 검사 할당을 키우지 못하게 막는다.
 const maxSentenceBreakRunes = 64
 
 func compileRules(raw *rawRulepack) ([]compiledRule, error) {
@@ -245,7 +244,6 @@ func compileRuleMasking(compiled *compiledRule, rule *rawRule) error {
 	return nil
 }
 
-// 결합 평가는 경계 앞뒤 최대 일치 길이 안에서만 교차 근거를 찾으므로 길이 상한이 있는 정규식만 예외 문맥과 문장 경계를 쓴다.
 func validateRuleMasking(compiled *compiledRule) error {
 	if compiled.SentenceBreak < 0 || compiled.SentenceBreak > maxSentenceBreakRunes {
 		return fmt.Errorf("%s: sentence_break must be between 0 and %d", compiled.ID, maxSentenceBreakRunes)
@@ -258,7 +256,6 @@ func validateRuleMasking(compiled *compiledRule) error {
 	return nil
 }
 
-// 원문의 대소문자와 문장부호로 단어 내부·식별자를 구분하므로 (?i)를 붙이지 않는다.
 func compileRuleExclusions(rule *rawRule) ([]*regexp.Regexp, error) {
 	if len(rule.Exclude) == 0 {
 		return nil, nil
@@ -285,7 +282,6 @@ func compileRuleExclusions(rule *rawRule) ([]*regexp.Regexp, error) {
 	return exclusions, nil
 }
 
-// regexMaxRunes는 정규식이 일치할 수 있는 최대 rune 수다. 반복 상한이 없으면 -1이다.
 func regexMaxRunes(re *syntax.Regexp) int {
 	switch re.Op {
 	case syntax.OpLiteral:

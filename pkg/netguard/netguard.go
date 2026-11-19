@@ -16,19 +16,13 @@ import (
 )
 
 var (
-	// ErrBlockedIP는 대상이 차단된 IP 주소로 확인될 때의 오류다.
-	ErrBlockedIP = errors.New("netguard: target resolves to a blocked IP address")
-	// ErrHostNotAllowed는 대상 host가 allowlist 정책을 통과하지 못할 때의 오류다.
-	ErrHostNotAllowed = errors.New("netguard: host not allowed")
-	// ErrTooManyRedirects는 redirect 횟수가 정책 한도를 넘을 때의 오류다.
-	ErrTooManyRedirects = errors.New("netguard: too many redirects")
-	// ErrUnsupportedScheme는 URL scheme이 정책에서 허용되지 않을 때의 오류다.
-	ErrUnsupportedScheme = errors.New("netguard: unsupported URL scheme")
-	// ErrUnguardedTransport는 dial 무보증 RoundTripper를 거부할 때의 오류다.
+	ErrBlockedIP          = errors.New("netguard: target resolves to a blocked IP address")
+	ErrHostNotAllowed     = errors.New("netguard: host not allowed")
+	ErrTooManyRedirects   = errors.New("netguard: too many redirects")
+	ErrUnsupportedScheme  = errors.New("netguard: unsupported URL scheme")
 	ErrUnguardedTransport = errors.New("netguard: transport does not guard its dial path")
 )
 
-// stdlib net.Dialer의 saneMinimum과 같은 값으로, 후보가 많을 때 시도별 예산이 무의미하게 작아지는 것을 막는다.
 const minDialAttemptTimeout = 2 * time.Second
 
 var blockedAddressPrefixes = [...]netip.Prefix{
@@ -68,60 +62,36 @@ var blockedAddressPrefixes = [...]netip.Prefix{
 	netip.MustParsePrefix("ff00::/8"),
 }
 
-// Resolver는 host를 IP 주소 목록으로 확인한다.
 type Resolver interface {
-	// LookupIP는 host의 IP 주소 목록을 반환한다.
 	LookupIP(ctx context.Context, network, host string) ([]net.IP, error)
 }
 
-// Policy는 외부 네트워크 대상 검증 규칙이다.
 type Policy struct {
-	// Resolver는 host lookup에 사용할 resolver다.
-	Resolver Resolver
-	// Timeout은 lookup과 기본 dial timeout이다.
-	Timeout time.Duration
-	// AllowedIPPrefixes는 기본 차단 대역 중 의도적으로 허용할 IP prefix 목록이다.
-	AllowedIPPrefixes []netip.Prefix
-	// AllowedHosts는 허용할 host allowlist다.
-	AllowedHosts []string
-	// AllowHost는 host별 추가 허용 여부를 판단한다.
-	AllowHost func(string) bool
-	// AllowedPorts는 허용할 destination port 목록이다.
-	AllowedPorts []string
-	// Schemes는 허용할 URL scheme 목록이다.
-	Schemes []string
-	// AllowUnguardedDial은 dial 경로를 증명할 수 없는 opaque RoundTripper를 명시적으로 허용한다.
-	// 기본값 false는 fail-closed다. 이 예외를 켜도 요청 시점 URL/IP 검증은 유지된다.
+	Resolver           Resolver
+	Timeout            time.Duration
+	AllowedIPPrefixes  []netip.Prefix
+	AllowedHosts       []string
+	AllowHost          func(string) bool
+	AllowedPorts       []string
+	Schemes            []string
 	AllowUnguardedDial bool
 
-	// AllowedHosts를 ASCII 정규화한 사본이다. guard 생성 시 한 번 채우며, 비어 있으면
-	// 요청 시점에 AllowedHosts로부터 다시 계산해 값으로 만든 Policy도 같은 결과를 낸다.
 	normalizedAllowedHosts []string
 }
 
-// dialGuardedTransport는 dial 시점 IP 정책을 보장할 수 없는 opaque RoundTripper가
-// 스스로 그 정책을 적용했다고 선언하는 계약이다. 외부 RoundTripper는 NetguardDialGuarded() bool을
-// 구현해 true를 반환하면 GuardedClient에서 fail-closed 대신 그대로 쓰인다.
 type dialGuardedTransport interface {
 	http.RoundTripper
 	NetguardDialGuarded() bool
 }
 
-// RedirectConfig는 HTTP redirect 검증과 header 전달 정책이다.
 type RedirectConfig struct {
-	// Policy는 redirect target 검증에 사용할 정책이다.
-	Policy Policy
-	// MaxRedirects는 허용할 최대 redirect 수다.
-	MaxRedirects int
-	// DisableFollow는 redirect follow를 비활성화한다.
-	DisableFollow bool
-	// ForwardHeaders는 cross-origin(scheme·host·port) redirect에도 기존 header를 유지한다.
+	Policy         Policy
+	MaxRedirects   int
+	DisableFollow  bool
 	ForwardHeaders bool
-	// CheckRedirect는 정책 검증 뒤 실행할 추가 redirect hook이다.
-	CheckRedirect func(req *http.Request, via []*http.Request) error
+	CheckRedirect  func(req *http.Request, via []*http.Request) error
 }
 
-// IsBlockedIP는 IP가 private 또는 특수 목적 대역인지 검사한다.
 func IsBlockedIP(ip net.IP) bool {
 	addr, ok := netip.AddrFromSlice(ip)
 	if !ok {
@@ -136,8 +106,6 @@ func isBlockedAddr(addr netip.Addr) bool {
 		return true
 	}
 
-	// netip.Prefix.Contains는 zone이 붙은 주소에 항상 false를 돌려주므로, zone을 남겨두면 아래 대역
-	// 검사가 통째로 무력화된다. egress 대상에 interface zone이 붙을 이유도 없어 fail-closed로 막는다.
 	if addr.Zone() != "" {
 		return true
 	}
@@ -157,8 +125,6 @@ func normalizeHost(host string) string {
 	return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
 }
 
-// dial 계층은 punycode, request 계층은 unicode host를 보므로 두 계층이 같은 형태를 비교하도록
-// allowlist와 후보를 모두 ASCII로 맞춘다. 변환 실패 시 unicode 그대로 두어 fail-closed로 남긴다.
 func normalizeHostASCII(host string) string {
 	normalized := normalizeHost(host)
 	if isASCII(normalized) {
@@ -282,7 +248,7 @@ func guardedDialContext(
 			}
 
 			conn, err := base(attemptCtx, network, resolvedAddress)
-			// net.Dialer/tls.Dialer 계약상 연결이 성립한 뒤의 context 취소는 conn에 영향이 없다.
+
 			cancel()
 
 			if err == nil {
@@ -300,9 +266,6 @@ func guardedDialContext(
 	}
 }
 
-// dialAttemptContext는 ctx에 남은 시간을 남은 후보 수로 나눠 첫 후보가 예산을 모두 쓰고
-// 나머지 후보의 failover 기회를 없애는 것을 막는다. 마지막 후보는 남은 예산을 그대로 쓴다.
-// Ctx에 deadline이 없으면 base dialer의 자체 timeout이 그대로 적용된다.
 func dialAttemptContext(ctx context.Context, remaining int) (context.Context, context.CancelFunc, error) {
 	deadline, ok := ctx.Deadline()
 	if !ok || remaining <= 1 {
@@ -324,7 +287,6 @@ func dialAttemptContext(ctx context.Context, remaining int) (context.Context, co
 	return attemptCtx, cancel, nil
 }
 
-// GuardedTransport는 http.Transport의 dial 경로에 Policy 검증을 적용한다.
 func GuardedTransport(base *http.Transport, p Policy) *http.Transport {
 	if base == nil {
 		if defaultTransport, ok := http.DefaultTransport.(*http.Transport); ok {
@@ -338,7 +300,6 @@ func GuardedTransport(base *http.Transport, p Policy) *http.Transport {
 
 	p = p.prepared()
 	base.Proxy = nil
-	//lint:ignore SA1019 deprecated DialTLS를 비워 소비자 제공 unguarded DialTLS 우회를 막는다.
 	base.DialTLS = nil //nolint:staticcheck // golangci-lint staticcheck도 같은 보안 우회 차단 예외를 인식시킨다.
 
 	baseDialContext := base.DialContext
@@ -356,9 +317,6 @@ func GuardedTransport(base *http.Transport, p Policy) *http.Transport {
 	return base
 }
 
-// GuardedClient는 http.Client transport에 Policy 검증을 적용한 복사본을 반환한다.
-// Opaque RoundTripper 경로는 dial을 통제하지 못해 request 시점 resolve 결과만 검사하며,
-// 반환 client의 Transport는 더 이상 *http.Transport로 단언되지 않는다.
 func GuardedClient(client *http.Client, p Policy) *http.Client {
 	if client == nil {
 		client = &http.Client{}
@@ -389,7 +347,6 @@ func GuardedClient(client *http.Client, p Policy) *http.Client {
 		return &cloned
 	}
 
-	// 선언과 명시적 예외는 요청 시점 검증 강도를 낮추지 않는다.
 	cloned.Transport = guardedRoundTripper{base: cloned.Transport, policy: p}
 
 	return &cloned
@@ -437,7 +394,6 @@ func (g guardedRoundTripper) RoundTrip(req *http.Request) (*http.Response, error
 	return out, nil
 }
 
-// RoundTripper 계약상 거부 경로에서도 body를 닫아야 한다.
 func closeRequestBody(req *http.Request) {
 	if req != nil && req.Body != nil {
 		_ = req.Body.Close()
@@ -458,7 +414,6 @@ func (unguardedRoundTripper) RoundTrip(req *http.Request) (*http.Response, error
 	return nil, ErrUnguardedTransport
 }
 
-// RedirectPolicy는 redirect 대상도 Policy로 검증하는 CheckRedirect 함수다.
 func RedirectPolicy(cfg RedirectConfig) func(req *http.Request, via []*http.Request) error {
 	cfg.Policy = cfg.Policy.prepared()
 
@@ -484,8 +439,6 @@ func RedirectPolicy(cfg RedirectConfig) func(req *http.Request, via []*http.Requ
 			return err
 		}
 
-		// net/http는 hop마다 최초 요청 header 사본을 복원하므로 직전 hop이 아니라 최초 요청 origin과
-		// 비교해야 한다. 직전 hop과 비교하면 hop1에서 지운 header가 hop2에서 되살아난다.
 		if !cfg.ForwardHeaders && len(via) > 0 && !sameOrigin(via[0].URL, req.URL) {
 			stripHeaders(req)
 		}
@@ -690,7 +643,5 @@ func sameOrigin(a, b *url.URL) bool {
 }
 
 func stripHeaders(req *http.Request) {
-	// Header.Del은 키를 canonical 형태로 바꿔 지우므로, 호출자가 맵에 직접 꽂은 비canonical 키
-	// ("x-internal-token")는 Del로 지워지지 않고 그대로 다음 hop에 실린다.
 	clear(req.Header)
 }

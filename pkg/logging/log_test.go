@@ -92,7 +92,6 @@ func TestLevelWrappersDelegateToLogLevel(t *testing.T) {
 	}
 }
 
-// 전역 slog default를 바꾸므로 병렬로 돌리지 않는다.
 func TestNilLoggerUsesDefaultLogger(t *testing.T) {
 	handler := newCaptureLogHandler(true)
 	testsupport.UseDefaultLogger(t, handler)

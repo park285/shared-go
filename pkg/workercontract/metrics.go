@@ -11,7 +11,6 @@ import (
 	"github.com/park285/shared-go/v2/pkg/internal/promtext"
 )
 
-// MetricType은 Prometheus family type을 고정한다.
 type MetricType string
 
 const (
@@ -19,13 +18,11 @@ const (
 	MetricCounter MetricType = "counter"
 )
 
-// MetricSample은 deterministic label set과 값을 담는다.
 type MetricSample struct {
 	Labels map[string]string
 	Value  float64
 }
 
-// MetricFamily는 collector와 text writer가 공유하는 descriptor다.
 type MetricFamily struct {
 	Name    string
 	Help    string
@@ -206,7 +203,6 @@ func addDiscardSamples(families map[string]*MetricFamily, labels map[string]stri
 	}
 }
 
-// addSample은 labels의 소유권을 가져간다. 호출자는 이후 그 map을 변경하지 않아야 한다.
 func addSample(families map[string]*MetricFamily, family string, labels map[string]string, value float64) {
 	metricFamily, ok := families[family]
 	if !ok || metricFamily == nil {
@@ -233,7 +229,6 @@ func boolFloat(value bool) float64 {
 
 func millisecondsToSeconds(value int64) float64 { return float64(value) / 1000 }
 
-// WritePrometheus는 descriptor와 sample을 deterministic text exposition으로 쓴다. Label은 name 오름차순으로 쓴다.
 func WritePrometheus(writer io.Writer, families []MetricFamily) error {
 	for _, family := range families {
 		if err := promtext.WriteHeader(writer, family.Name, family.Help, string(family.Type)); err != nil {

@@ -274,8 +274,6 @@ func TestDecodeCandidatesWithContextForRulesPreservesStandardTransforms(t *testi
 	}
 }
 
-// encodingSyntaxNeedsNormalizationReference는 ruleDecodePreflight가 한 번의 순회로 합친 정규화 판정의
-// 기준 구현이다. 비교 기준으로만 쓴다.
 func encodingSyntaxNeedsNormalizationReference(text string) bool {
 	requiresCompatibilityCheck := false
 

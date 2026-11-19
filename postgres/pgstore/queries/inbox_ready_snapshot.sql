@@ -1,4 +1,3 @@
--- 논리적 획득 가능성은 일시적 행 잠금을 무시하되 순서 제약은 지킨다. Claim과 같은 head 집합을 쓴다.
 WITH RECURSIVE {{heads}},
 ready AS (
     SELECT {{eligible_at}} AS eligible_at

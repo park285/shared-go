@@ -5,8 +5,6 @@ import (
 	"time"
 )
 
-// capacity/max age는 iris-stack의 valid-profile-chatbotgo.json을 사용한다.
-// 실제 queue mutation, expiry selection, 1/16 stale sweep을 섞으며 callback/provider 시간은 제외한다.
 func BenchmarkManagedExpiryProfile(b *testing.B) {
 	for _, profile := range []struct {
 		name     string

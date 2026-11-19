@@ -2,7 +2,6 @@ package workercontract
 
 import "sync/atomic"
 
-// AdmissionResult는 canonical queue ownership 결론이다.
 type AdmissionResult string
 
 const (
@@ -13,7 +12,6 @@ const (
 	AdmissionOutcomeUnknown AdmissionResult = "outcome_unknown"
 )
 
-// AttemptOutcome은 시작된 attempt의 terminal 결론이다.
 type AttemptOutcome string
 
 const (
@@ -25,7 +23,6 @@ const (
 	AttemptOutcomeUnknown AttemptOutcome = "outcome_unknown"
 )
 
-// DiscardReason은 attempt 시작 전 owned work를 폐기한 이유다.
 type DiscardReason string
 
 const (
@@ -33,14 +30,12 @@ const (
 	DiscardShutdown DiscardReason = "shutdown"
 )
 
-// Counters는 worker별 bounded outcome 누계를 instance 안에 보관한다.
 type Counters struct {
 	admissions [5]atomic.Uint64
 	attempts   [6]atomic.Uint64
 	discarded  [2]atomic.Uint64
 }
 
-// RecordAdmission은 증명된 admission 결론만 기록한다.
 func (c *Counters) RecordAdmission(result AdmissionResult) bool {
 	if c == nil {
 		return false
@@ -56,7 +51,6 @@ func (c *Counters) RecordAdmission(result AdmissionResult) bool {
 	return true
 }
 
-// RecordAttempt은 시작된 attempt의 terminal 결론만 기록한다.
 func (c *Counters) RecordAttempt(outcome AttemptOutcome) bool {
 	if c == nil {
 		return false
@@ -134,7 +128,6 @@ func discardIndex(reason DiscardReason) (int, bool) {
 	}
 }
 
-// AdmissionTotals는 diagnostics wire vocabulary를 고정한다.
 type AdmissionTotals struct {
 	Accepted       uint64 `json:"accepted"`
 	Duplicate      uint64 `json:"duplicate"`
@@ -143,7 +136,6 @@ type AdmissionTotals struct {
 	OutcomeUnknown uint64 `json:"outcomeUnknown"`
 }
 
-// AttemptTotals는 diagnostics wire vocabulary를 고정한다.
 type AttemptTotals struct {
 	Success        uint64 `json:"success"`
 	Failed         uint64 `json:"failed"`
@@ -153,13 +145,11 @@ type AttemptTotals struct {
 	OutcomeUnknown uint64 `json:"outcomeUnknown"`
 }
 
-// DiscardTotals는 diagnostics wire vocabulary를 고정한다.
 type DiscardTotals struct {
 	Stale    uint64 `json:"stale"`
 	Shutdown uint64 `json:"shutdown"`
 }
 
-// WorkerTotals는 한 worker의 bounded 누계다.
 type WorkerTotals struct {
 	Admissions AdmissionTotals `json:"admissions"`
 	Attempts   AttemptTotals   `json:"attempts"`
@@ -194,7 +184,6 @@ func (c *Counters) Snapshot() WorkerTotals {
 	}
 }
 
-// DiagnosticsEnvelope은 `/diagnostics/workers`의 v1 body다.
 type DiagnosticsEnvelope struct {
 	ContractVersion   int                          `json:"contractVersion"`
 	Service           string                       `json:"service"`
@@ -205,7 +194,6 @@ type DiagnosticsEnvelope struct {
 	Workers           map[string]WorkerDiagnostics `json:"workers"`
 }
 
-// ProfileDiagnostics는 loaded identity와 file drift만 공개한다.
 type ProfileDiagnostics struct {
 	ID                   string                `json:"id"`
 	Hash                 string                `json:"hash"`
@@ -214,7 +202,6 @@ type ProfileDiagnostics struct {
 	FileErrorCode        *ProfileFileErrorCode `json:"fileErrorCode"`
 }
 
-// WorkerDiagnostics는 executor, canonical queue, bounded totals를 묶는다.
 type WorkerDiagnostics struct {
 	Runtime  RuntimeKind         `json:"runtime"`
 	Executor ExecutorDiagnostics `json:"executor"`
@@ -222,7 +209,6 @@ type WorkerDiagnostics struct {
 	Totals   WorkerTotals        `json:"totals"`
 }
 
-// ExecutorDiagnostics는 process-local executor 상태다. 관측 불가인 동적 값은 함께 nil이다.
 type ExecutorDiagnostics struct {
 	Enabled             bool   `json:"enabled"`
 	ConfiguredWorkers   int    `json:"configuredWorkers"`
@@ -231,7 +217,6 @@ type ExecutorDiagnostics struct {
 	OldestInFlightAgeMS *int64 `json:"oldestInFlightAgeMs"`
 }
 
-// QueueDiagnostics는 latest-attempt snapshot 의미를 보존한다.
 type QueueDiagnostics struct {
 	Backend              QueueBackend            `json:"backend"`
 	Scope                QueueScope              `json:"scope"`

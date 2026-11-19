@@ -24,8 +24,6 @@ const (
 type AwareWriter struct {
 	Inner    io.Writer
 	Archiver *CompressedLogArchiver
-	// Failures는 파일 lane 쓰기가 오류 또는 short write로 끝난 건수다. logging이 프로세스
-	// counter를 주입하는 필수 필드다.
 	Failures *atomic.Uint64
 }
 
@@ -120,7 +118,6 @@ func (a *CompressedLogArchiver) Close() error {
 		return nil
 	}
 
-	// closed를 wait 전에 세워야 진행 중 run은 join하고 이후 Trigger는 차단된다(close 후 archive dir 재생성 방지).
 	a.mu.Lock()
 
 	a.closed = true
@@ -151,8 +148,6 @@ func MoveAndPrune(logPath string, maxBackups, maxAgeDays int) error {
 			continue
 		}
 
-		// lumberjack은 .gz를 닫은 뒤에야 원본을 지운다. 원본이 남아 있으면 압축 중이거나 실패·중단된
-		// 시도의 잔여물이므로 옮기지 않는다. 옮기면 lumberjack의 실패 정리(os.Remove(dst))가 이 사본을 놓친다.
 		if _, err := os.Lstat(strings.TrimSuffix(source, CompressSuffix)); err == nil {
 			continue
 		} else if !errors.Is(err, os.ErrNotExist) {

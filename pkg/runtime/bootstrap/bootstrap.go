@@ -13,8 +13,6 @@ import (
 	sharedlogging "github.com/park285/shared-go/v2/pkg/logging"
 )
 
-// Run이 error를 반환하면 Options.Run은 비-0 exit code로 종료해 supervisor(systemd/컨테이너 런타임)의
-// 재시작 정책이 동작하도록 합니다.
 type runtime interface {
 	Run() error
 	Close()
@@ -25,17 +23,15 @@ type Options[Config any, Runtime runtime] struct {
 	Initialize             func(version string)
 	LoadConfig             func() (Config, error)
 	LoadConfigErrorMessage string
-	// NewLogger는 필수입니다. 반환한 logger가 nil이면 slog.Default()를 씁니다.
-	NewLogger func(config Config) (*slog.Logger, io.Closer, error)
-	// LoggerLevel은 시작 로그의 log_level 필드 값입니다.
-	LoggerLevel       func(config Config) string
-	StartupMessage    string
-	StartupFields     func(config Config) []any
-	BuildTimeout      time.Duration
-	BuildRuntime      func(ctx context.Context, config Config, logger *slog.Logger) (Runtime, error)
-	BuildErrorMessage string
-	RunErrorMessage   string
-	Stderr            io.Writer
+	NewLogger              func(config Config) (*slog.Logger, io.Closer, error)
+	LoggerLevel            func(config Config) string
+	StartupMessage         string
+	StartupFields          func(config Config) []any
+	BuildTimeout           time.Duration
+	BuildRuntime           func(ctx context.Context, config Config, logger *slog.Logger) (Runtime, error)
+	BuildErrorMessage      string
+	RunErrorMessage        string
+	Stderr                 io.Writer
 }
 
 func (opts Options[Config, Runtime]) Run() int {
@@ -120,7 +116,6 @@ func printBootstrapError(stderr io.Writer, message string, err error) int {
 	return 1
 }
 
-// 닫힌 logger로는 자신의 닫기 실패를 기록할 수 없으므로 stderr에 남긴다. Exit code는 runtime 결과를 따른다.
 func reportLoggerCloseError(stderr io.Writer, closer io.Closer) {
 	if err := closer.Close(); err != nil {
 		printBootstrapError(stderr, "Failed to close logger", err)

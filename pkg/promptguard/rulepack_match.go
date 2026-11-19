@@ -76,24 +76,16 @@ func (r *compiledRule) maskViews(views guardtext.Views) (guardtext.Views, bool) 
 	return normalizeViews(masked), true
 }
 
-// ruleExclusionMask는 글자·숫자·구분자·제어 문자가 아니어서 정규화와 결합 view에서 그대로 남는다.
 const ruleExclusionMask = '\uE101'
 
-// sentenceBoundaryPattern의 첫 묶음은 두 단어 이상인 문장 끝의 문장부호와 뒤따르는 공백·줄바꿈이다.
-// 한 단어씩 끊은 우회(Ignore. Previous. Instructions.)와 줄 감싸기는 문장 경계로 보지 않는다.
 var sentenceBoundaryPattern = regexp.MustCompile(`[^\s.!?。．！？]\s+[^\s.!?。．！？]+([.!?。．！？]\s+)`)
 
-// maskExclusions는 예외 문맥(정규식에 묶음이 있으면 첫 묶음)이 차지한 원문 rune을 같은 수의 중립 문자로
-// 가리고, SentenceBreak가 있으면 문장 경계를 그 수의 중립 문자로 바꾼다. 가린 rune은 이웃 단어를 잇지
-// 않으므로 가린 근거만 사라지고, 문장을 건너는 일치는 경계만큼 간격을 더 써야 한다. 결합 세그먼트는
-// 조각마다 따로 가리므로 조각 경계를 가로지른 예외 문맥은 쓰지 않는다.
 func (r *compiledRule) maskExclusions(raw string) (string, bool) {
 	type maskSpan struct{ start, end, runes int }
 
 	var spans []maskSpan
 
 	for index, exclusion := range r.Exclude {
-		// 필수 리터럴이 없는 원문에서는 일치할 수 없으므로 정규식을 실행하지 않는다.
 		if !containsAllLiteralGroupsASCIIFold(raw, r.ExcludeLiteralGroups[index]) {
 			continue
 		}
@@ -106,8 +98,6 @@ func (r *compiledRule) maskExclusions(raw string) (string, bool) {
 			continue
 		}
 
-		// 묶음이 있으면 첫 묶음만 가린다. 나머지 일치는 예외 문맥이 성립하는 조건이어서, 부정한 동사만
-		// 지우고 비밀값 명사는 같은 문장의 다른 요청 동사와 다시 짝지을 수 있게 남긴다.
 		for _, span := range exclusion.FindAllStringSubmatchIndex(raw, -1) {
 			if span[2] >= 0 {
 				spans = append(spans, maskSpan{start: span[2], end: span[3], runes: -1})
@@ -158,10 +148,6 @@ func (r *compiledRule) maskExclusions(raw string) (string, bool) {
 	return masked.String(), true
 }
 
-// matchAggregateExcluding은 결합 세그먼트에서 마지막 조각 경계를 가로지르는 근거만 센다.
-// 한쪽 조각 안의 근거는 조각별·이전 결합 평가가 온전한 문맥과 예외로 이미 판정했으므로,
-// view 창이 예외 문맥을 잘라 낸 결합 세그먼트에서 다시 세지 않는다. 결합 view는 조각별 view를
-// 이어 만들므로, 조각마다 예외 문맥과 문장 경계를 가린 view를 같은 방식으로 이어 근거가 남는지 본다.
 func (r *compiledRule) matchAggregateExcluding(segment textSegment, policy compiledPolicy, limit int) []Match {
 	matches := r.crossingMatches(segment, policy, limit)
 	if len(matches) == 0 {
@@ -193,8 +179,6 @@ func (r *compiledRule) matchAggregateExcluding(segment textSegment, policy compi
 	return nil
 }
 
-// maskedAggregateLeft는 경계 앞 조각들의 가린 view를 결합 view와 같은 방식으로 잇는다. 교차 근거는
-// 경계 앞 MaxMatchRunes 안에 있으므로 그 길이를 넘을 때까지 뒤쪽 조각만 잇는다.
 func (r *compiledRule) maskedAggregateLeft(chunks []aggregateTailChunk) (string, bool) {
 	separator := ""
 
@@ -221,10 +205,6 @@ func (r *compiledRule) maskedAggregateLeft(chunks []aggregateTailChunk) (string,
 	return strings.Join(parts, separator), changed
 }
 
-// crossingMatches는 결합 view의 왼쪽 창과 오른쪽 조각에 걸친 근거를 limit개까지 찾는다.
-// 교차 근거는 경계 앞뒤 MaxMatchRunes 안에 있으므로 그보다 한 rune 넓은 창만 검사한다. 잘라 낸
-// 가장자리에서 앵커·단어 경계가 거짓으로 성립해도 그 일치는 길이 상한 때문에 경계를 넘지 못한다.
-// 왼쪽 안의 근거와 겹친 교차 근거를 놓치지 않도록 왼쪽 근거의 다음 rune부터 다시 찾는다.
 func (r *compiledRule) crossingMatches(segment textSegment, policy compiledPolicy, limit int) []Match {
 	view, weight, ok := r.matchInput(segment, policy)
 	if !ok {
@@ -262,8 +242,6 @@ func (r *compiledRule) crossingMatches(segment textSegment, policy compiledPolic
 	return matches
 }
 
-// aggregateViewSplit은 결합 view 문자열에서 왼쪽 창이 끝나는 위치와 오른쪽 조각이 시작하는 위치다.
-// 두 위치 사이에는 norm view의 경계 표식이 있다.
 func (segment textSegment) aggregateViewSplit(view, text string) (int, int) {
 	runes := 0
 
@@ -528,8 +506,6 @@ func (segment textSegment) rawNormalizedView() string {
 	return segment.Views.Norm
 }
 
-// normalizedRawFallback은 raw 규칙이 원문 text에서 찾지 못했을 때 다시 볼 정규화 원문이다. 결합 세그먼트는
-// 경계 창의 정규화 원문을 쓰고, 조각 세그먼트는 같은 원문을 규칙마다 다시 정규화하지 않도록 조각 캐시를 쓴다.
 func (segment textSegment) normalizedRawFallback(text string) string {
 	switch {
 	case segment.Aggregate:

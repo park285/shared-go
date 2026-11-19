@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 기존 직접 스크립트들이 같은 태그·모듈·산출물 규칙을 사용한다.
 release_identity() {
   repository="$1"
   tag="$2"

@@ -9,7 +9,6 @@ import (
 )
 
 func openRegularProfile(path string) (*os.File, error) {
-	// 마지막 경로가 symlink나 FIFO로 교체되어도 따라가거나 writer를 기다리지 않는다.
 	//nolint:gosec // 운영자가 지정한 profile 경로를 no-follow로 열고 같은 descriptor를 검사한다.
 	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {

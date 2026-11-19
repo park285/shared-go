@@ -18,8 +18,7 @@ import (
 )
 
 type Config struct {
-	Level string
-	// Format이 빈 값이면 json이다. json 외 값은 EnableFileLogging* 계열이 error로 거부한다.
+	Level      string
 	Format     string
 	Dir        string
 	MaxSizeMB  int
@@ -45,23 +44,11 @@ func NewLogger() *slog.Logger {
 	return slog.New(newFormatHandler(slog.LevelInfo, os.Stdout, nil))
 }
 
-// Options는 파일 로깅의 선택 동작을 제어한다.
 type Options struct {
-	// AsyncStdout이 true면 stdout 사본 lane을 drop-on-full 비동기 writer로 감싸
-	// stdout fd 정체가 로깅 전체를 블로킹하지 않게 한다. 파일 lane은 동기 기록을 유지한다.
-	// 파일 lane이 없는 콘솔 전용 구성(Dir 빈 값)에서는 유일한 기록처를 잃을 수 있어 적용하지 않는다.
 	AsyncStdout bool
-	// PrivacyKeys는 이 서비스가 개인 식별자로 다루는 attr·group key다(예: room, sender). 일치하는
-	// 값은 credential과 같이 가린다. 키는 대소문자·`-`·`.`·공백을 정규화한 정확 일치이며 빈 키는 오류다.
-	// 라이브러리는 privacy 키를 내장하지 않으므로 비우면 credential 규칙만 적용한다.
 	PrivacyKeys []string
 }
 
-// EnableFileLoggingWithOptions는 io.Closer를 함께 반환한다. Closer는 비동기 stdout lane의
-// 잔여 드레인과 lumberjack 파일 핸들 정리를 담당하며, 콘솔 전용 구성에서는 nil이다.
-//
-// Lumberjack은 첫 로테이션에서 millRun 고루틴을 띄우지만 Close()는 파일 핸들만 닫고 그
-// 고루틴을 회수하지 않는다(라이브러리 한계). 프로세스당 1회만 호출하고 재초기화는 피하라.
 func EnableFileLoggingWithOptions(config Config, fileName string, opts Options) (*slog.Logger, io.Closer, error) {
 	logger, closer, err := enableFileLoggingWithStdout(os.Stdout, config, fileName, opts)
 	if err != nil {
@@ -141,7 +128,6 @@ func buildLogLanes(stdout io.Writer, logFile *lumberjack.Logger, logArchiver *ar
 	}
 
 	fileLane := &archive.AwareWriter{Inner: logFile, Archiver: logArchiver, Failures: &fileWriteFailed}
-	// 요약은 stdout lane 종료 뒤 파일에 남아야 하므로 logFile Close보다 앞서 실행된다.
 	stdoutGuard := &bestEffortWriter{target: stdoutLane, summary: fileLane}
 
 	closers = append(closers, stdoutGuard, logFile)
@@ -153,10 +139,6 @@ func buildLogLanes(stdout io.Writer, logFile *lumberjack.Logger, logArchiver *ar
 	return io.MultiWriter(stdoutGuard, fileLane), closers
 }
 
-// io.MultiWriter는 첫 writer가 실패하면 나머지를 건너뛴다. Stdout이 EPIPE·ENOSPC로 죽었을 때
-// 그 뒤의 파일 lane까지 함께 멈추면 내구 기록이 사라지므로, stdout 사본의 실패는 삼키고
-// 유실 건수만 세어 Close에서 파일 lane으로 요약한다. 파일 lane은 감싸지 않아 실패가 전파되고,
-// 실패 건수는 AwareWriter가 센다.
 type bestEffortWriter struct {
 	target   io.Writer
 	summary  io.Writer
@@ -179,15 +161,12 @@ func (w *bestEffortWriter) Close() error {
 	return nil
 }
 
-// 요약을 stdout으로 되돌리면 이미 실패한 lane에 다시 쓰는 셈이라 파일 lane에만 남긴다.
 func (w *bestEffortWriter) writeLossSummary() {
 	dropped := w.dropped.Load()
 
 	var truncated uint64
 
 	if async, ok := w.target.(*asyncDropWriter); ok {
-		// Async Write는 의도적으로 성공을 반환한다. Inner queue의 결과를 직접
-		// 읽어 파일에도 남기되 process counter는 원래 실패 지점에서만 증가시킨다.
 		dropped += async.droppedCount()
 
 		truncated = async.truncatedCount()

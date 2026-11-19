@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# release-gate: shared-go release 전 로컬 전용 풀 품질 게이트.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -25,6 +24,9 @@ run_stage() {
   echo "[release] $*"
   "$@"
 }
+
+run_stage bash scripts/ci/verify-tools.sh scan
+run_stage bash scripts/ci/verify-tools.sh formal
 
 for module in "${modules[@]}"; do
   run_stage make tidy-check MODULES="$module"

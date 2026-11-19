@@ -29,7 +29,6 @@ func TestCachedMemStats_ReusesSnapshotWithinTTL(t *testing.T) {
 		t.Fatal("first read returned an empty snapshot")
 	}
 
-	// 힙을 실제로 늘려도 TTL 안에서는 같은 스냅샷이어야 캐시가 동작한 것이다.
 	sink := make([]byte, 8<<20)
 	for i := range sink {
 		sink[i] = byte(i)

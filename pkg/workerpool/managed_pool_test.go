@@ -146,33 +146,35 @@ func TestManagedPoolFinalizesQueueRejectionExactlyOnce(t *testing.T) {
 }
 
 func TestManagedPoolRunNilRejectionClaimsFinalizer(t *testing.T) {
-	finalized := make(chan workerpool.JobOutcome, 1)
-	pool := newManagedPoolForTest(t, workerpool.ManagedConfig{Workers: 1, QueueSize: 1, FinalizeQueueSize: 1})
-	result := pool.TrySubmitResult(workerpool.JobSpec{
-		Finalize: func(_ context.Context, outcome workerpool.JobOutcome) {
-			finalized <- outcome
-		},
+	synctest.Test(t, func(t *testing.T) {
+		finalized := make(chan workerpool.JobOutcome, 1)
+		pool := newManagedPoolForTest(t, workerpool.ManagedConfig{Workers: 1, QueueSize: 1, FinalizeQueueSize: 1})
+		result := pool.TrySubmitResult(workerpool.JobSpec{
+			Finalize: func(_ context.Context, outcome workerpool.JobOutcome) {
+				finalized <- outcome
+			},
+		})
+
+		if result.Accepted || !result.FinalizerClaimed || result.Reason != workerpool.ManagedSubmitRejectedFinalizerScheduled {
+			t.Fatalf("TrySubmitResult(nil Run) = %+v, want claimed rejection finalizer", result)
+		}
+
+		if outcome := awaitValue(t, finalized, "nil Run finalizer"); outcome != workerpool.JobOutcomeRejected {
+			t.Fatalf("outcome = %v, want rejected", outcome)
+		}
+
+		awaitManagedSnapshot(t, pool, "nil Run reservation release", func(snapshot workerpool.ManagedSnapshot) bool {
+			return snapshot.Finalizer.Reservations == 0 && snapshot.Finalizer.Completed == 1
+		})
+
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+
+		defer cancel()
+
+		if err := pool.CloseContext(ctx); err != nil {
+			t.Fatalf("CloseContext() error = %v", err)
+		}
 	})
-
-	if result.Accepted || !result.FinalizerClaimed || result.Reason != workerpool.ManagedSubmitRejectedFinalizerScheduled {
-		t.Fatalf("TrySubmitResult(nil Run) = %+v, want claimed rejection finalizer", result)
-	}
-
-	if outcome := awaitValue(t, finalized, "nil Run finalizer"); outcome != workerpool.JobOutcomeRejected {
-		t.Fatalf("outcome = %v, want rejected", outcome)
-	}
-
-	awaitManagedSnapshot(t, pool, "nil Run reservation release", func(snapshot workerpool.ManagedSnapshot) bool {
-		return snapshot.Finalizer.Reservations == 0 && snapshot.Finalizer.Completed == 1
-	})
-
-	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
-
-	defer cancel()
-
-	if err := pool.CloseContext(ctx); err != nil {
-		t.Fatalf("CloseContext() error = %v", err)
-	}
 }
 
 func TestManagedPoolReaperFinalizesStaleJobWhileWorkersAreBusy(t *testing.T) {
@@ -524,7 +526,6 @@ func TestManagedPoolWakesConfiguredWorkersAlreadyWaiting(t *testing.T) {
 			}
 		})
 
-		// 모든 worker가 빈 queue에서 대기하도록 한 뒤 한 scheduler turn에 작업을 넣는다.
 		synctest.Wait()
 
 		for index := range 4 {

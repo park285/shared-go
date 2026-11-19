@@ -14,9 +14,6 @@ type scramCharacter struct {
 	ccc       uint8
 }
 
-// PostgreSQL은 UAX #15 정규화만 수행하며 x/text의 stream-safe CGJ 삽입은 하지 않는다.
-// SASLprep 매핑에서 기존 CGJ는 이미 제거되므로 여기서 CGJ가 생기면 긴 결합 문자
-// 구간만 별도 처리한다. Unicode 표와 개별 합성은 계속 x/text가 소유한다.
 func postgresNFKC(mapped string) string {
 	normalized := norm.NFKC.String(mapped)
 	if !strings.ContainsRune(normalized, '\u034f') {
@@ -48,7 +45,6 @@ func postgresNFKC(mapped string) string {
 }
 
 func orderSCRAMCharacters(chars []scramCharacter) {
-	// CGJ 경계 양쪽의 non-starter도 하나의 구간에서 안정적으로 재정렬한다.
 	for start := 0; start < len(chars); {
 		end := start + 1
 		for end < len(chars) && chars[end].ccc != 0 {
@@ -68,7 +64,6 @@ func orderSCRAMCharacters(chars []scramCharacter) {
 }
 
 func composeSCRAMCharacters(chars []scramCharacter) int {
-	// PostgreSQL unicode_normalize의 canonical composition과 같은 blocking 규칙.
 	starter, size, lastClass := 0, 1, -1
 
 	var pair, composed [2 * utf8.UTFMax]byte

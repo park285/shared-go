@@ -175,7 +175,6 @@ func TestRunReturnsWhenShutdownDoesNotStopListener(t *testing.T) {
 			t.Fatalf("Run() returned after %v, exceeding shutdown budget", elapsed)
 		}
 
-		// 비동기 강제 종료의 스케줄링 순서 대신 실제 listener 종료를 검증한다.
 		synctest.Wait()
 
 		select {

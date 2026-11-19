@@ -10,21 +10,15 @@ import (
 
 const defaultLedgerTable = "schema_migrations"
 
-// Row는 단일 SQL row scan 동작이다.
 type Row interface {
-	// Scan은 row 값을 destination에 복사한다.
 	Scan(dest ...any) error
 }
 
-// RowQuerier는 context-aware 단일 row 조회 동작이다.
 type RowQuerier interface {
-	// QueryRow는 단일 row 조회를 실행한다.
 	QueryRow(ctx context.Context, query string, args ...any) Row
 }
 
-// Ledger는 적용된 migration 파일명을 저장하는 테이블 설정이다.
 type Ledger struct {
-	// Table은 ledger 테이블 이름이다.
 	Table string
 }
 
@@ -67,7 +61,6 @@ func (l Ledger) Applied(ctx context.Context, q RowQuerier, name string) (bool, e
 	return applied, nil
 }
 
-// Record는 migration 파일명을 ledger에 idempotent하게 기록한다.
 func (l Ledger) Record(ctx context.Context, exec Execer, name string) error {
 	if exec == nil {
 		return errors.New("dbmigrate: exec is required")

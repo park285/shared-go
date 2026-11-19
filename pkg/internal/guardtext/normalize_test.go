@@ -140,7 +140,6 @@ func slicesContain(values []string, want string) bool {
 	return slices.Contains(values, want)
 }
 
-// collapseWhitespaceReference는 NormalizePostProcess 빠른 경로 이전의 공백 축약 단계다. 비교 기준으로만 쓴다.
 func collapseWhitespaceReference(text string) string {
 	var builder strings.Builder
 

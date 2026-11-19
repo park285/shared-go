@@ -27,8 +27,6 @@ const (
 	maxLoggedMatchValues   = 16
 )
 
-// fallbackCause는 conservative fallback 원인을 로그에 남기는 고정 분류다. 입력 조각이나
-// 내부 상태를 담을 수 있는 detector 오류 문자열 대신 이 분류만 기록한다.
 type fallbackCause string
 
 const (
@@ -75,7 +73,6 @@ type evaluationState struct {
 	hardBlockHit  bool
 }
 
-// NewGuard는 cfg로 guard를 만든다. 인자 logger가 nil이면 slog.Default()를 쓰므로 만든 Guard의 logger는 nil이 아니다.
 func NewGuard(cfg Config, logger *slog.Logger) (*Guard, error) {
 	if logger == nil {
 		logger = slog.Default()
@@ -215,8 +212,6 @@ func (g *Guard) evaluate(input string, source Source) Evaluation {
 		return cloneEvaluation(evaluation)
 	}
 
-	// singleflight 반환값은 대기자 전원이 공유하므로 Hits를 in-place로 만지면 안 된다.
-	// Source는 구조체 복사본에만 쓰고, 호출자에게는 clone으로 소유권을 끊어 넘긴다.
 	if evaluation, ok := value.(Evaluation); ok {
 		evaluation.Source = source
 		g.observeEvaluation(evaluation, false, len(input))

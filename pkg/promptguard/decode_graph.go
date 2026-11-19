@@ -23,7 +23,6 @@ type decodeRuleEvidence struct {
 	checkedRaw bool
 }
 
-// 독립 해석은 그래프로 유지하고 실제 문자열의 정식 규칙 매치만 점수에 반영한다.
 type decodedRegionEvaluation struct {
 	guard   *Guard
 	policy  compiledPolicy
@@ -67,7 +66,6 @@ func (scan *decodedRegionEvaluation) evaluateRoot(root string) {
 
 	proof.states[0] = 1
 
-	// 해석 영역이 없으면 그래프에 해석 선택 간선이 없어 observeGraph가 모든 일치를 버리므로 그래프를 훑지 않는다.
 	matchGraph := len(regions) > 0
 	if matchGraph && len(scan.guard.decodeProof.automaton.nodes) > 0 {
 		for _, part := range parts {

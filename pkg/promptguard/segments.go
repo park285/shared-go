@@ -24,10 +24,8 @@ type textSegment struct {
 	Aggregate bool
 	Views     guardtext.Views
 	rawNorm   string
-	// rawChunks는 결합 세그먼트 원문 앞쪽(tail) 조각들의 rune 수다. 방문 중에만 유효하다.
 	rawChunks []aggregateTailChunk
-	// piece는 조각 세그먼트 자신의, 결합 세그먼트에서는 오른쪽 조각의 파생 view 캐시다. 방문 중에만 유효하다.
-	piece *segmentPiece
+	piece     *segmentPiece
 }
 
 const (
@@ -117,8 +115,6 @@ type segmentizer struct {
 	inFence     bool
 }
 
-// walkTextSegments는 서식 경계 수와 무관하게 한 세그먼트씩 전달한다.
-// 입력 byte 한도는 Guard가 소유하며, 서식 수를 차단 근거로 쓰지 않는다.
 func walkTextSegments(text string, yield func(textSegment)) {
 	raw := sanitizeUTF8(text)
 	if strings.TrimSpace(raw) == "" {

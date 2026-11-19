@@ -5,7 +5,6 @@ import (
 	"testing"
 )
 
-// 이 최적화가 "정제를 건너뛴" 것과 구분되지 않으면 유출이 되므로, 전량 재정제 결과와 항상 같은 record가 나오는지 고정한다.
 func TestSanitizeHandler_ReuseMatchesFullSanitization(t *testing.T) {
 	t.Parallel()
 

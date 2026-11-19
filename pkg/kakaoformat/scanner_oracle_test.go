@@ -9,7 +9,6 @@ import (
 	"testing"
 )
 
-// 바이트 스캐너로 바꾸기 전의 정규식 구현을 오라클로 두고, 같은 입력에서 결과가 바이트 단위로 같은지 비교한다.
 var (
 	oracleReferenceHead = regexp.MustCompile(`!?\[([^\]]*)\]\(`)
 	oracleDateListLine  = regexp.MustCompile(`(?m)^([ \t]{0,3})(\d{4})\.([ \t]+\d{1,2}\.)`)
@@ -61,7 +60,6 @@ func oracleCleanupSpacing(input string) string {
 	return oracleBlankRun.ReplaceAllString(strings.Join(lines, "\n"), "\n\n")
 }
 
-// oracleLiteralURLParserEnd는 URL 인라인 파서가 줄 첫머리에서만 받던 정규식 일치의 끝을, 없으면 -1을 돌려준다.
 func oracleLiteralURLParserEnd(line []byte) int {
 	match := oracleLiteralURL.FindIndex(line)
 	if len(match) != 2 || match[0] != 0 {
@@ -91,8 +89,6 @@ func checkScannersMatchOracle(t *testing.T, input string) {
 	}
 }
 
-// 정규식 의미가 갈릴 수 있는 지점(꼬리 없는 URL 스킴, '\f'·'<'에서 끝나는 URL, Go `\s`에 없어 URL이 끝나지 않는
-// '\v'·U+0085·U+00A0, 개행을 넘는 링크 머리, 겹치지 않는 재탐색, '\r' 뒤 줄 시작, 들여쓰기 4칸, 숫자 3개, 공백만 있는 줄)을 시드로 둔다.
 var scannerOracleSeeds = []string{
 	"", "http://", "https://", "https:// x", "http:/x", "httphttps://a", "https://a<b", "http://a\fb", "https://\xffa b",
 	"http://a\vb", "https://a\u0085b", "http://a\u00a0b",

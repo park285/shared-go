@@ -6,7 +6,6 @@ import (
 	"testing"
 )
 
-// 새 Restore는 모든 입력에서 이 결과와 바이트 단위로 같아야 한다.
 func restoreWithReplacer(s *store, text string) string {
 	if len(s.values) == 0 {
 		return text
@@ -20,7 +19,6 @@ func restoreWithReplacer(s *store, text string) string {
 	return strings.NewReplacer(pairs...).Replace(text)
 }
 
-// 값은 rawValues를 \x01로 나눈 조각을 돌려 써서 count개를 넣고, count 0은 값이 없는 store다.
 func FuzzStoreRestoreMatchesReplacer(f *testing.F) {
 	for _, seed := range []struct {
 		text, rawValues string
@@ -75,8 +73,6 @@ func FuzzStoreRestoreMatchesReplacer(f *testing.F) {
 	})
 }
 
-// fuzz를 돌리지 않는 일반 go test에서도 표식 조각을 무작위로 이은 입력을 고정 시드로 재현해 비교한다.
-// 값에도 표식 조각을 섞어 바꾼 값을 다시 훑지 않는지 함께 본다.
 func addRandomRestoreSeeds(f *testing.F) {
 	f.Helper()
 

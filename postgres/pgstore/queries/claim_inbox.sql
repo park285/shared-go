@@ -1,5 +1,3 @@
--- 후보는 ordering key별 head뿐이므로 같은 key의 후속 행은 head가 끝날 때까지 잡히지 않아 FIFO가 유지된다.
--- head 판정은 문 스냅샷 기준이고, 잠근 행의 적격 조건은 FOR UPDATE가 최신 행에서 다시 검사한다.
 WITH RECURSIVE {{heads}},
 candidate AS (
     SELECT current_row.id, {{eligible_at}} AS eligible_at

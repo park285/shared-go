@@ -33,7 +33,6 @@ func (d *contextDecoder) deferRuleExpansion(current decodeQueueEntry, candidate 
 		return false
 	}
 
-	// 확장 전용 중간값은 결과 후보·byte 예산을 사용하지 않고 기존 depth·scan 한도로 제한한다.
 	d.visited[candidate] = struct{}{}
 	d.queue = append(d.queue, decodeQueueEntry{text: candidate, depth: current.depth + 1})
 
@@ -55,9 +54,6 @@ func (d *contextDecoder) observeRuleExpansion(current decodeQueueEntry, candidat
 	}
 
 	if hasPlausibleShortRuleDecodeSurface(candidate.decoded) {
-		// depth≥1에서 root의 독립 인코딩 토큰과 동일한 값은 root 레벨 확장이 이미
-		// 책임지므로 status 없이 생략한다. 다른 인코딩 값 내부의 우연한 substring은
-		// 새 decode provenance이므로 생략하면 중첩 role surface를 놓친다.
 		if current.depth >= 1 && d.rootContainsValue(current.text[candidate.span.start:candidate.span.end]) {
 			return false
 		}
@@ -69,7 +65,6 @@ func (d *contextDecoder) observeRuleExpansion(current decodeQueueEntry, candidat
 		start: candidate.span.start,
 		end:   candidate.span.start + len(candidate.decoded),
 	}
-	// 치환 경계에서 새로 완성되고 실제 rule 기여가 확인된 surface만 확장한다.
 	if !d.ruleExpansionCrossBoundaryMayContribute(contextual, replacement) {
 		return false
 	}
@@ -145,7 +140,6 @@ func (d *contextDecoder) ruleExpansionCrossBoundaryBase64MayContribute(input str
 }
 
 func (d *contextDecoder) consumeRuleExpansionProbe(candidateBytes int) bool {
-	// 경계 탐색은 시도·byte 예산으로 제한하고, 실제 변환 스캔을 중복 차감하지 않는다.
 	return consumeProtectedDecodeWork(&d.protectedWork, &d.result.Status, candidateBytes)
 }
 

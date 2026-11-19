@@ -12,8 +12,6 @@ import (
 	"strings"
 )
 
-// DecodeWorkerSettingsSet는 모든 worker의 decoder를 빠짐없이 지정한 뒤 strict decode한다.
-// 이 함수가 settings를 읽는 유일한 공개 경로이며, 각 worker settings는 decodeWorkerSettings 규칙(정확한 키 집합, 포인터 외 null 거부)을 따른다.
 func DecodeWorkerSettingsSet(loaded LoadedProfile, destinations map[string]any) error {
 	if len(loaded.Profile.Workers) != len(destinations) {
 		return errors.New("workercontract: worker settings: decoder worker set must match profile")
@@ -35,7 +33,6 @@ func DecodeWorkerSettingsSet(loaded LoadedProfile, destinations map[string]any) 
 	return nil
 }
 
-// Settings의 모든 struct 키 집합은 json 태그 필드 집합과 정확히 같아야 한다. 포인터 외의 null과 빠진 키는 거부하므로 zero value로 조용히 채워지는 설정이 없다.
 func decodeWorkerSettings(loaded LoadedProfile, workerID string, destination any) error {
 	worker, ok := loaded.Profile.Workers[workerID]
 	if !ok {
@@ -135,7 +132,6 @@ func validateSettingsMap(raw jsontext.Value, typ reflect.Type, path string) erro
 }
 
 func validateSettingsArray(raw jsontext.Value, typ reflect.Type, path string) error {
-	// 바이트 슬라이스는 JSON 배열 대신 문자열로 인코딩될 수 있다.
 	if bytes.TrimSpace(raw)[0] != '[' {
 		return nil
 	}

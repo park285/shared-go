@@ -41,6 +41,9 @@ linters:
     - unqueryvet
     - usestdlibvars
 
+    - depguard
+    - forbidigo
+
     # 오류 처리
     - errchkjson
     - errname
@@ -52,6 +55,7 @@ linters:
 
     # 스타일·문서·진단 억제 관리
     - godot
+    - godox
     - misspell
     - nakedret
     - nlreturn
@@ -88,6 +92,74 @@ linters:
     - gosec
 
   settings:
+    depguard:
+      rules:
+        stack:
+          list-mode: lax
+          deny:
+            - pkg: encoding/json$
+              desc: encoding/json/v2와 encoding/json/jsontext를 직접 쓰고 raw 값은 jsontext.Value로 선언한다 (iris-stack docs/contracts/go-json-v2.md)
+            - pkg: github.com/bytedance/sonic
+              desc: 대체 JSON codec 대신 encoding/json/v2를 쓴다 (iris-stack docs/contracts/go-json-v2.md)
+            - pkg: github.com/goccy/go-json
+              desc: 대체 JSON codec 대신 encoding/json/v2를 쓴다 (iris-stack docs/contracts/go-json-v2.md)
+            - pkg: github.com/json-iterator/go
+              desc: 대체 JSON codec 대신 encoding/json/v2를 쓴다 (iris-stack docs/contracts/go-json-v2.md)
+            - pkg: github.com/google/uuid
+              desc: 표준 라이브러리 uuid 패키지를 쓴다 (iris-stack docs/contracts/go-modernization.md)
+            - pkg: github.com/gofrs/uuid
+              desc: 표준 라이브러리 uuid 패키지를 쓴다 (iris-stack docs/contracts/go-modernization.md)
+        hololive-native-exec:
+          list-mode: lax
+          files:
+            - "**/hololive/hololive-api/**"
+            - "**/hololive/hololive-shared/pkg/service/template/**"
+            - "!$test"
+          deny:
+            - pkg: os/exec
+              desc: hololive-api와 저장 template 실행기는 외부 process를 실행하지 않는다. 외부 실행이 필요한 작업은 alarm-worker·youtube-collector처럼 별도 runtime이 소유한다
+            - pkg: plugin
+              desc: hololive-api와 저장 template 실행기는 native plugin을 적재하지 않는다
+        twentyq-boundaries:
+          list-mode: lax
+          files:
+            - "**/twentyq-bot/**"
+          deny:
+            - pkg: github.com/valkey-io/valkey-go
+              desc: TwentyQ 상태는 PostgreSQL(pgx, internal/twentyq/pgstate)만 쓴다. Redis/Valkey를 추가하지 않는다
+            - pkg: github.com/redis/go-redis
+              desc: TwentyQ 상태는 PostgreSQL(pgx, internal/twentyq/pgstate)만 쓴다. Redis/Valkey를 추가하지 않는다
+            - pkg: github.com/park285/shared-go/openai
+              desc: TwentyQ LLM provider는 Vertex(google.golang.org/genai) 하나다
+            - pkg: github.com/openai/openai-go
+              desc: TwentyQ LLM provider는 Vertex(google.golang.org/genai) 하나다
+
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: ^json\.(MatchCaseInsensitiveNames|FormatNilMapAsNull|FormatNilSliceAsNull)$
+          pkg: ^encoding/json/v2$
+          msg: v1 동작을 복원하는 option 대신 producer·consumer의 type/tag와 fixture를 함께 고친다 (iris-stack docs/contracts/go-json-v2.md)
+        - pattern: ^jsontext\.(AllowDuplicateNames|AllowInvalidUTF8)$
+          pkg: ^encoding/json/jsontext$
+          msg: v1 동작을 복원하는 option 대신 producer·consumer의 type/tag와 fixture를 함께 고친다 (iris-stack docs/contracts/go-json-v2.md)
+        - pattern: ^sort\.(Strings|Ints|Float64s|Slice|SliceStable)$
+          pkg: ^sort$
+          msg: slices.Sort, slices.SortFunc, slices.SortStableFunc를 쓴다 (iris-stack docs/contracts/go-modernization.md)
+        - pattern: ^atomic\.(Add|Load|Store|Swap|CompareAndSwap)(Int32|Int64|Uint32|Uint64|Uintptr|Pointer)$
+          pkg: ^sync/atomic$
+          msg: atomic.Int64, atomic.Pointer[T] 같은 typed atomic 값을 쓴다 (iris-stack docs/contracts/go-modernization.md)
+        - pattern: ^errors\.As$
+          pkg: ^errors$
+          msg: target 타입이 정적으로 정해지면 errors.AsType[T]를 쓴다. target을 any로 받는 helper만 line-scoped nolint 사유를 남긴다 (iris-stack docs/contracts/go-modernization.md)
+
+    godox:
+      keywords:
+        - TODO
+        - FIXME
+        - HACK
+        - XXX
+
     errcheck:
       check-type-assertions: true
       check-blank: true

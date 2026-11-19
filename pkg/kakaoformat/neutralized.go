@@ -4,16 +4,15 @@ import "strings"
 
 const neutralizedMarkers = "*_`~]#&<\\"
 
-// 호출자가 마커 뒤 ZWSP로 무력화한 표시 문자를 코드·강조 parser보다 먼저 보호합니다.
-// 접기용 연속 ZWSP와 원래 URL은 그대로 두고, 가시 문자와 단발 ZWSP도 복원합니다.
 func protectNeutralizedMarkers(input string, dst *store) string {
 	if !strings.Contains(input, "\u200b") {
 		return input
 	}
 
-	var output strings.Builder
-	// 같은 마커의 복원값은 고정이므로 메시지 안에서 보호 표식을 재사용합니다.
-	var tokens [len(neutralizedMarkers)]string
+	var (
+		output strings.Builder
+		tokens [len(neutralizedMarkers)]string
+	)
 
 	start := 0
 
@@ -30,7 +29,6 @@ func protectNeutralizedMarkers(input string, dst *store) string {
 		}
 
 		if start == 0 {
-			// 보호 표식이 원래 마커보다 길어 결과는 입력 이상이므로 첫 치환에서 입력 크기만큼 잡는다.
 			output.Grow(len(input))
 		}
 

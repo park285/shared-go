@@ -11,27 +11,21 @@ import (
 )
 
 const (
-	// JSON 응답의 Content-Type 값이다.
-	contentTypeJSON = "application/json"
-	// HTTP Content-Type 헤더 이름이다.
+	contentTypeJSON   = "application/json"
 	headerContentType = "Content-Type"
-	// HeaderAPIKey는 관리 API key 인증 헤더 이름이다.
-	HeaderAPIKey = "X-API-Key" //nolint:gosec // 헤더 이름 상수이며 credential 값이 아니다.
+	HeaderAPIKey      = "X-API-Key" //nolint:gosec // 헤더 이름 상수이며 credential 값이 아니다.
 )
 
-// ErrorResponse는 관리 HTTP JSON 에러 응답 본문이다.
 type ErrorResponse struct {
 	Error   string `json:"error"`
 	Message string `json:"message"`
 }
 
-// AdminAuthConfig는 관리 API key 인증 middleware 설정이다. Disabled가 false인 zero value는 인증을 강제한다.
 type AdminAuthConfig struct {
 	APIKey   string
 	Disabled bool
 }
 
-// ConstantTimeStringEqual은 두 문자열을 길이 차이까지 포함해 일정 시간 비교한다.
 func ConstantTimeStringEqual(left, right string) bool {
 	leftHash := sha256.Sum256([]byte(left))
 	rightHash := sha256.Sum256([]byte(right))
@@ -39,7 +33,6 @@ func ConstantTimeStringEqual(left, right string) bool {
 	return subtle.ConstantTimeCompare(leftHash[:], rightHash[:]) == 1 && len(left) == len(right)
 }
 
-// APIKeyFromRequest는 X-API-Key 헤더 값만 관리 API key로 추출한다.
 func APIKeyFromRequest(r *http.Request) string {
 	if r == nil {
 		return ""
@@ -48,7 +41,6 @@ func APIKeyFromRequest(r *http.Request) string {
 	return strings.TrimSpace(r.Header.Get(HeaderAPIKey))
 }
 
-// WriteJSON은 값을 JSON으로 인코딩해 HTTP 응답 본문으로 쓴다. HTML escape는 적용하지 않는다.
 func WriteJSON(w http.ResponseWriter, status int, v any) error {
 	var body bytes.Buffer
 
@@ -66,7 +58,6 @@ func WriteJSON(w http.ResponseWriter, status int, v any) error {
 	return nil
 }
 
-// WriteErrorJSON은 표준 관리 HTTP JSON 에러 응답을 쓴다.
 func WriteErrorJSON(w http.ResponseWriter, status int, code, message string) error {
 	if err := WriteJSON(w, status, ErrorResponse{
 		Error:   strings.TrimSpace(code),
@@ -78,8 +69,6 @@ func WriteErrorJSON(w http.ResponseWriter, status int, code, message string) err
 	return nil
 }
 
-// AdminAuthMiddleware는 X-API-Key 헤더의 관리 API key를 일정 시간 비교로 검증하는 middleware를 만든다.
-// Authorization Bearer 값은 관리 API key로 보지 않으므로 X-API-Key 없이 보낸 요청은 401이다.
 func AdminAuthMiddleware(cfg AdminAuthConfig) func(http.Handler) http.Handler {
 	expected := strings.TrimSpace(cfg.APIKey)
 

@@ -12,12 +12,6 @@ import (
 	"time"
 )
 
-// WithBodyReadTimeout은 handler 진입 이후의 요청 본문 읽기에 timeout 예산을 둔다.
-//
-// 요청 context에는 deadline을 더하지 않으므로 본문을 다 읽은 뒤의 서비스 작업은 제한하지
-// 않는다. 예산이 끝나면 본문을 닫고 이후 Read는 context.DeadlineExceeded를 돌려주며,
-// transport의 read deadline 초과(os.ErrDeadlineExceeded, net.Error Timeout)도 같은 오류로
-// 정규화한다. ResponseController가 read deadline을 지원하면 socket deadline도 함께 건다.
 func WithBodyReadTimeout(next http.Handler, timeout time.Duration) http.Handler {
 	if next == nil {
 		next = http.NotFoundHandler()

@@ -13,7 +13,6 @@ type decodeViewState struct {
 	separators uint8
 }
 
-// graphViewText는 viewTexts가 만든 조각 text에 앞 상태의 공백·결합 규칙을 이어 적용한다. 원문 view는 그대로 쓴다.
 func graphViewText(text, view string, state decodeViewState) (string, decodeViewState) {
 	if view == viewRaw {
 		return text, state

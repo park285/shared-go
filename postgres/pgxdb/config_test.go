@@ -202,7 +202,6 @@ func TestApplyPoolConfigKeepsExplicitValuesAndZeroJitter(t *testing.T) {
 		t.Fatalf("pool = %d/%d/%v/%v, want explicit 0/12/2h/5m", pc.MinConns, pc.MaxConns, pc.MaxConnLifetime, pc.MaxConnIdleTime)
 	}
 
-	// 지터 0은 지터 없음이며 수명에서 파생하지 않는다.
 	if pc.MaxConnLifetimeJitter != 0 {
 		t.Fatalf("MaxConnLifetimeJitter = %v, want 0", pc.MaxConnLifetimeJitter)
 	}

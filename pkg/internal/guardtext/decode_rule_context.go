@@ -2,9 +2,6 @@ package guardtext
 
 const maxShortBase64CandidateLen = minBase64CandidateLen - 1
 
-// minRegionInteriorBase64Len은 prompt 영역 경로가 읽을 수 없는 Base64 값 내부에서 해석하는 최소 창
-// 길이다(6바이트). 키·서명·인증서 내부의 3~5바이트 조각은 우연히 출력 가능해도 지시문이 되지 못하고,
-// 그 조합이 행마다 늘어 정상 입력을 작업 예산 소진으로 미완료로 만든다.
 const minRegionInteriorBase64Len = 8
 
 func decodeCandidatesWithContextForRules(
@@ -87,7 +84,6 @@ func (d *contextDecoder) expandRuleNext() {
 	current := d.queue[d.cursor]
 	d.cursor++
 
-	// 정상 변환값이 전역 후보 예산을 선점하지 않도록 rule 기여가 확인된 후보만 admission한다.
 	standardCandidate := false
 
 	decodeContextSurfaces(

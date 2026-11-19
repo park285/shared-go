@@ -30,7 +30,6 @@ func (p *literalURLParser) Trigger() []byte { return []byte{':'} }
 
 func (p *literalURLParser) CloseBlock(_ ast.Node, _ parser.Context) {}
 
-// URL 내부 별표·밑줄은 기존 일반톡 계약에 따라 강조 대신 주소의 일부로 보존한다.
 func (p *literalURLParser) Parse(parent ast.Node, reader text.Reader, context parser.Context) ast.Node {
 	_, segment := reader.PeekLine()
 	source := reader.Source()
@@ -74,7 +73,6 @@ func (p *literalURLParser) Parse(parent ast.Node, reader text.Reader, context pa
 }
 
 func literalURLEnd(line []byte, end int, last *parser.Delimiter) int {
-	// 주소 바깥에서 열린 강조의 닫힘 판정은 Goldmark의 동일한 구분자 규칙을 사용한다.
 	if !bytes.ContainsAny(line[:end], "*_~") {
 		return end
 	}

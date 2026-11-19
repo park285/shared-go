@@ -15,7 +15,6 @@ import (
 
 const backlogRows = 5000
 
-// 후속 행이 후보에 남으면 claim이 backlog를 매번 순회하므로, 후보는 key별 head뿐이어야 한다.
 func TestClaimBatchSkipsBlockedBacklogKey(t *testing.T) {
 	pool := newMigratedPool(t)
 	store := newScopedStore(t, pool)
@@ -41,7 +40,6 @@ func TestClaimBatchSkipsBlockedBacklogKey(t *testing.T) {
 		t.Fatalf("complete other-2: %v", completeErr)
 	}
 
-	// 다른 트랜잭션이 잠근 head는 건너뛰고, 같은 key의 후속 행으로 넘어가지 않는다.
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		t.Fatalf("begin locking transaction: %v", err)
@@ -98,7 +96,6 @@ func deferBacklogAndCompleteOther(t *testing.T, store *pgstore.Store, claims []p
 	}
 }
 
-// 남긴 claim의 Complete가 성공해야 같은 메시지가 다른 poll에 다시 claim되지 않는다.
 func TestReleaseClaimTokenReturnsUnreturnedClaims(t *testing.T) {
 	pool := newMigratedPool(t)
 	store := newScopedStoreWithOptions(t, pool, pgstore.Options{
@@ -205,7 +202,6 @@ func TestPruneInboxLargeBacklogHonorsLimitPerBranch(t *testing.T) {
 
 var errInjectedRead = errors.New("injected read failure")
 
-// 실제 문장은 끝까지 실행돼 commit되므로 '일부만 반환되고 나머지는 commit된' 결과 미상 상태를 그대로 만든다.
 type truncatingQuerier struct {
 	pgstore.Querier
 }
@@ -227,7 +223,6 @@ type truncatedRows struct {
 
 func (r *truncatedRows) Next() bool {
 	if r.read == 1 {
-		// Close는 남은 결과를 끝까지 읽으므로 claim 문은 모든 행을 commit한 상태로 끝난다.
 		r.Close()
 
 		return false
@@ -246,7 +241,6 @@ func (r *truncatedRows) Err() error {
 	return r.Rows.Err()
 }
 
-// 반환된 claim이 pending으로 돌아가면 다음 poll이 같은 메시지를 두 번 처리한다.
 func TestClaimBatchErrorReleasesOnlyUnreturnedClaims(t *testing.T) {
 	pool := newMigratedPool(t)
 	ctx := t.Context()
@@ -268,9 +262,8 @@ func TestClaimBatchErrorReleasesOnlyUnreturnedClaims(t *testing.T) {
 
 	claims, err := failing.ClaimBatch(ctx, 3)
 
-	var batchErr *pgstore.ClaimBatchError
-
-	if !errors.As(err, &batchErr) || !errors.Is(err, errInjectedRead) {
+	batchErr, ok := errors.AsType[*pgstore.ClaimBatchError](err)
+	if !ok || !errors.Is(err, errInjectedRead) {
 		t.Fatalf("ClaimBatch error = %v; want *ClaimBatchError wrapping the read failure", err)
 	}
 

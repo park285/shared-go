@@ -9,14 +9,11 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-// RuleDecodeRegion은 원문의 한 연결 영역과 그 영역 전체를 치환하는 실제 해석이다.
-// 부분 윈도우나 서로 다른 해석을 합성한 문자열은 Readings에 넣지 않는다.
 type RuleDecodeRegion struct {
 	Start, End int
 	Readings   []string
 }
 
-// HasIndependentRuleRegions는 서로 떨어진 디코딩 영역이 둘 이상인지 할당 없이 판정한다.
 func HasIndependentRuleRegions(input string) bool {
 	count := 0
 
@@ -41,7 +38,6 @@ func HasIndependentRuleRegions(input string) bool {
 	return false
 }
 
-// RuleDecodeInputs는 원문을 보존하면서 기존 문법 정규화·분할 Base64 해석을 더한다.
 func RuleDecodeInputs(input string) []string {
 	inputs := []string{input}
 	if normalized := NormalizeEncodingSyntax(input); normalized != input {
@@ -57,12 +53,8 @@ func RuleDecodeInputs(input string) []string {
 	return inputs
 }
 
-// RuleRegionDecoder는 입력 전체의 실제 변환 작업 예산을 공유한다. 각 영역을 바이트·작업
-// 한도 안에서 끝까지 확장하며, 한 영역의 제한이 다음 영역의 검사를 중단하지 않는다.
 type RuleRegionDecoder struct {
-	work protectedDecodeWork
-	// regions는 영역 텍스트별 해석이다. 해석은 영역 텍스트로만 정해지므로 반복 행과 원문·정규화
-	// 입력에 같은 영역이 다시 나오면 해석을 반복하지 않고 위치만 바꿔 근거를 전달한다.
+	work    protectedDecodeWork
 	regions map[string]regionExpansion
 }
 
@@ -72,7 +64,6 @@ type regionExpansion struct {
 	status   DecodeStatus
 }
 
-// ReserveContext는 실제 근거 문자열을 구성하기 전에 요청 전체 문맥 바이트 예산을 예약한다.
 func (decoder *RuleRegionDecoder) ReserveContext(bytes int) DecodeStatus {
 	var status DecodeStatus
 
@@ -81,7 +72,6 @@ func (decoder *RuleRegionDecoder) ReserveContext(bytes int) DecodeStatus {
 	return status
 }
 
-// Evidence는 단독 디코딩 근거를 즉시 소비한다.
 func (decoder *RuleRegionDecoder) Walk(input string, evidence func(int, int, string), visit func(RuleDecodeRegion)) DecodeStatus {
 	var status DecodeStatus
 
@@ -181,8 +171,6 @@ func (decoder *regionDecoder) standard(current string) {
 	}
 }
 
-// base64는 hex: 표지가 붙은 값을 Base64로 다시 읽지 않는다. 표지 없는 원문 root가 같은 숫자열의 Base64
-// 해석을 맡고, hex 숫자만인 Base64는 공백이 없고 위치마다 쓸 수 있는 글자도 제한돼 지시 문장을 만들지 못한다.
 func (decoder *regionDecoder) base64(current string) {
 	searched := withoutHexPayloads(current)
 	seen := newSpanContextSeen(searched)
@@ -202,7 +190,6 @@ func (decoder *regionDecoder) base64(current string) {
 	}
 }
 
-// 메모의 빈 문자열은 읽을 수 없는 값이다.
 func (decoder *regionDecoder) decodedBase64(encoded string) (string, bool) {
 	if value, exists := decoder.work.base64Memo[encoded]; exists {
 		return value, value != ""
@@ -216,7 +203,6 @@ func (decoder *regionDecoder) decodedBase64(encoded string) (string, bool) {
 	return string(decoded), true
 }
 
-// 값 뒤에 Base64 문자가 이어지면 hex 값이 아니라 더 긴 토큰의 앞부분이므로, 가려서 Base64 정렬을 바꾸지 않는다.
 func withoutHexPayloads(text string) string {
 	if !containsHexFold(text) {
 		return text
@@ -301,7 +287,6 @@ func (decoder *regionDecoder) admit(current, candidate, standalone string) {
 	decoder.queue = append(decoder.queue, candidate)
 }
 
-// RuleRegionContext는 다른 영역과 정규화 또는 인코딩 경계가 결합되는 해석의 문맥을 반환한다.
 func RuleRegionContext(input string, region RuleDecodeRegion, reading string) (string, bool) {
 	unstable := !norm.NFKC.PropertiesString(reading).BoundaryBefore() ||
 		region.End < len(input) && !norm.NFKC.PropertiesString(input[region.End:]).BoundaryBefore()
@@ -401,7 +386,6 @@ func hexRegionEnd(input string, start int) int {
 	return start + match[3]
 }
 
-// 줄바꿈·탭 이스케이프는 풀면 공백이라 영역을 나누므로 ruleRegionGap이 건너뛴다.
 func ruleJSONEscapeEnd(input string, start int) int {
 	if start+1 == len(input) {
 		return start
@@ -419,7 +403,6 @@ func ruleJSONEscapeEnd(input string, start int) int {
 	return start
 }
 
-// JSON 줄바꿈·탭 이스케이프는 풀면 공백이므로 두 글자를 한 구분자로 건너뛴다. 뒤 글자를 다음 영역의 시작으로 읽으면 이어지는 값이 깨진다.
 func ruleRegionGap(input string, position int) int {
 	if isJSONWhitespaceEscape(input, position) {
 		return 2

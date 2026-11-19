@@ -13,18 +13,15 @@ import (
 )
 
 const (
-	pruneScope      = "chat"
-	pruneOtherScope = "prune-neighbor"
-	pruneLimit      = 7
-	prunePlannerOff = "off"
-	// 각 scope에 넣는 오래된 종단 행 수와 그중 manual_review 수(v % 4 = 0)다.
-	pruneOldRows    = 160
-	pruneReviewRows = pruneOldRows / 4
-	// 젊은 completed, pending, processing 행을 종류마다 이만큼 넣는다.
+	pruneScope         = "chat"
+	pruneOtherScope    = "prune-neighbor"
+	pruneLimit         = 7
+	prunePlannerOff    = "off"
+	pruneOldRows       = 160
+	pruneReviewRows    = pruneOldRows / 4
 	pruneProtectedRows = 5
 )
 
-// 통계와 규모에 따라 운영 planner도 고를 수 있는 모양이므로, 호출당 상한은 어떤 조인 전략에서도 지켜져야 한다.
 var rescanningPlanner = map[string]string{
 	"enable_hashjoin":  prunePlannerOff,
 	"enable_mergejoin": prunePlannerOff,
@@ -33,7 +30,6 @@ var rescanningPlanner = map[string]string{
 	"enable_sort":      prunePlannerOff,
 }
 
-// 넘겨 지우면 유지보수 한 번의 잠금·WAL·지연이 batch 크기로 묶이지 않는다.
 func TestPruneInboxDeletesAtMostTheLimitPerCall(t *testing.T) {
 	planners := []struct {
 		name   string
@@ -77,7 +73,6 @@ func TestPruneInboxDeletesAtMostTheLimitPerCall(t *testing.T) {
 	}
 }
 
-// 잠긴 행에서 멈추거나 기다리면 동시에 도는 유지보수가 서로를 막는다.
 func TestPruneInboxSkipsLockedRowsWithinTheLimit(t *testing.T) {
 	pool := newMigratedPool(t)
 	seedPruneFixture(t, pool)
@@ -128,7 +123,6 @@ func TestPruneInboxSkipsLockedRowsWithinTheLimit(t *testing.T) {
 	assertPruneSurvivors(t, pool, pruneReviewRows)
 }
 
-// 각 terminal_at은 두 행씩 같아 id가 순서를 가른다.
 func seedPruneFixture(t *testing.T, pool *pgxpool.Pool) time.Time {
 	t.Helper()
 
@@ -185,7 +179,6 @@ func withPlanner(t *testing.T, pool *pgxpool.Pool, params map[string]string) *pg
 	return planned
 }
 
-// 정리는 완료 갈래를 먼저 비우고 남은 한도로 manual_review 갈래를 지우므로 갈래 순서가 먼저다.
 func pruneOracle(t *testing.T, pool *pgxpool.Pool, includeReview bool, cutoff time.Time) []int64 {
 	t.Helper()
 
@@ -209,7 +202,6 @@ func pruneOracle(t *testing.T, pool *pgxpool.Pool, includeReview bool, cutoff ti
 	return ids
 }
 
-// 차집합을 테이블 전체에서 구하므로 다른 scope나 보호 행을 지워도 드러난다.
 func drainPrune(t *testing.T, pool *pgxpool.Pool, candidates []int64, prune func() (int64, error)) {
 	t.Helper()
 

@@ -22,8 +22,6 @@ const (
 	asyncDropWriterCloseTimeout = 2 * time.Second
 )
 
-// stdout이 느린 fd에 묶여도 로깅 전체가 블로킹되지 않도록 큐가 가득 차면 해당 라인을 버린다.
-// 파일(lumberjack) lane은 동기 기록을 유지하므로 유실은 stdout 사본에 한정된다.
 type asyncDropWriter struct {
 	target    io.Writer
 	queue     chan queuedLine
@@ -98,8 +96,6 @@ func (w *asyncDropWriter) forward(line queuedLine) {
 }
 
 func (w *asyncDropWriter) Write(p []byte) (int, error) {
-	// admission과 enqueue를 직렬화해 복사 전에 자리를 예약한다. Consumer는 이
-	// lock을 잡지 않으며 target I/O도 lock 밖이다. Full/closed 경로는 할당하지 않는다.
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -119,9 +115,6 @@ func (w *asyncDropWriter) recordDrop() {
 	stdoutDropped.Add(1)
 }
 
-// 정상 record는 JSON을 다시 해석하지 않는다. Oversized 사본만 이미 정제된 JSON에서
-// correlation을 재구성하고 나머지 필드를 생략한다. 원문 prefix를 싣지 않아 정제 전
-// 데이터를 복원하지 않으며 파일 lane에 전달할 p도 변경하지 않는다.
 func (w *asyncDropWriter) boundedCopy(p []byte) queuedLine {
 	if len(p) <= asyncStdoutMaxLineBytes {
 		return queuedLine{data: bytes.Clone(p)}
@@ -131,7 +124,6 @@ func (w *asyncDropWriter) boundedCopy(p []byte) queuedLine {
 
 	data = strconv.AppendInt(data, int64(len(p)), 10)
 
-	// 미지의 필드는 생략한다. 제외할 대형 진단 값을 맵에 복사하지 않기 위해서다.
 	var fields struct {
 		Time      jsontext.Value `json:"time"`
 		Level     jsontext.Value `json:"level"`
@@ -142,14 +134,12 @@ func (w *asyncDropWriter) boundedCopy(p []byte) queuedLine {
 		RequestID jsontext.Value `json:"request_id"`
 	}
 
-	if err := jsonv2.Unmarshal(p, &fields, jsontext.AllowDuplicateNames(true)); err != nil {
+	if err := jsonv2.Unmarshal(p, &fields, jsontext.AllowDuplicateNames(true)); err != nil { //nolint:forbidigo // slog JSONHandler는 같은 key를 중복 출력할 수 있어, 큰 stdout 줄 요약은 중복 이름을 허용해야 필드를 잃지 않는다.
 		data = append(data, ",\"stdout_invalid_json\":true}\n"...)
 
 		return queuedLine{data: data, truncated: true}
 	}
 
-	// 각 string은 최대 1024 bytes, JSON escaping은 최대 6배다.
-	// 7개 고정 key와 metadata를 포함해 항상 64 KiB보다 작다.
 	for _, field := range [...]struct {
 		key string
 		raw jsontext.Value
@@ -185,7 +175,6 @@ func (w *asyncDropWriter) boundedCopy(p []byte) queuedLine {
 
 		data, quoteErr = jsontext.AppendQuote(data, value)
 		if quoteErr != nil {
-			// AppendQuote는 잘못된 UTF-8을 보고해도 유효한 JSON을 유지한다.
 			data = append(data, `,"stdout_invalid_utf8":true`...)
 		}
 	}
@@ -205,8 +194,6 @@ func (w *asyncDropWriter) Close() error {
 
 	w.mu.Unlock()
 
-	// 요약까지 sole writer인 run이 담당한다. 타임아웃은 대기만 끝내며,
-	// 막힌 target.Write를 취소하거나 run의 종료를 보장하지 않는다.
 	select {
 	case <-w.stopped:
 	case <-time.After(asyncDropWriterCloseTimeout):
@@ -215,8 +202,6 @@ func (w *asyncDropWriter) Close() error {
 	return nil
 }
 
-// 요약도 JSON handler를 거쳐 stdout 파싱 계약을 보존한다. Run만 호출하므로
-// 일반 라인과 직렬화되고, 요약 쓰기가 막혀도 Close의 대기 시간은 늘지 않는다.
 func (w *asyncDropWriter) writeLossSummary() {
 	dropped, truncated := w.dropped.Load(), w.truncated.Load()
 	if dropped == 0 && truncated == 0 {
@@ -229,7 +214,6 @@ func (w *asyncDropWriter) writeLossSummary() {
 		slog.Uint64("truncated", truncated),
 	)
 
-	// Handle은 handler level을 재검사하지 않으므로 이 인자는 요약 방출 여부를 정하지 않는다.
 	//nolint:errcheck // best-effort 종료 진단, 기록 실패는 무시한다.
 	_ = newFormatHandler(record.Level, w.target, nil).Handle(context.Background(), record)
 }

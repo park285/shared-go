@@ -5,8 +5,6 @@ import (
 	"unicode/utf8"
 )
 
-// writeNormalizedASCII는 ASCII 글자별 대응표로 바꾼 text를 이어 쓰고, 끝에 쓰지 않고 접어 둔 공백이 남았는지 돌려준다.
-// 앞에서 접어 둔 공백은 pendingSpace로 받는다.
 func writeNormalizedASCII(normalized *strings.Builder, text string, trimEdges, pendingSpace bool) bool {
 	for i := range len(text) {
 		replacement := normalizeASCIIReplacement[text[i]]
@@ -32,8 +30,6 @@ func writeNormalizedASCII(normalized *strings.Builder, text string, trimEdges, p
 	return pendingSpace
 }
 
-// 이런 글은 NFKC에서 바뀌지 않고, normalizeWithKoreanPreserved는 한글 음절을 그대로 둔 채 그 사이 ASCII 구간마다 위장 I를 접고 정규화한다. ASCII 구간은 ASCII 빠른
-// 경로와 같은 글자별 대응표로 바꾸고, 공백은 후처리처럼 글 전체에서 접는다. 한글 음절은 공백·제어 문자가 아니고 소문자화로 바뀌지 않는다.
 func normalizeFastHangulASCIIText(text string, trimEdges bool) (string, bool) {
 	for _, value := range text {
 		if value >= utf8.RuneSelf && (value < 0xAC00 || value > 0xD7A3) {

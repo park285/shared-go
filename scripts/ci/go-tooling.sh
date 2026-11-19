@@ -160,7 +160,6 @@ for module in selected:
             path: root / sibling for sibling, path in modules.items()
             if sibling != module and path not in existing
         }
-        # 실제 manifest는 건드리지 않고 이 임시 modfile에 삽입한 replace만 제거한다.
         subprocess.run(
             [*command, *(f"-replace={path}={location}" for path, location in inserted.items())],
             cwd=directory, env=environment, check=True,
@@ -178,7 +177,6 @@ for module in selected:
             expected = expected_path.read_text(encoding="utf-8").splitlines(keepends=True) if expected_path.exists() else []
             actual = actual_path.read_text(encoding="utf-8").splitlines(keepends=True) if actual_path.exists() else []
             if filename == "go.sum":
-                # 로컬 sibling의 게시 checksum은 source 검사로 입증할 수 없다.
                 expected = [line for line in expected if line.split()[0] not in inserted]
                 actual = [line for line in actual if line.split()[0] not in inserted]
             if expected != actual:

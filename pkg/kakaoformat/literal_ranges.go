@@ -2,8 +2,6 @@ package kakaoformat
 
 import "strings"
 
-// CodeRange는 Markdown 코드 구간의 바이트 경계와 fenced block 표시 정보를 보관한다.
-// End와 BodyEnd는 구간 다음 위치이며 원문은 변경하지 않는다.
 type CodeRange struct {
 	Start, End, BodyStart, BodyEnd int
 	Indent, Language               string
@@ -11,8 +9,6 @@ type CodeRange struct {
 	Block, Fenced, Container       bool
 }
 
-// CodeRanges는 코드 블록과 code span을 겹치지 않는 원문 순서로 반환한다.
-// 인용·목록 안 fence, 닫히지 않은 fence와 여러 줄 code span도 코드로 취급한다.
 func CodeRanges(input string) []CodeRange {
 	blocks := codeBlocks(input)
 
@@ -55,7 +51,6 @@ func codeBlocks(input string) []CodeRange {
 	return result
 }
 
-// codeBlockAt은 base가 0보다 크면 그 목록 항목 내용 들여쓰기를 기준으로 코드 블록을 판정한다.
 func codeBlockAt(input string, offset, lineEnd int, previousBlank bool, base int) (CodeRange, bool) {
 	content, quotes := stripCodeQuotes(input[offset:lineEnd])
 	indent := len(content) - len(strings.TrimLeft(content, " "))
@@ -211,10 +206,8 @@ func markdownEscaped(input string, index int) bool {
 	return count%2 != 0
 }
 
-// 항목 안에서 빈 줄 뒤 4칸 들여쓴 문단과 fence는 CommonMark에서 항목 내용이므로, 문서 최상위 기준으로 들여쓰기 코드로 오인하지 않게 한다.
 type listContext struct{ indents []int }
 
-// observe는 줄이 속한 목록 항목의 내용 들여쓰기를 반환하고, 그 줄이 목록 항목이면 다음 줄을 위해 기록한다.
 func (c *listContext) observe(line string, previousBlank bool) int {
 	if strings.TrimSpace(line) == "" {
 		return 0
@@ -222,7 +215,6 @@ func (c *listContext) observe(line string, previousBlank bool) int {
 
 	content, quotes := stripCodeQuotes(line)
 	if quotes > 0 {
-		// 인용 안 목록은 추적하지 않으며 인용 시작은 바깥 목록을 끝낸다.
 		c.indents = c.indents[:0]
 
 		return 0
@@ -233,7 +225,6 @@ func (c *listContext) observe(line string, previousBlank bool) int {
 	marker := codeListPrefix(trimmed)
 
 	for len(c.indents) > 0 && indent < c.indents[len(c.indents)-1] {
-		// 빈 줄 없이 덜 들여쓴 일반 줄은 앞 문단의 lazy continuation이므로 항목을 닫지 않는다.
 		if !previousBlank && marker == 0 && codeFenceWidth(trimmed) < 3 {
 			return 0
 		}

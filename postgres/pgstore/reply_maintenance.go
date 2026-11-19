@@ -8,7 +8,6 @@ import (
 	"github.com/park285/shared-go/v2/pkg/irisdurable"
 )
 
-// RedriveCandidate는 다시 발송을 시도할 수 있는 outbox 행이다.
 type RedriveCandidate struct {
 	irisdurable.ReplyIdentity
 
@@ -18,8 +17,6 @@ type RedriveCandidate struct {
 	Attempts        int
 }
 
-// Redrive는 저장된 clientRequestId로 다시 보낼 수 있는 행을 자동 replay 지평 안에서만 돌려준다.
-// 소유권은 잡지 않으므로 호출자가 BeginAttempt로 fence를 얻어야 한다.
 func (s *Store) Redrive(ctx context.Context, limit int) ([]RedriveCandidate, error) {
 	if limit <= 0 {
 		return nil, errors.New("pgstore: redrive limit must be positive")
@@ -61,9 +58,6 @@ func (s *Store) Redrive(ctx context.Context, limit int) ([]RedriveCandidate, err
 	return candidates, nil
 }
 
-// RetiredReply는 Retire가 종단으로 보낸 행이다. Status는 종단으로 보내기 직전의 상태이고
-// Payload는 지우기 직전의 저장본이다. 전송을 시작하지 못한 행에서 대체본을 파생하는 호출자가
-// 이 둘을 함께 봐야 이미 전달됐을 수 있는 행까지 다시 보내지 않는다.
 type RetiredReply struct {
 	irisdurable.ReplyIdentity
 
@@ -74,9 +68,6 @@ type RetiredReply struct {
 	Attempts        int
 }
 
-// Retire는 더 보낼 수 없는 행을 dead로 보내고 payload를 지운 뒤 지운 행을 돌려준다.
-// Store는 기존 트랜잭션을 사용해야 한다. 호출자는 스캔·읽기를 포함한 모든 오류에서
-// 롤백하고 커밋 확인 뒤에만 반환 페이로드를 사용한다. 커밋 응답 유실은 결과 불명으로 남기며 재시도하지 않는다.
 func (s *Store) Retire(ctx context.Context, limit int) ([]RetiredReply, error) {
 	if _, ok := s.db.(txQuerier); !ok {
 		return nil, errors.New("pgstore: retire requires a transaction")
@@ -128,9 +119,6 @@ func (s *Store) Retire(ctx context.Context, limit int) ([]RetiredReply, error) {
 	return retired, nil
 }
 
-// CountRepliesByStatus는 scope에서 아직 보낼 수 있는 행을 상태별로 센다. 종단 행은 세지 않는다.
-// 그 수는 backlog 관측에 쓸 값이 아니고, 세려면 보존 기간 전체를 훑어야 한다. 어느 상태에도 행이
-// 없으면 그 키는 결과에 없다.
 func (s *Store) CountRepliesByStatus(ctx context.Context) (map[irisdurable.ReplyStatus]int64, error) {
 	rows, err := s.db.Query(ctx, countRepliesByStatusSQL, s.opts.Scope)
 	if err != nil {
@@ -160,8 +148,6 @@ func (s *Store) CountRepliesByStatus(ctx context.Context) (map[irisdurable.Reply
 	return counts, nil
 }
 
-// ReplyReadySnapshot은 배치 제한 없이 Redrive 적격 상태를 측정한다.
-// 경과 시간은 과거 선행 행 해제가 아닌 예약·임대 만료 시각을 기준으로 한다.
 func (s *Store) ReplyReadySnapshot(ctx context.Context) (ReadySnapshot, error) {
 	if err := s.requirePolicy("reply ready snapshot", false, true, true); err != nil {
 		return ReadySnapshot{}, err
@@ -172,7 +158,6 @@ func (s *Store) ReplyReadySnapshot(ctx context.Context) (ReadySnapshot, error) {
 	)
 }
 
-// 사람이 처리할 때까지 manual_review 행은 남긴다.
 func (s *Store) PruneReplies(ctx context.Context, limit int) (int64, error) {
 	if limit <= 0 {
 		return 0, errors.New("pgstore: prune limit must be positive")

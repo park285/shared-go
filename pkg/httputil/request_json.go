@@ -14,36 +14,23 @@ import (
 const defaultMaxRequestBodyBytes int64 = 64 << 10
 
 var (
-	// ErrRequestBodyRequired는 필수 JSON 요청 본문이 없을 때의 오류다.
-	ErrRequestBodyRequired = errors.New("httputil: request body is required")
-	// ErrUnsupportedJSONContentType는 JSON Content-Type이 아닐 때의 오류다.
+	ErrRequestBodyRequired        = errors.New("httputil: request body is required")
 	ErrUnsupportedJSONContentType = errors.New("httputil: content type must be application/json")
-	// ErrRequestBodyTooLarge는 JSON 요청 본문이 허용 크기를 넘을 때의 오류다.
-	ErrRequestBodyTooLarge = errors.New("httputil: request body exceeds limit")
-	// ErrMultipleJSONValues는 JSON 본문에 값이 둘 이상 있을 때의 오류다.
-	ErrMultipleJSONValues = errors.New("httputil: JSON body must contain a single JSON value")
+	ErrRequestBodyTooLarge        = errors.New("httputil: request body exceeds limit")
+	ErrMultipleJSONValues         = errors.New("httputil: JSON body must contain a single JSON value")
 )
 
-// DecodeJSONRequestOptions는 JSON 요청 decode 동작을 조정한다.
 type DecodeJSONRequestOptions struct {
-	// MaxBodyBytes는 요청 본문 최대 크기다.
-	MaxBodyBytes int64
-	// Strict는 알 수 없는 JSON field를 거부한다.
-	Strict bool
-	// RequireContentType은 application/json Content-Type을 필수로 한다.
+	MaxBodyBytes       int64
+	Strict             bool
 	RequireContentType bool
 }
 
-// JSONRequestError는 JSON 요청 decode 실패의 HTTP taxonomy다.
 type JSONRequestError struct {
-	// StatusCode는 응답해야 할 HTTP status code다.
 	StatusCode int
-	// Code는 machine-readable 오류 code다.
-	Code string
-	// Message는 응답에 사용할 오류 message다.
-	Message string
-	// Err는 원래 decode 또는 validation 오류다.
-	Err error
+	Code       string
+	Message    string
+	Err        error
 }
 
 func (e *JSONRequestError) Error() string {
@@ -75,7 +62,6 @@ func (e *JSONRequestError) Unwrap() error {
 	return e.Err
 }
 
-// DecodeJSONRequestStatus는 JSON 요청 오류에 대응하는 HTTP status를 반환한다.
 func DecodeJSONRequestStatus(err error) int {
 	if requestErr, ok := errors.AsType[*JSONRequestError](err); ok {
 		return requestErr.StatusCode
@@ -84,7 +70,6 @@ func DecodeJSONRequestStatus(err error) int {
 	return http.StatusBadRequest
 }
 
-// DecodeJSONRequest는 HTTP 요청 본문에서 단일 JSON 값을 decode한다.
 func DecodeJSONRequest(w http.ResponseWriter, r *http.Request, v any, opts DecodeJSONRequestOptions) error {
 	if r == nil || r.Body == nil {
 		return newJSONRequestError(

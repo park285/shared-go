@@ -15,7 +15,6 @@ import (
 
 const ProfileFileCheckInterval = 60 * time.Second
 
-// ProfileFileErrorCode는 diagnostics에 공개 가능한 bounded code다.
 type ProfileFileErrorCode string
 
 const (
@@ -31,7 +30,6 @@ type profileFileError struct {
 
 func (e profileFileError) Error() string { return "workercontract: worker profile: " + string(e.code) }
 
-// LoadProfileFile은 regular file의 exact bytes를 strict profile로 해석한다.
 func LoadProfileFile(path string, identity Identity) (LoadedProfile, error) {
 	if path == "" {
 		return LoadedProfile{}, profileFileError{code: ProfileFileMissing}
@@ -83,14 +81,12 @@ func profileOpenError(err error) error {
 	return profileFileError{code: ProfileFileUnreadable}
 }
 
-// ProfileFileStatus는 loaded bytes와 현재 source의 match 상태만 공개한다.
 type ProfileFileStatus struct {
 	Match            bool
 	CheckedAtEpochMS int64
 	ErrorCode        *ProfileFileErrorCode
 }
 
-// ProfileFileChecker는 hot reload 없이 같은 profile path의 drift만 관측한다.
 type ProfileFileChecker struct {
 	mu         sync.RWMutex
 	path       string
@@ -98,7 +94,6 @@ type ProfileFileChecker struct {
 	status     ProfileFileStatus
 }
 
-// NewProfileFileChecker는 이미 load된 exact hash를 기준으로 checker를 만든다.
 func NewProfileFileChecker(profile LoadedProfile, loadedAt time.Time) *ProfileFileChecker {
 	checker := &ProfileFileChecker{
 		path:       profile.path,
@@ -117,7 +112,6 @@ func NewProfileFileChecker(profile LoadedProfile, loadedAt time.Time) *ProfileFi
 	return checker
 }
 
-// Check는 현재 bytes를 비교하고 replacement hash를 보존하지 않는다.
 func (c *ProfileFileChecker) Check(now time.Time) ProfileFileStatus {
 	if c == nil {
 		code := ProfileFileMissing

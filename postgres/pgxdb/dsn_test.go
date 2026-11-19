@@ -280,7 +280,6 @@ func TestParseConfigPreservesQueryKeyBoundaries(t *testing.T) {
 func TestDSNRejectsAuthoritySSLModeDespiteEnvironment(t *testing.T) {
 	t.Setenv("PGSSLMODE", "disable")
 
-	// 파서가 잘못 동작해도 테스트 소유 소켓에만 접근하며, 취소된 컨텍스트로 검증과 접속을 구분한다.
 	host := t.TempDir()
 	query := "?host=" + url.PathEscape(host) + "&port=5432&pool_min_conns=0"
 

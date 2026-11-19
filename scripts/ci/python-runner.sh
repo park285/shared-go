@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# .python-version이 고정한 CPython을 uv가 이미 설치한 해석기 중에서 offline으로 고른다.
-# 자동 다운로드나 ambient python으로 대체하지 않는다.
 UV_MIN_VERSION="0.13.7"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 
@@ -24,7 +22,6 @@ esac
 pin_file="${ROOT_DIR}/.python-version"
 [[ -f "${pin_file}" && ! -L "${pin_file}" ]] ||
   fail ".python-version must be a regular file"
-# 개행으로 끝나는 버전 한 줄을 한 번 읽는다. sentinel은 명령 치환의 개행 제거를 막는다.
 pin_content="$(cat -- "${pin_file}" && printf x)" || fail ".python-version could not be read"
 pin_pattern=$'^([0-9]+[.][0-9]+[.][0-9]+)\nx$'
 [[ "${pin_content}" =~ ${pin_pattern} ]] ||

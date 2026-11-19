@@ -30,12 +30,6 @@ type filteredBase64Options struct {
 	emitNonContributingReadableWholes bool
 }
 
-// ruleBase64Spans는 rules 표준 경로용 수집기다. Suspect 경계 열거는 소비 단계가
-// 동일 분류를 재수행하므로 기여 스팬만 방출해도 탐지 결과가 같고, 걸러야 junk
-// suspect의 우연-가독 subspan 노이즈가 scan 예산을 소진하지 않는다. 반면 가독
-// whole은 비기여여도 방출해야 한다: observeRuleExpansion이 그 splice 이음새에서
-// 새로 완성되는 인코딩 표면(경계 조합 유출)을 소비 단계에서 확장 탐지한다.
-// 가독 whole을 경계 열거하지 않는 것(enumerateReadable=false)이 기존 rules 의미다.
 func ruleBase64Spans(
 	input string,
 	seenWholes *spanContextSeen,
@@ -421,7 +415,6 @@ func appendEmbeddedProtectedBase64Span(
 	return spans, true
 }
 
-// 열거는 시도마다, 선형 전체 스팬은 읽을 수 있는 값에만 과금한다.
 type decodeChargePolicy uint8
 
 const (
@@ -473,10 +466,6 @@ func protectedDecodedContribution(decoded string, mayContribute func(string) boo
 	return decodedContribution(decoded, mayContribute, true)
 }
 
-// contextual 윈도우에는 retainPotentialNested를 적용하지 않는다: 윈도우에 이웃
-// 인코딩 토큰이 보이는 것만으로 승격하면 승격된 윈도우가 또 이웃을 포함해 후보
-// 한도까지 연쇄 승격된다. 이웃 토큰은 root 레벨에서 자체 후보를 가지며, 인접 조각
-// 결합 탐지는 내부 nested DecodeCandidates의 실제 디코드·bloom 검사가 담당한다.
 func contextualWindowContribution(window string, mayContribute func(string) bool) (bool, DecodeStatus) {
 	return decodedContribution(window, mayContribute, false)
 }
@@ -516,13 +505,6 @@ func matchingDecodedContributionDetails(decoded string, mayContribute func(strin
 	return false, nested, 0
 }
 
-// contextual 기여 매칭은 전체 splice가 아니라 승격과 동일한 경계 윈도우로 수행한다.
-// 규칙 regex 폭(≤~120자)은 윈도우(±256 rune)에 완전히 포함되므로 탐지 동치이고,
-// 전체 splice로 매칭하면 후보마다 입력 전체 크기의 regex 표면이 만들어져 고유
-// readable 토큰 폭탄에서 검사 비용이 입력 크기에 비례 폭증한다(측정 14s→2s대).
-// 첫 표면(decoded)은 호출부의 contextBytes 선과금이 담당하고, 후보 표면은 여기서
-// 생성 크기만큼 추가 과금한다 — 과금 없이는 full-splice 폴백에서 단일 선과금으로
-// 후보 수×입력 크기의 regex 표면이 실행되는 미과금 배수가 생긴다.
 func matchingContextualDecodedContribution(
 	input string,
 	span encodedSpan,
@@ -555,10 +537,6 @@ func matchingContextualDecodedContribution(
 	return false, status
 }
 
-// 윈도우가 raw 한도를 넘는 희귀 경로에서는 잘라내지 않고 전체 splice로 매칭한다.
-// 잘라내면 거대한 구분자 run 너머로 쪼갠 payload가 projection에서 다시 붙는데도
-// 탐지되지 않는 우회가 생기고, 여기서 미완료를 세우면 비기여 문맥까지 fail-closed가
-// 된다. 크기 초과에 대한 fail-closed는 기여가 확인된 뒤 호출부가 담당한다.
 func contextualMatchSurface(input string, span encodedSpan, decoded string) string {
 	if window, bounded := contextualAdmissionCandidate(input, span, decoded); bounded {
 		return window

@@ -28,7 +28,7 @@ func policyTestPool(t *testing.T, maxConns int, policy *AcquirePolicy) *pgxpool.
 func TestIntegration_AcquirePolicyControlContention(t *testing.T) {
 	policy := &AcquirePolicy{ReservedConns: 1, Timeout: time.Second}
 	pool := policyTestPool(t, 2, policy)
-	// 생성 후 원본 변경이 예약 용량·기한에 영향을 주어서는 안 된다.
+
 	*policy = AcquirePolicy{ReservedConns: 0, Timeout: time.Nanosecond}
 
 	ordinary, err := pool.Acquire(t.Context())
@@ -50,7 +50,7 @@ func TestIntegration_AcquirePolicyControlContention(t *testing.T) {
 	}
 
 	controlCtx := WithControlAcquire(t.Context())
-	// 일반 작업의 허가가 소진되고 대기열이 생겨도 임대 갱신·정산 SQL은 실행 가능해야 한다.
+
 	_, err = pool.Exec(controlCtx, "CREATE TEMP TABLE acquire_lease (id int, generation int)")
 	require.NoError(t, err)
 
@@ -64,7 +64,7 @@ func TestIntegration_AcquirePolicyControlContention(t *testing.T) {
 	require.Equal(t, 2, generation)
 	require.ErrorIs(t, <-queued, context.DeadlineExceeded)
 	ordinary.Release()
-	ordinary.Release() // 멱등적인 Release가 허가를 두 번 반환해서는 안 된다.
+	ordinary.Release()
 	require.NoError(t, selectOne(t.Context(), pool))
 	require.NoError(t, selectOne(controlCtx, pool))
 }
@@ -119,7 +119,6 @@ func TestIntegration_AcquirePolicyLeaseLifetimes(t *testing.T) {
 				release = func() { require.NoError(t, results.Close()) }
 			}
 
-			// 검증 실패 시에도 Close가 멈추지 않도록 정리를 먼저 등록한다.
 			onceRelease := sync.OnceFunc(release)
 			t.Cleanup(onceRelease)
 			require.NoError(t, selectOne(WithControlAcquire(ctx), pool))
@@ -139,7 +138,6 @@ func TestIntegration_AcquirePolicyDoesNotBoundSQL(t *testing.T) {
 	_, err := pool.Exec(ctx, "SELECT pg_sleep(0.25)")
 	require.NoError(t, err, "acquire timeout must end before query execution")
 
-	// SQL 오류를 획득 오류로 바꾸지 않는다.
 	_, err = pool.Exec(ctx, "SELECT 1/0")
 
 	var sqlState interface{ SQLState() string }
@@ -165,7 +163,7 @@ func TestIntegration_AcquirePolicyControlStillObeysPoolLimit(t *testing.T) {
 	_, err = pool.Acquire(ctx)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 
-	_, err = pool.Acquire(t.Context()) // 허가는 얻지만 실제 풀 대기는 실패한다.
+	_, err = pool.Acquire(t.Context())
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	second.Release()
 	require.NoError(t, selectOne(t.Context(), pool), "failed physical acquire must restore its ordinary permit")
@@ -225,7 +223,6 @@ func TestIntegration_AcquirePolicyCancellationReuseAndReset(t *testing.T) {
 		}
 	}
 
-	// 쿼리 한 건 성공이 아닌 일반 허가 전체의 복구를 확인한다.
 	restored := make([]*pgxpool.Conn, 0, 3)
 
 	defer func() {
@@ -348,7 +345,6 @@ func TestIntegration_AcquirePolicyConstructorFailureAndTimeout(t *testing.T) {
 				require.ErrorIs(t, err, connectErr)
 			}
 
-			// Puddle의 지연된 생성이 획득 기한 뒤에 끝나도 유휴 연결에 허가가 누수되어서는 안 된다.
 			unblockOnce()
 			require.NoError(t, selectOne(t.Context(), pool))
 			require.NoError(t, selectOne(WithControlAcquire(t.Context()), pool))
@@ -398,7 +394,6 @@ func TestIntegration_AcquirePolicyOneBudgetAcrossGateAndPool(t *testing.T) {
 		result <- err
 	}()
 
-	// 허가 반환 뒤 AfterRelease가 물리 연결 반환을 지연해 실제 풀에서도 대기하게 한다.
 	<-time.After(500 * time.Millisecond)
 	ordinary.Release()
 	require.ErrorIs(t, <-result, context.DeadlineExceeded)

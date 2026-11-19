@@ -9,8 +9,6 @@ import (
 	"github.com/park285/shared-go/postgres/pgstore"
 )
 
-// 테스트가 명시하는 정책 값이다. Iris admission 보존·지평은 iris-client-go 공개 상수와 같은 값이며,
-// 라이브러리 기본값이 아니라 소비자가 넘기는 값을 흉내 낸다.
 const (
 	testIrisAdmissionRetention = 168 * time.Hour
 	testReplayHorizon          = 144 * time.Hour
@@ -41,7 +39,6 @@ func testPolicy(opts pgstore.Options) pgstore.Options {
 	return opts
 }
 
-// 종단 inbox 보존은 admission 보존과 같아도 거부하고, 정본 지평(144h)을 한 시간이라도 넘는 지평은 admission 보존 안이어도 거부한다.
 func TestOptionsEnforceIrisAdmissionBoundaries(t *testing.T) {
 	t.Parallel()
 
@@ -88,7 +85,6 @@ func TestOptionsEnforceIrisAdmissionBoundaries(t *testing.T) {
 func TestOperationsRejectMissingPolicy(t *testing.T) {
 	t.Parallel()
 
-	// SQL에 닿으면 nil Querier 호출로 panic하므로 오류 반환은 SQL 전 판정을 뜻한다.
 	store, err := pgstore.New(struct{ pgstore.Querier }{}, pgstore.Options{Scope: "nonce-only"})
 	if err != nil {
 		t.Fatalf("New(policy-free store) error = %v", err)

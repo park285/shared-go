@@ -1,0 +1,10 @@
+ruleDirs:
+  - .ast-grep/rules
+languageGlobs:
+  bash:
+    - commit-msg
+    - pre-commit
+    - pre-push
+    - pre-rebase
+    - reference-transaction
+    - exit-node-direct-return

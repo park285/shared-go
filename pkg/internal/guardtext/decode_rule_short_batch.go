@@ -8,7 +8,6 @@ type shortRuleReading struct {
 	decoded   string
 }
 
-// 독립된 전체 토큰의 동시 변환은 추가 해석이다. 원문을 일부 남기는 해석도 유지한다.
 func (d *contextDecoder) admitShortRuleReadings(current decodeQueueEntry, readings []shortRuleReading) {
 	if len(readings) < 2 || !d.result.Complete() || !independentShortReadings(current.text, readings) {
 		for _, reading := range readings {

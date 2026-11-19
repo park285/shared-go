@@ -2,7 +2,6 @@ package outputguard
 
 import "fmt"
 
-// BoundGuard는 한 요청의 정규화된 protected text index를 소유한다.
 type BoundGuard struct{ index *protectedIndex }
 
 func (g *Guard) Bind(protectedTexts []string) (*BoundGuard, error) {

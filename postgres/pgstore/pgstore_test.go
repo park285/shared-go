@@ -23,8 +23,6 @@ import (
 )
 
 const (
-	// TEST_DATABASE_URL이 가리키는 서버에 일회용 데이터베이스를 만들어 쓴다. 두 변수가 모두
-	// 설정된 경우에만 돌아가므로 개발자 머신의 실제 데이터베이스를 건드리지 않는다.
 	testDatabaseURLEnv     = "TEST_DATABASE_URL"
 	allowExternalTestDBEnv = "ALLOW_EXTERNAL_TEST_DB"
 )
@@ -88,7 +86,6 @@ func TestReferenceSchemaIsRepeatable(t *testing.T) {
 	}
 }
 
-// 결과 미상은 호출자가 503으로 매핑해 Iris 재전송을 부르므로, 같은 payload로는 영원히 실패하는 입력이 재전송 루프에 갇힌다.
 func TestAdmitClassifiesDeterministicRejections(t *testing.T) {
 	pool := newMigratedPool(t)
 	store := newScopedStore(t, pool)
@@ -214,7 +211,6 @@ func TestInboxRenewAndRelease(t *testing.T) {
 	}
 }
 
-// 직렬화가 없으면 아직 commit되지 않은 앞 메시지를 Claim의 head 규칙이 보지 못해, 뒤 메시지를 head로 잡고 앞 메시지가 보이게 된 뒤 두 행이 동시에 처리된다.
 func TestAdmitSerializesOrderingKeyAcrossTransactions(t *testing.T) {
 	pool := newMigratedPool(t)
 	store := newScopedStore(t, pool)
@@ -284,12 +280,10 @@ func beginAdmittedTx(t *testing.T, pool *pgxpool.Pool, scope, messageID, orderin
 	return tx
 }
 
-// 같은 ordering key의 앞 트랜잭션이 열려 있는 동안 이 호출은 막혀 있어야 한다.
 func admitAsync(store *pgstore.Store, messageID, orderingKey string) <-chan error {
 	done := make(chan error, 1)
 
 	go func() {
-		// 이 goroutine은 앞 트랜잭션이 끝날 때까지 살아 있어야 하므로 테스트 컨텍스트를 쓰지 않는다.
 		_, err := store.Admit(context.Background(), irisdurable.AdmissionInput{
 			MessageID:   messageID,
 			OrderingKey: orderingKey,
@@ -512,7 +506,6 @@ func TestReplyRedriveAndRetire(t *testing.T) {
 	}
 }
 
-// BeginAttempt가 보내기 전에 attempts를 올리므로 마지막 시도는 시작하는 순간 이미 소진 조건을 만족하고, lease가 전송보다 짧으면 전송 중에 payload가 지워진다.
 func TestRetireLeavesInFlightAttemptAlone(t *testing.T) {
 	pool := newMigratedPool(t)
 	store := newScopedStoreWithOptions(t, pool, pgstore.Options{
@@ -639,7 +632,6 @@ func newMigratedPool(t *testing.T) *pgxpool.Pool {
 	return pool
 }
 
-// 이 DDL은 스택 SQL 소유권 계약상 소비자 migration이 소유하므로 shared-go에서는 계약 스위트를 돌리기 위한 fixture로만 쓴다.
 func applyReferenceSchema(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 
