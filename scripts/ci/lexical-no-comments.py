@@ -16,7 +16,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 EXEMPT_GLOBS = ("docs/*", "*/testdata/*", "testdata/*", "*/fixtures/*", "fixtures/*", "*/vendor/*", "vendor/*")
-IMMUTABLE_LIST = Path("scripts/ci/sql-immutable-migrations.txt")
 FRAGMENT_DIRECTIVE = re.compile(r"/\* fragment:[a-z][a-z0-9_]* \*/")
 REGULAR_FILE_MODES = {"100644", "100755"}
 SQL_BODY_LANGUAGES = frozenset({"sql", "plpgsql"})
@@ -437,13 +436,6 @@ def git_paths(root: Path, tracked_only: bool) -> list[str]:
     return sorted(set(names))
 
 
-def immutable_paths(root: Path) -> set[str]:
-    listing = root / IMMUTABLE_LIST
-    if not listing.is_file():
-        return set()
-    return {line.strip() for line in listing.read_text(encoding="utf-8").splitlines() if line.strip()}
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="SQL(PostgreSQL 어휘 기준)·TLA+·Lean 파일과 셸에 포함된 Python의 주석을 찾아 보고합니다. 자동으로 고치지 않습니다."
@@ -453,7 +445,6 @@ def main() -> int:
     parser.add_argument("--heredocs-stdin", action="store_true", help="Bash heredoc의 ast-grep JSON 스트림을 읽습니다.")
     args = parser.parse_args()
     root = args.root.resolve()
-    immutable = immutable_paths(root)
     violations = 0
     if args.heredocs_stdin:
         for record in sys.stdin:
@@ -462,7 +453,7 @@ def main() -> int:
                 print(f"{match['file']}:{line}: error[no-comments-lexical]: {message}")
                 violations += 1
     for name in git_paths(root, args.tracked_only):
-        if name in immutable or any(fnmatch.fnmatch(name, pattern) for pattern in EXEMPT_GLOBS):
+        if any(fnmatch.fnmatch(name, pattern) for pattern in EXEMPT_GLOBS):
             continue
         path = root / name
         language = language_for(name)
