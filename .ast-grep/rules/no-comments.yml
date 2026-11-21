@@ -12,8 +12,6 @@ rule:
     regex: '^(//go:|//nolint:|//line |//export |// ?#nosec|// Code generated .* DO NOT EDIT\.$)'
 ignores:
   - 'docs/**'
-  - '**/testdata/**'
-  - '**/fixtures/**'
   - '**/vendor/**'
   - '**/*_generated.go'
   - '**/*.pb.go'
@@ -32,8 +30,7 @@ rule:
     - kind: block_comment
 ignores:
   - 'docs/**'
-  - '**/testdata/**'
-  - '**/fixtures/**'
+  - '**/vendor/**'
 ---
 id: no-comments-kotlin
 language: Kotlin
@@ -48,8 +45,7 @@ rule:
     - kind: multiline_comment
 ignores:
   - 'docs/**'
-  - '**/testdata/**'
-  - '**/fixtures/**'
+  - '**/vendor/**'
 ---
 id: no-comments-java
 language: Java
@@ -63,8 +59,7 @@ rule:
     - kind: block_comment
 ignores:
   - 'docs/**'
-  - '**/testdata/**'
-  - '**/fixtures/**'
+  - '**/vendor/**'
 ---
 id: no-comments-javascript
 language: JavaScript
@@ -81,8 +76,7 @@ rule:
     regex: '^(?:// ?@ts-|// ?eslint-|/\* ?eslint|/// <reference |/\*\* (?:@(?:param|property) \{(?:[^{}\n]|\{(?:[^{}\n]|\{[^{}\n]*\})*\})*\} (?:[\w.$]+|\[[\w.$]+(?:=[^\]\n]*)?\])|@(?:type|returns|satisfies|this|enum) \{(?:[^{}\n]|\{(?:[^{}\n]|\{[^{}\n]*\})*\})*\}|@typedef \{(?:[^{}\n]|\{(?:[^{}\n]|\{[^{}\n]*\})*\})*\} [\w$]+|@template (?:\{(?:[^{}\n]|\{(?:[^{}\n]|\{[^{}\n]*\})*\})*\} )?[\w$]+(?:, [\w$]+)*|@callback [\w$]+|@import \{(?:[^{}\n]|\{(?:[^{}\n]|\{[^{}\n]*\})*\})*\} from ["''][^"''\n]+["'']|@overload|@override) \*/$|/\*\*\n(?:[ \t]* \* (?:@(?:param|property) \{(?:[^{}\n]|\{(?:[^{}\n]|\{[^{}\n]*\})*\})*\} (?:[\w.$]+|\[[\w.$]+(?:=[^\]\n]*)?\])|@(?:type|returns|satisfies|this|enum) \{(?:[^{}\n]|\{(?:[^{}\n]|\{[^{}\n]*\})*\})*\}|@typedef \{(?:[^{}\n]|\{(?:[^{}\n]|\{[^{}\n]*\})*\})*\} [\w$]+|@template (?:\{(?:[^{}\n]|\{(?:[^{}\n]|\{[^{}\n]*\})*\})*\} )?[\w$]+(?:, [\w$]+)*|@callback [\w$]+|@import \{(?:[^{}\n]|\{(?:[^{}\n]|\{[^{}\n]*\})*\})*\} from ["''][^"''\n]+["'']|@overload|@override)\n)+[ \t]* \*/$)'
 ignores:
   - 'docs/**'
-  - '**/testdata/**'
-  - '**/fixtures/**'
+  - '**/vendor/**'
   - '**/node_modules/**'
 ---
 id: no-comments-typescript
@@ -97,8 +91,7 @@ rule:
     regex: '^(// ?@ts-|// ?eslint-|/\* ?eslint|/// <reference )'
 ignores:
   - 'docs/**'
-  - '**/testdata/**'
-  - '**/fixtures/**'
+  - '**/vendor/**'
   - '**/node_modules/**'
 ---
 id: no-comments-bash
@@ -112,7 +105,7 @@ rule:
   kind: comment
   not:
     any:
-      - regex: '^# ?shellcheck '
+      - regex: '^#[ \t]*shellcheck([ \t]+[a-z-]+=[^ \t#]+)+([ \t]+#.*)?$'
       - all:
           - regex: '^#!'
           - nthChild: 1
@@ -120,8 +113,7 @@ rule:
               kind: program
 ignores:
   - 'docs/**'
-  - '**/testdata/**'
-  - '**/fixtures/**'
+  - '**/vendor/**'
 ---
 id: no-comments-python
 language: Python
@@ -141,8 +133,7 @@ rule:
               kind: module
 ignores:
   - 'docs/**'
-  - '**/testdata/**'
-  - '**/fixtures/**'
+  - '**/vendor/**'
 ---
 id: no-docstrings-python
 language: Python
@@ -165,5 +156,22 @@ rule:
           kind: interpolation
 ignores:
   - 'docs/**'
-  - '**/testdata/**'
-  - '**/fixtures/**'
+  - '**/vendor/**'
+---
+id: no-comments-yaml
+language: Yaml
+severity: error
+message: YAML 주석은 금지됩니다. 설명은 문서로, 제약은 검사·테스트로 옮기세요.
+note: |
+  허용되는 것은 파일 첫 줄의 생성 파일 머리말(# Code generated ... DO NOT EDIT.)뿐입니다.
+rule:
+  kind: comment
+  not:
+    all:
+      - regex: '^# Code generated .* DO NOT EDIT\.$'
+      - nthChild: 1
+      - inside: {not: {inside: {regex: ''}}}
+ignores:
+  - 'docs/**'
+  - '**/vendor/**'
+  - '**/node_modules/**'

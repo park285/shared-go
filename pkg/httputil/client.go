@@ -92,13 +92,7 @@ func copyDefaultTransportBaseline(transport *http.Transport) {
 	transport.ReadBufferSize = baseTransport.ReadBufferSize
 }
 
-func applyTransportProfile(transport *http.Transport, profile TransportProfile) {
-	if profile.DialTimeout > 0 {
-		transport.DialContext = (&net.Dialer{
-			Timeout: profile.DialTimeout,
-		}).DialContext
-	}
-
+func applyTransportProfile(transport *http.Transport, profile TransportProfile) *net.Dialer {
 	if profile.TLSHandshakeTimeout > 0 {
 		transport.TLSHandshakeTimeout = profile.TLSHandshakeTimeout
 	}
@@ -122,6 +116,16 @@ func applyTransportProfile(transport *http.Transport, profile TransportProfile) 
 	if profile.MaxIdleConnsPerHost > 0 {
 		transport.MaxIdleConnsPerHost = profile.MaxIdleConnsPerHost
 	}
+
+	if profile.DialTimeout <= 0 {
+		return nil
+	}
+
+	dialer := &net.Dialer{Timeout: profile.DialTimeout}
+
+	transport.DialContext = dialer.DialContext
+
+	return dialer
 }
 
 func NewExternalAPIClient(timeout time.Duration) *http.Client {

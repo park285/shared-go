@@ -61,7 +61,7 @@ fetch_verified() {
 }
 
 new_stage() {
-  mkdir -p -- "$1" && mktemp -d -- "$1/.stage.XXXXXX"
+  (umask 077 && mkdir -p -- "$1") && mktemp -d -- "$1/.stage.XXXXXX"
 }
 
 ast_grep_bin() {
@@ -201,49 +201,6 @@ regular_source_files() {
   done
 }
 
-shell_heredocs() {
-  local rule
-  rule="$(cat <<'YAML'
-id: literal-stdin-heredoc
-language: Bash
-ignores: ['docs/**', '**/testdata/**', '**/fixtures/**', '**/vendor/**']
-utils:
-  simple-command:
-    kind: command
-    pattern: $COMMAND
-    has: {field: name, pattern: $EXE}
-  receiver:
-    any:
-      - matches: simple-command
-      - kind: negated_command
-        has: {matches: simple-command}
-rule:
-  kind: redirected_statement
-  all:
-    - has:
-        field: body
-        any:
-          - matches: receiver
-          - kind: pipeline
-            has:
-              matches: receiver
-              not: {precedes: {regex: '.'}}
-    - has:
-        kind: heredoc_redirect
-        regex: '^0?<<'
-        all:
-          - has: {kind: heredoc_start, pattern: $DELIMITER, regex: "['\"\\\\]"}
-          - has: {kind: heredoc_body, pattern: $BODY}
-          - has: {kind: heredoc_end, pattern: $END}
-          - not: {has: {field: redirect, regex: '^0?<'}}
-          - any:
-              - has: {field: argument, pattern: $AFTER}
-              - kind: heredoc_redirect
-YAML
-)"
-  xargs -0 -r "$1" scan --config "$2" --inline-rules "$rule" --json=stream --
-}
-
 run_scan() {
   local bin config mode list python lexical_args=() status=0
   bin="$(ast_grep_bin)" || return 1
@@ -259,8 +216,7 @@ run_scan() {
   list="$(mktemp)"
   (cd "$REPO_ROOT" && source_files "$mode" | regular_source_files) > "$list" || { rm -f -- "$list"; return 1; }
   (cd "$REPO_ROOT" && xargs -0 -r "$bin" scan --config "$config" --report-style short -- < "$list") || status=1
-  (cd "$REPO_ROOT" && shell_heredocs "$bin" "$config" < "$list") |
-    "$python" "$SCRIPT_DIR/lexical-no-comments.py" --root "$REPO_ROOT" --heredocs-stdin "${lexical_args[@]}" || status=1
+  "$python" "$SCRIPT_DIR/lexical-no-comments.py" --root "$REPO_ROOT" --heredocs-from "$list" --ast-grep "$bin" --config "$config" "${lexical_args[@]}" || status=1
   rm -f -- "$list"
   return "$status"
 }

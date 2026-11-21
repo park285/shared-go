@@ -1,20 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
+unset CDPATH
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${ROOT_DIR}"
 export GOWORK=off
-modules=("$@")
-if ((${#modules[@]} == 0)); then
-  modules=(. core postgres transport openai)
+unset LINT_GOWORK SOURCE_GOWORK GO_MODULE_DIR MODULES MAKEFLAGS MFLAGS MAKEOVERRIDES GNUMAKEFLAGS
+discovered=$(bash scripts/ci/go-tooling.sh release-modules)
+mapfile -t modules <<< "$discovered"
+if (($#)); then
+  for requested in "$@"; do
+    for module in "${modules[@]}"; do
+      if [[ "$requested" == "$module" ]]; then continue 2; fi
+    done
+    printf 'release-gate: unknown module: %s\n' "$requested" >&2
+    exit 2
+  done
+  modules=("$@")
 fi
-for module in "${modules[@]}"; do
-  case "$module" in
-    .|core|postgres|transport|openai) ;;
-    *) echo "release-gate: unsupported module" >&2; exit 2 ;;
-  esac
-done
 
 echo "════════════════════════════════════════"
 echo "  shared-go release full gate"
@@ -29,6 +33,7 @@ run_stage bash scripts/ci/verify-tools.sh scan
 run_stage bash scripts/ci/verify-tools.sh formal
 
 for module in "${modules[@]}"; do
+  printf '[release] module %s\n' "$module"
   run_stage make tidy-check MODULES="$module"
   if [[ "$module" == . ]]; then
     run_stage go run ./pkg/internal/guardtext/genconfusables.go \
@@ -37,7 +42,7 @@ for module in "${modules[@]}"; do
       -unicode-data-source ./pkg/internal/guardtext/testdata/UnicodeData-17.0.0.txt.gz \
       -output ./pkg/internal/guardtext/confusables_table_generated.go \
       -check
-    run_stage make test-allocations
+    run_stage make test-allocations MODULES="$module"
   fi
   run_stage bash scripts/check-sql-ownership.sh "$module"
   run_stage make build MODULES="$module"

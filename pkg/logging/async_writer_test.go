@@ -94,6 +94,8 @@ func TestAsyncDropWriterDeliversAllLinesInOrderWhenTargetFast(t *testing.T) {
 }
 
 func TestEnableFileLoggingWithOptionsKeepsFileLoggingWhenStdoutStalls(t *testing.T) {
+	requireFileLogging(t)
+
 	t.Parallel()
 
 	dir := t.TempDir()

@@ -5,16 +5,17 @@ package workercontract_test
 import (
 	"os"
 	"path/filepath"
-	"syscall"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/park285/shared-go/v2/pkg/workercontract"
 )
 
 func TestProfileFIFOIsRejectedWithoutWaitingForWriter(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "profile.json")
-	if err := syscall.Mkfifo(path, 0o600); err != nil {
+	if err := unix.Mkfifo(path, 0o600); err != nil {
 		t.Fatal(err)
 	}
 

@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
+unset CDPATH
+export GOWORK=off
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${ROOT_DIR}/postgres"
+
+if (( $# )); then
+  [[ $# == 2 && "$1" == --gowork ]] || { echo "usage: $0 [--gowork <go.work>]" >&2; exit 2; }
+  GOWORK="$(bash "${ROOT_DIR}/scripts/ci/go-tooling.sh" workspace-path "$2")"
+fi
 
 for tool in podman jq go; do
   if ! command -v "${tool}" >/dev/null 2>&1; then

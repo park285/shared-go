@@ -3,7 +3,6 @@
 package envutil
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -28,6 +27,5 @@ func TestSecretFileUnsupportedWithoutNoFollowOpen(t *testing.T) {
 func TestOpenSecretFileNoFollowUnsupported(t *testing.T) {
 	file, err := openSecretFileNoFollow("ignored")
 	require.ErrorIs(t, err, errSecretFileNoFollowUnsupported)
-	require.True(t, errors.Is(err, errSecretFileNoFollowUnsupported))
 	require.Nil(t, file)
 }

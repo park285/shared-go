@@ -10,21 +10,30 @@ on:
 permissions:
   contents: read
 
+env:
+  GOWORK: "off"
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  modules:
+    uses: ./.github/workflows/go-modules.yml
+
   module-gate:
+    needs: modules
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        module: [".", core, postgres, transport, openai]
+        module: ${{ fromJSON(needs.modules.outputs.modules) }}
+    env:
+      GO_MODULE_DIR: ${{ matrix.module }}
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
 
@@ -32,53 +41,118 @@ jobs:
         uses: ./.github/actions/python-runtime
 
       - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
           go-version-file: go.mod
-          # 캐시는 같은 키를 쓰는 job 중 먼저 끝난 job의 내용이 저장되고, 키가 이미 있으면 갱신되지 않는다.
-          # golangci-lint를 빌드하는 이 job이 자기 캐시를 갖도록 workflow 파일을 키에 넣는다.
           cache-dependency-path: |
             **/go.sum
+            scripts/ci/pre-push-gate.sh
             scripts/ci/go-tooling.sh
+            scripts/ci/resolve-go-tool.py
             .github/workflows/ci.yml
 
       - name: Source integration workspace
         run: |
-          bash scripts/ci/go-tooling.sh source-workspace "$RUNNER_TEMP/shared-go.work"
-          printf 'GOWORK=%s/shared-go.work\n' "$RUNNER_TEMP" >>"$GITHUB_ENV"
+          work_dir=$(mktemp -d "$GITHUB_WORKSPACE/.ci-workspace.XXXXXXXX")
+          bash scripts/ci/go-tooling.sh source-workspace "$work_dir/go.work"
+          printf 'CI_SOURCE_WORKSPACE=%s/go.work\n' "$work_dir" >>"$GITHUB_ENV"
+
+      - name: Lint tracked Go files in the source workspace
+        run: env -u GNUMAKEFLAGS -u MAKEFLAGS -u MFLAGS -u MAKEOVERRIDES LINT_GOWORK="$CI_SOURCE_WORKSPACE" make lint
 
       - name: Source module graph tidy drift
-        run: make source-tidy-check MODULES="${{ matrix.module }}"
+        run: env -u GNUMAKEFLAGS -u MAKEFLAGS -u MFLAGS -u MAKEOVERRIDES make source-tidy-check
 
       - name: Pinned Unicode generated table
         if: matrix.module == '.'
         run: GOWORK=off go run ./pkg/internal/guardtext/genconfusables.go -confusables-source ./pkg/internal/guardtext/testdata/confusables-17.0.0.txt.gz -unicode-data-baseline-source ./pkg/internal/guardtext/testdata/UnicodeData-15.0.0.txt.gz -unicode-data-source ./pkg/internal/guardtext/testdata/UnicodeData-17.0.0.txt.gz -output ./pkg/internal/guardtext/confusables_table_generated.go -check
 
       - name: SQL ownership
-        run: bash scripts/check-sql-ownership.sh "${{ matrix.module }}"
-
-      - name: golangci-lint
-        run: make lint MODULES="${{ matrix.module }}"
+        run: bash scripts/check-sql-ownership.sh "$GO_MODULE_DIR"
 
       - name: Deterministic allocation ceilings
         if: matrix.module == '.'
-        run: make test-allocations
+        run: env -u GNUMAKEFLAGS -u MAKEFLAGS -u MFLAGS -u MAKEOVERRIDES make test-allocations SOURCE_GOWORK="$CI_SOURCE_WORKSPACE"
 
       - name: go test race
         if: matrix.module != 'postgres'
-        run: make test-race MODULES="${{ matrix.module }}"
+        run: env -u GNUMAKEFLAGS -u MAKEFLAGS -u MFLAGS -u MAKEOVERRIDES make test-race SOURCE_GOWORK="$CI_SOURCE_WORKSPACE"
 
       - name: PostgreSQL race contracts without skips
         if: matrix.module == 'postgres'
-        run: bash scripts/ci/pgstore-release-gate.sh
+        run: bash scripts/ci/pgstore-release-gate.sh --gowork "$CI_SOURCE_WORKSPACE"
+
+  comment-ban:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Python runtime
+        uses: ./.github/actions/python-runtime
+
+      - name: Comment ban scan
+        run: bash scripts/ci/verify-tools.sh scan
+
+  logging-platforms:
+    runs-on: ${{ matrix.goos == 'windows' && 'windows-latest' || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        goos: [linux, darwin, windows]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Vet and build logging tests
+        shell: bash
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: amd64
+          CGO_ENABLED: "0"
+        run: |
+          go vet ./pkg/logging/... ./pkg/obsmetrics
+          mkdir test-binaries
+          go test -c -o ./test-binaries/ ./pkg/logging/... ./pkg/obsmetrics
+
+      - name: Run Windows file logging and metrics tests
+        if: matrix.goos == 'windows'
+        shell: bash
+        run: |
+          run_required() {
+            local binary="$1" output name
+            shift
+            output="$("$binary" -test.v -test.count=1 -test.run "^($(IFS='|'; printf '%s' "$*"))$")" || { printf '%s\n' "$output"; return 1; }
+            printf '%s\n' "$output"
+            for name in "$@"; do
+              grep -qE "^--- PASS: ${name} \\(" <<<"$output" || { echo "::error::required test did not pass: ${name}"; return 1; }
+            done
+          }
+          run_required ./test-binaries/logging.test.exe TestFileLoggingUnsupported TestFileLoggingUnsupportedInExistingDir
+          run_required ./test-binaries/archive.test.exe TestLogPermissionsUnsupported
+          run_required ./test-binaries/obsmetrics.test.exe TestWriteLoggingMetricsExportsCurrentCounters TestWriteLoggingMetricsStopsOnExpositionFailure
 
   fast-gate:
-    needs: module-gate
+    needs: [module-gate, comment-ban, logging-platforms]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Require every module gate
+      - name: Require every module, comment ban and logging platform gate
         env:
           MODULE_GATE_RESULT: ${{ needs.module-gate.result }}
-        run: test "$MODULE_GATE_RESULT" = success
+          COMMENT_BAN_RESULT: ${{ needs.comment-ban.result }}
+          LOGGING_RESULT: ${{ needs.logging-platforms.result }}
+        run: test "$MODULE_GATE_RESULT" = success && test "$COMMENT_BAN_RESULT" = success && test "$LOGGING_RESULT" = success

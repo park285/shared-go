@@ -10,11 +10,7 @@ rules:
     max_occurrences: 1
     pattern: '(?:(?:show|print|reveal|dump|display|output|repeat|give|tell)[\s\S]{0,28}(?:(?:your|hidden|internal|developer)[\s\S]{0,16}(?:prompt|instructions?|rules?|message|policy)|system[\s\S]{0,8}message)|(?:reveal|print|output|repeat)[\s\S]{0,12}(?:the)?[\s\S]{0,4}instructions?|(?:hidden|internal|developer|system)[\s\S]{0,16}(?:prompt|instructions?|message|policy)[\s\S]{0,28}(?:show|print|reveal|dump|display|output|repeat|verbatim)|(?:prompt|instructions?|system[\s\S]{0,8}message)[\s\S]{0,16}(?:verbatim|word[\s_-]{0,3}for[\s_-]{0,3}word))'
     weight: 1.0
-    # 문장 경계가 간격 대부분을 쓰게 해 경계 바로 옆 근거(Ignore. Previous instructions.)만 문장을 건너 잇는다.
     sentence_break: 24
-    # 대화 메시지(your last message), 게임 규칙(your rules for this game), 조직 내부 정책, 생활·설치 안내
-    # (instructions for assembling, installation instructions), 앱의 숨김 메시지와 API의 developer message 형식은
-    # 프롬프트 유출 요청이 아니다.
     exclude:
       - '(?i)\byour[\s]+(?:last|previous|prior|recent|latest|earlier|first|second|final|own)[\s]+(?:messages?|repl(?:y|ies)|answers?|responses?)\b'
       - '(?i)\byour[\s]+rules?[\s]+(?:for|of|in)[\s]+(?:(?:this|the|our|a)[\s]+)?(?:game|quiz|match|round|contest|challenge|puzzle|riddle|trivia|tournament|league|class|course)\b'
@@ -35,12 +31,6 @@ rules:
     pattern: '(?:(?:[il]gnore|disregard|forget|override|bypass|(?:^|[^p])reset)[\s\S]{0,28}(?:all[\s\S]{0,8})?(?:previous|prior|developer)[\s\S]{0,16}(?:instructions?|prompts?|policies?|rules?)|(?:previous|prior|system|developer)[\s\S]{0,16}(?:instructions?|prompts?|policies?|rules?)(?:[\s\S]{0,16}(?:[il]gnore|disregard|forget|override|bypass|do not follow)|(?:[\s\S]{0,15}[^p])?reset))'
     weight: 1.0
     sentence_break: 24
-    # 단어 내부(.gitignore, preset), 코드 식별자(developerPrompt, override.Shared),
-    # 파일·디렉터리를 꾸미는 명사와 관용구(rules of thumb)는 지시 변경 근거가 아니다.
-    # 사용자가 자기 이전 지시를 정정하는 말(ignore my previous instructions)은 그 한정어만 가리고, 영역 이름이
-    # 붙은 규칙·정책(previous ESLint rules, firewall rules, game rules)은 그 명사구만 가린다.
-    # 정형 공격 문구의 뜻·유래를 묻거나 설명하는 말("ignore previous instructions" 밈이 뭐야, what does … mean)은
-    # 문구 바로 뒤에 메타 명사와 질문·설명 낱말이 이어질 때만 가린다. 뜻대로·밈처럼·같은 문장을 실행해는 가리지 않는다.
     exclude:
       - '(?i)\b(?:firewall|iptables|nftables|eslint|tslint|stylelint|prettier|lint(?:er|ing)?|css|style|styling|routing|route|validation|business|game|grammar|spelling|naming|commit|branch|protection|network|mail|e-?mail|inbox|spam|filter(?:ing)?|cache|caching|proxy|nginx|apache|waf|nat|acl|alert(?:ing)?|scoring|matching|pricing|tax|grading|chess|card|board|house|traffic|iam|rbac|retention|lifecycle|backup|sync|rewrite|redirect|formatting|format|compiler|build|test|sonar|security[\s_-]*group|ingress|egress|password|cookie|cors|csp|version)[\s_-]+(?:rules?|polic(?:y|ies))\b'
       - '(?i)\b(?:my|our)(?:[\s]+own)?[\s]+(?:previous|prior|earlier|last|above|original)\b'
@@ -63,13 +53,6 @@ rules:
     pattern: '(?:(?:show|print|reveal|dump|cat|echo)[\s\S]{0,32}(?:api[\s_-]{0,3}key|secret[\s_-]{0,3}key|access[\s_-]{0,3}token|refresh[\s_-]{0,3}token|credentials?|password|passwd)|(?:api[\s_-]{0,3}key|secret[\s_-]{0,3}key|access[\s_-]{0,3}token|refresh[\s_-]{0,3}token|credentials?|password|passwd)[\s\S]{0,32}(?:show|print|reveal|dump|cat|echo))'
     weight: 1.0
     sentence_break: 28
-    # 단어 내부 동사(application, fingerprint, GOOGLE_APPLICATION_CREDENTIALS, catalog), 동작을 서술하는
-    # 활용형·파생어(shows, printed, printer, showcase), 방법·예시를 보여 달라는 요청(show me how),
-    # 화자가 보여 주겠다는 서술(I'll show)과 비밀번호 UI·정책 명사구는 비밀값 요청이 아니다.
-    # 비밀값 명사가 다른 명사를 꾸미는 복합명사(password generator, API key format), 코드 호출·셸 출력(print(password),
-    # echo $API_KEY, 따옴표 문자열 하나로 끝나는 echo "done")과 /etc/passwd 경로도 값 요청이 아니다.
-    # 비밀값을 출력하지 말라는 안내(do not print the API key, passwords must never show)는 부정한 동사만
-    # 가려, 같은 문장의 다른 요청 동사는 비밀값 명사와 다시 짝짓는다. why not처럼 조동사 없는 not은 세지 않는다.
     exclude:
       - '[a-z0-9](?:show|print|reveal|dump|cat|echo)'
       - '[A-Z0-9](?:SHOW|PRINT|REVEAL|DUMP|CAT|ECHO)'
@@ -84,7 +67,6 @@ rules:
       - '(?i)\b((?:never|(?:do|does|did|will|would|should|must|can|could|may|might)[\s]+not|(?:don|doesn|didn|won|wouldn|shouldn|mustn|can|couldn)[''’]t|cannot)(?:[\s]+(?:ever|accidentally|directly|publicly|again|(?:share|log|store|send|commit|copy|paste|expose|leak|write|output|display|return|include|save|upload|email|hardcode)[\s]+(?:or|and|nor)))*[\s]+(?:show|print|reveal|dump|cat|echo))(?:[\s]+(?:me|us|them|him|her|anyone|anybody|others))?[\s]+(?:(?:the|your|my|our|their|any|its|this|that|these|those|raw|plain(?:text)?|real|actual|full|stored|users?[''’]?s?)[\s]+){0,2}(?:api[\s_-]*keys?|secret[\s_-]*keys?|(?:access|refresh)[\s_-]*tokens?|credentials?|passwords?|passwd)\b'
       - '(?i)\b(?:api[\s_-]*keys?|secret[\s_-]*keys?|(?:access|refresh)[\s_-]*tokens?|credentials?|passwords?|passwd)[\s]+(?:(?:must|should|will|would|can|could|may|might|do|does|did)[\s]+)?((?:never|not|(?:don|doesn|didn|won|wouldn|shouldn|mustn|can|couldn)[''’]t|cannot)(?:[\s]+(?:ever|be))?[\s]+(?:show|print|reveal|dump|cat|echo))\b'
 
-  # tell·give는 일반 대화에 흔하므로 me/us, 또는 your가 붙은 them/him/her 바로 뒤에 비밀값 명사가 오는 요청만 센다.
   - id: secret_tell_request_en
     family: secret_exfil
     type: regex
@@ -94,8 +76,6 @@ rules:
     max_occurrences: 1
     pattern: '(?:tell|give)(?:(?:me|us)(?:allof|all)?(?:your|the|its)?|(?:them|him|her)your)(?:stored|current|actual|real|admin|root)?(?:api[\s_-]{0,3}keys?|secret[\s_-]{0,3}keys?|access[\s_-]{0,3}tokens?|refresh[\s_-]{0,3}tokens?|credentials?|passwords?|passwd)'
     weight: 1.0
-    # 단어 내부(foretell, forgive), 활용형(tells, given)과 비밀값의 형식·규칙을 묻는 명사구는 값 요청이 아니다.
-    # 화자가 전하겠다는 서술(I'll tell him)은 요청이 아니고, 부정문(never tell me your password)은 부정한 동사만 가린다.
     exclude:
       - '[a-z0-9](?:tell|give)'
       - '[A-Z0-9](?:TELL|GIVE)'
@@ -104,7 +84,6 @@ rules:
       - '(?i)\b(?:i|we)(?:''ll|''d|[\s]+(?:will|would|can|could|should))?[\s]+(?:tell|give)\b'
       - '(?i)\b((?:never|(?:do|does|did|will|would|should|must|can|could|may|might)[\s]+not|(?:don|doesn|didn|won|wouldn|shouldn|mustn|can|couldn)[''’]t|cannot)(?:[\s]+(?:ever|again))*[\s]+(?:tell|give))[\s]+(?:me|us|them|him|her)[\s]+(?:all[\s]+(?:of[\s]+)?)?(?:(?:your|the|its)[\s]+)?(?:(?:stored|current|actual|real|admin|root)[\s]+)?(?:api[\s_-]*keys?|secret[\s_-]*keys?|(?:access|refresh)[\s_-]*tokens?|credentials?|passwords?|passwd)\b'
 
-  # 결합 view는 마침표를 지우므로 .env 파일명은 문장부호가 남는 view에서 찾는다.
   - id: env_file_exfil_en
     family: secret_exfil
     type: regex
@@ -190,7 +169,6 @@ rules:
     max_occurrences: 1
     pattern: '(?:(?:policy|guardrail|safety|security|contentpolicy)[\s\S]{0,24}(?:ignore|bypass|disregard|violate)|(?:ignore|bypass|disregard|violate)[\s\S]{0,16}(?:policy|guardrail|safety|security|contentpolicy))[\s\S]{0,24}(?:answer|continue|comply)'
     weight: 0.7
-    # 보안·정책이 다른 명사를 꾸미는 경고·검사·업데이트(ignore the security warning and continue)는 모델 정책 우회가 아니다.
     exclude:
       - '(?i)\b(?:security|safety|policy|ssl|tls|certificate)[\s_-]*(?:policy[\s_-]*)?(?:warnings?|alerts?|prompts?|checks?|updates?|patch(?:es)?|scans?|settings?|certificates?|modes?|dialogs?|pop-?ups?|errors?|notices?)\b'
 
@@ -198,8 +176,6 @@ rules:
     family: jailbreak
     type: regex
     action: score
-    # 결합 view는 단어를 이어 붙여 경계가 사라지므로 원문에서 찾는다.
-    # 점수는 입력 전체에서 합산되므로 사람 이름 Dan과 구분해 탈옥 용어 표기인 대문자 DAN만 센다.
     view: raw
     segments: [plain, quote, code, config]
     max_occurrences: 1

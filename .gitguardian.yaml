@@ -1,7 +1,3 @@
-# redaction·output guard·secret-file 처리를 검증하려면 합성 secret 값을 test fixture에 직접
-# 담아야 해서 GitGuardian이 오탐한다. 그런 fixture가 있는 세 패키지의 test 파일만 제외한다.
-# pgxdb test는 ab42ac6에서 값을 placeholder 계열로 개명해 공통 필터에 걸리므로 여기서 제외하지
-# 않는다(더 이상 blanket **/*_test.go 제외에 기대지 않는다).
 version: 2
 
 secret:

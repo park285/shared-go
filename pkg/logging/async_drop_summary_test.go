@@ -139,6 +139,8 @@ func TestAsyncDropWriter_CloseSummaryKeepsJSONFormat(t *testing.T) {
 }
 
 func TestEnableFileLogging_AsyncSummaryKeepsJSONFormat(t *testing.T) {
+	requireFileLogging(t)
+
 	t.Parallel()
 
 	stdout := &syncBuffer{started: make(chan struct{}), release: make(chan struct{})}
