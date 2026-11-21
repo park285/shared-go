@@ -6,7 +6,7 @@ Iris Stack의 Go 프로젝트들(`hololive-bot`, `chat-bot-go-kakao`, `twentyq-b
 
 > **호환성 정책**: 이 모듈의 호환성 보장 대상은 iris-stack 내부 소비자(`hololive-bot`, `chat-bot-go-kakao`, `twentyq-bot`, `iris-console`)로 한정됩니다. 외부 사용을 막지는 않지만 외부 importer 호환성은 보장하지 않으며, 스택 내 소비자가 0인 exported API는 major 승격 없이 minor 릴리스에서 제거될 수 있습니다.
 
-신규 `core`·`postgres`·`transport`·`openai` 모듈은 독립적인 안정 버전과 모듈별 태그를 사용하며, 사용 중 API의 파괴적 변경은 major 전환으로 관리합니다. 최초 경로 이전은 스택 소비자 8개 모듈의 동시 전환입니다. 구경로 forwarding·alias·영구 `replace`는 제공하지 않습니다.
+신규 `core`·`postgres`·`transport`·`openai` 모듈은 독립적인 안정 버전과 모듈별 태그를 사용합니다. 스택 소비자를 같은 배포에서 함께 이전할 수 있는 API 변경은 minor로 게시하고, major 전환(모듈 경로 변경)은 스택 밖 사용자가 직접 조치해야 하는 비호환 변경에만 쓰며, 위 정책대로 외부 importer의 API 호환성은 여기에 들어가지 않습니다. 단계 판단이 갈리면 낮은 단계를 고릅니다. 최초 경로 이전은 스택 소비자 8개 모듈의 동시 전환입니다. 구경로 forwarding·alias·영구 `replace`는 제공하지 않습니다.
 
 | 모듈 | 소유 패키지 | 최초 전환 대상 |
 |---|---|---|
