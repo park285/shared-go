@@ -63,12 +63,21 @@ release_source_identity() {
 }
 
 release_archive() {
+  local manifest dir manifests=() excludes=()
+  mapfile -d '' -t manifests < <(git ls-tree -rz --name-only "$commit")
+  wait "$!" || { echo "release bundle: cannot list the commit tree" >&2; return 1; }
+  for manifest in "${manifests[@]}"; do
+    [[ "$manifest" == */go.mod ]] || continue
+    dir="${manifest%/go.mod}"
+    if [[ "$module_dir" == . || "$dir" == "$module_dir"/* ]]; then
+      excludes+=(":(exclude,literal)$dir")
+    fi
+  done
   if [[ "$module_dir" == . ]]; then
-    git archive --format=tar --prefix="${artifact_name}/" "$commit" -- . \
-      ':(exclude)core' ':(exclude)postgres' ':(exclude)transport' ':(exclude)openai'
+    git archive --format=tar --prefix="${artifact_name}/" "$commit" -- . "${excludes[@]}"
   else
     git archive --format=tar --prefix="${artifact_name}/" "$commit" -- \
-      "$module_dir" LICENSE THIRD_PARTY_NOTICES.md
+      "$module_dir" LICENSE THIRD_PARTY_NOTICES.md "${excludes[@]}"
   fi
 }
 

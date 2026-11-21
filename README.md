@@ -119,6 +119,8 @@ async 유실 요약은 파일에도 기록되며, 포화 큐에서는 복사 전
 
 서비스는 환경/profile decode와 관계 검증을 마친 지역 설정에 같은 DB 옵션을 구성해 preflight한 뒤 자원을 생성합니다. 사전 점검 성공은 원격 TLS/SAN·인증·권한·SQL·pooler 호환성의 성공이 아닙니다. `RuntimeParams`는 startup packet으로 전달하며 timeout을 삭제하거나 직접 DB로 우회하지 않습니다. 일반 acquire와 제어 예약은 로컬 풀 정책이지 backend 용량 보장이 아닙니다.
 
+Windows, WASI(`wasip1/wasm`), JavaScript(`js/wasm`)에서는 파일 0640·디렉터리 0750 권한을 보장할 수 없어 파일 로깅을 요청하면 경로를 만들기 전에 `errors.ErrUnsupported`를 반환합니다. Unix와 Plan 9에서는 파일과 디렉터리를 준비한 뒤 실제 권한이 각각 0640과 0750인지 확인합니다. 기존 경로의 권한은 마지막 경로 요소가 symlink이면 따라가지 않고 처음 확인한 파일과 같은 파일에만 바꿉니다. 중간 디렉터리는 설정이 정한 신뢰 경로로 보며, 같은 사용자 프로세스의 경로 교체나 inode 재사용은 막지 않습니다. Linux는 `O_PATH` 핸들을 `/proc/self/fd`로 바꾸고, procfs가 없거나 접근이 거부되면 경로를 읽기나 쓰기로 연 핸들로 바꿉니다. 열 수 없는 경로는 Darwin·BSD에서 `AT_SYMLINK_NOFOLLOW` chmod 전후로 같은 파일인지 확인하므로, 그 사이 로그 디렉터리에 쓸 수 있는 프로세스가 항목을 바꾸면 다른 파일의 권한이 바뀐 뒤 오류로 보고될 수 있습니다. procfs가 없는 Linux와 그 밖의 Unix에서는 열 수 없는 경로의 권한 복구가 실패합니다. 압축 백업은 이동 전에 권한을 복구하며, 복구가 실패하면 이동과 정리를 하지 않고 오류를 반환합니다. Plan 9는 디렉터리 간 rename을 지원하지 않으므로 압축 백업의 archive 이동과 추가 정리는 `errors.ErrUnsupported`를 반환하고(비동기 archiver는 경고로 남깁니다), 백업은 로그 디렉터리에 남아 lumberjack의 보존 정리만 적용됩니다. `Config.Dir`가 빈 콘솔 전용 로깅은 모든 플랫폼에서 사용할 수 있습니다.
+
 로그 archive 이동·추가 pruning은 유지합니다. 기존 수집 경로·0750/0640 권한·age/count 보존·실패 관측을 인수할 근거 없이 삭제하지 않으며, `Close`가 lumberjack 압축 완료나 내구 저장을 보장하지 않는 한계도 유지합니다.
 
 ## Prompt guard 계약
@@ -251,10 +253,22 @@ make build
 make source-tidy-check
 ```
 
-**CI 정책:** `ci.yml`은 PR 및 `main` push마다 5개 모듈의 소스 workspace에서 tidy drift·lint·race를 검사합니다. 루트의 고정 Unicode 생성·할당 상한과 SQL ownership 검사를 유지하고, PostgreSQL 모듈은 일회용 실제 DB에서 pgxdb·pgstore를 skip 없이 검사합니다. `security.yml`의 `main` push·주간 스케줄·수동 dispatch 및 `govulncheck`를 유지합니다. `./...`만 실행하면 하위 모듈이 빠지므로 모듈별 작업 디렉터리를 명시합니다.
+모든 Make 대상은 기본 Go 환경을 `GOWORK=off`로 고정합니다. 상위 디렉터리의 `go.work`와 환경·Make 명령줄에서 상속한 `GOWORK`는 모듈 선택에 영향을 주지 않습니다. 저장소 루트의 `make lint`는 기본적으로 추적 중인 모든 모듈을 검사합니다. `make lint MODULES=core`처럼 명시한 모듈은 CI에서 상속한 `GO_MODULE_DIR`보다 우선합니다. pre-push는 전체 모듈을 검사합니다.
 
-보호된 main이 요구하는 상태 검사 이름은 `fast-gate`로 유지합니다. 다섯 `module-gate` matrix 작업의 결과가 모두 `success`일 때만 집계 job이 통과하며, 실패·취소·건너뜀을 성공으로 바꾸지 않습니다.
+린트·포맷·취약점 검사와 CI·릴리스 게이트는 `scripts/ci/pre-push-gate.sh`의 `GOLANGCI_LINT_VERSION`과 `GOVULNCHECK_VERSION`을 사용합니다. `scripts/ci/go-tooling.sh`는 린트 행렬과 같은 고정 Python 런타임으로 공통 `scripts/ci/resolve-go-tool.py --tool <도구> --version <핀> --repo <모듈 디렉터리>`를 호출합니다. 여러 모듈을 한 번에 린트할 때는 루트 `go.mod`를 사용합니다. 단일 모듈 린트·포맷·취약점 검사에서는 해당 모듈의 `go.mod`를 사용합니다. `GO_TOOLING`, `GOLANGCI_LINT`, `GOVULNCHECK` 등으로 실행 파일을 지정하면 게이트가 실패합니다.
+
+공통 resolver는 호스트 CPU 기본 수준과 `CGO_ENABLED=0`으로 도구를 빌드하고, 사용자 캐시의 소유권·권한과 실행 파일의 SHA-256·Go 빌드 정보를 확인합니다. 고정 Go 툴체인과 모듈 소스·의존성·검증 정보가 로컬에 있으면 `GOPROXY=off make lint`로 오프라인에서도 도구를 설치하고 사용할 수 있습니다. 실제 취약점 검사에는 취약점 데이터베이스도 필요합니다.
+
+Make는 실행 파일 경로와 고정 버전을 각각 `--golangci-lint`와 `--golangci-lint-version`으로 전달합니다. 공통 행렬은 루트 `.golangci.yml`을 사용하며 파일 이름과 빌드 제약에서 도출한 각 구성에서 모듈 전체(`./...`)와 테스트를 `-mod=readonly`로 검사합니다. 단독 생성기는 파일 단위로 검사합니다. 형제 모듈 변경을 함께 검사하려면 체크아웃 안에 대상 모듈을 모두 `use`하는 workspace를 만들고 `LINT_GOWORK="$PWD/go.work" make lint`를 실행합니다. `go list`의 컴파일 입력과 린터가 실제로 읽은 파일을 대조해 모듈별 커버리지를 출력합니다. 누락된 파일은 경로와 사유를 보고하고 실패합니다. `.golangci.yml`의 `run.build-tags`는 비워 둡니다.
+
+`make fmt`는 선택한 모듈의 현재 빌드 구성에 `golangci-lint run --fix ./...`를 적용합니다. 수정 후 전체 빌드 구성의 커버리지는 `make lint`로 확인합니다.
+
+공통 행렬은 `import "C"` 또는 `import "unsafe"`가 있는 파일의 경로를 출력하고 실패합니다.
+
+**CI 정책:** `ci.yml`은 PR 및 `main` push마다 체크아웃 안에 소스 `go.work`를 생성합니다. `LINT_GOWORK`에 지정한 경로를 Make가 `--gowork`로 전달하므로 모듈별 린트에서 같은 PR의 형제 모듈 변경도 검사합니다. CI의 race·할당 상한과 보안 워크플로의 취약점 검사는 Make 명령줄의 `SOURCE_GOWORK`로, PostgreSQL 소스 검사는 `--gowork`로 생성된 경로를 전달합니다. 각 단계는 실제 파일이 체크아웃 안에 있고 검사 대상 모듈을 `use`하는지 확인합니다. tidy drift는 임시 모듈 파일의 로컬 치환으로 검사합니다. CI와 보안 워크플로는 `--list-modules`로 모듈을 발견하며, 루트(`github.com/park285/shared-go/v2`)와 `core`·`postgres`·`transport`·`openai`(각각 `github.com/park285/shared-go/<디렉터리>`)의 경로와 모듈 선언이 일치해야 행렬을 생성합니다. 새로 발견한 모듈도 행렬에 포함합니다. PostgreSQL 모듈은 일회용 실제 DB에서 pgxdb·pgstore를 skip 없이 검사합니다. 루트의 고정 Unicode 생성·할당 상한, SQL ownership 검사와 `security.yml`의 `main` push·주간 스케줄·수동 dispatch 및 `govulncheck`를 유지합니다.
+
+보호된 main이 요구하는 상태 검사 이름은 `fast-gate`로 유지합니다. CI는 Linux, Darwin, Windows의 amd64에서 로그·메트릭 패키지에 대해 `go vet`과 테스트 빌드를 수행합니다. Windows 러너에서는 파일 로깅 거부와 메트릭 출력도 실행해 검증합니다. 모든 `module-gate`와 `logging-platforms` 작업의 결과가 `success`일 때만 집계 job이 통과하며, 실패·취소·건너뜀을 성공으로 바꾸지 않습니다.
 
 파일 줄 수(800)와 함수 길이 상한은 `.golangci.yml`의 revive `file-length-limit`과 `funlen`이 검사합니다. 별도 구조 예산은 두지 않습니다. Workflow 보안 정책(action 전체 SHA 고정, `id-token`·`attestations` 권한은 `release.yml`만, PR의 secret 사용 금지)은 iris-stack의 `tools/checks/check-workflow-policy.py`가 검증합니다. 로컬 릴리스 게이트도 `make test-allocations`로 race 빌드에서 빠지는 할당 상한을 검증합니다.
 
-`bash scripts/ci/release-gate.sh [모듈...]`은 선택한 모듈을 실제 pin과 `GOWORK=off`로 검증하며, 인자를 생략하면 5개 모듈 모두 검사합니다. `postgres`는 rootless Podman의 일회용 PostgreSQL에서 pgxdb·pgstore race와 필수 사례 pass·전체 skip=0을 요구합니다. 소스 workspace의 성공은 게시 pin·서명·immutable release 성공을 대신하지 않습니다. 태그·SBOM·attestation 규칙은 [release provenance](docs/release-provenance.md)를 따릅니다.
+`bash scripts/ci/release-gate.sh [모듈...]`은 선택한 모듈을 실제 pin과 `GOWORK=off`로 검증하며, 인자를 생략하면 `--list-modules`가 발견한 모든 모듈을 검사합니다. CI와 같은 릴리스 계약 검사로 다섯 모듈의 경로·선언을 먼저 확인합니다. 명시한 디렉터리도 발견 목록에 있어야 하며, 각 Make 단계에는 선택한 모듈을 명령줄로 전달합니다. `postgres`는 rootless Podman의 일회용 PostgreSQL에서 pgxdb·pgstore race와 필수 사례 pass·전체 skip=0을 요구합니다. 소스 workspace의 성공은 게시 pin·서명·immutable release 성공을 대신하지 않습니다. 태그·SBOM·attestation 규칙은 [release provenance](docs/release-provenance.md)를 따릅니다.

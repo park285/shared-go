@@ -25,6 +25,7 @@ func openRegularProfile(path string) (*os.File, error) {
 
 	after, lstatErr := os.Lstat(path)
 	opened, statErr := file.Stat()
+
 	if lstatErr != nil || statErr != nil || !after.Mode().IsRegular() || !opened.Mode().IsRegular() ||
 		!os.SameFile(before, after) || !os.SameFile(after, opened) {
 		return nil, profileOpenError(errors.Join(profileFileError{code: ProfileFileTypeInvalid}, file.Close()))

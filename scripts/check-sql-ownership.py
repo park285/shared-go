@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 
 import re
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-MODULES = (".", "core", "postgres", "transport", "openai")
+MODULES = tuple(subprocess.check_output(
+    [sys.executable, "-I", "scripts/ci/go-lint-matrix.py", "--list-modules"], cwd=ROOT, text=True,
+).splitlines())
 EXCLUDED_DIRS = {
     ".git",
     "dist",
@@ -111,7 +114,7 @@ def scan_files(modules: tuple[str, ...]):
             dirs[:] = [
                 name for name in dirs
                 if name not in EXCLUDED_DIRS
-                and not (directory == ROOT and name in MODULES[1:])
+                and (directory / name).relative_to(ROOT).as_posix() not in MODULES
             ]
             for name in files:
                 path = directory / name

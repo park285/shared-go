@@ -11,21 +11,30 @@ on:
 permissions:
   contents: read
 
+env:
+  GOWORK: "off"
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  modules:
+    uses: ./.github/workflows/go-modules.yml
+
   dependency-security:
+    needs: modules
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        module: [".", core, postgres, transport, openai]
+        module: ${{ fromJSON(needs.modules.outputs.modules) }}
+    env:
+      GO_MODULE_DIR: ${{ matrix.module }}
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
 
@@ -33,19 +42,21 @@ jobs:
         uses: ./.github/actions/python-runtime
 
       - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
           go-version-file: go.mod
-          # govulncheck만 빌드하는 job이 lint job의 캐시 키를 먼저 차지하지 않도록 키를 나눈다.
           cache-dependency-path: |
             **/go.sum
+            scripts/ci/pre-push-gate.sh
             scripts/ci/go-tooling.sh
+            scripts/ci/resolve-go-tool.py
             .github/workflows/security.yml
 
       - name: Source integration workspace
         run: |
-          bash scripts/ci/go-tooling.sh source-workspace "$RUNNER_TEMP/shared-go.work"
-          printf 'GOWORK=%s/shared-go.work\n' "$RUNNER_TEMP" >>"$GITHUB_ENV"
+          work_dir=$(mktemp -d "$GITHUB_WORKSPACE/.ci-workspace.XXXXXXXX")
+          bash scripts/ci/go-tooling.sh source-workspace "$work_dir/go.work"
+          printf 'CI_SOURCE_WORKSPACE=%s/go.work\n' "$work_dir" >>"$GITHUB_ENV"
 
       - name: govulncheck
-        run: make vulncheck MODULES="${{ matrix.module }}"
+        run: env -u GNUMAKEFLAGS -u MAKEFLAGS -u MFLAGS -u MAKEOVERRIDES make vulncheck SOURCE_GOWORK="$CI_SOURCE_WORKSPACE"

@@ -9,6 +9,6 @@ import (
 
 var errSecretFileNoFollowUnsupported = errors.New("secret file no-follow open is unsupported on this platform")
 
-func openSecretFileNoFollow(filePath string) (*os.File, error) {
+func openSecretFileNoFollow(string) (*os.File, error) {
 	return nil, errSecretFileNoFollowUnsupported
 }

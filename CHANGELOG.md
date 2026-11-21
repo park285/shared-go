@@ -5,6 +5,12 @@
 
 ## 미출시
 
+- depguard로 `unsafe` 패키지 가져오기를 기본 금지했습니다. 공통 린트 행렬도 명시적 `unsafe` import와 cgo 사용을 거부하며 해당 파일의 경로를 출력합니다.
+- 로컬·CI·릴리스 게이트에서 golangci-lint와 govulncheck를 스택 공통 resolver로 해석합니다. 두 버전 핀은 `scripts/ci/pre-push-gate.sh`에 선언하며 도구 경로 재정의는 거부합니다. 오프라인 설치와 캐시 검증도 공통 resolver가 담당합니다. Make는 실행 파일과 고정 버전을 공통 행렬에 함께 전달합니다. 행렬은 루트 `.golangci.yml`로 각 구성의 모듈 전체와 테스트를 검사하고, 단독 생성기도 검사해 실제 로더 입력으로 커버리지를 확인합니다. `make fmt`는 선택한 모듈의 현재 빌드 구성에 자동 수정을 적용합니다.
+- CI는 형제 모듈 변경을 함께 검사하도록 체크아웃 안에 소스 `go.work`를 생성해 모듈별 린트에 전달합니다. Make와 독립 Go 게이트는 `GOWORK=off`를 기본값으로 강제해 상위 스택의 `go.work`가 검사 결과를 바꾸는 문제를 수정했습니다. CI의 소스 통합 검사에는 체크아웃 내부에서 생성하고 검증한 workspace를 명시적으로 전달합니다. CI·보안 행렬은 모든 모듈을 자동 발견하고 릴리스 대상 다섯 모듈의 경로와 모듈 선언을 확인합니다. 로컬 릴리스 게이트도 같은 계약 검사를 거쳐 발견한 모든 모듈을 검사하며, 상위 Make 설정을 지우고 각 단계에 대상 모듈을 명시합니다. Make 명령줄의 `MODULES`는 상속한 CI 모듈 선택보다 우선합니다.
+- Windows, WASI(`wasip1/wasm`), JavaScript(`js/wasm`)에서는 파일 0640·디렉터리 0750 권한을 보장할 수 없어 파일 로깅이 경로 생성 전에 `errors.ErrUnsupported`를 반환합니다. 그 밖의 플랫폼에서는 지원 여부에 따라 `O_NOFOLLOW` 또는 배타적 생성(`O_EXCL`)을 사용하고, 생성과 권한 변경 후 파일과 디렉터리의 실제 모드를 확인합니다. 로그 디렉터리의 setgid·sticky 비트는 권한을 맞출 때도 보존을 요청해 수집 그룹 상속을 유지합니다. 프로세스가 디렉터리 그룹의 구성원이 아니어서 커널이 setgid를 지우면 오류로 보지 않습니다. Plan 9에서는 압축 백업의 archive 이동이 디렉터리 간 rename을 필요로 해 `errors.ErrUnsupported`를 반환합니다(이전에도 동작하지 않았습니다). 제한된 umask를 검증하는 테스트는 Unix에서 실행하며, lifecycle 시그널 테스트는 모든 구성에서 빌드합니다.
+- Make와 게이트의 모듈 선택에서 `CDPATH`를 제거하고, pre-push와 CI가 상위 Make의 dry-run 설정으로 검사를 건너뛰는 문제를 수정했습니다. CI는 로그·메트릭 테스트를 Linux·Darwin·Windows amd64 대상으로 빌드하고 Windows에서 파일 로깅 거부와 메트릭 출력을 검사합니다.
+- `httputil` 테스트는 소켓을 열지 않고 설치된 dialer와 기한 만료 동작을 확인합니다.
 - **주석 금지:** 기계 지시문을 뺀 Go·shell·Python 주석과 doc 주석을 지웠습니다. shell heredoc으로 실행하는 Python 본문도 같은 검사를 받으며, 파일별 MIT 머리글은 지우고 라이선스 고지는 루트 `LICENSE`가 유지합니다. 새 `scripts/ci/pre-push-gate.sh`와 `scripts/ci/release-gate.sh`가 `bash scripts/ci/verify-tools.sh scan`과 `formal`을 실행합니다.
 - **형식 검증:** `verification/tla/InboxClaim/`이 inbox claim·lease·완료와 수락 순번 선두, 같은 파티션의 단일 처리권, 재예약 뒤 키 간 선발 순서를 불변식 8개로 검사합니다. `verification/lean/BoundedQueue/`가 bounded queue 연산을 증명하며 같은 명세를 `bounded_queue_trace_fuzz_test.go`가 구현에 대어 봅니다.
 - **테스트:** 실제 시간을 기다리던 `time.Sleep` 9곳을 synctest·잠금 관측 동기화로 바꾸고 `httputil` body 상한 fuzz 대상을 추가했습니다.

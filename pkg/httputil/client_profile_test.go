@@ -8,7 +8,6 @@ import (
 	"reflect"
 	"testing"
 	"time"
-	"unsafe"
 )
 
 func TestApplyTransportProfile(t *testing.T) {
@@ -51,18 +50,8 @@ func assertAllPositiveProfileFieldsApplied(t *testing.T) {
 		MaxIdleConnsPerHost:   7,
 	}
 
-	applyTransportProfile(transport, profile)
-
-	if transport.DialContext == nil {
-		t.Fatal("DialContext is nil")
-	}
-
-	requireDialContextTimeout(t, transport.DialContext, profile.DialTimeout)
-
-	_, err := transport.DialContext(t.Context(), "", "")
-	if errors.Is(err, sentinelErr) {
-		t.Fatal("DialContext was not replaced")
-	}
+	dialer := applyTransportProfile(transport, profile)
+	requireDialContextTimeout(t, transport, dialer, profile.DialTimeout)
 
 	if transport.TLSHandshakeTimeout != profile.TLSHandshakeTimeout {
 		t.Fatalf("TLSHandshakeTimeout = %s, want %s", transport.TLSHandshakeTimeout, profile.TLSHandshakeTimeout)
@@ -107,9 +96,9 @@ func assertDialTimeoutOnlyProfilePreservesZeroFields(t *testing.T) {
 	transport := newBaselineProfiledTransport(errors.New("sentinel dial"))
 	profile := TransportProfile{DialTimeout: 3 * time.Second}
 
-	applyTransportProfile(transport, profile)
+	dialer := applyTransportProfile(transport, profile)
 
-	requireDialContextTimeout(t, transport.DialContext, profile.DialTimeout)
+	requireDialContextTimeout(t, transport, dialer, profile.DialTimeout)
 	assertBaselineTransportFieldsPreserved(t, transport)
 }
 
@@ -268,26 +257,31 @@ func mustClientTransport(t *testing.T, client *http.Client) *http.Transport {
 	return transport
 }
 
-func requireDialContextTimeout(t *testing.T, dialContext func(context.Context, string, string) (net.Conn, error), want time.Duration) {
+func requireDialContextTimeout(t *testing.T, transport *http.Transport, dialer *net.Dialer, want time.Duration) {
 	t.Helper()
 
-	if dialContext == nil {
-		t.Fatal("DialContext is nil")
-	}
-
-	funcValuePointer := *(*unsafe.Pointer)(unsafe.Pointer(&dialContext)) //nolint:gosec // 함수 값 동일성 검증을 위한 테스트 전용 포인터 비교다.
-	if funcValuePointer == nil {
-		t.Fatal("DialContext func value is nil")
-	}
-
-	fields := (*[2]unsafe.Pointer)(funcValuePointer)
-	dialer := (*net.Dialer)(fields[1])
-
-	if dialer == nil {
-		t.Fatal("DialContext dialer capture is nil")
+	if dialer == nil || transport.DialContext == nil {
+		t.Fatal("transport profile did not install a dialer")
 	}
 
 	if dialer.Timeout != want {
 		t.Fatalf("DialContext dialer timeout = %s, want %s", dialer.Timeout, want)
+	}
+
+	localAddr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 43210}
+
+	dialer.LocalAddr = localAddr
+
+	_, err := transport.DialContext(t.Context(), "tcp", "127.0.0.1:0")
+	if addrErr, ok := errors.AsType[*net.AddrError](err); !ok || addrErr.Addr != localAddr.String() {
+		t.Fatalf("DialContext error = %v, want *net.AddrError for %s", err, localAddr)
+	}
+
+	dialer.LocalAddr = nil
+	dialer.Deadline = time.Now().Add(-time.Second)
+
+	_, err = transport.DialContext(t.Context(), "tcp", "127.0.0.1:0")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("DialContext with expired dialer deadline returned %v, want deadline exceeded", err)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -20,6 +21,8 @@ const (
 	LogFilePerm    os.FileMode = 0o640
 	LogDirPerm     os.FileMode = 0o750
 )
+
+var ErrLogPathSymlink = errors.New("log path is a symlink")
 
 type AwareWriter struct {
 	Inner    io.Writer
@@ -128,6 +131,10 @@ func (a *CompressedLogArchiver) Close() error {
 }
 
 func MoveAndPrune(logPath string, maxBackups, maxAgeDays int) error {
+	if runtime.GOOS == "plan9" {
+		return fmt.Errorf("compressed backup archive needs a cross-directory rename: %w", errors.ErrUnsupported)
+	}
+
 	logDir := filepath.Dir(logPath)
 	archiveDir := filepath.Join(logDir, DirName)
 
@@ -142,20 +149,28 @@ func MoveAndPrune(logPath string, maxBackups, maxAgeDays int) error {
 
 	for _, name := range names {
 		source := filepath.Join(logDir, name)
-		if ok, err := removeIfUnsafeCompressedBackup(source); err != nil {
-			return fmt.Errorf("check compressed backup %s: %w", name, err)
-		} else if !ok {
+
+		observed, err := removeIfUnsafeCompressedBackup(source)
+		if errors.Is(err, errCompressedBackupSkipped) {
 			continue
+		} else if err != nil {
+			return fmt.Errorf("check compressed backup %s: %w", name, err)
 		}
 
-		if _, err := os.Lstat(strings.TrimSuffix(source, CompressSuffix)); err == nil {
+		if _, err = os.Lstat(strings.TrimSuffix(source, CompressSuffix)); err == nil {
 			continue
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("check original of compressed backup %s: %w", name, err)
 		}
 
+		if observed.Mode() != LogFilePerm {
+			if err = setLogMode(source, observed, LogFilePerm); err != nil {
+				return fmt.Errorf("repair compressed backup %s: %w", name, err)
+			}
+		}
+
 		target := filepath.Join(archiveDir, name)
-		if err := os.Rename(source, target); err != nil {
+		if err = os.Rename(source, target); err != nil {
 			if os.IsNotExist(err) {
 				continue
 			}
@@ -163,14 +178,15 @@ func MoveAndPrune(logPath string, maxBackups, maxAgeDays int) error {
 			return fmt.Errorf("move compressed backup %s: %w", name, err)
 		}
 
-		if ok, err := removeIfUnsafeCompressedBackup(target); err != nil {
-			return fmt.Errorf("check moved compressed backup %s: %w", name, err)
-		} else if !ok {
+		moved, err := removeIfUnsafeCompressedBackup(target)
+		if errors.Is(err, errCompressedBackupSkipped) {
 			continue
+		} else if err != nil {
+			return fmt.Errorf("check moved compressed backup %s: %w", name, err)
 		}
 
-		if err := os.Chmod(target, LogFilePerm); err != nil {
-			fmt.Fprintf(os.Stderr, "log archive warning: chmod %s err=%v\n", target, err)
+		if !os.SameFile(observed, moved) {
+			return fmt.Errorf("compressed backup %s changed while moving", name)
 		}
 	}
 
@@ -181,23 +197,25 @@ func MoveAndPrune(logPath string, maxBackups, maxAgeDays int) error {
 	return nil
 }
 
-func removeIfUnsafeCompressedBackup(path string) (bool, error) {
+var errCompressedBackupSkipped = errors.New("compressed backup skipped")
+
+func removeIfUnsafeCompressedBackup(path string) (os.FileInfo, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return false, nil
+			return nil, errCompressedBackupSkipped
 		}
 
-		return false, fmt.Errorf("lstat: %w", err)
+		return nil, fmt.Errorf("lstat: %w", err)
 	}
 
 	if info.Mode().IsRegular() {
-		return true, nil
+		return info, nil
 	}
 
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		return false, fmt.Errorf("remove unsafe backup: %w", err)
+		return nil, fmt.Errorf("remove unsafe backup: %w", err)
 	}
 
-	return false, nil
+	return nil, errCompressedBackupSkipped
 }

@@ -35,11 +35,15 @@ pgstore용 일회용 PostgreSQL과 pgxdb 자체 일회용 서버를 사용하며
 필수 사례 pass와 전체 skip=0을 요구한다. Podman/DB 준비 실패는 통과가 아니다.
 
 ```bash
-# 기존 개발 workspace로 모든 모듈의 소스 통합을 검사한다.
-make build test-race vulncheck
+# 체크아웃 안에 생성한 소스 workspace로 모든 모듈의 소스 통합을 검사한다.
+work_dir=$(mktemp -d "$PWD/.ci-workspace.XXXXXXXX")
+bash scripts/ci/go-tooling.sh source-workspace "$work_dir/go.work"
+LINT_GOWORK="$work_dir/go.work" make lint
+make test-race vulncheck SOURCE_GOWORK="$work_dir/go.work"
 make source-tidy-check
 bash scripts/check-sql-ownership.sh
-bash scripts/ci/pgstore-release-gate.sh
+bash scripts/ci/pgstore-release-gate.sh --gowork "$work_dir/go.work"
+rm -rf -- "$work_dir"
 
 # 게시 가능한 의존성만으로 모든 모듈을 검사한다.
 bash scripts/ci/release-gate.sh

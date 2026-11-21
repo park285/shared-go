@@ -1,22 +1,30 @@
+//go:build unix || plan9
+
 package archive
 
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
-	"syscall"
+	"path/filepath"
 )
 
-var ErrLogPathSymlink = errors.New("log path is a symlink")
-
 func EnsureLogFilePerm(path string) error {
+	path = filepath.Clean(path)
+
 	info, err := os.Lstat(path)
-	if err != nil {
-		if ensureErr := ensureMissingLogFile(path, err); ensureErr != nil {
-			return fmt.Errorf("ensure missing log file: %w", ensureErr)
+	if errors.Is(err, os.ErrNotExist) {
+		err = createLogFile(path)
+		if !errors.Is(err, fs.ErrExist) {
+			return err
 		}
 
-		return nil
+		info, err = os.Lstat(path)
+	}
+
+	if err != nil {
+		return fmt.Errorf("stat log file failed: %w", err)
 	}
 
 	if info.Mode()&os.ModeSymlink != 0 {
@@ -31,59 +39,43 @@ func EnsureLogFilePerm(path string) error {
 		return fmt.Errorf("log path is not a regular file: %s", path)
 	}
 
-	if info.Mode().Perm() == LogFilePerm {
+	if info.Mode() == LogFilePerm {
 		return nil
 	}
 
-	if chmodErr := os.Chmod(path, LogFilePerm); chmodErr != nil {
-		return fmt.Errorf("chmod log file failed: %w", chmodErr)
-	}
-
-	return nil
+	return setLogMode(path, info, LogFilePerm)
 }
 
-func ensureMissingLogFile(path string, statErr error) error {
-	if !errors.Is(statErr, os.ErrNotExist) {
-		return fmt.Errorf("stat log file failed: %w", statErr)
-	}
-
+func createLogFile(path string) error {
 	// #nosec G304 -- 로그 파일 경로는 애플리케이션 설정이며 외부 입력이 아니다.
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY|syscall.O_NOFOLLOW, LogFilePerm)
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_APPEND|os.O_WRONLY|logFileCreateGuard, LogFilePerm)
 	if err != nil {
 		return fmt.Errorf("create log file failed: %w", err)
 	}
 
 	if err := file.Chmod(LogFilePerm); err != nil {
-		chmodErr := fmt.Errorf("chmod log file failed: %w", err)
-
-		if closeErr := file.Close(); closeErr != nil {
-			if err := errors.Join(chmodErr, fmt.Errorf("close log file failed: %w", closeErr)); err != nil {
-				return fmt.Errorf("ensure missing log file: %w", err)
-			}
-
-			return nil
-		}
-
-		return chmodErr
+		return fmt.Errorf("chmod log file failed: %w", errors.Join(err, file.Close()))
 	}
 
 	if err := file.Close(); err != nil {
 		return fmt.Errorf("close log file failed: %w", err)
 	}
 
-	return nil
+	return verifyLogMode(path, LogFilePerm)
 }
 
 func EnsureLogDirPerm(path string) error {
-	if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("%w: %s", ErrLogPathSymlink, path)
-	}
-
-	if err := os.MkdirAll(path, LogDirPerm); err != nil {
-		return fmt.Errorf("create log dir failed: %w", err)
-	}
+	path = filepath.Clean(path)
 
 	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		if err = os.MkdirAll(path, LogDirPerm); err != nil {
+			return fmt.Errorf("create log dir failed: %w", err)
+		}
+
+		info, err = os.Lstat(path)
+	}
+
 	if err != nil {
 		return fmt.Errorf("stat log dir failed: %w", err)
 	}
@@ -100,8 +92,21 @@ func EnsureLogDirPerm(path string) error {
 		return nil
 	}
 
-	if chmodErr := os.Chmod(path, LogDirPerm); chmodErr != nil {
-		return fmt.Errorf("chmod log dir failed: %w", chmodErr)
+	return setLogMode(path, info, info.Mode()&(os.ModeDir|os.ModeSetgid|os.ModeSticky)|LogDirPerm)
+}
+
+func verifyLogMode(path string, want os.FileMode) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return fmt.Errorf("verify log permissions: %w", err)
+	}
+
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%w: %s", ErrLogPathSymlink, path)
+	}
+
+	if got := info.Mode(); got != want {
+		return fmt.Errorf("log path %s: mode %s, want %s", path, got, want)
 	}
 
 	return nil

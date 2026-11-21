@@ -27,6 +27,7 @@ func openRegularProfile(path string) (*os.File, error) {
 	if err != nil {
 		return nil, profileOpenError(errors.Join(err, windows.CloseHandle(handle)))
 	}
+
 	if kind != windows.FILE_TYPE_DISK {
 		return nil, profileOpenError(errors.Join(profileFileError{code: ProfileFileTypeInvalid}, windows.CloseHandle(handle)))
 	}

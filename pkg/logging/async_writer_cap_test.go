@@ -303,6 +303,8 @@ func findJSONLogRecord(t *testing.T, text, message string, maxLineBytes int) map
 }
 
 func TestEnableFileLoggingOversizePreservesSanitizedFileRecord(t *testing.T) {
+	requireFileLogging(t)
+
 	t.Parallel()
 
 	var stdout bytes.Buffer

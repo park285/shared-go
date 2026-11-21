@@ -187,6 +187,8 @@ func TestConsoleHandler_SanitizesJSON(t *testing.T) {
 }
 
 func TestFileHandler_SanitizesJSONOnBothLanes(t *testing.T) {
+	requireFileLogging(t)
+
 	logDir := t.TempDir()
 
 	var stdout bytes.Buffer
@@ -301,13 +303,27 @@ func TestFormatHandlers_MaskSensitiveKeysRegardlessOfValueKind(t *testing.T) {
 
 			slog.New(newFormatHandler(slog.LevelInfo, &buf, testPrivacy)).Info("probe", tc.attr)
 
-			out := buf.String()
-			if strings.Contains(out, tc.leak) {
-				t.Fatalf("%s value survived masking: %s", tc.name, strings.TrimSpace(out))
+			out := strings.TrimSpace(buf.String())
+
+			var fields map[string]any
+
+			if err := jsonv2.Unmarshal(buf.Bytes(), &fields); err != nil {
+				t.Fatalf("%s produced invalid JSON: %v: %s", tc.name, err, out)
 			}
 
-			if !strings.Contains(out, redactedValue) {
-				t.Fatalf("%s produced no redaction marker: %s", tc.name, strings.TrimSpace(out))
+			delete(fields, "time")
+
+			untimed, err := jsonv2.Marshal(fields)
+			if err != nil {
+				t.Fatalf("%s re-encode: %v", tc.name, err)
+			}
+
+			if strings.Contains(string(untimed), tc.leak) {
+				t.Fatalf("%s value survived masking: %s", tc.name, out)
+			}
+
+			if fields[tc.attr.Key] != redactedValue {
+				t.Fatalf("%s produced no redaction marker: %s", tc.name, out)
 			}
 		})
 	}
@@ -331,6 +347,10 @@ func TestJSONFormat_LevelPinned(t *testing.T) {
 
 	for lane, config := range lanes {
 		t.Run(lane, func(t *testing.T) {
+			if config.Dir != "" {
+				requireFileLogging(t)
+			}
+
 			var stdout bytes.Buffer
 
 			logger, closer, err := enableFileLoggingWithStdout(&stdout, config, "probe.log", Options{})
@@ -346,15 +366,19 @@ func TestJSONFormat_LevelPinned(t *testing.T) {
 			logFormatProbe(logger)
 
 			assertJSONLevelPinned(t, "json/"+lane+"/stdout", stdout.String(), debugProbe)
+
+			if config.Dir == "" {
+				return
+			}
+
+			fileBytes, err := os.ReadFile(filepath.Join(config.Dir, "probe.log"))
+			if err != nil {
+				t.Fatalf("file lane wrote no log file under %s: %v", config.Dir, err)
+			}
+
+			assertJSONLevelPinned(t, "json/file/file", string(fileBytes), debugProbe)
 		})
 	}
-
-	fileBytes, err := os.ReadFile(filepath.Join(fileLaneDir, "probe.log")) //nolint:gosec // 테스트가 만든 임시 디렉터리 경로만 읽는다.
-	if err != nil {
-		t.Fatalf("file lane wrote no log file under %s: %v", fileLaneDir, err)
-	}
-
-	assertJSONLevelPinned(t, "json/file/file", string(fileBytes), debugProbe)
 }
 
 func assertJSONLevelPinned(t *testing.T, label, out, debugProbe string) {

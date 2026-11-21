@@ -226,6 +226,8 @@ func TestAsyncDropWriterConcurrentAdmissionAndCloseAccountsForEveryWrite(t *test
 }
 
 func TestEnableFileLoggingAsyncFailuresReachFileSummary(t *testing.T) {
+	requireFileLogging(t)
+
 	t.Parallel()
 
 	for _, target := range []io.Writer{failingWriter{}, shortStdout{}} {
@@ -248,22 +250,16 @@ func TestEnableFileLoggingAsyncFailuresReachFileSummary(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		var summary map[string]any
-
-		for line := range strings.SplitSeq(strings.TrimSpace(string(file)), "\n") {
-			record := decodeLogLine(t, line)
-			if record["msg"] == "stdout lane write failed" {
-				summary = record
-			}
-		}
-
-		if summary == nil || summary["dropped"] != float64(2) || summary["truncated"] != float64(0) {
+		summary := findJSONLogRecord(t, string(file), "stdout lane write failed", 0)
+		if summary["dropped"] != float64(2) || summary["truncated"] != float64(0) {
 			t.Fatalf("file summary while stdout fails = %v", summary)
 		}
 	}
 }
 
 func TestEnableFileLoggingBlockedCloseStillSummarizesKnownDrops(t *testing.T) {
+	requireFileLogging(t)
+
 	t.Parallel()
 
 	target := &stallingWriter{started: make(chan struct{}), release: make(chan struct{})}
@@ -305,16 +301,8 @@ func TestEnableFileLoggingBlockedCloseStillSummarizesKnownDrops(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var summary map[string]any
-
-	for line := range strings.SplitSeq(strings.TrimSpace(string(file)), "\n") {
-		record := decodeLogLine(t, line)
-		if record["msg"] == "stdout lane write failed" {
-			summary = record
-		}
-	}
-
-	if summary == nil || summary["dropped"] != float64(1) || summary["truncated"] != float64(0) {
+	summary := findJSONLogRecord(t, string(file), "stdout lane write failed", 0)
+	if summary["dropped"] != float64(1) || summary["truncated"] != float64(0) {
 		t.Fatalf("timed-out file summary = %v", summary)
 	}
 

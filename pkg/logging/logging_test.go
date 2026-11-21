@@ -5,10 +5,19 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/park285/shared-go/v2/pkg/logging/internal/archive"
 )
+
+func requireFileLogging(t *testing.T) {
+	t.Helper()
+
+	if runtime.GOOS == "windows" || runtime.GOOS == "wasip1" || runtime.GOOS == "js" {
+		t.Skip("this platform cannot enforce log file permissions")
+	}
+}
 
 func TestNewLogger(t *testing.T) {
 	logger := NewLogger()
@@ -64,6 +73,8 @@ func TestConfig_Validation(t *testing.T) {
 }
 
 func TestEnableFileLoggingWithOptions_RejectsDirectoryAsLogFile(t *testing.T) {
+	requireFileLogging(t)
+
 	logDir := t.TempDir()
 	logPath := filepath.Join(logDir, "service.log")
 	child := filepath.Join(logPath, "child")
@@ -86,6 +97,8 @@ func TestEnableFileLoggingWithOptions_RejectsDirectoryAsLogFile(t *testing.T) {
 }
 
 func TestEnableFileLoggingWithOptions_RejectsMissingFileParent(t *testing.T) {
+	requireFileLogging(t)
+
 	logDir := t.TempDir()
 	fileName := filepath.Join("missing", "service.log")
 
@@ -99,6 +112,8 @@ func TestEnableFileLoggingWithOptions_RejectsMissingFileParent(t *testing.T) {
 }
 
 func TestEnableFileLoggingWithOptions_RejectsFileAsDirectoryParent(t *testing.T) {
+	requireFileLogging(t)
+
 	parent := filepath.Join(t.TempDir(), "parent")
 	logDir := filepath.Join(parent, "nested")
 
@@ -167,6 +182,8 @@ func assertLogPathPreserved(t *testing.T, path, contentPath string, wantMode os.
 }
 
 func TestEnableFileLogging_UsesRestrictedFileAndDirectoryPerms(t *testing.T) {
+	requireFileLogging(t)
+
 	logDir := t.TempDir()
 	serviceLogPath := filepath.Join(logDir, "service.log")
 
@@ -211,6 +228,8 @@ func TestEnableFileLogging_UsesRestrictedFileAndDirectoryPerms(t *testing.T) {
 }
 
 func TestEnableFileLoggingWithOptionsAppliesLevel(t *testing.T) {
+	requireFileLogging(t)
+
 	logDir := t.TempDir()
 	config := Config{
 		Dir:        logDir,
@@ -237,6 +256,8 @@ func TestEnableFileLoggingWithOptionsAppliesLevel(t *testing.T) {
 }
 
 func TestEnableFileLogging_DoesNotCreateCombinedLog(t *testing.T) {
+	requireFileLogging(t)
+
 	t.Parallel()
 
 	logDir := t.TempDir()
@@ -302,6 +323,10 @@ func TestEnableFileLoggingDoesNotSetDefault(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.config.Dir != "" {
+				requireFileLogging(t)
+			}
+
 			logger, closer, err := EnableFileLoggingWithOptions(tt.config, "service.log", Options{})
 			if err != nil {
 				t.Fatalf("EnableFileLoggingWithOptions() error = %v", err)

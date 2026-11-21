@@ -318,13 +318,13 @@ func TestRun_CustomSignals(t *testing.T) {
 	var gotSignals []os.Signal
 
 	err := Run(t.Context(), Options{
-		Signals: []os.Signal{syscall.SIGUSR1},
+		Signals: []os.Signal{os.Interrupt},
 		NotifySignals: func(signals ...os.Signal) (<-chan os.Signal, func()) {
 			gotSignals = append([]os.Signal(nil), signals...)
 
 			ch := make(chan os.Signal, 1)
 
-			ch <- syscall.SIGUSR1
+			ch <- os.Interrupt
 
 			return ch, func() {}
 		},
@@ -334,8 +334,8 @@ func TestRun_CustomSignals(t *testing.T) {
 		t.Fatalf("Run() error = %v, want nil", err)
 	}
 
-	if len(gotSignals) != 1 || gotSignals[0] != syscall.SIGUSR1 {
-		t.Fatalf("NotifySignals() signals = %v, want [SIGUSR1]", gotSignals)
+	if len(gotSignals) != 1 || gotSignals[0] != os.Interrupt {
+		t.Fatalf("NotifySignals() signals = %v, want [%v]", gotSignals, os.Interrupt)
 	}
 }
 
@@ -442,7 +442,7 @@ func TestRun_SignalWithPendingErrorStillFiresOnError(t *testing.T) {
 func TestDefaultSignalNotifier(t *testing.T) {
 	t.Parallel()
 
-	sigCh, stop := defaultSignalNotifier(syscall.SIGUSR1)
+	sigCh, stop := defaultSignalNotifier(os.Interrupt)
 	defer stop()
 
 	if sigCh == nil {

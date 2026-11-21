@@ -23,6 +23,8 @@ func (w *brokenStdout) Write(_ []byte) (int, error) {
 }
 
 func TestEnableFileLogging_StdoutFailureDoesNotBlockFileLane(t *testing.T) {
+	requireFileLogging(t)
+
 	t.Parallel()
 
 	logDir := t.TempDir()

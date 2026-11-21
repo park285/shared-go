@@ -1,3 +1,5 @@
+//go:build unix || plan9
+
 package logging
 
 import (
