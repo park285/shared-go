@@ -18,7 +18,7 @@ for tool in podman jq go; do
   fi
 done
 
-POSTGRES_IMAGE='docker.io/library/postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873'
+POSTGRES_IMAGE='docker.io/library/postgres:19.0-alpine@sha256:8b0ff4cdf221f0c53d7fcda681d3b461be725c492cd881c5ec9c0ad25023f188'
 container_id=''
 result_file="$(mktemp)"
 cleanup() {
