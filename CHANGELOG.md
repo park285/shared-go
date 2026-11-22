@@ -6,6 +6,7 @@ release 섹션은 최신 순으로 배치합니다. 이 문서는 `미출시`와
 
 ## 미출시
 
+- 의존성을 최신 안정판으로 올렸습니다. `golang.org/x/net` v0.63.0, `openai/openai-go/v3` v3.105.0(`openai` 모듈) 등 Go 모듈과, promptguard 규칙 팩의 YAML 파서를 `go.yaml.in/yaml/v4` v4.0.0으로 옮겼습니다. CI의 `actions/setup-go`·`actions/setup-python`은 v7.1.0, uv는 0.13.9, govulncheck 핀은 v1.10.0입니다. 공개 Go API는 바뀌지 않습니다.
 - 통합 시험과 `pgstore` 릴리스 게이트의 PostgreSQL 이미지를 `postgres:19.0-alpine`(digest 고정)으로 올렸습니다. 공개 Go API는 바뀌지 않습니다.
 - depguard로 `unsafe` 패키지 가져오기를 기본 금지했습니다. 공통 린트 행렬도 명시적 `unsafe` import와 cgo 사용을 거부하며 해당 파일의 경로를 출력합니다.
 - 로컬·CI·릴리스 게이트에서 golangci-lint와 govulncheck를 스택 공통 resolver로 해석합니다. 두 버전 핀은 `scripts/ci/pre-push-gate.sh`에 선언하며 도구 경로 재정의는 거부합니다. 오프라인 설치와 캐시 검증도 공통 resolver가 담당합니다. Make는 실행 파일과 고정 버전을 공통 행렬에 함께 전달합니다. 행렬은 루트 `.golangci.yml`로 각 구성의 모듈 전체와 테스트를 검사하고, 단독 생성기도 검사해 실제 로더 입력으로 커버리지를 확인합니다. `make fmt`는 선택한 모듈의 현재 빌드 구성에 자동 수정을 적용합니다.
