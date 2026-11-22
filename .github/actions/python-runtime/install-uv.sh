@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 case "${RUNNER_OS:?}/${RUNNER_ARCH:?}" in
-  Linux/ARM64) archive_url="https://releases.astral.sh/github/uv/releases/download/0.13.7/uv-aarch64-unknown-linux-gnu.tar.gz"; expected_sha="71279f8d3c67241e807b9d8db872d1bf541579fb9f08b7d1eb1682196d1e57dc" ;;
-  Linux/X64) archive_url="https://releases.astral.sh/github/uv/releases/download/0.13.7/uv-x86_64-unknown-linux-gnu.tar.gz"; expected_sha="c5221ff41b7892bfc223543883600125f6a47fe845093e0f5bdff4f359196d83" ;;
+  Linux/ARM64) archive_url="https://releases.astral.sh/github/uv/releases/download/0.13.9/uv-aarch64-unknown-linux-gnu.tar.gz"; expected_sha="0797542018e541a9288855df555c8077eed06f7a47d206362030480e8ecc9f3d" ;;
+  Linux/X64) archive_url="https://releases.astral.sh/github/uv/releases/download/0.13.9/uv-x86_64-unknown-linux-gnu.tar.gz"; expected_sha="a7fbaff2b9a271d85c1bdb540941090fd1ce011797b4abeb48e4dcd39c2471d5" ;;
   *) echo 'unsupported uv bootstrap platform' >&2; exit 1 ;;
 esac
 work_dir="$(mktemp -d "${RUNNER_TEMP:?}/uv-bootstrap.XXXXXX")"
