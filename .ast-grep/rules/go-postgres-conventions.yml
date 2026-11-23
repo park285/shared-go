@@ -5,112 +5,218 @@ message: Go 문자열에 SQL을 직접 쓰지 않습니다. 패키지의 queries
 note: |
   Go 문자열 안의 SQL은 SQL 주석 금지 검사와 SQL 파일 단위 검토·검색에서 빠지고, MustQuery가 시작 시점에 하는 누락·빈 쿼리 검증도 받지 못합니다.
   .sql.tpl의 자리표시자는 pgx.Identifier{...}.Sanitize() 같은 검증된 식별자로만 치환합니다.
+utils:
+  string-literal:
+    any:
+      - kind: interpreted_string_literal
+      - kind: raw_string_literal
+  sql-argument:
+    any:
+      - nthChild: 1
+        inside:
+          kind: argument_list
+          inside:
+            kind: call_expression
+            has:
+              field: function
+              kind: selector_expression
+              has:
+                field: field
+                regex: '^Queue$'
+      - nthChild: 2
+        inside:
+          kind: argument_list
+          inside:
+            kind: call_expression
+            has:
+              field: function
+              kind: selector_expression
+              has:
+                field: field
+                regex: '^(ExecContext|QueryContext|QueryRowContext|PrepareContext|ExecParams)$'
+      - nthChild: 2
+        inside:
+          kind: argument_list
+          has:
+            nthChild: 1
+            regex: '(?i)(^|[^a-z0-9_])[a-z0-9_]*ctx([^a-z0-9_]|$)|context'
+          inside:
+            kind: call_expression
+            has:
+              field: function
+              kind: selector_expression
+              has:
+                field: field
+                regex: '^(Exec|Query|QueryRow)$'
+      - nthChild: 3
+        inside:
+          kind: argument_list
+          all:
+            - has:
+                nthChild: 1
+                regex: '(?i)(^|[^a-z0-9_])[a-z0-9_]*ctx([^a-z0-9_]|$)|context'
+            - has:
+                nthChild: 2
+                matches: string-literal
+          inside:
+            kind: call_expression
+            has:
+              field: function
+              kind: selector_expression
+              has:
+                field: field
+                regex: '^Prepare$'
+      - nthChild: 4
+        inside:
+          kind: argument_list
+          inside:
+            kind: call_expression
+            has:
+              field: function
+              kind: selector_expression
+              all:
+                - has:
+                    field: operand
+                    regex: '^pgxscan$'
+                - has:
+                    field: field
+                    regex: '^(Select|Get)$'
+      - nthChild: 4
+        inside:
+          kind: argument_list
+          inside:
+            kind: call_expression
+            has:
+              field: function
+              kind: selector_expression
+              all:
+                - has:
+                    field: operand
+                    regex: '^dbx$'
+                - has:
+                    field: field
+                    regex: '^ExecSQL$'
+      - nthChild: 5
+        inside:
+          kind: argument_list
+          inside:
+            kind: call_expression
+            has:
+              field: function
+              kind: selector_expression
+              all:
+                - has:
+                    field: operand
+                    regex: '^dbx$'
+                - has:
+                    field: field
+                    regex: '^(SelectSQL|GetSQL)$'
+  weak-sql-argument:
+    any:
+      - nthChild: 1
+        inside:
+          kind: argument_list
+          inside:
+            kind: call_expression
+            has:
+              field: function
+              kind: selector_expression
+              has:
+                field: field
+                regex: '^(Exec|Query|QueryRow|Prepare)$'
+      - nthChild: 2
+        inside:
+          kind: argument_list
+          not:
+            has:
+              nthChild: 1
+              regex: '(?i)(sql|query|stmt|statement)'
+          inside:
+            kind: call_expression
+            has:
+              field: function
+              kind: selector_expression
+              has:
+                field: field
+                regex: '^(Exec|Query|QueryRow)$'
+      - nthChild: 3
+        inside:
+          kind: argument_list
+          inside:
+            kind: call_expression
+            has:
+              field: function
+              kind: selector_expression
+              has:
+                field: field
+                regex: '^Prepare$'
 rule:
   any:
-    - any:
-        - kind: interpreted_string_literal
-        - kind: raw_string_literal
-      regex: '^["`](\s|\\[nrt])*(\((\s|\\[nrt])*)*(SELECT([\s(*]|\\[nrt])|INSERT\s+INTO\s|UPDATE\s+[a-z_."]+(\s+(AS\s+)?[a-z_]+)?\s+SET\s|DELETE\s+FROM\s|(DROP|REASSIGN)\s+OWNED\s+BY\s|TABLE\s+(ONLY\s+)?[a-z_][a-z0-9_.]*\s*["`;]|(CREATE(\s+OR\s+REPLACE)?(\s+(UNIQUE|TEMP|TEMPORARY|UNLOGGED|MATERIALIZED))*|ALTER|DROP)\s+(TABLE|INDEX|VIEW|FUNCTION|PROCEDURE|SCHEMA|ROLE|USER|SEQUENCE|TYPE|DOMAIN|EXTENSION|TRIGGER|POLICY|PUBLICATION|SUBSCRIPTION|DATABASE|DEFAULT|SYSTEM|EVENT|AGGREGATE|COLLATION|OPERATOR|RULE|SERVER|STATISTICS)\b|TRUNCATE\s+(TABLE\s+|ONLY\s+)?[a-z_][a-z0-9_.]*\s*(["`;,(]|RESTART|CASCADE|CONTINUE)|DO\s+(\$|LANGUAGE\s)|VALUES\s*\(|(ANALYZE|VACUUM)(\s+\([^)]*\)|\s+VERBOSE)?\s+[a-z_][a-z0-9_.]*\s*["`;,(]|(GRANT|REVOKE)\s+(SELECT|INSERT|UPDATE|DELETE|TRUNCATE|REFERENCES|TRIGGER|USAGE|EXECUTE|ALL|CONNECT|CREATE|TEMPORARY|TEMP|MAINTAIN|SET)\b|RESET\s+(ALL|ROLE|SESSION\s+AUTHORIZATION|[a-z_][a-z0-9_]*[_.][a-z0-9_.]*)(\s|\\[nrt])*(;(\s|\\[nrt])*)?["`]$|DISCARD\s+(ALL|PLANS|SEQUENCES|TEMP|TEMPORARY)\b|(NOTIFY|LISTEN|UNLISTEN)\s+([a-z_][a-z0-9_]*|\*)\s*["`;,(]|EXPLAIN\s+(\(|ANALYZE\s|VERBOSE\s|SELECT\s|INSERT\s|UPDATE\s|DELETE\s|WITH\s)|MERGE\s+INTO\s|COPY\s+[a-z_][a-z0-9_.]*\s*(\(|FROM\s|TO\s)|START\s+TRANSACTION\b|SAVEPOINT\s|RELEASE\s+SAVEPOINT\s|ROLLBACK\s+TO\s|(COMMIT|ROLLBACK)\s+PREPARED\s|PREPARE\s+TRANSACTION\s|CALL\s+[a-z_][a-z0-9_.]*\s*\(|REINDEX\s+(\(|TABLE|INDEX|SCHEMA|DATABASE|SYSTEM)\b|REFRESH\s+MATERIALIZED\s|WITH\s+(RECURSIVE\s+)?[a-z_]+|LOCK\s+TABLE\s|SET\s+(LOCAL|SESSION|ROLE)\s)'
+    - matches: string-literal
+      regex: '^["`](\s|\\[nrt])*(\((\s|\\[nrt])*)*(SELECT([\s(*]|\\[nrt])|INSERT\s+INTO\s|UPDATE\s+[a-z0-9_."]+(\s+(AS\s+)?[a-z_][a-z0-9_]*)?\s+SET\s|DELETE\s+FROM\s|(DROP|REASSIGN)\s+OWNED\s+BY\s|TABLE\s+(ONLY\s+)?[a-z_][a-z0-9_.]*\s*["`;]|(CREATE(\s+OR\s+REPLACE)?(\s+(UNIQUE|TEMP|TEMPORARY|UNLOGGED|MATERIALIZED))*|ALTER|DROP)\s+(TABLE|INDEX|VIEW|FUNCTION|PROCEDURE|SCHEMA|ROLE|USER|SEQUENCE|TYPE|DOMAIN|EXTENSION|TRIGGER|POLICY|PUBLICATION|SUBSCRIPTION|DATABASE|DEFAULT|SYSTEM|EVENT|AGGREGATE|COLLATION|OPERATOR|RULE|SERVER|STATISTICS)\b|TRUNCATE\s+(TABLE\s+|ONLY\s+)?[a-z_][a-z0-9_.]*\s*(["`;,(]|RESTART|CASCADE|CONTINUE)|DO\s+(\$|LANGUAGE\s)|VALUES\s*\(|(ANALYZE|VACUUM)(\s+\([^)]*\)|\s+VERBOSE)?\s+[a-z_][a-z0-9_.]*\s*["`;,(]|(GRANT|REVOKE)\s+(SELECT|INSERT|UPDATE|DELETE|TRUNCATE|REFERENCES|TRIGGER|USAGE|EXECUTE|ALL|CONNECT|CREATE|TEMPORARY|TEMP|MAINTAIN|SET)\b|RESET\s+(ALL|ROLE|SESSION\s+AUTHORIZATION|[a-z_][a-z0-9_]*[_.][a-z0-9_.]*)(\s|\\[nrt])*(;(\s|\\[nrt])*)?["`]$|DISCARD\s+(ALL|PLANS|SEQUENCES|TEMP|TEMPORARY)\b|(NOTIFY|LISTEN|UNLISTEN)\s+([a-z_][a-z0-9_]*|\*)\s*["`;,(]|EXPLAIN\s+(\(|ANALYZE\s|VERBOSE\s|SELECT\s|INSERT\s|UPDATE\s|DELETE\s|WITH\s)|MERGE\s+INTO\s|COPY\s+[a-z_][a-z0-9_.]*\s*(\(|FROM\s|TO\s)|START\s+TRANSACTION\b|SAVEPOINT\s|RELEASE\s+SAVEPOINT\s|ROLLBACK\s+TO\s|(COMMIT|ROLLBACK)\s+PREPARED\s|PREPARE\s+TRANSACTION\s|CALL\s+[a-z_][a-z0-9_.]*\s*\(|REINDEX\s+(\(|TABLE|INDEX|SCHEMA|DATABASE|SYSTEM)\b|REFRESH\s+MATERIALIZED\s|WITH\s+(RECURSIVE\s+)?[a-z_]+|LOCK\s+TABLE\s|LOCK\s+(ONLY\s+)?[a-z0-9_."]+\s*(IN\s|NOWAIT|;|["`]$)|SET\s+(LOCAL|SESSION|ROLE)\s|SET\s+[a-z_][a-z0-9_.]*\s*(=|TO\s)|SHOW\s+(ALL|[a-z_][a-z0-9_.]*)(\s|\\[nrt])*(;(\s|\\[nrt])*)?["`]$|COMMENT\s+ON\s)'
     - all:
+        - matches: string-literal
         - any:
-            - kind: interpreted_string_literal
-            - kind: raw_string_literal
-        - any:
+            - matches: sql-argument
+            - not:
+                regex: '^["`](\s|\\[nrt])*["`]$'
+              inside:
+                kind: binary_expression
+                stopBy:
+                  not:
+                    any:
+                      - kind: binary_expression
+                      - kind: parenthesized_expression
+                matches: sql-argument
             - nthChild: 1
               inside:
                 kind: argument_list
                 inside:
                   kind: call_expression
-                  has:
-                    field: function
-                    kind: selector_expression
-                    has:
-                      field: field
-                      regex: '^Queue$'
-            - nthChild: 2
-              inside:
-                kind: argument_list
-                inside:
-                  kind: call_expression
-                  has:
-                    field: function
-                    kind: selector_expression
-                    has:
-                      field: field
-                      regex: '^(ExecContext|QueryContext|QueryRowContext|PrepareContext|ExecParams)$'
-            - nthChild: 2
-              inside:
-                kind: argument_list
-                has:
-                  nthChild: 1
-                  regex: '(?i)(^|[^a-z0-9_])[a-z0-9_]*ctx([^a-z0-9_]|$)|context'
-                inside:
-                  kind: call_expression
-                  has:
-                    field: function
-                    kind: selector_expression
-                    has:
-                      field: field
-                      regex: '^(Exec|Query|QueryRow)$'
-            - nthChild: 3
-              inside:
-                kind: argument_list
-                all:
-                  - has:
-                      nthChild: 1
-                      regex: '(?i)(^|[^a-z0-9_])[a-z0-9_]*ctx([^a-z0-9_]|$)|context'
-                  - has:
-                      nthChild: 2
-                      any:
-                        - kind: interpreted_string_literal
-                        - kind: raw_string_literal
-                inside:
-                  kind: call_expression
-                  has:
-                    field: function
-                    kind: selector_expression
-                    has:
-                      field: field
-                      regex: '^Prepare$'
+                  all:
+                    - has:
+                        field: function
+                        kind: selector_expression
+                        all:
+                          - has:
+                              field: operand
+                              regex: '^fmt$'
+                          - has:
+                              field: field
+                              regex: '^Sprintf$'
+                    - matches: sql-argument
     - all:
+        - matches: string-literal
+        - regex: '(?i)^["`](\s|\\[nrt])*(\((\s|\\[nrt])*)*((BEGIN|COMMIT|END|ROLLBACK|ABORT|CHECKPOINT|ANALYZE|VACUUM)(\s|\\[nrt])*(;(\s|\\[nrt])*)?["`]$|SELECT([\s(*]|\\[nrt])|INSERT\s+INTO\s|UPDATE\s+[a-z0-9_."]+(\s+(AS\s+)?[a-z_][a-z0-9_]*)?\s+SET\s|DELETE\s+FROM\s|(DROP|REASSIGN)\s+OWNED\s+BY\s|TABLE\s+(ONLY\s+)?[a-z_][a-z0-9_.]*\s*["`;]|COMMENT\s+ON\s|(CREATE(\s+OR\s+REPLACE)?(\s+(UNIQUE|TEMP|TEMPORARY|UNLOGGED|MATERIALIZED))*|ALTER|DROP)\s+(TABLE|INDEX|VIEW|FUNCTION|PROCEDURE|SCHEMA|ROLE|USER|SEQUENCE|TYPE|DOMAIN|EXTENSION|TRIGGER|POLICY|PUBLICATION|SUBSCRIPTION|DATABASE|DEFAULT|SYSTEM|EVENT|AGGREGATE|COLLATION|OPERATOR|RULE|SERVER|STATISTICS)\b|TRUNCATE\s+(TABLE\s+|ONLY\s+)?[a-z_][a-z0-9_.]*\s*(["`;,(]|RESTART|CASCADE|CONTINUE)|DO\s+(\$|LANGUAGE\s)|VALUES\s*\(|(ANALYZE|VACUUM)(\s+\([^)]*\)|\s+VERBOSE)?\s+[a-z_][a-z0-9_.]*\s*["`;,(]|(GRANT|REVOKE)\s+(SELECT|INSERT|UPDATE|DELETE|TRUNCATE|REFERENCES|TRIGGER|USAGE|EXECUTE|ALL|CONNECT|CREATE|TEMPORARY|TEMP|MAINTAIN|SET)\b|RESET\s+(ALL|ROLE|SESSION\s+AUTHORIZATION|[a-z_][a-z0-9_]*[_.][a-z0-9_.]*)(\s|\\[nrt])*(;(\s|\\[nrt])*)?["`]$|DISCARD\s+(ALL|PLANS|SEQUENCES|TEMP|TEMPORARY)\b|(NOTIFY|LISTEN|UNLISTEN)\s+([a-z_][a-z0-9_]*|\*)\s*["`;,(]|EXPLAIN\s+(\(|ANALYZE\s|VERBOSE\s|SELECT\s|INSERT\s|UPDATE\s|DELETE\s|WITH\s)|MERGE\s+INTO\s|COPY\s+[a-z_][a-z0-9_.]*\s*(\(|FROM\s|TO\s)|START\s+TRANSACTION\b|SAVEPOINT\s|RELEASE\s+SAVEPOINT\s|ROLLBACK\s+TO\s|(COMMIT|ROLLBACK)\s+PREPARED\s|PREPARE\s+TRANSACTION\s|CALL\s+[a-z_][a-z0-9_.]*\s*\(|REINDEX\s+(\(|TABLE|INDEX|SCHEMA|DATABASE|SYSTEM)\b|REFRESH\s+MATERIALIZED\s|WITH\s+(RECURSIVE\s+)?[a-z_][a-z0-9_]*\s*(\([^)]*\)\s*)?AS(\s|\()|(BEGIN|START)\s+(TRANSACTION|WORK|ISOLATION|READ)\b|(COMMIT|END|ROLLBACK|ABORT)\s+(WORK|TRANSACTION|AND\s)|(SAVEPOINT|RELEASE(\s+SAVEPOINT)?)\s+[a-z_][a-z0-9_]*(\s|\\[nrt])*(;(\s|\\[nrt])*)?["`]$|SET\s+(LOCAL\s+|SESSION\s+)?([a-z_][a-z0-9_.]*\s*(=|TO\s)|ROLE\s|SESSION\s+AUTHORIZATION\s|TRANSACTION\s|CONSTRAINTS\s|TIME\s+ZONE\s|SCHEMA\s|NAMES\s)|SHOW\s+(ALL|[a-z_][a-z0-9_.]*)(\s|\\[nrt])*(;(\s|\\[nrt])*)?["`]$|LOCK\s+(TABLE\s+)?(ONLY\s+)?[a-z0-9_."]+\s*(IN\s|NOWAIT|;|["`]$)|DEALLOCATE\s+(PREPARE\s+)?ALL\b|PREPARE\s+[a-z_][a-z0-9_]*\s*(\([^)]*\)\s*)?AS\s|DECLARE\s+[a-z_][a-z0-9_]*\s+(BINARY\s+|(A|IN)SENSITIVE\s+|(NO\s+)?SCROLL\s+)*CURSOR\b)'
         - any:
-            - kind: interpreted_string_literal
-            - kind: raw_string_literal
-        - regex: '(?i)^["`](\s|\\[nrt])*(\((\s|\\[nrt])*)*((BEGIN|COMMIT|END|ROLLBACK|ABORT|CHECKPOINT|ANALYZE|VACUUM)(\s|\\[nrt])*(;(\s|\\[nrt])*)?["`]$|SELECT([\s(*]|\\[nrt])|INSERT\s+INTO\s|UPDATE\s+[a-z_."]+(\s+(AS\s+)?[a-z_]+)?\s+SET\s|DELETE\s+FROM\s|(CREATE(\s+OR\s+REPLACE)?(\s+(UNIQUE|TEMP|TEMPORARY|UNLOGGED|MATERIALIZED))*|ALTER|DROP)\s+(TABLE|INDEX|VIEW|FUNCTION|PROCEDURE|SCHEMA|ROLE|USER|SEQUENCE|TYPE|DOMAIN|EXTENSION|TRIGGER|POLICY|PUBLICATION|SUBSCRIPTION|DATABASE|DEFAULT|SYSTEM|EVENT|AGGREGATE|COLLATION|OPERATOR|RULE|SERVER|STATISTICS)\b|TRUNCATE\s+(TABLE\s+|ONLY\s+)?[a-z_][a-z0-9_.]*\s*(["`;,(]|RESTART|CASCADE|CONTINUE)|DO\s+(\$|LANGUAGE\s)|VALUES\s*\(|(ANALYZE|VACUUM)(\s+\([^)]*\)|\s+VERBOSE)?\s+[a-z_][a-z0-9_.]*\s*["`;,(]|(GRANT|REVOKE)\s+(SELECT|INSERT|UPDATE|DELETE|TRUNCATE|REFERENCES|TRIGGER|USAGE|EXECUTE|ALL|CONNECT|CREATE|TEMPORARY|TEMP|MAINTAIN|SET)\b|RESET\s+(ALL|ROLE|SESSION\s+AUTHORIZATION|[a-z_][a-z0-9_]*[_.][a-z0-9_.]*)(\s|\\[nrt])*(;(\s|\\[nrt])*)?["`]$|DISCARD\s+(ALL|PLANS|SEQUENCES|TEMP|TEMPORARY)\b|(NOTIFY|LISTEN|UNLISTEN)\s+([a-z_][a-z0-9_]*|\*)\s*["`;,(]|EXPLAIN\s+(\(|ANALYZE\s|VERBOSE\s|SELECT\s|INSERT\s|UPDATE\s|DELETE\s|WITH\s)|MERGE\s+INTO\s|COPY\s+[a-z_][a-z0-9_.]*\s*(\(|FROM\s|TO\s)|START\s+TRANSACTION\b|SAVEPOINT\s|RELEASE\s+SAVEPOINT\s|ROLLBACK\s+TO\s|(COMMIT|ROLLBACK)\s+PREPARED\s|PREPARE\s+TRANSACTION\s|CALL\s+[a-z_][a-z0-9_.]*\s*\(|REINDEX\s+(\(|TABLE|INDEX|SCHEMA|DATABASE|SYSTEM)\b|REFRESH\s+MATERIALIZED\s|WITH\s+(RECURSIVE\s+)?[a-z_][a-z0-9_]*\s*(\([^)]*\)\s*)?AS\s|(BEGIN|START)\s+(TRANSACTION|WORK|ISOLATION|READ)\b|(COMMIT|END|ROLLBACK|ABORT)\s+(WORK|TRANSACTION|AND\s)|(SAVEPOINT|RELEASE(\s+SAVEPOINT)?)\s+[a-z_][a-z0-9_]*(\s|\\[nrt])*(;(\s|\\[nrt])*)?["`]$|SET\s+(LOCAL\s+|SESSION\s+)?([a-z_][a-z0-9_.]*\s*(=|TO\s)|ROLE\s|SESSION\s+AUTHORIZATION\s|TRANSACTION\s|CONSTRAINTS\s|TIME\s+ZONE\s|SCHEMA\s|NAMES\s)|SHOW\s+(ALL|[a-z_][a-z0-9_]*[_.][a-z0-9_.]*)(\s|\\[nrt])*(;(\s|\\[nrt])*)?["`]$|LOCK\s+(TABLE\s+)?(ONLY\s+)?[a-z_."]+\s*(IN\s|NOWAIT|;|["`]$)|DEALLOCATE\s+(PREPARE\s+)?ALL\b|PREPARE\s+[a-z_][a-z0-9_]*\s*(\([^)]*\)\s*)?AS\s|DECLARE\s+[a-z_][a-z0-9_]*\s+(BINARY\s+|(A|IN)SENSITIVE\s+|(NO\s+)?SCROLL\s+)*CURSOR\b)'
-        - any:
+            - matches: weak-sql-argument
+            - not:
+                regex: '^["`](\s|\\[nrt])*["`]$'
+              inside:
+                kind: binary_expression
+                stopBy:
+                  not:
+                    any:
+                      - kind: binary_expression
+                      - kind: parenthesized_expression
+                matches: weak-sql-argument
             - nthChild: 1
               inside:
                 kind: argument_list
                 inside:
                   kind: call_expression
-                  has:
-                    field: function
-                    kind: selector_expression
-                    has:
-                      field: field
-                      regex: '^(Exec|Query|QueryRow|Prepare)$'
-            - nthChild: 2
-              inside:
-                kind: argument_list
-                inside:
-                  kind: call_expression
-                  has:
-                    field: function
-                    kind: selector_expression
-                    has:
-                      field: field
-                      regex: '^(Exec|Query|QueryRow)$'
-            - nthChild: 3
-              inside:
-                kind: argument_list
-                inside:
-                  kind: call_expression
-                  has:
-                    field: function
-                    kind: selector_expression
-                    has:
-                      field: field
-                      regex: '^Prepare$'
+                  all:
+                    - has:
+                        field: function
+                        kind: selector_expression
+                        all:
+                          - has:
+                              field: operand
+                              regex: '^fmt$'
+                          - has:
+                              field: field
+                              regex: '^Sprintf$'
+                    - matches: weak-sql-argument
 ignores:
   - 'docs/**'
   - '**/*_test.go'
