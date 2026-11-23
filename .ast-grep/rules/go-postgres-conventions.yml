@@ -531,9 +531,9 @@ utils:
       - not:
           any:
             - kind: interpreted_string_literal
-              regex: '%[-+# 0-9.]*(\[[0-9]+\])?[-+# 0-9.]*q(\s|\\[nrt])+(ASC|DESC|(NULLS|nulls)(\s|\\[nrt])+(FIRST|LAST|first|last)|IS(\s|\\[nrt])+(NOT(\s|\\[nrt])+)?(NULL|TRUE|FALSE|UNKNOWN|DISTINCT))\b'
+              regex: '%[-+# 0-9.]*(\[[0-9]+\])?[-+# 0-9.]*q(\s|\\[nrt])+(ASC|DESC|(?i:nulls)(\s|\\[nrt])+(?i:first|last)|IS(\s|\\[nrt])+(NOT(\s|\\[nrt])+)?(NULL|TRUE|FALSE|UNKNOWN|DISTINCT))\b'
             - kind: raw_string_literal
-              regex: '%[-+# 0-9.]*(\[[0-9]+\])?[-+# 0-9.]*q(\s)+(ASC|DESC|(NULLS|nulls)(\s)+(FIRST|LAST|first|last)|IS(\s)+(NOT(\s)+)?(NULL|TRUE|FALSE|UNKNOWN|DISTINCT))\b'
+              regex: '%[-+# 0-9.]*(\[[0-9]+\])?[-+# 0-9.]*q(\s)+(ASC|DESC|(?i:nulls)(\s)+(?i:first|last)|IS(\s)+(NOT(\s)+)?(NULL|TRUE|FALSE|UNKNOWN|DISTINCT))\b'
       - not:
           regex: '\$[0-9]'
       - not:
@@ -651,12 +651,15 @@ utils:
       - kind: binary_expression
       - kind: parenthesized_expression
       - matches: sql-builder-call
+      - matches: sql-text-transform
   sql-builder-path:
     any:
       - matches: sql-builder
       - kind: argument_list
         inside:
-          matches: sql-builder-call
+          any:
+            - matches: sql-builder-call
+            - matches: sql-text-transform
       - kind: literal_element
       - kind: literal_value
       - kind: composite_literal
@@ -699,11 +702,11 @@ utils:
   sql-named-value:
     any:
       - kind: identifier
-        regex: '(?i)sql$'
+        matches: sql-plain-binding-name
       - kind: selector_expression
         has:
           field: field
-          regex: '(?i)sql$'
+          matches: sql-plain-binding-name
   sql-named-operand:
     any:
       - matches: sql-named-value
@@ -887,138 +890,138 @@ utils:
       - kind: raw_string_literal
         regex: '(?i)(\b)((for(\s)+(update|share|no(\s)+key(\s)+update|key(\s)+share)|order(\s)+by|group(\s)+by|on(\s)+conflict|skip(\s)+locked|insert(\s)+into|delete(\s)+from|(left|right|inner|full|cross)(\s)+join|union(\s)+(all|select)|fetch(\s)+(first|next)((\s)+(\d+|%[dsv]|\$\d+|\(([^()]|\([^()]*\))*\)))?(\s)+rows?|fetch(\s)+((next|prior|first|last|absolute|relative|forward|backward)((\s)+(-?\d+|%[dsv]|\$\d+|all))?|all|-?\d+|%[dsv]|\$\d+)(\s)+(from|in)|join(\s)+([a-z_][a-z0-9_.]*|%s)((\s)+(as(\s)+)?[a-z_][a-z0-9_]*)?(\s)+(using|on))\b|(limit|offset)(\s)+(\d|%[dsv]|\$)|values(\s)*\(|where(\s)+[a-z_][a-z0-9_.]*(\s)*(=|<|>|!=|in(\s)*\(|is(\s)+(not(\s)+)?(null|true|false|unknown|distinct(\s)+from)\b|like(\s)|between(\s)))'
 rule:
-  all:
-    - not:
-        inside:
-          stopBy:
-            kind: keyed_element
-          kind: literal_element
-          nthChild: 1
-          inside:
-            kind: keyed_element
-    - any:
-      - all:
-          - matches: string-literal
-          - not:
-              regex: '^["`](\s|\\[nrt])*["`]$'
-          - inside:
-              matches: sql-concat
-              stopBy:
-                not:
-                  matches: sql-text-path
-              has:
-                stopBy:
-                  not:
-                    matches: sql-concat-path
-                matches: sql-named-operand
-      - all:
-          - matches: string-literal
-          - matches: sql-fragment
-          - inside:
-              all:
-                - matches: sql-builder-call
-                - has:
-                    field: arguments
+  any:
+    - all:
+        - not:
+            inside:
+              stopBy: end
+              kind: literal_element
+              nthChild: 1
+              inside:
+                kind: keyed_element
+        - any:
+            - all:
+                - matches: string-literal
+                - not:
+                    regex: '^["`](\s|\\[nrt])*["`]$'
+                - inside:
+                    matches: sql-concat
+                    stopBy:
+                      not:
+                        matches: sql-text-path
                     has:
                       stopBy:
                         not:
-                          matches: sql-arg-path
+                          matches: sql-concat-path
                       matches: sql-named-operand
-              stopBy:
-                not:
-                  matches: sql-text-path
-          - not:
-              any:
-                - all:
-                    - nthChild: 1
-                    - inside:
-                        kind: argument_list
-                        inside:
-                          matches: sql-quoted-diagnostic-call
-                - all:
-                    - not:
-                        matches: sql-strong-fragment
+            - all:
+                - matches: string-literal
+                - matches: sql-fragment
+                - inside:
+                    all:
+                      - matches: sql-builder-call
+                      - has:
+                          field: arguments
+                          has:
+                            stopBy:
+                              not:
+                                matches: sql-arg-path
+                            matches: sql-named-operand
+                    stopBy:
+                      not:
+                        matches: sql-text-path
+                - not:
+                    any:
+                      - all:
+                          - nthChild: 1
+                          - inside:
+                              kind: argument_list
+                              inside:
+                                matches: sql-quoted-diagnostic-call
+                      - all:
+                          - not:
+                              matches: sql-strong-fragment
+                          - inside:
+                              stopBy:
+                                not:
+                                  matches: sql-text-path
+                              matches: sql-quoted-diagnostic-call
+            - all:
+                - matches: string-literal
+                - not:
+                    regex: '^["`](\s|\\[nrt])*["`]$'
+                - inside:
+                    kind: assignment_statement
+                    all:
+                      - has:
+                          field: operator
+                          regex: '^\+=$'
+                      - has:
+                          field: left
+                          has:
+                            any:
+                              - matches: sql-named-operand
+                              - kind: unary_expression
+                                has:
+                                  field: operand
+                                  matches: sql-named-operand
+                    stopBy:
+                      not:
+                        any:
+                          - matches: sql-text-path
+                          - kind: expression_list
+            - all:
+                - matches: string-literal
+                - not:
+                    regex: '^["`](\s|\\[nrt])*["`]$'
+                - any:
+                    - matches: sql-plain-named-binding
                     - inside:
                         stopBy:
                           not:
-                            matches: sql-text-path
-                        matches: sql-quoted-diagnostic-call
-      - all:
-          - matches: string-literal
-          - not:
-              regex: '^["`](\s|\\[nrt])*["`]$'
-          - inside:
-              kind: assignment_statement
-              all:
-                - has:
-                    field: operator
-                    regex: '^\+=$'
-                - has:
-                    field: left
-                    has:
-                      any:
-                        - matches: sql-named-operand
-                        - kind: unary_expression
-                          has:
-                            field: operand
-                            matches: sql-named-operand
-              stopBy:
-                not:
-                  any:
-                    - matches: sql-text-path
-                    - kind: expression_list
-      - any:
-          - kind: interpreted_string_literal
-            regex: '^["`](\s|\\[nrt])*(\((\s|\\[nrt])*)*(TRUNCATE(\s|\\[nrt])+((TABLE|ONLY)(\s|\\[nrt])+(ONLY(\s|\\[nrt])+)?([A-Za-z0-9_.]|\\"[^"\\%]+\\"|\\"%(\[[0-9]+\])?[sqv]\\"|%(\[[0-9]+\])?[sqv])+((\s|\\[nrt])*\*)?(\s|\\[nrt])*(,|;|RESTART\b|CONTINUE\b|CASCADE\b|RESTRICT\b|["`]$|%(\[[0-9]+\])?[sqv])|([A-Za-z0-9_.]|\\"[^"\\%]+\\"|\\"%(\[[0-9]+\])?[sqv]\\"|%(\[[0-9]+\])?[sqv])+((\s|\\[nrt])*\*)?(\s|\\[nrt])*(,|;|RESTART\b|CONTINUE\b|CASCADE\b|RESTRICT\b|["`]$|%(\[[0-9]+\])?[sqv]))|LOCK(\s|\\[nrt])+(TABLE(\s|\\[nrt])+)?(ONLY(\s|\\[nrt])+)?([A-Za-z0-9_.]|\\"[^"\\%]+\\"|\\"%(\[[0-9]+\])?[sqv]\\"|%(\[[0-9]+\])?[sqv])+((\s|\\[nrt])*\*)?((\s|\\[nrt])*,(\s|\\[nrt])*(ONLY(\s|\\[nrt])+)?([A-Za-z0-9_.]|\\"[^"\\%]+\\"|\\"%(\[[0-9]+\])?[sqv]\\"|%(\[[0-9]+\])?[sqv])+((\s|\\[nrt])*\*)?)*(\s|\\[nrt])+IN(\s|\\[nrt])+(ACCESS(\s|\\[nrt])+SHARE|ROW(\s|\\[nrt])+SHARE|ROW(\s|\\[nrt])+EXCLUSIVE|SHARE(\s|\\[nrt])+UPDATE(\s|\\[nrt])+EXCLUSIVE|SHARE(\s|\\[nrt])+ROW(\s|\\[nrt])+EXCLUSIVE|SHARE|EXCLUSIVE|ACCESS(\s|\\[nrt])+EXCLUSIVE)(\s|\\[nrt])+MODE\b|(ANALYZE|VACUUM)(\s|\\[nrt])+\([^)]*\)(\s|\\[nrt])*([A-Za-z0-9_.]|\\"[^"\\%]+\\"|\\"%(\[[0-9]+\])?[sqv]\\"|%(\[[0-9]+\])?[sqv])+(\s|\\[nrt])*(\(|,|;|["`]$|%(\[[0-9]+\])?[sqv])|CALL(\s|\\[nrt])+([A-Za-z0-9_.]|\\"[^"\\%]+\\"|\\"%(\[[0-9]+\])?[sqv]\\"|%(\[[0-9]+\])?[sqv])+(\s|\\[nrt])*\((\s|\\[nrt])*\$[0-9]|SELECT([\s(*]|\\[nrt])|INSERT(\s|\\[nrt])+INTO(\s|\\[nrt])|UPDATE(\s|\\[nrt])+(ONLY(\s|\\[nrt])+)?([A-Za-z0-9_.]|\\"[^"\\%]+\\"|\\"%(\[[0-9]+\])?[sqv]\\"|%(\[[0-9]+\])?[sqv])+((\s|\\[nrt])+(AS(\s|\\[nrt])+)?[a-z_][a-z0-9_]*)?(\s|\\[nrt])+SET(\s|\\[nrt])|DELETE(\s|\\[nrt])+FROM(\s|\\[nrt])|(DROP|REASSIGN)(\s|\\[nrt])+OWNED(\s|\\[nrt])+BY(\s|\\[nrt])|TABLE(\s|\\[nrt])+(ONLY(\s|\\[nrt])+)?[a-z_][a-z0-9_.]*(\s|\\[nrt])*["`;]|(CREATE((\s|\\[nrt])+OR(\s|\\[nrt])+REPLACE)?((\s|\\[nrt])+(UNIQUE|TEMP|TEMPORARY|UNLOGGED|MATERIALIZED))*|ALTER|DROP)(\s|\\[nrt])+(TABLE|INDEX|VIEW|FUNCTION|PROCEDURE|SCHEMA|ROLE|USER|SEQUENCE|TYPE|DOMAIN|EXTENSION|TRIGGER|POLICY|PUBLICATION|SUBSCRIPTION|DATABASE|DEFAULT|SYSTEM|EVENT|AGGREGATE|COLLATION|OPERATOR|RULE|SERVER|STATISTICS)\b|TRUNCATE(\s|\\[nrt])+(TABLE(\s|\\[nrt])+|ONLY(\s|\\[nrt])+)?[a-z_][a-z0-9_.]*(\s|\\[nrt])*(["`;,(]|RESTART|CASCADE|CONTINUE)|DO(\s|\\[nrt])+(\$|LANGUAGE(\s|\\[nrt]))|VALUES(\s|\\[nrt])*\(|(ANALYZE|VACUUM)((\s|\\[nrt])+\([^)]*\)|(\s|\\[nrt])+VERBOSE)?(\s|\\[nrt])+[a-z_][a-z0-9_.]*(\s|\\[nrt])*["`;,(]|(GRANT|REVOKE)(\s|\\[nrt])+(SELECT|INSERT|UPDATE|DELETE|TRUNCATE|REFERENCES|TRIGGER|USAGE|EXECUTE|ALL|CONNECT|CREATE|TEMPORARY|TEMP|MAINTAIN|SET)\b|RESET(\s|\\[nrt])+(ALL|ROLE|SESSION(\s|\\[nrt])+AUTHORIZATION|[a-z_][a-z0-9_]*[_.][a-z0-9_.]*)(\s|\\[nrt])*(;(\s|\\[nrt])*)?["`]$|DISCARD(\s|\\[nrt])+(ALL|PLANS|SEQUENCES|TEMP|TEMPORARY)\b|(NOTIFY|LISTEN|UNLISTEN)(\s|\\[nrt])+([a-z_][a-z0-9_]*|\*)(\s|\\[nrt])*["`;,(]|EXPLAIN(\s|\\[nrt])+(\(|ANALYZE(\s|\\[nrt])|VERBOSE(\s|\\[nrt])|SELECT(\s|\\[nrt])|INSERT(\s|\\[nrt])|UPDATE(\s|\\[nrt])|DELETE(\s|\\[nrt])|WITH(\s|\\[nrt]))|MERGE(\s|\\[nrt])+INTO(\s|\\[nrt])|COPY(\s|\\[nrt])+([a-z_][a-z0-9_.]*(\s|\\[nrt])*(\(|FROM(\s|\\[nrt])|TO(\s|\\[nrt]))|([A-Za-z0-9_.]|\\"[^"\\%]+\\")+(\s|\\[nrt])*(\([^)]*\)(\s|\\[nrt])*)?(FROM|TO)(\s|\\[nrt])+((STDIN|STDOUT)((\s|\\[nrt])|;|\(|["`]$)|PROGRAM(\s|\\[nrt])|'')|([A-Za-z0-9_.]|\\"[^"\\%]+\\"|\\"%(\[[0-9]+\])?[sqv]\\"|%(\[[0-9]+\])?[sqv])+(\s|\\[nrt])*(\([^)]*\)(\s|\\[nrt])*)?(FROM|TO)(\s|\\[nrt])+((STDIN|STDOUT)((\s|\\[nrt])|;|\(|["`]$)|PROGRAM(\s|\\[nrt])+''|''[^''%]+''))|COPY(\s|\\[nrt])*\(((\s|\\[nrt])*(SELECT|WITH|VALUES|TABLE)\b|[^)]*\)(\s|\\[nrt])*TO(\s|\\[nrt])+((STDIN|STDOUT)((\s|\\[nrt])|;|\(|["`]$)|PROGRAM(\s|\\[nrt])+''|''[^''%]+''))|START(\s|\\[nrt])+TRANSACTION\b|SAVEPOINT(\s|\\[nrt])|RELEASE(\s|\\[nrt])+SAVEPOINT(\s|\\[nrt])|ROLLBACK(\s|\\[nrt])+TO(\s|\\[nrt])|(COMMIT|ROLLBACK)(\s|\\[nrt])+PREPARED(\s|\\[nrt])|PREPARE(\s|\\[nrt])+TRANSACTION(\s|\\[nrt])|CALL(\s|\\[nrt])+[a-z_][a-z0-9_.]*(\s|\\[nrt])*\(|REINDEX(\s|\\[nrt])+(\(|TABLE|INDEX|SCHEMA|DATABASE|SYSTEM)\b|REFRESH(\s|\\[nrt])+MATERIALIZED(\s|\\[nrt])|WITH(\s|\\[nrt])+(RECURSIVE(\s|\\[nrt])+)?[a-z_]+|LOCK(\s|\\[nrt])+TABLE(\s|\\[nrt])+(ONLY(\s|\\[nrt])+)?([A-Za-z0-9_.]|\\"[^"\\%]+\\"|\\"%(\[[0-9]+\])?[sqv]\\"|%(\[[0-9]+\])?[sqv])+((\s|\\[nrt])*\*)?((\s|\\[nrt])*,(\s|\\[nrt])*(ONLY(\s|\\[nrt])+)?([A-Za-z0-9_.]|\\"[^"\\%]+\\"|\\"%(\[[0-9]+\])?[sqv]\\"|%(\[[0-9]+\])?[sqv])+((\s|\\[nrt])*\*)?)*(\s|\\[nrt])*(NOWAIT\b|;|["`]$)|LOCK(\s|\\[nrt])+(ONLY(\s|\\[nrt])+)?([A-Za-z0-9_.]|\\"[^"\\%]+\\")+(\s|\\[nrt])+NOWAIT\b|SET(\s|\\[nrt])+(LOCAL|SESSION|ROLE)(\s|\\[nrt])|SET(\s|\\[nrt])+([a-z_][a-z0-9_.]*|[A-Z][a-z]+([A-Z][a-z]+)+)(\s|\\[nrt])*(=|TO(\s|\\[nrt]))|SET(\s|\\[nrt])+[A-Z][A-Z0-9]*(_[A-Z0-9]+)+((\s|\\[nrt])+TO(\s|\\[nrt])|(\s|\\[nrt])+=(\s|\\[nrt])*(''[^'']*''|\\?"[^"\\]*\\?"|[-+]?([0-9]+(\.[0-9]*)?|\.[0-9]+)|%[dsvq]|[A-Za-z_][A-Za-z0-9_$]*)((\s|\\[nrt])*,(\s|\\[nrt])*(''[^'']*''|\\?"[^"\\]*\\?"|[-+]?([0-9]+(\.[0-9]*)?|\.[0-9]+)|%[dsvq]|[A-Za-z_][A-Za-z0-9_$]*))*(\s|\\[nrt])*;?(\s|\\[nrt])*["`]$)|SET(\s|\\[nrt])+[A-Za-z][A-Za-z0-9_.]*((\s|\\[nrt])*=|(\s|\\[nrt])+TO)(\s|\\[nrt])*(''[^'']*''|DEFAULT)(\s|\\[nrt])*;?(\s|\\[nrt])*["`]$|SHOW(\s|\\[nrt])+(ALL|[a-z_][a-z0-9_]*[_.][a-z0-9_.]*)(\s|\\[nrt])*(;(\s|\\[nrt])*)?["`]$|COMMENT(\s|\\[nrt])+ON(\s|\\[nrt])+(TABLE|COLUMN|INDEX|SCHEMA|ROLE|FUNCTION|PROCEDURE|VIEW|MATERIALIZED(\s|\\[nrt])+VIEW|SEQUENCE|TYPE|DOMAIN|EXTENSION|TRIGGER|POLICY|DATABASE|CONSTRAINT)(\s|\\[nrt]))'
-          - kind: raw_string_literal
-            regex: '^["`](\s)*(\((\s)*)*(TRUNCATE\s+((TABLE|ONLY)\s+(ONLY\s+)?([A-Za-z0-9_.]|"[^"%]+"|"%(\[[0-9]+\])?[sqv]"|%(\[[0-9]+\])?[sqv])+(\s*\*)?\s*(,|;|RESTART\b|CONTINUE\b|CASCADE\b|RESTRICT\b|["`]$|%(\[[0-9]+\])?[sqv])|([A-Za-z0-9_.]|"[^"%]+"|"%(\[[0-9]+\])?[sqv]"|%(\[[0-9]+\])?[sqv])+(\s*\*)?\s*(,|;|RESTART\b|CONTINUE\b|CASCADE\b|RESTRICT\b|["`]$|%(\[[0-9]+\])?[sqv]))|LOCK\s+(TABLE\s+)?(ONLY\s+)?([A-Za-z0-9_.]|"[^"%]+"|"%(\[[0-9]+\])?[sqv]"|%(\[[0-9]+\])?[sqv])+(\s*\*)?(\s*,\s*(ONLY\s+)?([A-Za-z0-9_.]|"[^"%]+"|"%(\[[0-9]+\])?[sqv]"|%(\[[0-9]+\])?[sqv])+(\s*\*)?)*\s+IN\s+(ACCESS\s+SHARE|ROW\s+SHARE|ROW\s+EXCLUSIVE|SHARE\s+UPDATE\s+EXCLUSIVE|SHARE\s+ROW\s+EXCLUSIVE|SHARE|EXCLUSIVE|ACCESS\s+EXCLUSIVE)\s+MODE\b|(ANALYZE|VACUUM)\s+\([^)]*\)\s*([A-Za-z0-9_.]|"[^"%]+"|"%(\[[0-9]+\])?[sqv]"|%(\[[0-9]+\])?[sqv])+\s*(\(|,|;|["`]$|%(\[[0-9]+\])?[sqv])|CALL\s+([A-Za-z0-9_.]|"[^"%]+"|"%(\[[0-9]+\])?[sqv]"|%(\[[0-9]+\])?[sqv])+\s*\(\s*\$[0-9]|SELECT([\s(*])|INSERT\s+INTO\s|UPDATE\s+(ONLY\s+)?([A-Za-z0-9_.]|"[^"%]+"|"%(\[[0-9]+\])?[sqv]"|%(\[[0-9]+\])?[sqv])+(\s+(AS\s+)?[a-z_][a-z0-9_]*)?\s+SET\s|DELETE\s+FROM\s|(DROP|REASSIGN)\s+OWNED\s+BY\s|TABLE\s+(ONLY\s+)?[a-z_][a-z0-9_.]*\s*["`;]|(CREATE(\s+OR\s+REPLACE)?(\s+(UNIQUE|TEMP|TEMPORARY|UNLOGGED|MATERIALIZED))*|ALTER|DROP)\s+(TABLE|INDEX|VIEW|FUNCTION|PROCEDURE|SCHEMA|ROLE|USER|SEQUENCE|TYPE|DOMAIN|EXTENSION|TRIGGER|POLICY|PUBLICATION|SUBSCRIPTION|DATABASE|DEFAULT|SYSTEM|EVENT|AGGREGATE|COLLATION|OPERATOR|RULE|SERVER|STATISTICS)\b|TRUNCATE\s+(TABLE\s+|ONLY\s+)?[a-z_][a-z0-9_.]*\s*(["`;,(]|RESTART|CASCADE|CONTINUE)|DO\s+(\$|LANGUAGE\s)|VALUES\s*\(|(ANALYZE|VACUUM)(\s+\([^)]*\)|\s+VERBOSE)?\s+[a-z_][a-z0-9_.]*\s*["`;,(]|(GRANT|REVOKE)\s+(SELECT|INSERT|UPDATE|DELETE|TRUNCATE|REFERENCES|TRIGGER|USAGE|EXECUTE|ALL|CONNECT|CREATE|TEMPORARY|TEMP|MAINTAIN|SET)\b|RESET\s+(ALL|ROLE|SESSION\s+AUTHORIZATION|[a-z_][a-z0-9_]*[_.][a-z0-9_.]*)(\s)*(;(\s)*)?["`]$|DISCARD\s+(ALL|PLANS|SEQUENCES|TEMP|TEMPORARY)\b|(NOTIFY|LISTEN|UNLISTEN)\s+([a-z_][a-z0-9_]*|\*)\s*["`;,(]|EXPLAIN\s+(\(|ANALYZE\s|VERBOSE\s|SELECT\s|INSERT\s|UPDATE\s|DELETE\s|WITH\s)|MERGE\s+INTO\s|COPY\s+([a-z_][a-z0-9_.]*\s*(\(|FROM\s|TO\s)|([A-Za-z0-9_.]|"[^"%]+")+\s*(\([^)]*\)\s*)?(FROM|TO)\s+((STDIN|STDOUT)(\s|;|\(|["`]$)|PROGRAM\s|'')|([A-Za-z0-9_.]|"[^"%]+"|"%(\[[0-9]+\])?[sqv]"|%(\[[0-9]+\])?[sqv])+\s*(\([^)]*\)\s*)?(FROM|TO)\s+((STDIN|STDOUT)(\s|;|\(|["`]$)|PROGRAM\s+''|''[^''%]+''))|COPY\s*\((\s*(SELECT|WITH|VALUES|TABLE)\b|[^)]*\)\s*TO\s+((STDIN|STDOUT)(\s|;|\(|["`]$)|PROGRAM\s+''|''[^''%]+''))|START\s+TRANSACTION\b|SAVEPOINT\s|RELEASE\s+SAVEPOINT\s|ROLLBACK\s+TO\s|(COMMIT|ROLLBACK)\s+PREPARED\s|PREPARE\s+TRANSACTION\s|CALL\s+[a-z_][a-z0-9_.]*\s*\(|REINDEX\s+(\(|TABLE|INDEX|SCHEMA|DATABASE|SYSTEM)\b|REFRESH\s+MATERIALIZED\s|WITH\s+(RECURSIVE\s+)?[a-z_]+|LOCK\s+TABLE\s+(ONLY\s+)?([A-Za-z0-9_.]|"[^"%]+"|"%(\[[0-9]+\])?[sqv]"|%(\[[0-9]+\])?[sqv])+(\s*\*)?(\s*,\s*(ONLY\s+)?([A-Za-z0-9_.]|"[^"%]+"|"%(\[[0-9]+\])?[sqv]"|%(\[[0-9]+\])?[sqv])+(\s*\*)?)*\s*(NOWAIT\b|;|["`]$)|LOCK\s+(ONLY\s+)?([A-Za-z0-9_.]|"[^"%]+")+\s+NOWAIT\b|SET\s+(LOCAL|SESSION|ROLE)\s|SET\s+([a-z_][a-z0-9_.]*|[A-Z][a-z]+([A-Z][a-z]+)+)\s*(=|TO\s)|SET\s+[A-Z][A-Z0-9]*(_[A-Z0-9]+)+(\s+TO\s|\s+=\s*(''[^'']*''|\\?"[^"\\]*\\?"|[-+]?([0-9]+(\.[0-9]*)?|\.[0-9]+)|%[dsvq]|[A-Za-z_][A-Za-z0-9_$]*)(\s*,\s*(''[^'']*''|\\?"[^"\\]*\\?"|[-+]?([0-9]+(\.[0-9]*)?|\.[0-9]+)|%[dsvq]|[A-Za-z_][A-Za-z0-9_$]*))*(\s)*;?(\s)*["`]$)|SET\s+[A-Za-z][A-Za-z0-9_.]*(\s*=|\s+TO)\s*(''[^'']*''|DEFAULT)(\s)*;?(\s)*["`]$|SHOW\s+(ALL|[a-z_][a-z0-9_]*[_.][a-z0-9_.]*)(\s)*(;(\s)*)?["`]$|COMMENT\s+ON\s+(TABLE|COLUMN|INDEX|SCHEMA|ROLE|FUNCTION|PROCEDURE|VIEW|MATERIALIZED\s+VIEW|SEQUENCE|TYPE|DOMAIN|EXTENSION|TRIGGER|POLICY|DATABASE|CONSTRAINT)\s)'
-      - all:
-          - matches: string-literal
-          - any:
-              - matches: sql-argument
-              - not:
-                  regex: '^["`](\s|\\[nrt])*["`]$'
-                inside:
-                  stopBy:
-                    not:
-                      matches: sql-builder-path
-                  all:
-                    - matches: sql-builder
-                    - matches: sql-argument
-      - all:
-          - any:
-              - kind: interpreted_string_literal
-                regex: '(?i)^["`](\s|\\[nrt])*(\((\s|\\[nrt])*)*((BEGIN|COMMIT|END|ROLLBACK|ABORT|CHECKPOINT|ANALYZE|VACUUM)(\s|\\[nrt])*(;(\s|\\[nrt])*)?["`]$|SELECT([\s(*]|\\[nrt])|INSERT(\s|\\[nrt])+INTO(\s|\\[nrt])|UPDATE(\s|\\[nrt])+(ONLY(\s|\\[nrt])+)?([A-Za-z0-9_.]|\\"[^"\\%]+\\"|\\"%(\[[0-9]+\])?[sqv]\\"|%(\[[0-9]+\])?[sqv])+((\s|\\[nrt])+(AS(\s|\\[nrt])+)?[a-z_][a-z0-9_]*)?(\s|\\[nrt])+SET(\s|\\[nrt])|DELETE(\s|\\[nrt])+FROM(\s|\\[nrt])|(DROP|REASSIGN)(\s|\\[nrt])+OWNED(\s|\\[nrt])+BY(\s|\\[nrt])|TABLE(\s|\\[nrt])+(ONLY(\s|\\[nrt])+)?([A-Za-z0-9_.]|\\"[^"\\%]+\\"|\\"%(\[[0-9]+\])?[sqv]\\"|%(\[[0-9]+\])?[sqv])+(\s|\\[nrt])*["`;]|COMMENT(\s|\\[nrt])+ON(\s|\\[nrt])|(CREATE((\s|\\[nrt])+OR(\s|\\[nrt])+REPLACE)?((\s|\\[nrt])+(UNIQUE|TEMP|TEMPORARY|UNLOGGED|MATERIALIZED))*|ALTER|DROP)(\s|\\[nrt])+(TABLE|INDEX|VIEW|FUNCTION|PROCEDURE|SCHEMA|ROLE|USER|SEQUENCE|TYPE|DOMAIN|EXTENSION|TRIGGER|POLICY|PUBLICATION|SUBSCRIPTION|DATABASE|DEFAULT|SYSTEM|EVENT|AGGREGATE|COLLATION|OPERATOR|RULE|SERVER|STATISTICS)\b|TRUNCATE(\s|\\[nrt])+(TABLE(\s|\\[nrt])+|ONLY(\s|\\[nrt])+)?([A-Za-z0-9_.]|\\"[^"\\%]+\\"|\\"%(\[[0-9]+\])?[sqv]\\"|%(\[[0-9]+\])?[sqv])+(\s|\\[nrt])*(["`;,(]|RESTART|CASCADE|CONTINUE)|DO(\s|\\[nrt])+(\$|LANGUAGE(\s|\\[nrt]))|VALUES(\s|\\[nrt])*\(|(ANALYZE|VACUUM)((\s|\\[nrt])+\([^)]*\)|(\s|\\[nrt])+VERBOSE)?(\s|\\[nrt])+([A-Za-z0-9_.]|\\"[^"\\%]+\\"|\\"%(\[[0-9]+\])?[sqv]\\"|%(\[[0-9]+\])?[sqv])+(\s|\\[nrt])*["`;,(]|(GRANT|REVOKE)(\s|\\[nrt])+(SELECT|INSERT|UPDATE|DELETE|TRUNCATE|REFERENCES|TRIGGER|USAGE|EXECUTE|ALL|CONNECT|CREATE|TEMPORARY|TEMP|MAINTAIN|SET)\b|RESET(\s|\\[nrt])+(ALL|ROLE|SESSION(\s|\\[nrt])+AUTHORIZATION|[a-z_][a-z0-9_]*[_.][a-z0-9_.]*)(\s|\\[nrt])*(;(\s|\\[nrt])*)?["`]$|DISCARD(\s|\\[nrt])+(ALL|PLANS|SEQUENCES|TEMP|TEMPORARY)\b|(NOTIFY|LISTEN|UNLISTEN)(\s|\\[nrt])+(([a-z_]|%(\[[0-9]+\])?[sqv])([a-z0-9_]|%(\[[0-9]+\])?[sqv])*|\*)(\s|\\[nrt])*["`;,(]|EXPLAIN(\s|\\[nrt])+(\(|ANALYZE(\s|\\[nrt])|VERBOSE(\s|\\[nrt])|SELECT(\s|\\[nrt])|INSERT(\s|\\[nrt])|UPDATE(\s|\\[nrt])|DELETE(\s|\\[nrt])|WITH(\s|\\[nrt]))|MERGE(\s|\\[nrt])+INTO(\s|\\[nrt])|COPY(\s|\\[nrt])+([A-Za-z0-9_.]|\\"[^"\\%]+\\"|\\"%(\[[0-9]+\])?[sqv]\\"|%(\[[0-9]+\])?[sqv])+(\s|\\[nrt])*(\(|FROM(\s|\\[nrt])|TO(\s|\\[nrt]))|START(\s|\\[nrt])+TRANSACTION\b|SAVEPOINT(\s|\\[nrt])|RELEASE(\s|\\[nrt])+SAVEPOINT(\s|\\[nrt])|ROLLBACK(\s|\\[nrt])+TO(\s|\\[nrt])|(COMMIT|ROLLBACK)(\s|\\[nrt])+PREPARED(\s|\\[nrt])|PREPARE(\s|\\[nrt])+TRANSACTION(\s|\\[nrt])|CALL(\s|\\[nrt])+([A-Za-z0-9_.]|\\"[^"\\%]+\\"|\\"%(\[[0-9]+\])?[sqv]\\"|%(\[[0-9]+\])?[sqv])+(\s|\\[nrt])*\(|REINDEX(\s|\\[nrt])+(\(|TABLE|INDEX|SCHEMA|DATABASE|SYSTEM)\b|REFRESH(\s|\\[nrt])+MATERIALIZED(\s|\\[nrt])|WITH(\s|\\[nrt])+(RECURSIVE(\s|\\[nrt])+)?[a-z_][a-z0-9_]*(\s|\\[nrt])*(\([^)]*\)(\s|\\[nrt])*)?AS((\s|\\[nrt])|\()|(BEGIN|START)(\s|\\[nrt])+(TRANSACTION|WORK|ISOLATION|READ)\b|(COMMIT|END|ROLLBACK|ABORT)(\s|\\[nrt])+(WORK|TRANSACTION|AND(\s|\\[nrt]))|(SAVEPOINT|RELEASE((\s|\\[nrt])+SAVEPOINT)?)(\s|\\[nrt])+[a-z_][a-z0-9_]*(\s|\\[nrt])*(;(\s|\\[nrt])*)?["`]$|SET(\s|\\[nrt])+(LOCAL(\s|\\[nrt])+|SESSION(\s|\\[nrt])+)?([a-z_][a-z0-9_.]*(\s|\\[nrt])*(=|TO(\s|\\[nrt]))|ROLE(\s|\\[nrt])|SESSION(\s|\\[nrt])+AUTHORIZATION(\s|\\[nrt])|TRANSACTION(\s|\\[nrt])|CONSTRAINTS(\s|\\[nrt])|TIME(\s|\\[nrt])+ZONE(\s|\\[nrt])|SCHEMA(\s|\\[nrt])|NAMES(\s|\\[nrt]))|SHOW(\s|\\[nrt])+(ALL|[a-z_][a-z0-9_.]*)(\s|\\[nrt])*(;(\s|\\[nrt])*)?["`]$|LOCK(\s|\\[nrt])+(TABLE(\s|\\[nrt])+)?(ONLY(\s|\\[nrt])+)?([A-Za-z0-9_.]|\\"[^"\\%]+\\"|\\"%(\[[0-9]+\])?[sqv]\\"|%(\[[0-9]+\])?[sqv])+(\s|\\[nrt])*(IN(\s|\\[nrt])|NOWAIT|;|["`]$)|DEALLOCATE(\s|\\[nrt])+(PREPARE(\s|\\[nrt])+)?ALL\b|PREPARE(\s|\\[nrt])+[a-z_][a-z0-9_]*(\s|\\[nrt])*(\([^)]*\)(\s|\\[nrt])*)?AS(\s|\\[nrt])|DECLARE(\s|\\[nrt])+[a-z_][a-z0-9_]*(\s|\\[nrt])+(BINARY(\s|\\[nrt])+|(A|IN)SENSITIVE(\s|\\[nrt])+|(NO(\s|\\[nrt])+)?SCROLL(\s|\\[nrt])+)*CURSOR\b)'
-              - kind: raw_string_literal
-                regex: '(?i)^["`](\s)*(\((\s)*)*((BEGIN|COMMIT|END|ROLLBACK|ABORT|CHECKPOINT|ANALYZE|VACUUM)(\s)*(;(\s)*)?["`]$|SELECT([\s(*])|INSERT\s+INTO\s|UPDATE\s+(ONLY\s+)?([A-Za-z0-9_.]|"[^"%]+"|"%(\[[0-9]+\])?[sqv]"|%(\[[0-9]+\])?[sqv])+(\s+(AS\s+)?[a-z_][a-z0-9_]*)?\s+SET\s|DELETE\s+FROM\s|(DROP|REASSIGN)\s+OWNED\s+BY\s|TABLE\s+(ONLY\s+)?([A-Za-z0-9_.]|"[^"%]+"|"%(\[[0-9]+\])?[sqv]"|%(\[[0-9]+\])?[sqv])+\s*["`;]|COMMENT\s+ON\s|(CREATE(\s+OR\s+REPLACE)?(\s+(UNIQUE|TEMP|TEMPORARY|UNLOGGED|MATERIALIZED))*|ALTER|DROP)\s+(TABLE|INDEX|VIEW|FUNCTION|PROCEDURE|SCHEMA|ROLE|USER|SEQUENCE|TYPE|DOMAIN|EXTENSION|TRIGGER|POLICY|PUBLICATION|SUBSCRIPTION|DATABASE|DEFAULT|SYSTEM|EVENT|AGGREGATE|COLLATION|OPERATOR|RULE|SERVER|STATISTICS)\b|TRUNCATE\s+(TABLE\s+|ONLY\s+)?([A-Za-z0-9_.]|"[^"%]+"|"%(\[[0-9]+\])?[sqv]"|%(\[[0-9]+\])?[sqv])+\s*(["`;,(]|RESTART|CASCADE|CONTINUE)|DO\s+(\$|LANGUAGE\s)|VALUES\s*\(|(ANALYZE|VACUUM)(\s+\([^)]*\)|\s+VERBOSE)?\s+([A-Za-z0-9_.]|"[^"%]+"|"%(\[[0-9]+\])?[sqv]"|%(\[[0-9]+\])?[sqv])+\s*["`;,(]|(GRANT|REVOKE)\s+(SELECT|INSERT|UPDATE|DELETE|TRUNCATE|REFERENCES|TRIGGER|USAGE|EXECUTE|ALL|CONNECT|CREATE|TEMPORARY|TEMP|MAINTAIN|SET)\b|RESET\s+(ALL|ROLE|SESSION\s+AUTHORIZATION|[a-z_][a-z0-9_]*[_.][a-z0-9_.]*)(\s)*(;(\s)*)?["`]$|DISCARD\s+(ALL|PLANS|SEQUENCES|TEMP|TEMPORARY)\b|(NOTIFY|LISTEN|UNLISTEN)\s+(([a-z_]|%(\[[0-9]+\])?[sqv])([a-z0-9_]|%(\[[0-9]+\])?[sqv])*|\*)\s*["`;,(]|EXPLAIN\s+(\(|ANALYZE\s|VERBOSE\s|SELECT\s|INSERT\s|UPDATE\s|DELETE\s|WITH\s)|MERGE\s+INTO\s|COPY\s+([A-Za-z0-9_.]|"[^"%]+"|"%(\[[0-9]+\])?[sqv]"|%(\[[0-9]+\])?[sqv])+\s*(\(|FROM\s|TO\s)|START\s+TRANSACTION\b|SAVEPOINT\s|RELEASE\s+SAVEPOINT\s|ROLLBACK\s+TO\s|(COMMIT|ROLLBACK)\s+PREPARED\s|PREPARE\s+TRANSACTION\s|CALL\s+([A-Za-z0-9_.]|"[^"%]+"|"%(\[[0-9]+\])?[sqv]"|%(\[[0-9]+\])?[sqv])+\s*\(|REINDEX\s+(\(|TABLE|INDEX|SCHEMA|DATABASE|SYSTEM)\b|REFRESH\s+MATERIALIZED\s|WITH\s+(RECURSIVE\s+)?[a-z_][a-z0-9_]*\s*(\([^)]*\)\s*)?AS(\s|\()|(BEGIN|START)\s+(TRANSACTION|WORK|ISOLATION|READ)\b|(COMMIT|END|ROLLBACK|ABORT)\s+(WORK|TRANSACTION|AND\s)|(SAVEPOINT|RELEASE(\s+SAVEPOINT)?)\s+[a-z_][a-z0-9_]*(\s)*(;(\s)*)?["`]$|SET\s+(LOCAL\s+|SESSION\s+)?([a-z_][a-z0-9_.]*\s*(=|TO\s)|ROLE\s|SESSION\s+AUTHORIZATION\s|TRANSACTION\s|CONSTRAINTS\s|TIME\s+ZONE\s|SCHEMA\s|NAMES\s)|SHOW\s+(ALL|[a-z_][a-z0-9_.]*)(\s)*(;(\s)*)?["`]$|LOCK\s+(TABLE\s+)?(ONLY\s+)?([A-Za-z0-9_.]|"[^"%]+"|"%(\[[0-9]+\])?[sqv]"|%(\[[0-9]+\])?[sqv])+\s*(IN\s|NOWAIT|;|["`]$)|DEALLOCATE\s+(PREPARE\s+)?ALL\b|PREPARE\s+[a-z_][a-z0-9_]*\s*(\([^)]*\)\s*)?AS\s|DECLARE\s+[a-z_][a-z0-9_]*\s+(BINARY\s+|(A|IN)SENSITIVE\s+|(NO\s+)?SCROLL\s+)*CURSOR\b)'
-          - any:
-              - matches: weak-sql-argument
-              - not:
-                  regex: '^["`](\s|\\[nrt])*["`]$'
-                inside:
-                  stopBy:
-                    not:
-                      matches: sql-builder-path
-                  all:
-                    - matches: sql-builder
-                    - matches: weak-sql-argument
-      - all:
-          - matches: string-literal
-          - not:
-              regex: '^["`](\s|\\[nrt])*["`]$'
-          - any:
-              - matches: sql-plain-named-binding
-              - inside:
-                  stopBy:
-                    not:
-                      matches: sql-binding-path
-                  all:
-                    - any:
-                        - matches: sql-text-builder
-                        - matches: sql-text-transform
-                        - kind: composite_literal
-                        - kind: parenthesized_expression
-                    - matches: sql-plain-named-binding
+                            matches: sql-binding-path
+                        all:
+                          - any:
+                              - matches: sql-text-builder
+                              - matches: sql-text-transform
+                              - kind: composite_literal
+                              - kind: parenthesized_expression
+                          - matches: sql-plain-named-binding
+    - any:
+        - kind: interpreted_string_literal
+          regex: '^["`](\s|\\[nrt])*(\((\s|\\[nrt])*)*(TRUNCATE(\s|\\[nrt])+((TABLE|ONLY)(\s|\\[nrt])+(ONLY(\s|\\[nrt])+)?([a-z_0-9.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*((\s|\\[nrt])*\*)?(\s|\\[nrt])*(,|;|RESTART\b|CONTINUE\b|CASCADE\b|RESTRICT\b|["`]$|%(\[[0-9]+\])?[sqv](\s|\\[nrt])*(;|["`]$))|([a-z_0-9.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*((\s|\\[nrt])*\*)?(\s|\\[nrt])*(,|;|RESTART\b|CONTINUE\b|CASCADE\b|RESTRICT\b|["`]$|%(\[[0-9]+\])?[sqv](\s|\\[nrt])*(;|["`]$)))|LOCK(\s|\\[nrt])+(TABLE(\s|\\[nrt])+)?(ONLY(\s|\\[nrt])+)?([a-z_0-9.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*((\s|\\[nrt])*\*)?((\s|\\[nrt])*,(\s|\\[nrt])*(ONLY(\s|\\[nrt])+)?([a-z_0-9.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*((\s|\\[nrt])*\*)?)*(\s|\\[nrt])+(?i:IN)(\s|\\[nrt])+((?i:ACCESS(\s|\\[nrt])+SHARE|ROW(\s|\\[nrt])+SHARE|ROW(\s|\\[nrt])+EXCLUSIVE|SHARE(\s|\\[nrt])+UPDATE(\s|\\[nrt])+EXCLUSIVE|SHARE(\s|\\[nrt])+ROW(\s|\\[nrt])+EXCLUSIVE|SHARE|EXCLUSIVE|ACCESS(\s|\\[nrt])+EXCLUSIVE)|%(\[[0-9]+\])?[sqv])(\s|\\[nrt])+(?i:MODE)\b|(ANALYZE|VACUUM)(\s|\\[nrt])+(\([^)]*\)(\s|\\[nrt])*([a-z_0-9.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*(\s|\\[nrt])*(\(|,|;|["`]$|%(\[[0-9]+\])?[sqv](\s|\\[nrt])*(;|["`]$))|([a-z_0-9.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*(\s|\\[nrt])*(\(|,|;|%(\[[0-9]+\])?[sqv](\s|\\[nrt])*(;|["`]$)))|CALL(\s|\\[nrt])+([a-z_0-9.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*(\s|\\[nrt])*\((\s|\\[nrt])*\$[0-9]|SELECT([\s(*]|\\[nrt])|INSERT(\s|\\[nrt])+INTO(\s|\\[nrt])|UPDATE(\s|\\[nrt])+(ONLY(\s|\\[nrt])+)?([a-z_0-9.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*((\s|\\[nrt])+(AS(\s|\\[nrt])+)?[a-z_][a-z0-9_]*)?(\s|\\[nrt])+SET(\s|\\[nrt])|DELETE(\s|\\[nrt])+FROM(\s|\\[nrt])|(DROP|REASSIGN)(\s|\\[nrt])+OWNED(\s|\\[nrt])+BY(\s|\\[nrt])|TABLE(\s|\\[nrt])+(ONLY(\s|\\[nrt])+)?[a-z_][a-z0-9_.]*(\s|\\[nrt])*["`;]|(CREATE((\s|\\[nrt])+OR(\s|\\[nrt])+REPLACE)?((\s|\\[nrt])+(UNIQUE|TEMP|TEMPORARY|UNLOGGED|MATERIALIZED))*|ALTER|DROP)(\s|\\[nrt])+(TABLE|INDEX|VIEW|FUNCTION|PROCEDURE|SCHEMA|ROLE|USER|SEQUENCE|TYPE|DOMAIN|EXTENSION|TRIGGER|POLICY|PUBLICATION|SUBSCRIPTION|DATABASE|DEFAULT|SYSTEM|EVENT|AGGREGATE|COLLATION|OPERATOR|RULE|SERVER|STATISTICS)\b|TRUNCATE(\s|\\[nrt])+(TABLE(\s|\\[nrt])+|ONLY(\s|\\[nrt])+)?[a-z_][a-z0-9_.]*(\s|\\[nrt])*(["`;,(]|RESTART|CASCADE|CONTINUE)|DO(\s|\\[nrt])+(\$|LANGUAGE(\s|\\[nrt]))|VALUES(\s|\\[nrt])*\(|(ANALYZE|VACUUM)((\s|\\[nrt])+\([^)]*\)|(\s|\\[nrt])+VERBOSE)?(\s|\\[nrt])+[a-z_][a-z0-9_.]*(\s|\\[nrt])*["`;,(]|(GRANT|REVOKE)(\s|\\[nrt])+(SELECT|INSERT|UPDATE|DELETE|TRUNCATE|REFERENCES|TRIGGER|USAGE|EXECUTE|ALL|CONNECT|CREATE|TEMPORARY|TEMP|MAINTAIN|SET)\b|RESET(\s|\\[nrt])+(ALL|ROLE|SESSION(\s|\\[nrt])+AUTHORIZATION|[a-z_][a-z0-9_]*[_.][a-z0-9_.]*)(\s|\\[nrt])*(;(\s|\\[nrt])*)?["`]$|DISCARD(\s|\\[nrt])+(ALL|PLANS|SEQUENCES|TEMP|TEMPORARY)\b|(NOTIFY|LISTEN|UNLISTEN)(\s|\\[nrt])+([a-z_][a-z0-9_]*|\*)(\s|\\[nrt])*["`;,(]|EXPLAIN(\s|\\[nrt])+(\(|ANALYZE(\s|\\[nrt])|VERBOSE(\s|\\[nrt])|SELECT(\s|\\[nrt])|INSERT(\s|\\[nrt])|UPDATE(\s|\\[nrt])|DELETE(\s|\\[nrt])|WITH(\s|\\[nrt]))|MERGE(\s|\\[nrt])+INTO(\s|\\[nrt])|COPY(\s|\\[nrt])+([a-z_][a-z0-9_.]*(\s|\\[nrt])*(\(|FROM(\s|\\[nrt])|TO(\s|\\[nrt]))|([a-z_0-9.]|\\"[^"\\%]+\\")([A-Za-z0-9_.]|\\"[^"\\%]+\\")*(\s|\\[nrt])*(\([^)]*\)(\s|\\[nrt])*)?(FROM|TO)(\s|\\[nrt])+((STDIN|STDOUT)((\s|\\[nrt])|;|\(|["`]$)|PROGRAM(\s|\\[nrt])|'')|([a-z_0-9.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*(\s|\\[nrt])*(\([^)]*\)(\s|\\[nrt])*)?(FROM|TO)(\s|\\[nrt])+((STDIN|STDOUT)((\s|\\[nrt])|;|\(|["`]$)|PROGRAM(\s|\\[nrt])+''|''[^''%]+''))|COPY(\s|\\[nrt])*\(((\s|\\[nrt])*(?i:SELECT|WITH|VALUES|TABLE)\b|([^()]|\([^()]*\))*\)(\s|\\[nrt])*TO(\s|\\[nrt])+((STDIN|STDOUT)((\s|\\[nrt])|;|\(|["`]$)|PROGRAM(\s|\\[nrt])+''|''[^''%]+''))|START(\s|\\[nrt])+TRANSACTION\b|SAVEPOINT(\s|\\[nrt])|RELEASE(\s|\\[nrt])+SAVEPOINT(\s|\\[nrt])|ROLLBACK(\s|\\[nrt])+TO(\s|\\[nrt])|(COMMIT|ROLLBACK)(\s|\\[nrt])+PREPARED(\s|\\[nrt])|PREPARE(\s|\\[nrt])+TRANSACTION(\s|\\[nrt])|CALL(\s|\\[nrt])+[a-z_][a-z0-9_.]*(\s|\\[nrt])*\(|REINDEX(\s|\\[nrt])+(\(|TABLE|INDEX|SCHEMA|DATABASE|SYSTEM)\b|REFRESH(\s|\\[nrt])+MATERIALIZED(\s|\\[nrt])|WITH(\s|\\[nrt])+(RECURSIVE(\s|\\[nrt])+)?[a-z_]+|LOCK(\s|\\[nrt])+TABLE(\s|\\[nrt])+(ONLY(\s|\\[nrt])+)?["`]$|LOCK(\s|\\[nrt])+TABLE(\s|\\[nrt])+(ONLY(\s|\\[nrt])+)?([a-z_0-9.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*((\s|\\[nrt])*\*)?((\s|\\[nrt])*,(\s|\\[nrt])*(ONLY(\s|\\[nrt])+)?([a-z_0-9.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*((\s|\\[nrt])*\*)?)*(\s|\\[nrt])*((?i:NOWAIT)\b|;|["`]$)|LOCK(\s|\\[nrt])+(ONLY(\s|\\[nrt])+)?([a-z_0-9.]|\\"[^"\\%]+\\")([A-Za-z0-9_.]|\\"[^"\\%]+\\")*(\s|\\[nrt])+(?i:NOWAIT)\b|SET(\s|\\[nrt])+(LOCAL|SESSION|ROLE)(\s|\\[nrt])|SET(\s|\\[nrt])+([a-z_][a-z0-9_.]*|[A-Z][a-z]+([A-Z][a-z]+)+)(\s|\\[nrt])*(=|TO(\s|\\[nrt]))|SET(\s|\\[nrt])+[A-Z][A-Z0-9]*(_[A-Z0-9]+)+((\s|\\[nrt])+TO(\s|\\[nrt])|(\s|\\[nrt])+=(\s|\\[nrt])*(''[^'']*''|\\?"[^"\\]*\\?"|[-+]?([0-9]+(\.[0-9]*)?|\.[0-9]+)|%[dsvq]|[A-Za-z_][A-Za-z0-9_$]*)((\s|\\[nrt])*,(\s|\\[nrt])*(''[^'']*''|\\?"[^"\\]*\\?"|[-+]?([0-9]+(\.[0-9]*)?|\.[0-9]+)|%[dsvq]|[A-Za-z_][A-Za-z0-9_$]*))*(\s|\\[nrt])*;?(\s|\\[nrt])*["`]$)|SET(\s|\\[nrt])+[A-Za-z][A-Za-z0-9_.]*((\s|\\[nrt])*=|(\s|\\[nrt])+TO)(\s|\\[nrt])*(''[^'']*''|DEFAULT)(\s|\\[nrt])*;?(\s|\\[nrt])*["`]$|SHOW(\s|\\[nrt])+(ALL|[a-z_][a-z0-9_]*[_.][a-z0-9_.]*)(\s|\\[nrt])*(;(\s|\\[nrt])*)?["`]$|COMMENT(\s|\\[nrt])+ON(\s|\\[nrt])+(TABLE|COLUMN|INDEX|SCHEMA|ROLE|FUNCTION|PROCEDURE|VIEW|MATERIALIZED(\s|\\[nrt])+VIEW|SEQUENCE|TYPE|DOMAIN|EXTENSION|TRIGGER|POLICY|DATABASE|CONSTRAINT)(\s|\\[nrt]))'
+        - kind: raw_string_literal
+          regex: '^["`](\s)*(\((\s)*)*(TRUNCATE\s+((TABLE|ONLY)\s+(ONLY\s+)?([a-z_0-9.]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*(\s*\*)?\s*(,|;|RESTART\b|CONTINUE\b|CASCADE\b|RESTRICT\b|["`]$|%(\[[0-9]+\])?[sqv]\s*(;|["`]$))|([a-z_0-9.]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*(\s*\*)?\s*(,|;|RESTART\b|CONTINUE\b|CASCADE\b|RESTRICT\b|["`]$|%(\[[0-9]+\])?[sqv]\s*(;|["`]$)))|LOCK\s+(TABLE\s+)?(ONLY\s+)?([a-z_0-9.]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*(\s*\*)?(\s*,\s*(ONLY\s+)?([a-z_0-9.]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*(\s*\*)?)*\s+(?i:IN)\s+((?i:ACCESS\s+SHARE|ROW\s+SHARE|ROW\s+EXCLUSIVE|SHARE\s+UPDATE\s+EXCLUSIVE|SHARE\s+ROW\s+EXCLUSIVE|SHARE|EXCLUSIVE|ACCESS\s+EXCLUSIVE)|%(\[[0-9]+\])?[sqv])\s+(?i:MODE)\b|(ANALYZE|VACUUM)\s+(\([^)]*\)\s*([a-z_0-9.]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*\s*(\(|,|;|["`]$|%(\[[0-9]+\])?[sqv]\s*(;|["`]$))|([a-z_0-9.]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*\s*(\(|,|;|%(\[[0-9]+\])?[sqv]\s*(;|["`]$)))|CALL\s+([a-z_0-9.]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*\s*\(\s*\$[0-9]|SELECT([\s(*])|INSERT\s+INTO\s|UPDATE\s+(ONLY\s+)?([a-z_0-9.]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*(\s+(AS\s+)?[a-z_][a-z0-9_]*)?\s+SET\s|DELETE\s+FROM\s|(DROP|REASSIGN)\s+OWNED\s+BY\s|TABLE\s+(ONLY\s+)?[a-z_][a-z0-9_.]*\s*["`;]|(CREATE(\s+OR\s+REPLACE)?(\s+(UNIQUE|TEMP|TEMPORARY|UNLOGGED|MATERIALIZED))*|ALTER|DROP)\s+(TABLE|INDEX|VIEW|FUNCTION|PROCEDURE|SCHEMA|ROLE|USER|SEQUENCE|TYPE|DOMAIN|EXTENSION|TRIGGER|POLICY|PUBLICATION|SUBSCRIPTION|DATABASE|DEFAULT|SYSTEM|EVENT|AGGREGATE|COLLATION|OPERATOR|RULE|SERVER|STATISTICS)\b|TRUNCATE\s+(TABLE\s+|ONLY\s+)?[a-z_][a-z0-9_.]*\s*(["`;,(]|RESTART|CASCADE|CONTINUE)|DO\s+(\$|LANGUAGE\s)|VALUES\s*\(|(ANALYZE|VACUUM)(\s+\([^)]*\)|\s+VERBOSE)?\s+[a-z_][a-z0-9_.]*\s*["`;,(]|(GRANT|REVOKE)\s+(SELECT|INSERT|UPDATE|DELETE|TRUNCATE|REFERENCES|TRIGGER|USAGE|EXECUTE|ALL|CONNECT|CREATE|TEMPORARY|TEMP|MAINTAIN|SET)\b|RESET\s+(ALL|ROLE|SESSION\s+AUTHORIZATION|[a-z_][a-z0-9_]*[_.][a-z0-9_.]*)(\s)*(;(\s)*)?["`]$|DISCARD\s+(ALL|PLANS|SEQUENCES|TEMP|TEMPORARY)\b|(NOTIFY|LISTEN|UNLISTEN)\s+([a-z_][a-z0-9_]*|\*)\s*["`;,(]|EXPLAIN\s+(\(|ANALYZE\s|VERBOSE\s|SELECT\s|INSERT\s|UPDATE\s|DELETE\s|WITH\s)|MERGE\s+INTO\s|COPY\s+([a-z_][a-z0-9_.]*\s*(\(|FROM\s|TO\s)|([a-z_0-9.]|"[^"%]+")([A-Za-z0-9_.]|"[^"%]+")*\s*(\([^)]*\)\s*)?(FROM|TO)\s+((STDIN|STDOUT)(\s|;|\(|["`]$)|PROGRAM\s|'')|([a-z_0-9.]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*\s*(\([^)]*\)\s*)?(FROM|TO)\s+((STDIN|STDOUT)(\s|;|\(|["`]$)|PROGRAM\s+''|''[^''%]+''))|COPY\s*\((\s*(?i:SELECT|WITH|VALUES|TABLE)\b|([^()]|\([^()]*\))*\)\s*TO\s+((STDIN|STDOUT)(\s|;|\(|["`]$)|PROGRAM\s+''|''[^''%]+''))|START\s+TRANSACTION\b|SAVEPOINT\s|RELEASE\s+SAVEPOINT\s|ROLLBACK\s+TO\s|(COMMIT|ROLLBACK)\s+PREPARED\s|PREPARE\s+TRANSACTION\s|CALL\s+[a-z_][a-z0-9_.]*\s*\(|REINDEX\s+(\(|TABLE|INDEX|SCHEMA|DATABASE|SYSTEM)\b|REFRESH\s+MATERIALIZED\s|WITH\s+(RECURSIVE\s+)?[a-z_]+|LOCK\s+TABLE\s+(ONLY\s+)?["`]$|LOCK\s+TABLE\s+(ONLY\s+)?([a-z_0-9.]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*(\s*\*)?(\s*,\s*(ONLY\s+)?([a-z_0-9.]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*(\s*\*)?)*\s*((?i:NOWAIT)\b|;|["`]$)|LOCK\s+(ONLY\s+)?([a-z_0-9.]|"[^"%]+")([A-Za-z0-9_.]|"[^"%]+")*\s+(?i:NOWAIT)\b|SET\s+(LOCAL|SESSION|ROLE)\s|SET\s+([a-z_][a-z0-9_.]*|[A-Z][a-z]+([A-Z][a-z]+)+)\s*(=|TO\s)|SET\s+[A-Z][A-Z0-9]*(_[A-Z0-9]+)+(\s+TO\s|\s+=\s*(''[^'']*''|\\?"[^"\\]*\\?"|[-+]?([0-9]+(\.[0-9]*)?|\.[0-9]+)|%[dsvq]|[A-Za-z_][A-Za-z0-9_$]*)(\s*,\s*(''[^'']*''|\\?"[^"\\]*\\?"|[-+]?([0-9]+(\.[0-9]*)?|\.[0-9]+)|%[dsvq]|[A-Za-z_][A-Za-z0-9_$]*))*(\s)*;?(\s)*["`]$)|SET\s+[A-Za-z][A-Za-z0-9_.]*(\s*=|\s+TO)\s*(''[^'']*''|DEFAULT)(\s)*;?(\s)*["`]$|SHOW\s+(ALL|[a-z_][a-z0-9_]*[_.][a-z0-9_.]*)(\s)*(;(\s)*)?["`]$|COMMENT\s+ON\s+(TABLE|COLUMN|INDEX|SCHEMA|ROLE|FUNCTION|PROCEDURE|VIEW|MATERIALIZED\s+VIEW|SEQUENCE|TYPE|DOMAIN|EXTENSION|TRIGGER|POLICY|DATABASE|CONSTRAINT)\s)'
+    - all:
+        - matches: string-literal
+        - any:
+            - matches: sql-argument
+            - not:
+                regex: '^["`](\s|\\[nrt])*["`]$'
+              inside:
+                stopBy:
+                  not:
+                    matches: sql-builder-path
+                all:
+                  - matches: sql-builder
+                  - matches: sql-argument
+    - all:
+        - any:
+            - kind: interpreted_string_literal
+              regex: '(?i)^["`](\s|\\[nrt])*(\((\s|\\[nrt])*)*((BEGIN|COMMIT|END|ROLLBACK|ABORT|CHECKPOINT|ANALYZE|VACUUM)(\s|\\[nrt])*(;(\s|\\[nrt])*)?["`]$|SELECT([\s(*]|\\[nrt])|INSERT(\s|\\[nrt])+INTO(\s|\\[nrt])|UPDATE(\s|\\[nrt])+(ONLY(\s|\\[nrt])+)?([a-z_0-9.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*((\s|\\[nrt])+(AS(\s|\\[nrt])+)?[a-z_][a-z0-9_]*)?(\s|\\[nrt])+SET(\s|\\[nrt])|DELETE(\s|\\[nrt])+FROM(\s|\\[nrt])|(DROP|REASSIGN)(\s|\\[nrt])+OWNED(\s|\\[nrt])+BY(\s|\\[nrt])|TABLE(\s|\\[nrt])+(ONLY(\s|\\[nrt])+)?([a-z_0-9.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*(\s|\\[nrt])*["`;]|COMMENT(\s|\\[nrt])+ON(\s|\\[nrt])|(CREATE((\s|\\[nrt])+OR(\s|\\[nrt])+REPLACE)?((\s|\\[nrt])+(UNIQUE|TEMP|TEMPORARY|UNLOGGED|MATERIALIZED))*|ALTER|DROP)(\s|\\[nrt])+(TABLE|INDEX|VIEW|FUNCTION|PROCEDURE|SCHEMA|ROLE|USER|SEQUENCE|TYPE|DOMAIN|EXTENSION|TRIGGER|POLICY|PUBLICATION|SUBSCRIPTION|DATABASE|DEFAULT|SYSTEM|EVENT|AGGREGATE|COLLATION|OPERATOR|RULE|SERVER|STATISTICS)\b|TRUNCATE(\s|\\[nrt])+(TABLE(\s|\\[nrt])+|ONLY(\s|\\[nrt])+)?([a-z_0-9.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*(\s|\\[nrt])*(["`;,(]|RESTART|CASCADE|CONTINUE)|DO(\s|\\[nrt])+(\$|LANGUAGE(\s|\\[nrt]))|VALUES(\s|\\[nrt])*\(|(ANALYZE|VACUUM)((\s|\\[nrt])+\([^)]*\)|(\s|\\[nrt])+VERBOSE)?(\s|\\[nrt])+([a-z_0-9.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*(\s|\\[nrt])*["`;,(]|(GRANT|REVOKE)(\s|\\[nrt])+(SELECT|INSERT|UPDATE|DELETE|TRUNCATE|REFERENCES|TRIGGER|USAGE|EXECUTE|ALL|CONNECT|CREATE|TEMPORARY|TEMP|MAINTAIN|SET)\b|RESET(\s|\\[nrt])+(ALL|ROLE|SESSION(\s|\\[nrt])+AUTHORIZATION|[a-z_][a-z0-9_]*[_.][a-z0-9_.]*)(\s|\\[nrt])*(;(\s|\\[nrt])*)?["`]$|DISCARD(\s|\\[nrt])+(ALL|PLANS|SEQUENCES|TEMP|TEMPORARY)\b|(NOTIFY|LISTEN|UNLISTEN)(\s|\\[nrt])+(([a-z_]|%(\[[0-9]+\])?[sqv])([a-z0-9_]|%(\[[0-9]+\])?[sqv])*|\*)(\s|\\[nrt])*["`;,(]|EXPLAIN(\s|\\[nrt])+(\(|ANALYZE(\s|\\[nrt])|VERBOSE(\s|\\[nrt])|SELECT(\s|\\[nrt])|INSERT(\s|\\[nrt])|UPDATE(\s|\\[nrt])|DELETE(\s|\\[nrt])|WITH(\s|\\[nrt]))|MERGE(\s|\\[nrt])+INTO(\s|\\[nrt])|COPY(\s|\\[nrt])+([a-z_0-9.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*(\s|\\[nrt])*(\(|FROM(\s|\\[nrt])|TO(\s|\\[nrt]))|START(\s|\\[nrt])+TRANSACTION\b|SAVEPOINT(\s|\\[nrt])|RELEASE(\s|\\[nrt])+SAVEPOINT(\s|\\[nrt])|ROLLBACK(\s|\\[nrt])+TO(\s|\\[nrt])|(COMMIT|ROLLBACK)(\s|\\[nrt])+PREPARED(\s|\\[nrt])|PREPARE(\s|\\[nrt])+TRANSACTION(\s|\\[nrt])|CALL(\s|\\[nrt])+([a-z_0-9.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*(\s|\\[nrt])*\(|REINDEX(\s|\\[nrt])+(\(|TABLE|INDEX|SCHEMA|DATABASE|SYSTEM)\b|REFRESH(\s|\\[nrt])+MATERIALIZED(\s|\\[nrt])|WITH(\s|\\[nrt])+(RECURSIVE(\s|\\[nrt])+)?[a-z_][a-z0-9_]*(\s|\\[nrt])*(\([^)]*\)(\s|\\[nrt])*)?AS((\s|\\[nrt])|\()|(BEGIN|START)(\s|\\[nrt])+(TRANSACTION|WORK|ISOLATION|READ)\b|(COMMIT|END|ROLLBACK|ABORT)(\s|\\[nrt])+(WORK|TRANSACTION|AND(\s|\\[nrt]))|(SAVEPOINT|RELEASE((\s|\\[nrt])+SAVEPOINT)?)(\s|\\[nrt])+[a-z_][a-z0-9_]*(\s|\\[nrt])*(;(\s|\\[nrt])*)?["`]$|SET(\s|\\[nrt])+(LOCAL(\s|\\[nrt])+|SESSION(\s|\\[nrt])+)?([a-z_][a-z0-9_.]*(\s|\\[nrt])*(=|TO(\s|\\[nrt]))|ROLE(\s|\\[nrt])|SESSION(\s|\\[nrt])+AUTHORIZATION(\s|\\[nrt])|TRANSACTION(\s|\\[nrt])|CONSTRAINTS(\s|\\[nrt])|TIME(\s|\\[nrt])+ZONE(\s|\\[nrt])|SCHEMA(\s|\\[nrt])|NAMES(\s|\\[nrt]))|SHOW(\s|\\[nrt])+(ALL|[a-z_][a-z0-9_.]*)(\s|\\[nrt])*(;(\s|\\[nrt])*)?["`]$|LOCK(\s|\\[nrt])+(TABLE(\s|\\[nrt])+)?(ONLY(\s|\\[nrt])+)?([a-z_0-9.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*(\s|\\[nrt])*(IN(\s|\\[nrt])|NOWAIT|;|["`]$)|DEALLOCATE(\s|\\[nrt])+(PREPARE(\s|\\[nrt])+)?ALL\b|PREPARE(\s|\\[nrt])+[a-z_][a-z0-9_]*(\s|\\[nrt])*(\([^)]*\)(\s|\\[nrt])*)?AS(\s|\\[nrt])|DECLARE(\s|\\[nrt])+[a-z_][a-z0-9_]*(\s|\\[nrt])+(BINARY(\s|\\[nrt])+|(A|IN)SENSITIVE(\s|\\[nrt])+|(NO(\s|\\[nrt])+)?SCROLL(\s|\\[nrt])+)*CURSOR\b)'
+            - kind: raw_string_literal
+              regex: '(?i)^["`](\s)*(\((\s)*)*((BEGIN|COMMIT|END|ROLLBACK|ABORT|CHECKPOINT|ANALYZE|VACUUM)(\s)*(;(\s)*)?["`]$|SELECT([\s(*])|INSERT\s+INTO\s|UPDATE\s+(ONLY\s+)?([a-z_0-9.]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*(\s+(AS\s+)?[a-z_][a-z0-9_]*)?\s+SET\s|DELETE\s+FROM\s|(DROP|REASSIGN)\s+OWNED\s+BY\s|TABLE\s+(ONLY\s+)?([a-z_0-9.]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*\s*["`;]|COMMENT\s+ON\s|(CREATE(\s+OR\s+REPLACE)?(\s+(UNIQUE|TEMP|TEMPORARY|UNLOGGED|MATERIALIZED))*|ALTER|DROP)\s+(TABLE|INDEX|VIEW|FUNCTION|PROCEDURE|SCHEMA|ROLE|USER|SEQUENCE|TYPE|DOMAIN|EXTENSION|TRIGGER|POLICY|PUBLICATION|SUBSCRIPTION|DATABASE|DEFAULT|SYSTEM|EVENT|AGGREGATE|COLLATION|OPERATOR|RULE|SERVER|STATISTICS)\b|TRUNCATE\s+(TABLE\s+|ONLY\s+)?([a-z_0-9.]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*\s*(["`;,(]|RESTART|CASCADE|CONTINUE)|DO\s+(\$|LANGUAGE\s)|VALUES\s*\(|(ANALYZE|VACUUM)(\s+\([^)]*\)|\s+VERBOSE)?\s+([a-z_0-9.]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*\s*["`;,(]|(GRANT|REVOKE)\s+(SELECT|INSERT|UPDATE|DELETE|TRUNCATE|REFERENCES|TRIGGER|USAGE|EXECUTE|ALL|CONNECT|CREATE|TEMPORARY|TEMP|MAINTAIN|SET)\b|RESET\s+(ALL|ROLE|SESSION\s+AUTHORIZATION|[a-z_][a-z0-9_]*[_.][a-z0-9_.]*)(\s)*(;(\s)*)?["`]$|DISCARD\s+(ALL|PLANS|SEQUENCES|TEMP|TEMPORARY)\b|(NOTIFY|LISTEN|UNLISTEN)\s+(([a-z_]|%(\[[0-9]+\])?[sqv])([a-z0-9_]|%(\[[0-9]+\])?[sqv])*|\*)\s*["`;,(]|EXPLAIN\s+(\(|ANALYZE\s|VERBOSE\s|SELECT\s|INSERT\s|UPDATE\s|DELETE\s|WITH\s)|MERGE\s+INTO\s|COPY\s+([a-z_0-9.]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*\s*(\(|FROM\s|TO\s)|START\s+TRANSACTION\b|SAVEPOINT\s|RELEASE\s+SAVEPOINT\s|ROLLBACK\s+TO\s|(COMMIT|ROLLBACK)\s+PREPARED\s|PREPARE\s+TRANSACTION\s|CALL\s+([a-z_0-9.]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*\s*\(|REINDEX\s+(\(|TABLE|INDEX|SCHEMA|DATABASE|SYSTEM)\b|REFRESH\s+MATERIALIZED\s|WITH\s+(RECURSIVE\s+)?[a-z_][a-z0-9_]*\s*(\([^)]*\)\s*)?AS(\s|\()|(BEGIN|START)\s+(TRANSACTION|WORK|ISOLATION|READ)\b|(COMMIT|END|ROLLBACK|ABORT)\s+(WORK|TRANSACTION|AND\s)|(SAVEPOINT|RELEASE(\s+SAVEPOINT)?)\s+[a-z_][a-z0-9_]*(\s)*(;(\s)*)?["`]$|SET\s+(LOCAL\s+|SESSION\s+)?([a-z_][a-z0-9_.]*\s*(=|TO\s)|ROLE\s|SESSION\s+AUTHORIZATION\s|TRANSACTION\s|CONSTRAINTS\s|TIME\s+ZONE\s|SCHEMA\s|NAMES\s)|SHOW\s+(ALL|[a-z_][a-z0-9_.]*)(\s)*(;(\s)*)?["`]$|LOCK\s+(TABLE\s+)?(ONLY\s+)?([a-z_0-9.]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*\s*(IN\s|NOWAIT|;|["`]$)|DEALLOCATE\s+(PREPARE\s+)?ALL\b|PREPARE\s+[a-z_][a-z0-9_]*\s*(\([^)]*\)\s*)?AS\s|DECLARE\s+[a-z_][a-z0-9_]*\s+(BINARY\s+|(A|IN)SENSITIVE\s+|(NO\s+)?SCROLL\s+)*CURSOR\b)'
+        - any:
+            - matches: weak-sql-argument
+            - not:
+                regex: '^["`](\s|\\[nrt])*["`]$'
+              inside:
+                stopBy:
+                  not:
+                    matches: sql-builder-path
+                all:
+                  - matches: sql-builder
+                  - matches: weak-sql-argument
 ignores:
   - 'docs/**'
   - '**/*_test.go'
