@@ -8,8 +8,24 @@ note: |
 rule:
   any:
     - kind: interpreted_string_literal
+      regex: '^["`]\s*(SELECT\s|INSERT\s+INTO\s|UPDATE\s+[a-z_.]+(\s+(AS\s+)?[a-z_]+)?\s+SET\s|DELETE\s+FROM\s|WITH\s+(RECURSIVE\s+)?[a-z_]+|LOCK\s+TABLE\s|SET\s+(LOCAL|SESSION|ROLE)\s|(CREATE(\s+OR\s+REPLACE)?(\s+(UNIQUE|TEMP|TEMPORARY|UNLOGGED|MATERIALIZED))*|ALTER|DROP)\s+(TABLE|INDEX|VIEW|FUNCTION|PROCEDURE|SCHEMA|ROLE|USER|SEQUENCE|TYPE|DOMAIN|EXTENSION|TRIGGER|POLICY|PUBLICATION|SUBSCRIPTION|DATABASE|DEFAULT|SYSTEM|EVENT|AGGREGATE|COLLATION|OPERATOR|RULE|SERVER|STATISTICS)\b|TRUNCATE\s+(TABLE\s+|ONLY\s+)?[a-z_][a-z0-9_.]*\s*(["`;,(]|RESTART|CASCADE|CONTINUE)|DO\s+(\$|LANGUAGE\s)|VALUES\s*\(|(ANALYZE|VACUUM)(\s+\([^)]*\)|\s+VERBOSE)?\s+[a-z_][a-z0-9_.]*\s*["`;,(]|(GRANT|REVOKE)\s+(SELECT|INSERT|UPDATE|DELETE|TRUNCATE|REFERENCES|TRIGGER|USAGE|EXECUTE|ALL|CONNECT|CREATE|TEMPORARY|TEMP|MAINTAIN|SET)\b|RESET\s+(ALL|ROLE|SESSION)\b|DISCARD\s+(ALL|PLANS|SEQUENCES|TEMP|TEMPORARY)\b|(NOTIFY|LISTEN|UNLISTEN)\s+([a-z_][a-z0-9_]*|\*)\s*["`;,(]|EXPLAIN\s+(\(|ANALYZE\s|VERBOSE\s|SELECT\s|INSERT\s|UPDATE\s|DELETE\s|WITH\s)|MERGE\s+INTO\s|COPY\s+[a-z_][a-z0-9_.]*\s*(\(|FROM\s|TO\s)|START\s+TRANSACTION\b|SAVEPOINT\s|RELEASE\s+SAVEPOINT\s|ROLLBACK\s+TO\s|(COMMIT|ROLLBACK)\s+PREPARED\s|PREPARE\s+TRANSACTION\s|CALL\s+[a-z_][a-z0-9_.]*\s*\(|REINDEX\s+(\(|TABLE|INDEX|SCHEMA|DATABASE|SYSTEM)\b|REFRESH\s+MATERIALIZED\s)'
     - kind: raw_string_literal
-  regex: '^["`]\s*(SELECT\s|INSERT\s+INTO\s|UPDATE\s+[a-z_.]+\s+SET\s|DELETE\s+FROM\s|WITH\s+(RECURSIVE\s+)?[a-z_]+|LOCK\s+TABLE\s|SET\s+(LOCAL|SESSION|ROLE)\s|CREATE\s|ALTER\s|DROP\s|TRUNCATE\s|DO\s|VALUES\s*\(|ANALYZE\s|GRANT\s|REVOKE\s|RESET\s|DISCARD\s|NOTIFY\s|EXPLAIN\s|MERGE\s+INTO\s|COPY\s)'
+      regex: '^["`]\s*(SELECT\s|INSERT\s+INTO\s|UPDATE\s+[a-z_.]+(\s+(AS\s+)?[a-z_]+)?\s+SET\s|DELETE\s+FROM\s|WITH\s+(RECURSIVE\s+)?[a-z_]+|LOCK\s+TABLE\s|SET\s+(LOCAL|SESSION|ROLE)\s|(CREATE(\s+OR\s+REPLACE)?(\s+(UNIQUE|TEMP|TEMPORARY|UNLOGGED|MATERIALIZED))*|ALTER|DROP)\s+(TABLE|INDEX|VIEW|FUNCTION|PROCEDURE|SCHEMA|ROLE|USER|SEQUENCE|TYPE|DOMAIN|EXTENSION|TRIGGER|POLICY|PUBLICATION|SUBSCRIPTION|DATABASE|DEFAULT|SYSTEM|EVENT|AGGREGATE|COLLATION|OPERATOR|RULE|SERVER|STATISTICS)\b|TRUNCATE\s+(TABLE\s+|ONLY\s+)?[a-z_][a-z0-9_.]*\s*(["`;,(]|RESTART|CASCADE|CONTINUE)|DO\s+(\$|LANGUAGE\s)|VALUES\s*\(|(ANALYZE|VACUUM)(\s+\([^)]*\)|\s+VERBOSE)?\s+[a-z_][a-z0-9_.]*\s*["`;,(]|(GRANT|REVOKE)\s+(SELECT|INSERT|UPDATE|DELETE|TRUNCATE|REFERENCES|TRIGGER|USAGE|EXECUTE|ALL|CONNECT|CREATE|TEMPORARY|TEMP|MAINTAIN|SET)\b|RESET\s+(ALL|ROLE|SESSION)\b|DISCARD\s+(ALL|PLANS|SEQUENCES|TEMP|TEMPORARY)\b|(NOTIFY|LISTEN|UNLISTEN)\s+([a-z_][a-z0-9_]*|\*)\s*["`;,(]|EXPLAIN\s+(\(|ANALYZE\s|VERBOSE\s|SELECT\s|INSERT\s|UPDATE\s|DELETE\s|WITH\s)|MERGE\s+INTO\s|COPY\s+[a-z_][a-z0-9_.]*\s*(\(|FROM\s|TO\s)|START\s+TRANSACTION\b|SAVEPOINT\s|RELEASE\s+SAVEPOINT\s|ROLLBACK\s+TO\s|(COMMIT|ROLLBACK)\s+PREPARED\s|PREPARE\s+TRANSACTION\s|CALL\s+[a-z_][a-z0-9_.]*\s*\(|REINDEX\s+(\(|TABLE|INDEX|SCHEMA|DATABASE|SYSTEM)\b|REFRESH\s+MATERIALIZED\s)'
+    - any:
+        - kind: interpreted_string_literal
+        - kind: raw_string_literal
+      nthChild:
+        position: 2
+      inside:
+        kind: argument_list
+        inside:
+          kind: call_expression
+          has:
+            field: function
+            kind: selector_expression
+            has:
+              field: field
+              regex: '^(Exec|Query|QueryRow|ExecContext|QueryContext|QueryRowContext|PrepareContext)$'
 ignores:
   - 'docs/**'
   - '**/*_test.go'
@@ -55,6 +71,13 @@ rule:
   pattern:
     context: 'func f() { $TX.Rollback($CTX) }'
     selector: call_expression
+constraints:
+  CTX:
+    not:
+      any:
+        - kind: interpreted_string_literal
+        - kind: raw_string_literal
+        - kind: int_literal
 ignores:
   - 'docs/**'
   - '**/*_test.go'
