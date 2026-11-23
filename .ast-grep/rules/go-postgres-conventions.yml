@@ -198,7 +198,11 @@ utils:
       - kind: literal_element
       - kind: literal_value
       - kind: composite_literal
-  sql-named-operand:
+  sql-concat-path:
+    any:
+      - matches: sql-concat
+      - kind: parenthesized_expression
+  sql-named-value:
     any:
       - kind: identifier
         regex: '(?i)sql$'
@@ -206,6 +210,29 @@ utils:
         has:
           field: field
           regex: '(?i)sql$'
+  sql-named-operand:
+    any:
+      - matches: sql-named-value
+      - kind: call_expression
+        has:
+          field: function
+          matches: sql-named-value
+      - kind: index_expression
+        has:
+          field: operand
+          matches: sql-named-value
+      - kind: call_expression
+        all:
+          - has:
+              field: function
+              kind: selector_expression
+              has:
+                field: operand
+                regex: '^strings$'
+          - has:
+              field: arguments
+              has:
+                matches: sql-named-operand
 rule:
   any:
     - all:
@@ -213,7 +240,20 @@ rule:
         - not:
             regex: '^["`](\s|\\[nrt])*["`]$'
         - inside:
-            matches: sql-text-builder
+            matches: sql-concat
+            stopBy:
+              not:
+                matches: sql-text-path
+            has:
+              stopBy:
+                not:
+                  matches: sql-concat-path
+              matches: sql-named-operand
+    - all:
+        - matches: string-literal
+        - regex: '\b(SELECT|FROM|WHERE|JOIN|ON|USING|ORDER|GROUP|BY|HAVING|LIMIT|OFFSET|FETCH|FOR|RETURNING|VALUES|SET|UNION|INTERSECT|EXCEPT|INSERT|UPDATE|DELETE|MERGE|AND|OR|NOT|IN|IS|NULL|LIKE|ILIKE|BETWEEN|EXISTS|DISTINCT|AS|WITH|INTO|DO|CONFLICT|CASE|WHEN|THEN|ELSE|END|ASC|DESC|LATERAL|OVER|PARTITION|ANY|ALL|NOWAIT|SKIP|LOCKED|SHARE)\b|\$[0-9]'
+        - inside:
+            matches: sql-builder-call
             stopBy:
               not:
                 matches: sql-text-path
@@ -228,14 +268,26 @@ rule:
             regex: '^["`](\s|\\[nrt])*["`]$'
         - inside:
             kind: assignment_statement
-            regex: '^[A-Za-z_][A-Za-z0-9_.]*(?i:sql)\s*\+='
+            all:
+              - has:
+                  field: operator
+                  regex: '^\+=$'
+              - has:
+                  field: left
+                  has:
+                    any:
+                      - matches: sql-named-operand
+                      - kind: unary_expression
+                        has:
+                          field: operand
+                          matches: sql-named-operand
             stopBy:
               not:
                 any:
                   - matches: sql-text-path
                   - kind: expression_list
     - matches: string-literal
-      regex: '^["`](\s|\\[nrt])*(\((\s|\\[nrt])*)*(SELECT([\s(*]|\\[nrt])|INSERT\s+INTO\s|UPDATE\s+[a-z0-9_."]+(\s+(AS\s+)?[a-z_][a-z0-9_]*)?\s+SET\s|DELETE\s+FROM\s|(DROP|REASSIGN)\s+OWNED\s+BY\s|TABLE\s+(ONLY\s+)?[a-z_][a-z0-9_.]*\s*["`;]|(CREATE(\s+OR\s+REPLACE)?(\s+(UNIQUE|TEMP|TEMPORARY|UNLOGGED|MATERIALIZED))*|ALTER|DROP)\s+(TABLE|INDEX|VIEW|FUNCTION|PROCEDURE|SCHEMA|ROLE|USER|SEQUENCE|TYPE|DOMAIN|EXTENSION|TRIGGER|POLICY|PUBLICATION|SUBSCRIPTION|DATABASE|DEFAULT|SYSTEM|EVENT|AGGREGATE|COLLATION|OPERATOR|RULE|SERVER|STATISTICS)\b|TRUNCATE\s+(TABLE\s+|ONLY\s+)?[a-z_][a-z0-9_.]*\s*(["`;,(]|RESTART|CASCADE|CONTINUE)|DO\s+(\$|LANGUAGE\s)|VALUES\s*\(|(ANALYZE|VACUUM)(\s+\([^)]*\)|\s+VERBOSE)?\s+[a-z_][a-z0-9_.]*\s*["`;,(]|(GRANT|REVOKE)\s+(SELECT|INSERT|UPDATE|DELETE|TRUNCATE|REFERENCES|TRIGGER|USAGE|EXECUTE|ALL|CONNECT|CREATE|TEMPORARY|TEMP|MAINTAIN|SET)\b|RESET\s+(ALL|ROLE|SESSION\s+AUTHORIZATION|[a-z_][a-z0-9_]*[_.][a-z0-9_.]*)(\s|\\[nrt])*(;(\s|\\[nrt])*)?["`]$|DISCARD\s+(ALL|PLANS|SEQUENCES|TEMP|TEMPORARY)\b|(NOTIFY|LISTEN|UNLISTEN)\s+([a-z_][a-z0-9_]*|\*)\s*["`;,(]|EXPLAIN\s+(\(|ANALYZE\s|VERBOSE\s|SELECT\s|INSERT\s|UPDATE\s|DELETE\s|WITH\s)|MERGE\s+INTO\s|COPY\s+[a-z_][a-z0-9_.]*\s*(\(|FROM\s|TO\s)|START\s+TRANSACTION\b|SAVEPOINT\s|RELEASE\s+SAVEPOINT\s|ROLLBACK\s+TO\s|(COMMIT|ROLLBACK)\s+PREPARED\s|PREPARE\s+TRANSACTION\s|CALL\s+[a-z_][a-z0-9_.]*\s*\(|REINDEX\s+(\(|TABLE|INDEX|SCHEMA|DATABASE|SYSTEM)\b|REFRESH\s+MATERIALIZED\s|WITH\s+(RECURSIVE\s+)?[a-z_]+|LOCK\s+TABLE\s|LOCK\s+(ONLY\s+)?[a-z0-9_."]+\s+(IN\s+[A-Z ]+\s+MODE\b|NOWAIT\b)|SET\s+(LOCAL|SESSION|ROLE)\s|SET\s+[a-z_][a-z0-9_.]*\s*(=|TO\s)|SHOW\s+(ALL|[a-z_][a-z0-9_]*[_.][a-z0-9_.]*)(\s|\\[nrt])*(;(\s|\\[nrt])*)?["`]$|COMMENT\s+ON\s+(TABLE|COLUMN|INDEX|SCHEMA|ROLE|FUNCTION|PROCEDURE|VIEW|MATERIALIZED\s+VIEW|SEQUENCE|TYPE|DOMAIN|EXTENSION|TRIGGER|POLICY|DATABASE|CONSTRAINT)\s)'
+      regex: '^["`](\s|\\[nrt])*(\((\s|\\[nrt])*)*(SELECT([\s(*]|\\[nrt])|INSERT\s+INTO\s|UPDATE\s+[a-z0-9_."]+(\s+(AS\s+)?[a-z_][a-z0-9_]*)?\s+SET\s|DELETE\s+FROM\s|(DROP|REASSIGN)\s+OWNED\s+BY\s|TABLE\s+(ONLY\s+)?[a-z_][a-z0-9_.]*\s*["`;]|(CREATE(\s+OR\s+REPLACE)?(\s+(UNIQUE|TEMP|TEMPORARY|UNLOGGED|MATERIALIZED))*|ALTER|DROP)\s+(TABLE|INDEX|VIEW|FUNCTION|PROCEDURE|SCHEMA|ROLE|USER|SEQUENCE|TYPE|DOMAIN|EXTENSION|TRIGGER|POLICY|PUBLICATION|SUBSCRIPTION|DATABASE|DEFAULT|SYSTEM|EVENT|AGGREGATE|COLLATION|OPERATOR|RULE|SERVER|STATISTICS)\b|TRUNCATE\s+(TABLE\s+|ONLY\s+)?[a-z_][a-z0-9_.]*\s*(["`;,(]|RESTART|CASCADE|CONTINUE)|DO\s+(\$|LANGUAGE\s)|VALUES\s*\(|(ANALYZE|VACUUM)(\s+\([^)]*\)|\s+VERBOSE)?\s+[a-z_][a-z0-9_.]*\s*["`;,(]|(GRANT|REVOKE)\s+(SELECT|INSERT|UPDATE|DELETE|TRUNCATE|REFERENCES|TRIGGER|USAGE|EXECUTE|ALL|CONNECT|CREATE|TEMPORARY|TEMP|MAINTAIN|SET)\b|RESET\s+(ALL|ROLE|SESSION\s+AUTHORIZATION|[a-z_][a-z0-9_]*[_.][a-z0-9_.]*)(\s|\\[nrt])*(;(\s|\\[nrt])*)?["`]$|DISCARD\s+(ALL|PLANS|SEQUENCES|TEMP|TEMPORARY)\b|(NOTIFY|LISTEN|UNLISTEN)\s+([a-z_][a-z0-9_]*|\*)\s*["`;,(]|EXPLAIN\s+(\(|ANALYZE\s|VERBOSE\s|SELECT\s|INSERT\s|UPDATE\s|DELETE\s|WITH\s)|MERGE\s+INTO\s|COPY\s+[a-z_][a-z0-9_.]*\s*(\(|FROM\s|TO\s)|START\s+TRANSACTION\b|SAVEPOINT\s|RELEASE\s+SAVEPOINT\s|ROLLBACK\s+TO\s|(COMMIT|ROLLBACK)\s+PREPARED\s|PREPARE\s+TRANSACTION\s|CALL\s+[a-z_][a-z0-9_.]*\s*\(|REINDEX\s+(\(|TABLE|INDEX|SCHEMA|DATABASE|SYSTEM)\b|REFRESH\s+MATERIALIZED\s|WITH\s+(RECURSIVE\s+)?[a-z_]+|LOCK\s+TABLE\s|LOCK\s+(ONLY\s+)?[a-z0-9_."]+\s+(IN\s+[A-Z ]+\s+MODE\b|NOWAIT\b)|SET\s+(LOCAL|SESSION|ROLE)\s|SET\s+[A-Za-z_][A-Za-z0-9_.]*\s*(=|TO\s)|SHOW\s+(ALL|[a-z_][a-z0-9_]*[_.][a-z0-9_.]*)(\s|\\[nrt])*(;(\s|\\[nrt])*)?["`]$|COMMENT\s+ON\s+(TABLE|COLUMN|INDEX|SCHEMA|ROLE|FUNCTION|PROCEDURE|VIEW|MATERIALIZED\s+VIEW|SEQUENCE|TYPE|DOMAIN|EXTENSION|TRIGGER|POLICY|DATABASE|CONSTRAINT)\s)'
     - all:
         - matches: string-literal
         - any:
