@@ -1,0 +1,1155 @@
+id: no-inline-sql-in-go
+language: Go
+severity: error
+message: Go 문자열에 SQL을 직접 쓰지 않습니다. 패키지의 queries/*.sql로 옮기고 //go:embed와 저장소의 SQL 로더(shared-go sqlutil.MustQuery, hololive-shared sqlassets.MustReader)로 읽으세요. 식별자가 바뀌는 SQL은 {{table}} 같은 자리표시자를 둔 queries/*.sql.tpl에 둡니다.
+note: |
+  Go 문자열 안의 SQL은 SQL 주석 금지 검사와 SQL 파일 단위 검토·검색에서 빠지고, MustQuery가 시작 시점에 하는 누락·빈 쿼리 검증도 받지 못합니다.
+  .sql.tpl의 자리표시자는 pgx.Identifier{...}.Sanitize() 같은 검증된 식별자로만 치환합니다.
+utils:
+  string-literal:
+    any:
+      - kind: interpreted_string_literal
+      - kind: raw_string_literal
+  sql-argument:
+    any:
+      - nthChild: 1
+        inside:
+          kind: argument_list
+          inside:
+            kind: call_expression
+            has:
+              field: function
+              kind: selector_expression
+              has:
+                field: field
+                regex: '^Queue$'
+      - nthChild: 2
+        inside:
+          kind: argument_list
+          inside:
+            kind: call_expression
+            has:
+              field: function
+              kind: selector_expression
+              has:
+                field: field
+                regex: '^(ExecContext|QueryContext|QueryRowContext|PrepareContext|ExecParams)$'
+      - nthChild: 2
+        inside:
+          kind: argument_list
+          has:
+            nthChild: 1
+            regex: '(?i)(^|[^a-z0-9_])[a-z0-9_]*ctx([^a-z0-9_]|$)|context'
+          inside:
+            kind: call_expression
+            has:
+              field: function
+              kind: selector_expression
+              has:
+                field: field
+                regex: '^(Exec|Query|QueryRow)$'
+      - nthChild: 3
+        inside:
+          kind: argument_list
+          all:
+            - has:
+                nthChild: 1
+                regex: '(?i)(^|[^a-z0-9_])[a-z0-9_]*ctx([^a-z0-9_]|$)|context'
+            - has:
+                nthChild: 2
+                matches: string-literal
+          inside:
+            kind: call_expression
+            has:
+              field: function
+              kind: selector_expression
+              has:
+                field: field
+                regex: '^Prepare$'
+      - nthChild: 4
+        inside:
+          kind: argument_list
+          inside:
+            kind: call_expression
+            has:
+              field: function
+              kind: selector_expression
+              all:
+                - has:
+                    field: operand
+                    regex: '^pgxscan$'
+                - has:
+                    field: field
+                    regex: '^(Select|Get)$'
+      - nthChild: 4
+        inside:
+          kind: argument_list
+          inside:
+            kind: call_expression
+            has:
+              field: function
+              kind: selector_expression
+              all:
+                - has:
+                    field: operand
+                    regex: '^dbx$'
+                - has:
+                    field: field
+                    regex: '^ExecSQL$'
+      - nthChild: 5
+        inside:
+          kind: argument_list
+          inside:
+            kind: call_expression
+            has:
+              field: function
+              kind: selector_expression
+              all:
+                - has:
+                    field: operand
+                    regex: '^dbx$'
+                - has:
+                    field: field
+                    regex: '^(SelectSQL|GetSQL)$'
+  weak-sql-argument:
+    any:
+      - nthChild: 1
+        inside:
+          kind: argument_list
+          inside:
+            kind: call_expression
+            has:
+              field: function
+              kind: selector_expression
+              has:
+                field: field
+                regex: '^(Exec|Query|QueryRow|Prepare)$'
+      - nthChild: 2
+        inside:
+          kind: argument_list
+          not:
+            has:
+              nthChild: 1
+              regex: '(?i)(sql|query|stmt|statement)'
+          inside:
+            kind: call_expression
+            has:
+              field: function
+              kind: selector_expression
+              has:
+                field: field
+                regex: '^(Exec|Query|QueryRow)$'
+      - nthChild: 3
+        inside:
+          kind: argument_list
+          inside:
+            kind: call_expression
+            has:
+              field: function
+              kind: selector_expression
+              has:
+                field: field
+                regex: '^Prepare$'
+      - matches: sql-named-binding
+  sql-binding-name:
+    regex: '(?i)sql$'
+  sql-plain-binding-name:
+    all:
+      - regex: '(?i)sql$'
+      - not:
+          regex: '(^|[._])(?i:postgresql|mysql|nosql|mssql)$|[A-Za-z0-9](PostgreSQL|PostgreSql|Postgresql|MySQL|MySql|Mysql)$'
+  sql-named-binding:
+    any:
+      - nthChild: 1
+        inside:
+          kind: expression_list
+          inside:
+            any:
+              - kind: const_spec
+              - kind: var_spec
+            has:
+              kind: identifier
+              nthChild: 1
+              matches: sql-binding-name
+      - nthChild: 2
+        inside:
+          kind: expression_list
+          inside:
+            any:
+              - kind: const_spec
+              - kind: var_spec
+            has:
+              kind: identifier
+              nthChild: 2
+              matches: sql-binding-name
+      - nthChild: 3
+        inside:
+          kind: expression_list
+          inside:
+            any:
+              - kind: const_spec
+              - kind: var_spec
+            has:
+              kind: identifier
+              nthChild: 3
+              matches: sql-binding-name
+      - nthChild: 4
+        inside:
+          kind: expression_list
+          inside:
+            any:
+              - kind: const_spec
+              - kind: var_spec
+            has:
+              kind: identifier
+              nthChild: 4
+              matches: sql-binding-name
+      - nthChild: 5
+        inside:
+          kind: expression_list
+          inside:
+            any:
+              - kind: const_spec
+              - kind: var_spec
+            has:
+              kind: identifier
+              nthChild: 5
+              matches: sql-binding-name
+      - nthChild: 6
+        inside:
+          kind: expression_list
+          inside:
+            any:
+              - kind: const_spec
+              - kind: var_spec
+            has:
+              kind: identifier
+              nthChild: 6
+              matches: sql-binding-name
+      - nthChild: 
+          position: n+7
+        inside:
+          kind: expression_list
+          inside:
+            any:
+              - kind: const_spec
+              - kind: var_spec
+            has:
+              kind: identifier
+              matches: sql-binding-name
+      - nthChild: 1
+        inside:
+          kind: expression_list
+          inside:
+            field: right
+            any:
+              - kind: short_var_declaration
+              - kind: assignment_statement
+            has:
+              field: left
+              has:
+                nthChild: 1
+                matches: sql-binding-name
+      - nthChild: 2
+        inside:
+          kind: expression_list
+          inside:
+            field: right
+            any:
+              - kind: short_var_declaration
+              - kind: assignment_statement
+            has:
+              field: left
+              has:
+                nthChild: 2
+                matches: sql-binding-name
+      - nthChild: 3
+        inside:
+          kind: expression_list
+          inside:
+            field: right
+            any:
+              - kind: short_var_declaration
+              - kind: assignment_statement
+            has:
+              field: left
+              has:
+                nthChild: 3
+                matches: sql-binding-name
+      - nthChild: 4
+        inside:
+          kind: expression_list
+          inside:
+            field: right
+            any:
+              - kind: short_var_declaration
+              - kind: assignment_statement
+            has:
+              field: left
+              has:
+                nthChild: 4
+                matches: sql-binding-name
+      - nthChild: 5
+        inside:
+          kind: expression_list
+          inside:
+            field: right
+            any:
+              - kind: short_var_declaration
+              - kind: assignment_statement
+            has:
+              field: left
+              has:
+                nthChild: 5
+                matches: sql-binding-name
+      - nthChild: 6
+        inside:
+          kind: expression_list
+          inside:
+            field: right
+            any:
+              - kind: short_var_declaration
+              - kind: assignment_statement
+            has:
+              field: left
+              has:
+                nthChild: 6
+                matches: sql-binding-name
+      - nthChild: 
+          position: n+7
+        inside:
+          kind: expression_list
+          inside:
+            field: right
+            any:
+              - kind: short_var_declaration
+              - kind: assignment_statement
+            has:
+              field: left
+              has:
+                matches: sql-binding-name
+  sql-plain-named-binding:
+    any:
+      - nthChild: 1
+        inside:
+          kind: expression_list
+          inside:
+            any:
+              - kind: const_spec
+              - kind: var_spec
+            has:
+              kind: identifier
+              nthChild: 1
+              matches: sql-plain-binding-name
+      - nthChild: 2
+        inside:
+          kind: expression_list
+          inside:
+            any:
+              - kind: const_spec
+              - kind: var_spec
+            has:
+              kind: identifier
+              nthChild: 2
+              matches: sql-plain-binding-name
+      - nthChild: 3
+        inside:
+          kind: expression_list
+          inside:
+            any:
+              - kind: const_spec
+              - kind: var_spec
+            has:
+              kind: identifier
+              nthChild: 3
+              matches: sql-plain-binding-name
+      - nthChild: 4
+        inside:
+          kind: expression_list
+          inside:
+            any:
+              - kind: const_spec
+              - kind: var_spec
+            has:
+              kind: identifier
+              nthChild: 4
+              matches: sql-plain-binding-name
+      - nthChild: 5
+        inside:
+          kind: expression_list
+          inside:
+            any:
+              - kind: const_spec
+              - kind: var_spec
+            has:
+              kind: identifier
+              nthChild: 5
+              matches: sql-plain-binding-name
+      - nthChild: 6
+        inside:
+          kind: expression_list
+          inside:
+            any:
+              - kind: const_spec
+              - kind: var_spec
+            has:
+              kind: identifier
+              nthChild: 6
+              matches: sql-plain-binding-name
+      - nthChild: 
+          position: n+7
+        inside:
+          kind: expression_list
+          inside:
+            any:
+              - kind: const_spec
+              - kind: var_spec
+            has:
+              kind: identifier
+              matches: sql-plain-binding-name
+      - nthChild: 1
+        inside:
+          kind: expression_list
+          inside:
+            field: right
+            any:
+              - kind: short_var_declaration
+              - kind: assignment_statement
+            has:
+              field: left
+              has:
+                nthChild: 1
+                matches: sql-plain-binding-name
+      - nthChild: 2
+        inside:
+          kind: expression_list
+          inside:
+            field: right
+            any:
+              - kind: short_var_declaration
+              - kind: assignment_statement
+            has:
+              field: left
+              has:
+                nthChild: 2
+                matches: sql-plain-binding-name
+      - nthChild: 3
+        inside:
+          kind: expression_list
+          inside:
+            field: right
+            any:
+              - kind: short_var_declaration
+              - kind: assignment_statement
+            has:
+              field: left
+              has:
+                nthChild: 3
+                matches: sql-plain-binding-name
+      - nthChild: 4
+        inside:
+          kind: expression_list
+          inside:
+            field: right
+            any:
+              - kind: short_var_declaration
+              - kind: assignment_statement
+            has:
+              field: left
+              has:
+                nthChild: 4
+                matches: sql-plain-binding-name
+      - nthChild: 5
+        inside:
+          kind: expression_list
+          inside:
+            field: right
+            any:
+              - kind: short_var_declaration
+              - kind: assignment_statement
+            has:
+              field: left
+              has:
+                nthChild: 5
+                matches: sql-plain-binding-name
+      - nthChild: 6
+        inside:
+          kind: expression_list
+          inside:
+            field: right
+            any:
+              - kind: short_var_declaration
+              - kind: assignment_statement
+            has:
+              field: left
+              has:
+                nthChild: 6
+                matches: sql-plain-binding-name
+      - nthChild: 
+          position: n+7
+        inside:
+          kind: expression_list
+          inside:
+            field: right
+            any:
+              - kind: short_var_declaration
+              - kind: assignment_statement
+            has:
+              field: left
+              has:
+                matches: sql-plain-binding-name
+  sql-named-arg:
+    any:
+      - matches: sql-named-operand
+      - has:
+          stopBy:
+            not:
+              matches: sql-arg-path
+          matches: sql-named-operand
+  sql-strong-fragment:
+    any:
+      - matches: sql-clause-phrase
+      - matches: sql-nulls-order
+      - regex: '\$[0-9]'
+      - kind: interpreted_string_literal
+        regex: '(\b|\\[nrt])(BY|FROM|JOIN|INTO|UPDATE|TABLE|ON|SET|WHERE|AND|OR|NOT|IN|IS|LIKE|ILIKE|SELECT|DISTINCT|AS|USING|RETURNING|HAVING|WHEN|THEN|ELSE|CASE|VALUES|EXISTS|ANY|ALL)(\s|\\[nrt])*["`]$'
+      - kind: raw_string_literal
+        regex: '(\b)(BY|FROM|JOIN|INTO|UPDATE|TABLE|ON|SET|WHERE|AND|OR|NOT|IN|IS|LIKE|ILIKE|SELECT|DISTINCT|AS|USING|RETURNING|HAVING|WHEN|THEN|ELSE|CASE|VALUES|EXISTS|ANY|ALL)(\s)*["`]$'
+      - kind: interpreted_string_literal
+        regex: '^["`](\s|\\[nrt])*(ASC|DESC|NULLS(\s|\\[nrt])+(FIRST|LAST)|IS)\b'
+      - kind: raw_string_literal
+        regex: '^["`](\s)*(ASC|DESC|NULLS(\s)+(FIRST|LAST)|IS)\b'
+  sql-quoted-format:
+    all:
+      - matches: string-literal
+      - not:
+          any:
+            - kind: interpreted_string_literal
+              regex: '((\b|\\[nrt])(BY|FROM|JOIN|INTO|UPDATE|TABLE|ON|SET|WHERE|AND|OR|NOT|IN|IS|LIKE|ILIKE|SELECT|DISTINCT|AS|USING|RETURNING|HAVING|WHEN|THEN|ELSE|CASE|VALUES|EXISTS|ANY|ALL)|(?i)(\b|\\[nrt])((order|group|partition)(\s|\\[nrt])+by|insert(\s|\\[nrt])+into|delete(\s|\\[nrt])+from|join))(\s|\\[nrt])+%[-+# 0-9.]*(\[[0-9]+\])?[-+# 0-9.]*q'
+            - kind: raw_string_literal
+              regex: '((\b)(BY|FROM|JOIN|INTO|UPDATE|TABLE|ON|SET|WHERE|AND|OR|NOT|IN|IS|LIKE|ILIKE|SELECT|DISTINCT|AS|USING|RETURNING|HAVING|WHEN|THEN|ELSE|CASE|VALUES|EXISTS|ANY|ALL)|(?i)(\b)((order|group|partition)(\s)+by|insert(\s)+into|delete(\s)+from|join))(\s)+%[-+# 0-9.]*(\[[0-9]+\])?[-+# 0-9.]*q'
+      - not:
+          any:
+            - kind: interpreted_string_literal
+              regex: '%[-+# 0-9.]*(\[[0-9]+\])?[-+# 0-9.]*q(\s|\\[nrt])+(ASC|DESC|(?i:nulls)(\s|\\[nrt])+(?i:first|last)|IS(\s|\\[nrt])+(NOT(\s|\\[nrt])+)?(NULL|TRUE|FALSE|UNKNOWN|DISTINCT))\b'
+            - kind: raw_string_literal
+              regex: '%[-+# 0-9.]*(\[[0-9]+\])?[-+# 0-9.]*q(\s)+(ASC|DESC|(?i:nulls)(\s)+(?i:first|last)|IS(\s)+(NOT(\s)+)?(NULL|TRUE|FALSE|UNKNOWN|DISTINCT))\b'
+      - not:
+          regex: '\$[0-9]'
+      - not:
+          matches: sql-clause-phrase
+  sql-quoted-diagnostic-call:
+    all:
+      - kind: call_expression
+      - has:
+          field: function
+          regex: '^fmt\.Sprintf$'
+      - has:
+          field: arguments
+          all:
+            - has:
+                nthChild: 1
+                matches: sql-quoted-format
+            - has:
+                stopBy:
+                  not:
+                    matches: sql-arg-path
+                matches: sql-named-operand
+            - any:
+                - has:
+                    nthChild: 1
+                    regex: '^["`]([^%]|%%|%[-+# 0-9.]*(\[[0-9]+\])?[-+# 0-9.]*q)*["`]$'
+                - all:
+                    - not:
+                        has:
+                          nthChild: 1
+                          regex: '%[-+# 0-9.]*\['
+                    - any:
+                        - not:
+                            has:
+                              nthChild: 2
+                              matches: sql-named-arg
+                        - has:
+                            nthChild: 1
+                            regex: '^["`]([^%]|%%)*%[-+# 0-9.]*(\[[0-9]+\])?[-+# 0-9.]*q'
+                    - any:
+                        - not:
+                            has:
+                              nthChild: 3
+                              matches: sql-named-arg
+                        - has:
+                            nthChild: 1
+                            regex: '^["`]([^%]|%%)*(%[-+# 0-9.]*[a-zA-Z]([^%]|%%)*){1}%[-+# 0-9.]*(\[[0-9]+\])?[-+# 0-9.]*q'
+                    - any:
+                        - not:
+                            has:
+                              nthChild: 4
+                              matches: sql-named-arg
+                        - has:
+                            nthChild: 1
+                            regex: '^["`]([^%]|%%)*(%[-+# 0-9.]*[a-zA-Z]([^%]|%%)*){2}%[-+# 0-9.]*(\[[0-9]+\])?[-+# 0-9.]*q'
+                    - any:
+                        - not:
+                            has:
+                              nthChild: 5
+                              matches: sql-named-arg
+                        - has:
+                            nthChild: 1
+                            regex: '^["`]([^%]|%%)*(%[-+# 0-9.]*[a-zA-Z]([^%]|%%)*){3}%[-+# 0-9.]*(\[[0-9]+\])?[-+# 0-9.]*q'
+                    - any:
+                        - not:
+                            has:
+                              nthChild: 6
+                              matches: sql-named-arg
+                        - has:
+                            nthChild: 1
+                            regex: '^["`]([^%]|%%)*(%[-+# 0-9.]*[a-zA-Z]([^%]|%%)*){4}%[-+# 0-9.]*(\[[0-9]+\])?[-+# 0-9.]*q'
+                    - any:
+                        - not:
+                            has:
+                              nthChild: 7
+                              matches: sql-named-arg
+                        - has:
+                            nthChild: 1
+                            regex: '^["`]([^%]|%%)*(%[-+# 0-9.]*[a-zA-Z]([^%]|%%)*){5}%[-+# 0-9.]*(\[[0-9]+\])?[-+# 0-9.]*q'
+                    - not:
+                        has:
+                          nthChild:
+                            position: n+8
+                          matches: sql-named-arg
+      - not:
+          inside:
+            stopBy:
+              not:
+                matches: sql-text-path
+            all:
+              - matches: sql-builder-call
+              - has:
+                  field: arguments
+                  has:
+                    stopBy:
+                      not:
+                        matches: sql-arg-path
+                    matches: sql-named-operand
+  sql-builder-call:
+    kind: call_expression
+    has:
+      field: function
+      any:
+        - kind: selector_expression
+          all:
+            - has:
+                field: operand
+                regex: '^(fmt|strings)$'
+            - has:
+                field: field
+                regex: '^(Sprintf|Sprint|Join)$'
+        - kind: identifier
+          regex: '^string$'
+  sql-plain-builder:
+    any:
+      - kind: binary_expression
+      - kind: parenthesized_expression
+      - matches: sql-builder-call
+  sql-plain-builder-path:
+    any:
+      - matches: sql-plain-builder
+      - kind: argument_list
+        inside:
+          matches: sql-builder-call
+      - kind: literal_element
+      - kind: literal_value
+      - kind: composite_literal
+  sql-statement-text:
+    any:
+      - kind: interpreted_string_literal
+        regex: '(?i)^["`](\s|\\[nrt])*(\((\s|\\[nrt])*)*((BEGIN|COMMIT|END|ROLLBACK|ABORT|CHECKPOINT|ANALYZE|VACUUM)(\s|\\[nrt])*(;(\s|\\[nrt])*)?["`]$|SELECT([\s(*]|\\[nrt])|INSERT(\s|\\[nrt])+INTO(\s|\\[nrt])|UPDATE(\s|\\[nrt])+(ONLY(\s|\\[nrt])+)?([a-z_0-9.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*((\s|\\[nrt])+(AS(\s|\\[nrt])+)?[a-z_][a-z0-9_]*)?(\s|\\[nrt])+SET(\s|\\[nrt])|DELETE(\s|\\[nrt])+FROM(\s|\\[nrt])|(DROP|REASSIGN)(\s|\\[nrt])+OWNED(\s|\\[nrt])+BY(\s|\\[nrt])|TABLE(\s|\\[nrt])+(ONLY(\s|\\[nrt])+)?([a-z_0-9.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*(\s|\\[nrt])*["`;]|COMMENT(\s|\\[nrt])+ON(\s|\\[nrt])|(CREATE((\s|\\[nrt])+OR(\s|\\[nrt])+REPLACE)?((\s|\\[nrt])+(UNIQUE|TEMP|TEMPORARY|UNLOGGED|MATERIALIZED))*|ALTER|DROP)(\s|\\[nrt])+(TABLE|INDEX|VIEW|FUNCTION|PROCEDURE|SCHEMA|ROLE|USER|SEQUENCE|TYPE|DOMAIN|EXTENSION|TRIGGER|POLICY|PUBLICATION|SUBSCRIPTION|DATABASE|DEFAULT|SYSTEM|EVENT|AGGREGATE|COLLATION|OPERATOR|RULE|SERVER|STATISTICS)\b|TRUNCATE(\s|\\[nrt])+(TABLE(\s|\\[nrt])+|ONLY(\s|\\[nrt])+)?([a-z_0-9.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*(\s|\\[nrt])*(["`;,(]|RESTART|CASCADE|CONTINUE)|DO(\s|\\[nrt])+(\$|LANGUAGE(\s|\\[nrt]))|VALUES(\s|\\[nrt])*\(|(ANALYZE|VACUUM)((\s|\\[nrt])+\([^)]*\)|(\s|\\[nrt])+VERBOSE)?(\s|\\[nrt])+([a-z_0-9.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*(\s|\\[nrt])*["`;,(]|(GRANT|REVOKE)(\s|\\[nrt])+(SELECT|INSERT|UPDATE|DELETE|TRUNCATE|REFERENCES|TRIGGER|USAGE|EXECUTE|ALL|CONNECT|CREATE|TEMPORARY|TEMP|MAINTAIN|SET)\b|RESET(\s|\\[nrt])+(ALL|ROLE|SESSION(\s|\\[nrt])+AUTHORIZATION|[a-z_][a-z0-9_]*[_.][a-z0-9_.]*)(\s|\\[nrt])*(;(\s|\\[nrt])*)?["`]$|DISCARD(\s|\\[nrt])+(ALL|PLANS|SEQUENCES|TEMP|TEMPORARY)\b|(NOTIFY|LISTEN|UNLISTEN)(\s|\\[nrt])+(([a-z_]|%(\[[0-9]+\])?[sqv])([a-z0-9_]|%(\[[0-9]+\])?[sqv])*|\*)(\s|\\[nrt])*["`;,(]|EXPLAIN(\s|\\[nrt])+(\(|ANALYZE(\s|\\[nrt])|VERBOSE(\s|\\[nrt])|SELECT(\s|\\[nrt])|INSERT(\s|\\[nrt])|UPDATE(\s|\\[nrt])|DELETE(\s|\\[nrt])|WITH(\s|\\[nrt]))|MERGE(\s|\\[nrt])+INTO(\s|\\[nrt])|COPY(\s|\\[nrt])+([a-z_0-9.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*(\s|\\[nrt])*(\(|FROM(\s|\\[nrt])|TO(\s|\\[nrt]))|START(\s|\\[nrt])+TRANSACTION\b|SAVEPOINT(\s|\\[nrt])|RELEASE(\s|\\[nrt])+SAVEPOINT(\s|\\[nrt])|ROLLBACK(\s|\\[nrt])+TO(\s|\\[nrt])|(COMMIT|ROLLBACK)(\s|\\[nrt])+PREPARED(\s|\\[nrt])|PREPARE(\s|\\[nrt])+TRANSACTION(\s|\\[nrt])|CALL(\s|\\[nrt])+([a-z_0-9.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*(\s|\\[nrt])*\(|REINDEX(\s|\\[nrt])+(\(|TABLE|INDEX|SCHEMA|DATABASE|SYSTEM)\b|REFRESH(\s|\\[nrt])+MATERIALIZED(\s|\\[nrt])|WITH(\s|\\[nrt])+(RECURSIVE(\s|\\[nrt])+)?[a-z_][a-z0-9_]*(\s|\\[nrt])*(\([^)]*\)(\s|\\[nrt])*)?AS((\s|\\[nrt])|\()|(BEGIN|START)(\s|\\[nrt])+(TRANSACTION|WORK|ISOLATION|READ)\b|(COMMIT|END|ROLLBACK|ABORT)(\s|\\[nrt])+(WORK|TRANSACTION|AND(\s|\\[nrt]))|(SAVEPOINT|RELEASE((\s|\\[nrt])+SAVEPOINT)?)(\s|\\[nrt])+[a-z_][a-z0-9_]*(\s|\\[nrt])*(;(\s|\\[nrt])*)?["`]$|SET(\s|\\[nrt])+(LOCAL(\s|\\[nrt])+|SESSION(\s|\\[nrt])+)?([a-z_][a-z0-9_.]*(\s|\\[nrt])*(=|TO(\s|\\[nrt]))|ROLE(\s|\\[nrt])|SESSION(\s|\\[nrt])+AUTHORIZATION(\s|\\[nrt])|TRANSACTION(\s|\\[nrt])|CONSTRAINTS(\s|\\[nrt])|TIME(\s|\\[nrt])+ZONE(\s|\\[nrt])|SCHEMA(\s|\\[nrt])|NAMES(\s|\\[nrt]))|SHOW(\s|\\[nrt])+(ALL|[a-z_][a-z0-9_.]*)(\s|\\[nrt])*(;(\s|\\[nrt])*)?["`]$|LOCK(\s|\\[nrt])+(TABLE(\s|\\[nrt])+)?(ONLY(\s|\\[nrt])+)?([a-z_0-9.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*(\s|\\[nrt])*(IN(\s|\\[nrt])|NOWAIT|;|["`]$)|DEALLOCATE(\s|\\[nrt])+(PREPARE(\s|\\[nrt])+)?ALL\b|PREPARE(\s|\\[nrt])+[a-z_][a-z0-9_]*(\s|\\[nrt])*(\([^)]*\)(\s|\\[nrt])*)?AS(\s|\\[nrt])|DECLARE(\s|\\[nrt])+[a-z_][a-z0-9_]*(\s|\\[nrt])+(BINARY(\s|\\[nrt])+|(A|IN)SENSITIVE(\s|\\[nrt])+|(NO(\s|\\[nrt])+)?SCROLL(\s|\\[nrt])+)*CURSOR\b)'
+      - kind: raw_string_literal
+        regex: '(?i)^["`](\s)*(\((\s)*)*((BEGIN|COMMIT|END|ROLLBACK|ABORT|CHECKPOINT|ANALYZE|VACUUM)(\s)*(;(\s)*)?["`]$|SELECT([\s(*])|INSERT\s+INTO\s|UPDATE\s+(ONLY\s+)?([a-z_0-9.]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*(\s+(AS\s+)?[a-z_][a-z0-9_]*)?\s+SET\s|DELETE\s+FROM\s|(DROP|REASSIGN)\s+OWNED\s+BY\s|TABLE\s+(ONLY\s+)?([a-z_0-9.]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*\s*["`;]|COMMENT\s+ON\s|(CREATE(\s+OR\s+REPLACE)?(\s+(UNIQUE|TEMP|TEMPORARY|UNLOGGED|MATERIALIZED))*|ALTER|DROP)\s+(TABLE|INDEX|VIEW|FUNCTION|PROCEDURE|SCHEMA|ROLE|USER|SEQUENCE|TYPE|DOMAIN|EXTENSION|TRIGGER|POLICY|PUBLICATION|SUBSCRIPTION|DATABASE|DEFAULT|SYSTEM|EVENT|AGGREGATE|COLLATION|OPERATOR|RULE|SERVER|STATISTICS)\b|TRUNCATE\s+(TABLE\s+|ONLY\s+)?([a-z_0-9.]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*\s*(["`;,(]|RESTART|CASCADE|CONTINUE)|DO\s+(\$|LANGUAGE\s)|VALUES\s*\(|(ANALYZE|VACUUM)(\s+\([^)]*\)|\s+VERBOSE)?\s+([a-z_0-9.]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*\s*["`;,(]|(GRANT|REVOKE)\s+(SELECT|INSERT|UPDATE|DELETE|TRUNCATE|REFERENCES|TRIGGER|USAGE|EXECUTE|ALL|CONNECT|CREATE|TEMPORARY|TEMP|MAINTAIN|SET)\b|RESET\s+(ALL|ROLE|SESSION\s+AUTHORIZATION|[a-z_][a-z0-9_]*[_.][a-z0-9_.]*)(\s)*(;(\s)*)?["`]$|DISCARD\s+(ALL|PLANS|SEQUENCES|TEMP|TEMPORARY)\b|(NOTIFY|LISTEN|UNLISTEN)\s+(([a-z_]|%(\[[0-9]+\])?[sqv])([a-z0-9_]|%(\[[0-9]+\])?[sqv])*|\*)\s*["`;,(]|EXPLAIN\s+(\(|ANALYZE\s|VERBOSE\s|SELECT\s|INSERT\s|UPDATE\s|DELETE\s|WITH\s)|MERGE\s+INTO\s|COPY\s+([a-z_0-9.]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*\s*(\(|FROM\s|TO\s)|START\s+TRANSACTION\b|SAVEPOINT\s|RELEASE\s+SAVEPOINT\s|ROLLBACK\s+TO\s|(COMMIT|ROLLBACK)\s+PREPARED\s|PREPARE\s+TRANSACTION\s|CALL\s+([a-z_0-9.]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*\s*\(|REINDEX\s+(\(|TABLE|INDEX|SCHEMA|DATABASE|SYSTEM)\b|REFRESH\s+MATERIALIZED\s|WITH\s+(RECURSIVE\s+)?[a-z_][a-z0-9_]*\s*(\([^)]*\)\s*)?AS(\s|\()|(BEGIN|START)\s+(TRANSACTION|WORK|ISOLATION|READ)\b|(COMMIT|END|ROLLBACK|ABORT)\s+(WORK|TRANSACTION|AND\s)|(SAVEPOINT|RELEASE(\s+SAVEPOINT)?)\s+[a-z_][a-z0-9_]*(\s)*(;(\s)*)?["`]$|SET\s+(LOCAL\s+|SESSION\s+)?([a-z_][a-z0-9_.]*\s*(=|TO\s)|ROLE\s|SESSION\s+AUTHORIZATION\s|TRANSACTION\s|CONSTRAINTS\s|TIME\s+ZONE\s|SCHEMA\s|NAMES\s)|SHOW\s+(ALL|[a-z_][a-z0-9_.]*)(\s)*(;(\s)*)?["`]$|LOCK\s+(TABLE\s+)?(ONLY\s+)?([a-z_0-9.]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*\s*(IN\s|NOWAIT|;|["`]$)|DEALLOCATE\s+(PREPARE\s+)?ALL\b|PREPARE\s+[a-z_][a-z0-9_]*\s*(\([^)]*\)\s*)?AS\s|DECLARE\s+[a-z_][a-z0-9_]*\s+(BINARY\s+|(A|IN)SENSITIVE\s+|(NO\s+)?SCROLL\s+)*CURSOR\b)'
+  sql-builder:
+    any:
+      - kind: binary_expression
+      - kind: parenthesized_expression
+      - matches: sql-builder-call
+      - matches: sql-text-transform
+  sql-builder-path:
+    any:
+      - matches: sql-builder
+      - kind: argument_list
+        inside:
+          any:
+            - matches: sql-builder-call
+            - matches: sql-text-transform
+      - kind: literal_element
+      - kind: literal_value
+      - kind: composite_literal
+  sql-concat:
+    kind: binary_expression
+    has:
+      field: operator
+      regex: '^\+$'
+  sql-text-builder:
+    any:
+      - matches: sql-concat
+      - matches: sql-builder-call
+  sql-text-path:
+    any:
+      - matches: sql-text-builder
+      - matches: sql-text-transform
+      - kind: argument_list
+        inside:
+          matches: sql-text-transform
+      - kind: parenthesized_expression
+      - kind: argument_list
+        inside:
+          matches: sql-builder-call
+      - kind: literal_element
+      - kind: literal_value
+      - kind: composite_literal
+  sql-text-transform:
+    kind: call_expression
+    has:
+      field: function
+      regex: '^strings\.(TrimSpace|ToLower|ToUpper|ToTitle|Clone|Title)$'
+  sql-binding-path:
+    any:
+      - matches: sql-text-path
+      - kind: keyed_element
+  sql-concat-path:
+    any:
+      - matches: sql-concat
+      - kind: parenthesized_expression
+  sql-named-value:
+    any:
+      - kind: identifier
+        matches: sql-plain-binding-name
+      - kind: selector_expression
+        has:
+          field: field
+          matches: sql-plain-binding-name
+  sql-named-operand:
+    any:
+      - matches: sql-named-value
+      - kind: call_expression
+        has:
+          field: function
+          matches: sql-named-value
+      - kind: index_expression
+        has:
+          field: operand
+          all:
+            - matches: sql-named-operand
+            - not:
+                kind: call_expression
+                has:
+                  field: function
+                  kind: selector_expression
+                  has:
+                    field: field
+                    regex: '^Fields$'
+      - kind: call_expression
+        all:
+          - has:
+              field: function
+              any:
+                - kind: selector_expression
+                  all:
+                    - has:
+                        field: operand
+                        regex: '^strings$'
+                    - has:
+                        field: field
+                        regex: '^(Clone|Fields|FieldsFunc|Join|Map|Repeat|Replace|ReplaceAll|Split|SplitAfter|SplitAfterN|SplitN|Title|To[A-Za-z0-9]*|Trim[A-Za-z]*)$'
+                - kind: identifier
+                  regex: '^string$'
+          - has:
+              field: arguments
+              has:
+                any:
+                  - matches: sql-named-operand
+                  - kind: composite_literal
+                    has:
+                      kind: literal_value
+                      has:
+                        kind: literal_element
+                        has:
+                          matches: sql-named-operand
+      - kind: call_expression
+        all:
+          - has:
+              field: function
+              kind: selector_expression
+              all:
+                - has:
+                    field: operand
+                    regex: '^fmt$'
+                - has:
+                    field: field
+                    regex: '^(Sprintf|Sprint)$'
+          - has:
+              field: arguments
+              has:
+                nthChild: 1
+                matches: sql-named-operand
+      - kind: slice_expression
+        has:
+          field: operand
+          matches: sql-named-operand
+      - kind: unary_expression
+        has:
+          field: operand
+          matches: sql-named-operand
+      - kind: parenthesized_expression
+        has:
+          matches: sql-named-operand
+      - kind: call_expression
+        has:
+          field: function
+          any:
+            - kind: identifier
+              regex: '(?i)^must(sql|query)$'
+            - kind: selector_expression
+              has:
+                field: field
+                regex: '(?i)^must(sql|query)$'
+      - kind: call_expression
+        all:
+          - has:
+              field: function
+              kind: selector_expression
+              has:
+                field: field
+                regex: '^(Replace|ReplaceAll)$'
+          - has:
+              field: arguments
+              has:
+                matches: sql-named-operand
+      - kind: call_expression
+        all:
+          - has:
+              field: function
+              kind: selector_expression
+              all:
+                - has:
+                    field: operand
+                    regex: '^fmt$'
+                - has:
+                    field: field
+                    regex: '^Sprintf$'
+          - has:
+              field: arguments
+              all:
+                - has:
+                    nthChild: 1
+                    regex: '^["`]%[sv]'
+                - has:
+                    nthChild: 2
+                    matches: sql-named-operand
+      - kind: call_expression
+        all:
+          - has:
+              field: function
+              kind: selector_expression
+              all:
+                - has:
+                    field: operand
+                    regex: '^fmt$'
+                - has:
+                    field: field
+                    regex: '^Sprint$'
+          - has:
+              field: arguments
+              has:
+                matches: sql-named-operand
+      - kind: call_expression
+        all:
+          - has:
+              field: function
+              kind: selector_expression
+              all:
+                - has:
+                    field: operand
+                    regex: '^fmt$'
+                - has:
+                    field: field
+                    regex: '^Sprintf$'
+          - has:
+              field: arguments
+              all:
+                - has:
+                    nthChild: 1
+                    regex: '^["`]((\s|\\[nrt]|[()])*%(\[[0-9]+\])?[sv])+(\s|\\[nrt]|[()])*["`]$'
+                - has:
+                    matches: sql-named-operand
+  sql-arg-path:
+    any:
+      - kind: argument_list
+      - kind: composite_literal
+      - kind: literal_value
+      - kind: literal_element
+      - kind: parenthesized_expression
+      - matches: sql-concat
+  sql-fragment:
+    any:
+      - kind: interpreted_string_literal
+        regex: '(\b|\\[nrt])(SELECT|FROM|WHERE|JOIN|ON|USING|ORDER|GROUP|BY|HAVING|LIMIT|OFFSET|FETCH|FOR|RETURNING|VALUES|SET|UNION|INTERSECT|EXCEPT|INSERT|UPDATE|DELETE|MERGE|AND|OR|NOT|IN|IS|NULL|NULLS|LIKE|ILIKE|BETWEEN|EXISTS|DISTINCT|AS|WITH|INTO|DO|CONFLICT|CASE|WHEN|THEN|ELSE|END|ASC|DESC|LATERAL|OVER|PARTITION|ANY|ALL|NOWAIT|SKIP|LOCKED|SHARE)\b|\$[0-9]'
+      - kind: raw_string_literal
+        regex: '(\b)(SELECT|FROM|WHERE|JOIN|ON|USING|ORDER|GROUP|BY|HAVING|LIMIT|OFFSET|FETCH|FOR|RETURNING|VALUES|SET|UNION|INTERSECT|EXCEPT|INSERT|UPDATE|DELETE|MERGE|AND|OR|NOT|IN|IS|NULL|NULLS|LIKE|ILIKE|BETWEEN|EXISTS|DISTINCT|AS|WITH|INTO|DO|CONFLICT|CASE|WHEN|THEN|ELSE|END|ASC|DESC|LATERAL|OVER|PARTITION|ANY|ALL|NOWAIT|SKIP|LOCKED|SHARE)\b|\$[0-9]'
+      - matches: sql-clause-phrase
+      - matches: sql-nulls-order
+  sql-nulls-order:
+    any:
+      - kind: interpreted_string_literal
+        regex: '(?i)(\b|\\[nrt])nulls(\s|\\[nrt])+(first|last)\b'
+      - kind: raw_string_literal
+        regex: '(?i)\bnulls\s+(first|last)\b'
+  sql-clause-phrase:
+    any:
+      - kind: interpreted_string_literal
+        regex: '(?i)(\b|\\[nrt])((for(\s|\\[nrt])+(update|share|no(\s|\\[nrt])+key(\s|\\[nrt])+update|key(\s|\\[nrt])+share)|order(\s|\\[nrt])+by|group(\s|\\[nrt])+by|on(\s|\\[nrt])+conflict|skip(\s|\\[nrt])+locked|insert(\s|\\[nrt])+into|delete(\s|\\[nrt])+from|(left|right|inner|full|cross)(\s|\\[nrt])+join|union(\s|\\[nrt])+(all|select)|fetch(\s|\\[nrt])+(first|next)((\s|\\[nrt])+(\d+|%[dsv]|\$\d+|\(([^()]|\([^()]*\))*\)))?(\s|\\[nrt])+rows?|fetch(\s|\\[nrt])+((next|prior|first|last|absolute|relative|forward|backward)((\s|\\[nrt])+(-?\d+|%[dsv]|\$\d+|all))?|all|-?\d+|%[dsv]|\$\d+)(\s|\\[nrt])+(from|in)|join(\s|\\[nrt])+([a-z_][a-z0-9_.]*|%s)((\s|\\[nrt])+(as(\s|\\[nrt])+)?[a-z_][a-z0-9_]*)?(\s|\\[nrt])+(using|on))\b|(limit|offset)(\s|\\[nrt])+(\d|%[dsv]|\$)|values(\s|\\[nrt])*\(|where(\s|\\[nrt])+[a-z_][a-z0-9_.]*(\s|\\[nrt])*(=|<|>|!=|in(\s|\\[nrt])*\(|is(\s|\\[nrt])+(not(\s|\\[nrt])+)?(null|true|false|unknown|distinct(\s|\\[nrt])+from)\b|like(\s|\\[nrt])|between(\s|\\[nrt])))'
+      - kind: raw_string_literal
+        regex: '(?i)(\b)((for(\s)+(update|share|no(\s)+key(\s)+update|key(\s)+share)|order(\s)+by|group(\s)+by|on(\s)+conflict|skip(\s)+locked|insert(\s)+into|delete(\s)+from|(left|right|inner|full|cross)(\s)+join|union(\s)+(all|select)|fetch(\s)+(first|next)((\s)+(\d+|%[dsv]|\$\d+|\(([^()]|\([^()]*\))*\)))?(\s)+rows?|fetch(\s)+((next|prior|first|last|absolute|relative|forward|backward)((\s)+(-?\d+|%[dsv]|\$\d+|all))?|all|-?\d+|%[dsv]|\$\d+)(\s)+(from|in)|join(\s)+([a-z_][a-z0-9_.]*|%s)((\s)+(as(\s)+)?[a-z_][a-z0-9_]*)?(\s)+(using|on))\b|(limit|offset)(\s)+(\d|%[dsv]|\$)|values(\s)*\(|where(\s)+[a-z_][a-z0-9_.]*(\s)*(=|<|>|!=|in(\s)*\(|is(\s)+(not(\s)+)?(null|true|false|unknown|distinct(\s)+from)\b|like(\s)|between(\s)))'
+rule:
+  any:
+    - all:
+        - not:
+            inside:
+              stopBy: end
+              kind: literal_element
+              nthChild: 1
+              inside:
+                kind: keyed_element
+        - any:
+            - all:
+                - matches: string-literal
+                - not:
+                    regex: '^["`](\s|\\[nrt])*["`]$'
+                - inside:
+                    matches: sql-concat
+                    stopBy:
+                      not:
+                        matches: sql-text-path
+                    has:
+                      stopBy:
+                        not:
+                          matches: sql-concat-path
+                      matches: sql-named-operand
+            - all:
+                - matches: string-literal
+                - matches: sql-fragment
+                - inside:
+                    all:
+                      - matches: sql-builder-call
+                      - has:
+                          field: arguments
+                          has:
+                            stopBy:
+                              not:
+                                matches: sql-arg-path
+                            matches: sql-named-operand
+                    stopBy:
+                      not:
+                        matches: sql-text-path
+                - not:
+                    any:
+                      - all:
+                          - nthChild: 1
+                          - inside:
+                              kind: argument_list
+                              inside:
+                                matches: sql-quoted-diagnostic-call
+                      - all:
+                          - not:
+                              matches: sql-strong-fragment
+                          - inside:
+                              stopBy:
+                                not:
+                                  matches: sql-text-path
+                              matches: sql-quoted-diagnostic-call
+            - all:
+                - matches: string-literal
+                - not:
+                    regex: '^["`](\s|\\[nrt])*["`]$'
+                - inside:
+                    kind: assignment_statement
+                    all:
+                      - has:
+                          field: operator
+                          regex: '^\+=$'
+                      - has:
+                          field: left
+                          has:
+                            any:
+                              - matches: sql-named-operand
+                              - kind: unary_expression
+                                has:
+                                  field: operand
+                                  matches: sql-named-operand
+                    stopBy:
+                      not:
+                        any:
+                          - matches: sql-text-path
+                          - kind: expression_list
+            - all:
+                - matches: string-literal
+                - not:
+                    regex: '^["`](\s|\\[nrt])*["`]$'
+                - any:
+                    - matches: sql-plain-named-binding
+                    - inside:
+                        stopBy:
+                          not:
+                            matches: sql-binding-path
+                        all:
+                          - any:
+                              - matches: sql-text-builder
+                              - matches: sql-text-transform
+                              - kind: composite_literal
+                              - kind: parenthesized_expression
+                          - matches: sql-plain-named-binding
+            - all:
+                - any:
+                    - kind: interpreted_string_literal
+                      regex: '^["`](\s|\\[nrt])*(\((\s|\\[nrt])*)*(TRUNCATE(\s|\\[nrt])+((TABLE|ONLY)(\s|\\[nrt])+(ONLY(\s|\\[nrt])+)?([a-z_0-9.]|[A-Z][a-z]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*((\s|\\[nrt])*\*)?(\s|\\[nrt])*(,|;|(?i:RESTART|CONTINUE|CASCADE|RESTRICT)\b|["`]$|%(\[[0-9]+\])?[sqv](\s|\\[nrt])*(;|["`]$))|([a-z_0-9.]|[A-Z][a-z]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*((\s|\\[nrt])*\*)?((\s|\\[nrt])*(,|;|(?i:RESTART|CONTINUE|CASCADE|RESTRICT)\b)|["`]$))|LOCK(\s|\\[nrt])+(TABLE(\s|\\[nrt])+)?(ONLY(\s|\\[nrt])+)?([a-z_0-9.]|[A-Z][a-z]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*((\s|\\[nrt])*\*)?((\s|\\[nrt])*,(\s|\\[nrt])*(ONLY(\s|\\[nrt])+)?([a-z_0-9.]|[A-Z][a-z]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*((\s|\\[nrt])*\*)?)*(\s|\\[nrt])+(?i:IN)(\s|\\[nrt])+((?i:ACCESS(\s|\\[nrt])+SHARE|ROW(\s|\\[nrt])+SHARE|ROW(\s|\\[nrt])+EXCLUSIVE|SHARE(\s|\\[nrt])+UPDATE(\s|\\[nrt])+EXCLUSIVE|SHARE(\s|\\[nrt])+ROW(\s|\\[nrt])+EXCLUSIVE|SHARE|EXCLUSIVE|ACCESS(\s|\\[nrt])+EXCLUSIVE)|%(\[[0-9]+\])?[sqv])(\s|\\[nrt])+(?i:MODE)\b|(ANALYZE|VACUUM)(\s|\\[nrt])+(\([^)]*\)(\s|\\[nrt])*([a-z_0-9.]|[A-Z][a-z]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*(\s|\\[nrt])*(\(|,|;|["`]$|%(\[[0-9]+\])?[sqv](\s|\\[nrt])*(;|["`]$))|([a-z_0-9.]|[A-Z][a-z]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*((\s|\\[nrt])*(\(|,|;)|["`]$))|CALL(\s|\\[nrt])+([a-z_0-9.]|[A-Z][a-z]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*(\s|\\[nrt])*\((\s|\\[nrt])*\$[0-9]|TABLE(\s|\\[nrt])+(ONLY(\s|\\[nrt])+)?[a-z_][a-z0-9_.]*(\s|\\[nrt])*["`;]|TRUNCATE(\s|\\[nrt])+(TABLE(\s|\\[nrt])+|ONLY(\s|\\[nrt])+)?[a-z_][a-z0-9_.]*(["`]|(\s|\\[nrt])*([;,(]|(?i:RESTART|CASCADE|CONTINUE)\b))|(ANALYZE|VACUUM)((\s|\\[nrt])+\([^)]*\)|(\s|\\[nrt])+VERBOSE)?(\s|\\[nrt])+[a-z_][a-z0-9_.]*(["`]|(\s|\\[nrt])*[;,(])|(NOTIFY|LISTEN|UNLISTEN)(\s|\\[nrt])+(([a-z_]|%(\[[0-9]+\])?[sqv])([a-z0-9_]|%(\[[0-9]+\])?[sqv])*|\*)(["`]|(\s|\\[nrt])*[;,(])|COPY(\s|\\[nrt])+(([a-z_0-9.]|[A-Z][a-z]|\\"[^"\\%]+\\")([A-Za-z0-9_.]|\\"[^"\\%]+\\")*(\s|\\[nrt])*(\([^)]*\)(\s|\\[nrt])*)?(FROM|TO)(\s|\\[nrt])+((STDIN|STDOUT)((\s|\\[nrt])|;|\(|["`]$)|PROGRAM(\s|\\[nrt])|'')|([a-z_0-9.]|[A-Z][a-z]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*(\s|\\[nrt])*(\([^)]*\)(\s|\\[nrt])*)?(FROM|TO)(\s|\\[nrt])+((STDIN|STDOUT)((\s|\\[nrt])|;|\(|["`]$)|PROGRAM(\s|\\[nrt])+''|''[^''%]+''))|COPY(\s|\\[nrt])*\(([^()'']|''[^'']*''|\(([^()'']|''[^'']*'')*\))*\)(\s|\\[nrt])*TO(\s|\\[nrt])+((STDIN|STDOUT)((\s|\\[nrt])|;|\(|["`]$)|PROGRAM(\s|\\[nrt])+''|''[^''%]+'')|CALL(\s|\\[nrt])+[a-z_][a-z0-9_.]*(\s|\\[nrt])*\(|LOCK(\s|\\[nrt])+TABLE(\s|\\[nrt])+(ONLY(\s|\\[nrt])+)?["`]$|LOCK(\s|\\[nrt])+TABLE(\s|\\[nrt])+(ONLY(\s|\\[nrt])+)?([a-z_0-9.]|[A-Z][a-z]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*((\s|\\[nrt])*\*)?((\s|\\[nrt])*,(\s|\\[nrt])*(ONLY(\s|\\[nrt])+)?([a-z_0-9.]|[A-Z][a-z]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*((\s|\\[nrt])*\*)?)*(\s|\\[nrt])*((?i:NOWAIT)\b|;|["`]$)|LOCK(\s|\\[nrt])+(ONLY(\s|\\[nrt])+)?([a-z_0-9.]|[A-Z][a-z]|\\"[^"\\%]+\\")([A-Za-z0-9_.]|\\"[^"\\%]+\\")*(\s|\\[nrt])+(?i:NOWAIT)\b|SET(\s|\\[nrt])+([a-z_][a-z0-9_.]*|[A-Z][a-z]+([A-Z][a-z]+)+)(\s|\\[nrt])*(=|TO(\s|\\[nrt]))|SET(\s|\\[nrt])+[A-Z][A-Z0-9]*(_[A-Z0-9]+)+((\s|\\[nrt])+TO(\s|\\[nrt])|(\s|\\[nrt])+=(\s|\\[nrt])*(''[^'']*''|\\?"[^"\\]*\\?"|[-+]?([0-9]+(\.[0-9]*)?|\.[0-9]+)|%[dsvq]|[A-Za-z_][A-Za-z0-9_$]*)((\s|\\[nrt])*,(\s|\\[nrt])*(''[^'']*''|\\?"[^"\\]*\\?"|[-+]?([0-9]+(\.[0-9]*)?|\.[0-9]+)|%[dsvq]|[A-Za-z_][A-Za-z0-9_$]*))*(\s|\\[nrt])*;?(\s|\\[nrt])*["`]$)|SET(\s|\\[nrt])+[A-Za-z][A-Za-z0-9_.]*((\s|\\[nrt])*=|(\s|\\[nrt])+TO)(\s|\\[nrt])*(''[^'']*''|DEFAULT)(\s|\\[nrt])*;?(\s|\\[nrt])*["`]$|SHOW(\s|\\[nrt])+(ALL|[a-z_][a-z0-9_]*[_.][a-z0-9_.]*)(\s|\\[nrt])*(;(\s|\\[nrt])*)?["`]$)'
+                    - kind: raw_string_literal
+                      regex: '^["`](\s)*(\((\s)*)*(TRUNCATE\s+((TABLE|ONLY)\s+(ONLY\s+)?([a-z_0-9.]|[A-Z][a-z]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*(\s*\*)?\s*(,|;|(?i:RESTART|CONTINUE|CASCADE|RESTRICT)\b|["`]$|%(\[[0-9]+\])?[sqv]\s*(;|["`]$))|([a-z_0-9.]|[A-Z][a-z]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*(\s*\*)?(\s*(,|;|(?i:RESTART|CONTINUE|CASCADE|RESTRICT)\b)|["`]$))|LOCK\s+(TABLE\s+)?(ONLY\s+)?([a-z_0-9.]|[A-Z][a-z]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*(\s*\*)?(\s*,\s*(ONLY\s+)?([a-z_0-9.]|[A-Z][a-z]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*(\s*\*)?)*\s+(?i:IN)\s+((?i:ACCESS\s+SHARE|ROW\s+SHARE|ROW\s+EXCLUSIVE|SHARE\s+UPDATE\s+EXCLUSIVE|SHARE\s+ROW\s+EXCLUSIVE|SHARE|EXCLUSIVE|ACCESS\s+EXCLUSIVE)|%(\[[0-9]+\])?[sqv])\s+(?i:MODE)\b|(ANALYZE|VACUUM)\s+(\([^)]*\)\s*([a-z_0-9.]|[A-Z][a-z]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*\s*(\(|,|;|["`]$|%(\[[0-9]+\])?[sqv]\s*(;|["`]$))|([a-z_0-9.]|[A-Z][a-z]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*(\s*(\(|,|;)|["`]$))|CALL\s+([a-z_0-9.]|[A-Z][a-z]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*\s*\(\s*\$[0-9]|TABLE\s+(ONLY\s+)?[a-z_][a-z0-9_.]*\s*["`;]|TRUNCATE\s+(TABLE\s+|ONLY\s+)?[a-z_][a-z0-9_.]*(["`]|\s*([;,(]|(?i:RESTART|CASCADE|CONTINUE)\b))|(ANALYZE|VACUUM)(\s+\([^)]*\)|\s+VERBOSE)?\s+[a-z_][a-z0-9_.]*(["`]|\s*[;,(])|(NOTIFY|LISTEN|UNLISTEN)\s+(([a-z_]|%(\[[0-9]+\])?[sqv])([a-z0-9_]|%(\[[0-9]+\])?[sqv])*|\*)(["`]|\s*[;,(])|COPY\s+(([a-z_0-9.]|[A-Z][a-z]|"[^"%]+")([A-Za-z0-9_.]|"[^"%]+")*\s*(\([^)]*\)\s*)?(FROM|TO)\s+((STDIN|STDOUT)(\s|;|\(|["`]$)|PROGRAM\s|'')|([a-z_0-9.]|[A-Z][a-z]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*\s*(\([^)]*\)\s*)?(FROM|TO)\s+((STDIN|STDOUT)(\s|;|\(|["`]$)|PROGRAM\s+''|''[^''%]+''))|COPY\s*\(([^()'']|''[^'']*''|\(([^()'']|''[^'']*'')*\))*\)\s*TO\s+((STDIN|STDOUT)(\s|;|\(|["`]$)|PROGRAM\s+''|''[^''%]+'')|CALL\s+[a-z_][a-z0-9_.]*\s*\(|LOCK\s+TABLE\s+(ONLY\s+)?["`]$|LOCK\s+TABLE\s+(ONLY\s+)?([a-z_0-9.]|[A-Z][a-z]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*(\s*\*)?(\s*,\s*(ONLY\s+)?([a-z_0-9.]|[A-Z][a-z]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*(\s*\*)?)*\s*((?i:NOWAIT)\b|;|["`]$)|LOCK\s+(ONLY\s+)?([a-z_0-9.]|[A-Z][a-z]|"[^"%]+")([A-Za-z0-9_.]|"[^"%]+")*\s+(?i:NOWAIT)\b|SET\s+([a-z_][a-z0-9_.]*|[A-Z][a-z]+([A-Z][a-z]+)+)\s*(=|TO\s)|SET\s+[A-Z][A-Z0-9]*(_[A-Z0-9]+)+(\s+TO\s|\s+=\s*(''[^'']*''|\\?"[^"\\]*\\?"|[-+]?([0-9]+(\.[0-9]*)?|\.[0-9]+)|%[dsvq]|[A-Za-z_][A-Za-z0-9_$]*)(\s*,\s*(''[^'']*''|\\?"[^"\\]*\\?"|[-+]?([0-9]+(\.[0-9]*)?|\.[0-9]+)|%[dsvq]|[A-Za-z_][A-Za-z0-9_$]*))*(\s)*;?(\s)*["`]$)|SET\s+[A-Za-z][A-Za-z0-9_.]*(\s*=|\s+TO)\s*(''[^'']*''|DEFAULT)(\s)*;?(\s)*["`]$|SHOW\s+(ALL|[a-z_][a-z0-9_]*[_.][a-z0-9_.]*)(\s)*(;(\s)*)?["`]$)'
+                - inside:
+                    any:
+                      - matches: sql-builder-call
+                      - matches: sql-concat
+                    stopBy:
+                      not:
+                        matches: sql-text-path
+    - any:
+        - kind: interpreted_string_literal
+          regex: '^["`](\s|\\[nrt])*(\((\s|\\[nrt])*)*(SELECT([\s(*]|\\[nrt])|INSERT(\s|\\[nrt])+INTO(\s|\\[nrt])|UPDATE(\s|\\[nrt])+(ONLY(\s|\\[nrt])+)?([a-z_0-9.]|[A-Z][a-z]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|\\"[^"\\]+\\"|%(\[[0-9]+\])?[sqv])*((\s|\\[nrt])+(AS(\s|\\[nrt])+)?[a-z_][a-z0-9_]*)?(\s|\\[nrt])+SET(\s|\\[nrt])|DELETE(\s|\\[nrt])+FROM(\s|\\[nrt])|(DROP|REASSIGN)(\s|\\[nrt])+OWNED(\s|\\[nrt])+BY(\s|\\[nrt])|(CREATE((\s|\\[nrt])+OR(\s|\\[nrt])+REPLACE)?((\s|\\[nrt])+(UNIQUE|TEMP|TEMPORARY|UNLOGGED|MATERIALIZED))*|ALTER|DROP)(\s|\\[nrt])+(TABLE|INDEX|VIEW|FUNCTION|PROCEDURE|SCHEMA|ROLE|USER|SEQUENCE|TYPE|DOMAIN|EXTENSION|TRIGGER|POLICY|PUBLICATION|SUBSCRIPTION|DATABASE|DEFAULT|SYSTEM|EVENT|AGGREGATE|COLLATION|OPERATOR|RULE|SERVER|STATISTICS)\b|DO(\s|\\[nrt])+(\$|LANGUAGE(\s|\\[nrt]))|VALUES(\s|\\[nrt])*\(|(GRANT|REVOKE)(\s|\\[nrt])+(SELECT|INSERT|UPDATE|DELETE|TRUNCATE|REFERENCES|TRIGGER|USAGE|EXECUTE|ALL|CONNECT|CREATE|TEMPORARY|TEMP|MAINTAIN|SET)\b|RESET(\s|\\[nrt])+(ALL|ROLE|SESSION(\s|\\[nrt])+AUTHORIZATION|[a-z_][a-z0-9_]*[_.][a-z0-9_.]*)(\s|\\[nrt])*(;(\s|\\[nrt])*)?["`]$|DISCARD(\s|\\[nrt])+(ALL|PLANS|SEQUENCES|TEMP|TEMPORARY)\b|EXPLAIN(\s|\\[nrt])+(\(|ANALYZE(\s|\\[nrt])|VERBOSE(\s|\\[nrt])|SELECT(\s|\\[nrt])|INSERT(\s|\\[nrt])|UPDATE(\s|\\[nrt])|DELETE(\s|\\[nrt])|WITH(\s|\\[nrt]))|MERGE(\s|\\[nrt])+INTO(\s|\\[nrt])|START(\s|\\[nrt])+TRANSACTION((\s|\\[nrt])*(;|["`]$)|(\s|\\[nrt])+(ISOLATION|READ|DEFERRABLE|NOT)\b)|SAVEPOINT(\s|\\[nrt])+[a-z_][a-z0-9_]*(\s|\\[nrt])*(;(\s|\\[nrt])*)?["`]$|RELEASE(\s|\\[nrt])+SAVEPOINT(\s|\\[nrt])|ROLLBACK(\s|\\[nrt])+TO(\s|\\[nrt])+SAVEPOINT(\s|\\[nrt])|(COMMIT|ROLLBACK)(\s|\\[nrt])+PREPARED(\s|\\[nrt])|PREPARE(\s|\\[nrt])+TRANSACTION(\s|\\[nrt])|REINDEX(\s|\\[nrt])+(\(|TABLE|INDEX|SCHEMA|DATABASE|SYSTEM)\b|REFRESH(\s|\\[nrt])+MATERIALIZED(\s|\\[nrt])|WITH(\s|\\[nrt])+(RECURSIVE(\s|\\[nrt])+)?[a-z_][a-z0-9_]*(\s|\\[nrt])*(\([^)]*\)(\s|\\[nrt])*)?AS((\s|\\[nrt])|\(|["`]$)|SET(\s|\\[nrt])+(LOCAL|SESSION|ROLE)(\s|\\[nrt])|COMMENT(\s|\\[nrt])+ON(\s|\\[nrt])+(TABLE|COLUMN|INDEX|SCHEMA|ROLE|FUNCTION|PROCEDURE|VIEW|MATERIALIZED(\s|\\[nrt])+VIEW|SEQUENCE|TYPE|DOMAIN|EXTENSION|TRIGGER|POLICY|DATABASE|CONSTRAINT)(\s|\\[nrt]))'
+        - kind: raw_string_literal
+          regex: '^["`](\s)*(\((\s)*)*(SELECT([\s(*])|INSERT\s+INTO\s|UPDATE\s+(ONLY\s+)?([a-z_0-9.]|[A-Z][a-z]|"[^"]+"|%(\[[0-9]+\])?[sqv])([A-Za-z0-9_.]|"[^"]+"|%(\[[0-9]+\])?[sqv])*(\s+(AS\s+)?[a-z_][a-z0-9_]*)?\s+SET\s|DELETE\s+FROM\s|(DROP|REASSIGN)\s+OWNED\s+BY\s|(CREATE(\s+OR\s+REPLACE)?(\s+(UNIQUE|TEMP|TEMPORARY|UNLOGGED|MATERIALIZED))*|ALTER|DROP)\s+(TABLE|INDEX|VIEW|FUNCTION|PROCEDURE|SCHEMA|ROLE|USER|SEQUENCE|TYPE|DOMAIN|EXTENSION|TRIGGER|POLICY|PUBLICATION|SUBSCRIPTION|DATABASE|DEFAULT|SYSTEM|EVENT|AGGREGATE|COLLATION|OPERATOR|RULE|SERVER|STATISTICS)\b|DO\s+(\$|LANGUAGE\s)|VALUES\s*\(|(GRANT|REVOKE)\s+(SELECT|INSERT|UPDATE|DELETE|TRUNCATE|REFERENCES|TRIGGER|USAGE|EXECUTE|ALL|CONNECT|CREATE|TEMPORARY|TEMP|MAINTAIN|SET)\b|RESET\s+(ALL|ROLE|SESSION\s+AUTHORIZATION|[a-z_][a-z0-9_]*[_.][a-z0-9_.]*)(\s)*(;(\s)*)?["`]$|DISCARD\s+(ALL|PLANS|SEQUENCES|TEMP|TEMPORARY)\b|EXPLAIN\s+(\(|ANALYZE\s|VERBOSE\s|SELECT\s|INSERT\s|UPDATE\s|DELETE\s|WITH\s)|MERGE\s+INTO\s|START\s+TRANSACTION(\s*(;|["`]$)|\s+(ISOLATION|READ|DEFERRABLE|NOT)\b)|SAVEPOINT\s+[a-z_][a-z0-9_]*\s*(;\s*)?["`]$|RELEASE\s+SAVEPOINT\s|ROLLBACK\s+TO\s+SAVEPOINT\s|(COMMIT|ROLLBACK)\s+PREPARED\s|PREPARE\s+TRANSACTION\s|REINDEX\s+(\(|TABLE|INDEX|SCHEMA|DATABASE|SYSTEM)\b|REFRESH\s+MATERIALIZED\s|WITH\s+(RECURSIVE\s+)?[a-z_][a-z0-9_]*\s*(\([^)]*\)\s*)?AS(\s|\(|["`]$)|SET\s+(LOCAL|SESSION|ROLE)\s|COMMENT\s+ON\s+(TABLE|COLUMN|INDEX|SCHEMA|ROLE|FUNCTION|PROCEDURE|VIEW|MATERIALIZED\s+VIEW|SEQUENCE|TYPE|DOMAIN|EXTENSION|TRIGGER|POLICY|DATABASE|CONSTRAINT)\s)'
+        - kind: interpreted_string_literal
+          regex: '([^A-Za-z0-9_]|\\[nrt])CASE(\s|\\[nrt])+WHEN(\s|\\[nrt])[\s\S]*(\s|\\[nrt]|\))THEN(\s|\\[nrt])[\s\S]*(\s|\\[nrt]|\))END\b'
+        - kind: raw_string_literal
+          regex: '\bCASE\s+WHEN\s[\s\S]*\bTHEN\s[\s\S]*\bEND\b'
+    - all:
+        - matches: string-literal
+        - any:
+            - matches: sql-argument
+            - not:
+                regex: '^["`](\s|\\[nrt])*["`]$'
+              inside:
+                stopBy:
+                  not:
+                    matches: sql-plain-builder-path
+                all:
+                  - matches: sql-plain-builder
+                  - matches: sql-argument
+            - any:
+                - matches: sql-fragment
+                - matches: sql-statement-text
+              inside:
+                stopBy:
+                  not:
+                    matches: sql-builder-path
+                all:
+                  - matches: sql-builder
+                  - matches: sql-argument
+    - all:
+        - matches: sql-statement-text
+        - any:
+            - matches: weak-sql-argument
+            - not:
+                regex: '^["`](\s|\\[nrt])*["`]$'
+              inside:
+                stopBy:
+                  not:
+                    matches: sql-builder-path
+                all:
+                  - matches: sql-builder
+                  - matches: weak-sql-argument
+ignores:
+  - 'docs/**'
+  - '**/*_test.go'
+  - '**/testdata/**'
+  - '**/fixtures/**'
+  - '**/vendor/**'
+  - '**/testsupport/**'
+  - '**/*dbtest/**'
+  - '**/mocks/**'
+---
+id: no-pgx-begin-func
+language: Go
+severity: error
+message: pgx.BeginFunc·BeginTxFunc 대신 Begin(또는 BeginTx) 뒤에 defer pgxdb.RollbackDeferred(ctx, tx, &err)를 두고 tx.Commit(ctx)로 끝내세요. hololive는 dbx.InPgxTx·InPgxTxOptions를 씁니다. 저장점은 tx.Begin과 pgxdb.Rollback으로 처리합니다.
+note: |
+  BeginFunc는 호출자 ctx로 롤백합니다. ctx가 취소되거나 만료되면 ROLLBACK을 보내지 못해 연결이 버려지고, fn이 오류를 낸 경우에는 롤백 실패를 버립니다.
+  pgxdb.Rollback은 취소와 분리된 5초 컨텍스트로 롤백하고 이미 닫힌 트랜잭션은 성공으로 처리합니다.
+rule:
+  any:
+    - pattern:
+        context: 'func f() { pgx.BeginFunc($$$) }'
+        selector: call_expression
+    - pattern:
+        context: 'func f() { pgx.BeginTxFunc($$$) }'
+        selector: call_expression
+ignores:
+  - 'docs/**'
+  - '**/*_test.go'
+  - '**/testdata/**'
+  - '**/fixtures/**'
+  - '**/vendor/**'
+  - '**/testsupport/**'
+  - '**/*dbtest/**'
+  - '**/mocks/**'
+---
+id: no-direct-pgx-rollback
+language: Go
+severity: error
+message: 트랜잭션과 저장점 롤백은 pgxdb.Rollback(ctx, tx) 또는 defer pgxdb.RollbackDeferred(ctx, tx, &err)로 합니다.
+note: |
+  호출자 ctx로 직접 Rollback하면 취소되거나 만료된 ctx에서 ROLLBACK이 전송되지 않아 연결을 잃고, pgx.ErrTxClosed를 호출부마다 따로 걸러야 합니다.
+rule:
+  pattern:
+    context: 'func f() { $TX.Rollback($CTX) }'
+    selector: call_expression
+constraints:
+  CTX:
+    not:
+      any:
+        - kind: interpreted_string_literal
+        - kind: raw_string_literal
+        - kind: int_literal
+ignores:
+  - 'docs/**'
+  - '**/*_test.go'
+  - '**/testdata/**'
+  - '**/fixtures/**'
+  - '**/vendor/**'
+  - '**/testsupport/**'
+  - '**/*dbtest/**'
+  - '**/mocks/**'
+  - 'postgres/pgxdb/**'
+---
+id: no-raw-pgxpool-new
+language: Go
+severity: error
+message: 운영 코드의 PostgreSQL 풀은 pgxdb.OpenPool 또는 pgxdb.OpenPoolDSN으로 엽니다.
+note: |
+  pgxpool.New·NewWithConfig는 공통 풀 검증을 건너뜁니다. 연결 수·수명·유휴 시간 필수값, 제어 연결 예약 정책, 초기 연결 시간 제한과 ping 확인이 빠집니다.
+rule:
+  any:
+    - pattern:
+        context: 'func f() { pgxpool.New($$$) }'
+        selector: call_expression
+    - pattern:
+        context: 'func f() { pgxpool.NewWithConfig($$$) }'
+        selector: call_expression
+ignores:
+  - 'docs/**'
+  - '**/*_test.go'
+  - '**/testdata/**'
+  - '**/fixtures/**'
+  - '**/vendor/**'
+  - '**/testsupport/**'
+  - '**/*dbtest/**'
+  - '**/mocks/**'
+  - 'postgres/pgxdb/**'
+  - 'scripts/verify/**'
