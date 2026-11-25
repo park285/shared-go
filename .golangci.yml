@@ -110,7 +110,7 @@ linters:
             - "!$test"
           deny:
             - pkg: os/exec
-              desc: hololive-api와 저장 template 실행기는 외부 process를 실행하지 않는다. 외부 실행이 필요한 작업은 alarm-worker·youtube-collector처럼 별도 runtime이 소유한다
+              desc: hololive-api와 저장 template 실행기는 외부 process를 실행하지 않는다. 외부 실행이 필요한 작업은 alarm-worker·collector처럼 별도 runtime이 소유한다
             - pkg: plugin
               desc: hololive-api와 저장 template 실행기는 native plugin을 적재하지 않는다
         twentyq-boundaries:
@@ -145,6 +145,27 @@ linters:
         - pattern: ^errors\.As$
           pkg: ^errors$
           msg: target 타입이 정적으로 정해지면 errors.AsType[T]를 쓴다. target을 any로 받는 helper만 line-scoped nolint 사유를 남긴다 (iris-stack docs/contracts/go-modernization.md)
+        - pattern: ^pgxpool\.(Pool|Conn)\.(Exec|Query|QueryRow)$
+          pkg: ^github\.com/jackc/pgx/v5/pgxpool$
+          msg: pgxdb.Exec·Query·QueryRow에 pgxdb.Statement를 넘긴다. SQL은 queries/*.sql에 두고 pgxdb.MustStatement로 읽는다
+        - pattern: ^pgx\.(Conn|Tx)\.(Exec|Query|QueryRow)$
+          pkg: ^github\.com/jackc/pgx/v5$
+          msg: pgxdb.Exec·Query·QueryRow에 pgxdb.Statement를 넘긴다. SQL은 queries/*.sql에 두고 pgxdb.MustStatement로 읽는다
+        - pattern: ^pgx\.Batch\.Queue$
+          pkg: ^github\.com/jackc/pgx/v5$
+          msg: pgxdb.Queue에 pgxdb.Statement를 넘긴다. SQL은 queries/*.sql에 두고 pgxdb.MustStatement로 읽는다
+        - pattern: ^pgxdb\.Querier\.(Exec|Query|QueryRow)$
+          pkg: ^github\.com/park285/shared-go/postgres/pgxdb$
+          msg: pgxdb.Exec·Query·QueryRow에 pgxdb.Statement를 넘긴다. SQL은 queries/*.sql에 두고 pgxdb.MustStatement로 읽는다
+        - pattern: ^pgx\.(BeginFunc|BeginTxFunc)$
+          pkg: ^github\.com/jackc/pgx/v5$
+          msg: Begin·BeginTx 뒤에 defer pgxdb.RollbackDeferred(ctx, tx, &err)를 두고 tx.Commit(ctx)로 끝낸다. BeginFunc는 취소된 ctx로 롤백해 연결을 잃는다
+        - pattern: ^pgx\.Tx\.Rollback$
+          pkg: ^github\.com/jackc/pgx/v5$
+          msg: 롤백은 취소와 분리된 컨텍스트로 보내는 pgxdb.Rollback 또는 defer pgxdb.RollbackDeferred로 한다
+        - pattern: ^pgxpool\.(Tx\.Rollback|New|NewWithConfig)$
+          pkg: ^github\.com/jackc/pgx/v5/pgxpool$
+          msg: 풀은 pgxdb.OpenPool·OpenPoolDSN으로 열고, 롤백은 pgxdb.Rollback 또는 defer pgxdb.RollbackDeferred로 한다
 
     godox:
       keywords:
@@ -324,6 +345,7 @@ linters:
         - net/netip
         - github.com/jackc/pgx/v5
         - github.com/jackc/pgx/v5/*
+        - github.com/park285/shared-go/postgres/pgxdb
         - github.com/go-playground/validator/v10
         - github.com/panjf2000/ants/*
         - github.com/stretchr/testify/*
@@ -332,7 +354,7 @@ linters:
         - google.golang.org/grpc
         - google.golang.org/grpc/*
         - golang.org/x/sync/*
-        - github.com/kapu/hololive-youtube-collector/internal/runtime/collecterr
+        - github.com/kapu/hololive-collector/internal/runtime/collecterr
         - github.com/park285/iris-client-go/v5/internal/*
         - github.com/park285/iris-console/internal/apierr
         - github.com/park285/iris-console/internal/value
@@ -370,6 +392,11 @@ linters:
   exclusions:
     generated: strict
     warn-unused: true
+    rules:
+      - path: (_test\.go$|(^|/)(testsupport|[^/]*dbtest|e2e|mocks|testdata|fixtures)/)
+        linters:
+          - forbidigo
+        text: pgxdb\.
 
 issues:
   max-issues-per-linter: 0

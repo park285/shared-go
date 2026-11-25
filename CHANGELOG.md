@@ -17,7 +17,7 @@ release 섹션은 최신 순으로 배치합니다. 이 문서는 `미출시`와
 - **형식 검증:** `verification/tla/InboxClaim/`이 inbox claim·lease·완료와 수락 순번 선두, 같은 파티션의 단일 처리권, 재예약 뒤 키 간 선발 순서를 불변식 8개로 검사합니다. `verification/lean/BoundedQueue/`가 bounded queue 연산을 증명하며 같은 명세를 `bounded_queue_trace_fuzz_test.go`가 구현에 대어 봅니다.
 - **테스트:** 실제 시간을 기다리던 `time.Sleep` 9곳을 synctest·잠금 관측 동기화로 바꾸고 `httputil` body 상한 fuzz 대상을 추가했습니다.
 - 결정 기록 목록을 폐기했습니다. 과거 결정은 Git 이력에서 확인할 수 있습니다.
-- 스택 ast-grep 규칙 `.ast-grep/rules/go-postgres-conventions.yml`을 받았습니다. `verify-tools.sh scan`이 운영 Go 코드의 인라인 SQL, `pgx.BeginFunc`·`BeginTxFunc`, 트랜잭션 직접 `Rollback`, `pgxpool.New`를 거부합니다. `postgres/pgxdb`는 롤백과 풀 생성을 소유하므로 두 규칙에서 제외합니다. 현재 위반은 없습니다.
+- 운영 Go 코드의 PostgreSQL 규칙을 스택 golangci-lint forbidigo 규칙으로 받습니다. `pgxpool`·`pgx`·`pgxdb.Querier`의 `Exec`·`Query`·`QueryRow`와 `pgx.Batch.Queue`를 직접 부르지 못하게 해 SQL은 `pgxdb.Statement`로만 실행됩니다. `pgx.BeginFunc`·`BeginTxFunc`, 트랜잭션 직접 `Rollback`, `pgxpool.New`·`NewWithConfig`도 거부합니다. `postgres/pgxdb`의 실행 래퍼와 `OpenPool`만 줄 단위 `nolint`로 예외를 둡니다. 이 규칙이 스택 ast-grep 규칙 `go-postgres-conventions.yml`을 대신하므로 그 사본을 지웠습니다.
 
 ## postgres/v1.0.4 - 2026-11-25
 

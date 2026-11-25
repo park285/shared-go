@@ -181,7 +181,7 @@ func newPoolAndPing(ctx context.Context, poolCfg *pgxpool.Config, opts Options) 
 		return nil, err
 	}
 
-	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg) //nolint:forbidigo // OpenPool이 검증한 설정으로 풀을 여는 유일한 지점이다.
 	if err != nil {
 		return nil, fmt.Errorf("pgxdb: create pool: %w", err)
 	}
