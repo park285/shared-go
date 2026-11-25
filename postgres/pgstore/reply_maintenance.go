@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/park285/shared-go/postgres/pgxdb"
+
 	"github.com/park285/shared-go/v2/pkg/irisdurable"
 )
 
@@ -26,7 +28,7 @@ func (s *Store) Redrive(ctx context.Context, limit int) ([]RedriveCandidate, err
 		return nil, err
 	}
 
-	rows, err := s.db.Query(ctx, listRedrivableRepliesSQL, s.opts.Scope, s.opts.MaxAttempts, s.opts.AutomaticReplayHorizon.Seconds(), limit)
+	rows, err := pgxdb.Query(ctx, s.db, listRedrivableRepliesSQL, s.opts.Scope, s.opts.MaxAttempts, s.opts.AutomaticReplayHorizon.Seconds(), limit)
 	if err != nil {
 		return nil, fmt.Errorf("pgstore: list redrivable replies: %w", err)
 	}
@@ -81,7 +83,7 @@ func (s *Store) Retire(ctx context.Context, limit int) ([]RetiredReply, error) {
 		return nil, err
 	}
 
-	rows, err := s.db.Query(ctx, retireExhaustedRepliesSQL, s.opts.Scope, s.opts.MaxAttempts, s.opts.AutomaticReplayHorizon.Seconds(), limit)
+	rows, err := pgxdb.Query(ctx, s.db, retireExhaustedRepliesSQL, s.opts.Scope, s.opts.MaxAttempts, s.opts.AutomaticReplayHorizon.Seconds(), limit)
 	if err != nil {
 		return nil, fmt.Errorf("pgstore: retire exhausted replies: %w", err)
 	}
@@ -120,7 +122,7 @@ func (s *Store) Retire(ctx context.Context, limit int) ([]RetiredReply, error) {
 }
 
 func (s *Store) CountRepliesByStatus(ctx context.Context) (map[irisdurable.ReplyStatus]int64, error) {
-	rows, err := s.db.Query(ctx, countRepliesByStatusSQL, s.opts.Scope)
+	rows, err := pgxdb.Query(ctx, s.db, countRepliesByStatusSQL, s.opts.Scope)
 	if err != nil {
 		return nil, fmt.Errorf("pgstore: count replies by status: %w", err)
 	}
@@ -163,7 +165,7 @@ func (s *Store) PruneReplies(ctx context.Context, limit int) (int64, error) {
 		return 0, errors.New("pgstore: prune limit must be positive")
 	}
 
-	tag, err := s.db.Exec(ctx, pruneRepliesSQL, s.opts.Scope, limit)
+	tag, err := pgxdb.Exec(ctx, s.db, pruneRepliesSQL, s.opts.Scope, limit)
 	if err != nil {
 		return 0, fmt.Errorf("pgstore: prune replies: %w", err)
 	}

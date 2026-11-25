@@ -2,7 +2,8 @@ package pgstore
 
 import (
 	"embed"
-	"strings"
+
+	"github.com/park285/shared-go/postgres/pgxdb"
 
 	"github.com/park285/shared-go/v2/pkg/sqlutil"
 )
@@ -10,54 +11,50 @@ import (
 //go:embed queries/*.sql
 var queryFS embed.FS
 
-func inboxQuery(name, explicitRecovery string) string {
-	query := strings.NewReplacer(
+func inboxQuery(name, explicitRecovery string) pgxdb.Statement {
+	return pgxdb.MustStatement(queryFS, name).Replace(
 		"{{heads}}", sqlutil.MustQuery(queryFS, "queries/inbox_heads.sql"),
 		"{{eligible}}", sqlutil.MustQuery(queryFS, "queries/inbox_eligible.sql"),
 		"{{eligible_at}}", sqlutil.MustQuery(queryFS, "queries/inbox_eligible_at.sql"),
-	).Replace(sqlutil.MustQuery(queryFS, name))
-
-	return strings.NewReplacer("{{row}}", "current_row", "{{explicit_recovery}}", explicitRecovery).Replace(query)
+	).Replace("{{row}}", "current_row", "{{explicit_recovery}}", explicitRecovery)
 }
 
-func replyQuery(name, row, maxAttempts, replayHorizon string) string {
-	query := strings.NewReplacer(
+func replyQuery(name, row, maxAttempts, replayHorizon string) pgxdb.Statement {
+	return pgxdb.MustStatement(queryFS, name).Replace(
 		"{{eligible}}", sqlutil.MustQuery(queryFS, "queries/reply_eligible.sql"),
 		"{{eligible_at}}", sqlutil.MustQuery(queryFS, "queries/reply_eligible_at.sql"),
-	).Replace(sqlutil.MustQuery(queryFS, name))
-
-	return strings.NewReplacer("{{row}}", row, "{{max_attempts}}", maxAttempts, "{{replay_horizon}}", replayHorizon).Replace(query)
+	).Replace("{{row}}", row, "{{max_attempts}}", maxAttempts, "{{replay_horizon}}", replayHorizon)
 }
 
 var (
-	admitInboxSQL             = sqlutil.MustQuery(queryFS, "queries/admit_inbox.sql")
+	admitInboxSQL             = pgxdb.MustStatement(queryFS, "queries/admit_inbox.sql")
 	claimInboxSQL             = inboxQuery("queries/claim_inbox.sql", "$5")
-	completeInboxSQL          = sqlutil.MustQuery(queryFS, "queries/complete_inbox.sql")
-	renewInboxLeaseSQL        = sqlutil.MustQuery(queryFS, "queries/renew_inbox_lease.sql")
-	releaseInboxSQL           = sqlutil.MustQuery(queryFS, "queries/release_inbox.sql")
-	deferInboxSQL             = sqlutil.MustQuery(queryFS, "queries/defer_inbox.sql")
-	manualReviewInboxSQL      = sqlutil.MustQuery(queryFS, "queries/manual_review_inbox.sql")
-	pruneInboxCompletedSQL    = sqlutil.MustQuery(queryFS, "queries/prune_inbox_completed.sql")
-	pruneInboxManualReviewSQL = sqlutil.MustQuery(queryFS, "queries/prune_inbox_manual_review.sql")
-	releaseClaimTokenSQL      = sqlutil.MustQuery(queryFS, "queries/release_claim_token.sql")
-	inboxRuntimeSnapshotSQL   = sqlutil.MustQuery(queryFS, "queries/inbox_runtime_snapshot.sql")
+	completeInboxSQL          = pgxdb.MustStatement(queryFS, "queries/complete_inbox.sql")
+	renewInboxLeaseSQL        = pgxdb.MustStatement(queryFS, "queries/renew_inbox_lease.sql")
+	releaseInboxSQL           = pgxdb.MustStatement(queryFS, "queries/release_inbox.sql")
+	deferInboxSQL             = pgxdb.MustStatement(queryFS, "queries/defer_inbox.sql")
+	manualReviewInboxSQL      = pgxdb.MustStatement(queryFS, "queries/manual_review_inbox.sql")
+	pruneInboxCompletedSQL    = pgxdb.MustStatement(queryFS, "queries/prune_inbox_completed.sql")
+	pruneInboxManualReviewSQL = pgxdb.MustStatement(queryFS, "queries/prune_inbox_manual_review.sql")
+	releaseClaimTokenSQL      = pgxdb.MustStatement(queryFS, "queries/release_claim_token.sql")
+	inboxRuntimeSnapshotSQL   = pgxdb.MustStatement(queryFS, "queries/inbox_runtime_snapshot.sql")
 	inboxReadySnapshotSQL     = inboxQuery("queries/inbox_ready_snapshot.sql", "$2")
-	applyInboxRecoverySQL     = sqlutil.MustQuery(queryFS, "queries/apply_inbox_recovery.sql")
+	applyInboxRecoverySQL     = pgxdb.MustStatement(queryFS, "queries/apply_inbox_recovery.sql")
 
-	insertNonceSQL = sqlutil.MustQuery(queryFS, "queries/insert_nonce.sql")
-	pruneNonceSQL  = sqlutil.MustQuery(queryFS, "queries/prune_nonce.sql")
+	insertNonceSQL = pgxdb.MustStatement(queryFS, "queries/insert_nonce.sql")
+	pruneNonceSQL  = pgxdb.MustStatement(queryFS, "queries/prune_nonce.sql")
 
-	lockReplySequenceSQL          = sqlutil.MustQuery(queryFS, "queries/lock_reply_sequence.sql")
-	stageReplySQL                 = sqlutil.MustQuery(queryFS, "queries/stage_reply.sql")
-	markReplyPayloadDivergenceSQL = sqlutil.MustQuery(queryFS, "queries/mark_reply_payload_divergence.sql")
+	lockReplySequenceSQL          = pgxdb.MustStatement(queryFS, "queries/lock_reply_sequence.sql")
+	stageReplySQL                 = pgxdb.MustStatement(queryFS, "queries/stage_reply.sql")
+	markReplyPayloadDivergenceSQL = pgxdb.MustStatement(queryFS, "queries/mark_reply_payload_divergence.sql")
 	beginReplyAttemptSQL          = replyQuery("queries/begin_reply_attempt.sql", "outbox", "$7", "$8")
-	replyExistsSQL                = sqlutil.MustQuery(queryFS, "queries/reply_exists.sql")
-	settleReplySQL                = sqlutil.MustQuery(queryFS, "queries/settle_reply.sql")
-	inspectReplySQL               = sqlutil.MustQuery(queryFS, "queries/inspect_reply.sql")
+	replyExistsSQL                = pgxdb.MustStatement(queryFS, "queries/reply_exists.sql")
+	settleReplySQL                = pgxdb.MustStatement(queryFS, "queries/settle_reply.sql")
+	inspectReplySQL               = pgxdb.MustStatement(queryFS, "queries/inspect_reply.sql")
 
 	listRedrivableRepliesSQL  = replyQuery("queries/list_redrivable_replies.sql", "candidate", "$2", "$3")
-	retireExhaustedRepliesSQL = sqlutil.MustQuery(queryFS, "queries/retire_exhausted_replies.sql")
-	pruneRepliesSQL           = sqlutil.MustQuery(queryFS, "queries/prune_replies.sql")
-	countRepliesByStatusSQL   = sqlutil.MustQuery(queryFS, "queries/count_replies_by_status.sql")
+	retireExhaustedRepliesSQL = pgxdb.MustStatement(queryFS, "queries/retire_exhausted_replies.sql")
+	pruneRepliesSQL           = pgxdb.MustStatement(queryFS, "queries/prune_replies.sql")
+	countRepliesByStatusSQL   = pgxdb.MustStatement(queryFS, "queries/count_replies_by_status.sql")
 	replyReadySnapshotSQL     = replyQuery("queries/reply_ready_snapshot.sql", "candidate", "$2", "$3")
 )

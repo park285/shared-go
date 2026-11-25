@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/park285/shared-go/postgres/pgxdb"
 
 	"github.com/park285/shared-go/v2/pkg/irisdurable"
 )
@@ -61,7 +62,7 @@ func (s *Store) StageRow(ctx context.Context, record irisdurable.ReplyRecord) (S
 }
 
 func (s *Store) stageRow(ctx context.Context, db Querier, record irisdurable.ReplyRecord) (StagedReply, error) {
-	if _, err := db.Exec(ctx, lockReplySequenceSQL, s.opts.Scope, record.MessageID, record.Phase); err != nil {
+	if _, err := pgxdb.Exec(ctx, db, lockReplySequenceSQL, s.opts.Scope, record.MessageID, record.Phase); err != nil {
 		return StagedReply{}, fmt.Errorf("pgstore: lock reply sequence %s/%s: %w", record.MessageID, record.Phase, err)
 	}
 
@@ -74,7 +75,7 @@ func (s *Store) stageRow(ctx context.Context, db Querier, record irisdurable.Rep
 		inserted bool
 	)
 
-	err := db.QueryRow(ctx, stageReplySQL,
+	err := pgxdb.QueryRow(ctx, db, stageReplySQL,
 		s.opts.Scope, record.MessageID, record.Phase, record.Ordinal,
 		record.RoomID, record.ClientRequestID, string(record.Payload), hash,
 		s.opts.ReplyRetention.Seconds(),
@@ -101,7 +102,7 @@ func (s *Store) stageRow(ctx context.Context, db Querier, record irisdurable.Rep
 	case staged.PayloadHash == hash:
 		staged.Outcome = irisdurable.ReplyAlreadyStaged
 	default:
-		if _, err := db.Exec(ctx, markReplyPayloadDivergenceSQL, s.opts.Scope, record.MessageID, record.Phase, record.Ordinal); err != nil {
+		if _, err := pgxdb.Exec(ctx, db, markReplyPayloadDivergenceSQL, s.opts.Scope, record.MessageID, record.Phase, record.Ordinal); err != nil {
 			return StagedReply{}, fmt.Errorf("pgstore: mark reply divergence %s/%s/%d: %w", record.MessageID, record.Phase, record.Ordinal, err)
 		}
 
@@ -123,7 +124,7 @@ func (s *Store) BeginAttempt(ctx context.Context, identity irisdurable.ReplyIden
 
 	attempt := irisdurable.ReplyAttempt{ReplyIdentity: identity, ClaimToken: token}
 
-	err = s.db.QueryRow(ctx, beginReplyAttemptSQL,
+	err = pgxdb.QueryRow(ctx, s.db, beginReplyAttemptSQL,
 		s.opts.Scope, identity.MessageID, identity.Phase, identity.Ordinal, token, s.opts.Lease.Seconds(),
 		s.opts.MaxAttempts, s.opts.AutomaticReplayHorizon.Seconds(),
 	).Scan(&attempt.Attempt, &attempt.ClientRequestID)
@@ -137,7 +138,7 @@ func (s *Store) BeginAttempt(ctx context.Context, identity irisdurable.ReplyIden
 
 	var exists int
 
-	existsErr := s.db.QueryRow(ctx, replyExistsSQL, s.opts.Scope, identity.MessageID, identity.Phase, identity.Ordinal).Scan(&exists)
+	existsErr := pgxdb.QueryRow(ctx, s.db, replyExistsSQL, s.opts.Scope, identity.MessageID, identity.Phase, identity.Ordinal).Scan(&exists)
 
 	switch {
 	case errors.Is(existsErr, pgx.ErrNoRows):
@@ -183,7 +184,7 @@ func (s *Store) Inspect(ctx context.Context, identity irisdurable.ReplyIdentity)
 		status string
 	)
 
-	err := s.db.QueryRow(ctx, inspectReplySQL, s.opts.Scope, identity.MessageID, identity.Phase, identity.Ordinal).
+	err := pgxdb.QueryRow(ctx, s.db, inspectReplySQL, s.opts.Scope, identity.MessageID, identity.Phase, identity.Ordinal).
 		Scan(&status, &state.ClientRequestID, &state.Attempts, &state.PayloadPresent)
 
 	switch {
