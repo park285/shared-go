@@ -1,10 +1,10 @@
 # shared-go
 
-Iris Stack의 Go 프로젝트들(`hololive-bot`, `chat-bot-go-kakao`, `twentyq-bot`, `iris-console`)이 공통으로 사용하는 라이브러리 저장소입니다.
+Iris Stack의 Go 프로젝트들(`hololive-bot`, `chat-bot-go-kakao`, `iris-console`)이 공통으로 사용하는 라이브러리 저장소입니다.
 
 모든 모듈은 `cmd/` 실행 진입점이 없는 순수 라이브러리입니다. 공급자 중립 계약과 외부 어댑터를 별도 모듈로 선택합니다.
 
-> **호환성 정책**: 이 모듈의 호환성 보장 대상은 iris-stack 내부 소비자(`hololive-bot`, `chat-bot-go-kakao`, `twentyq-bot`, `iris-console`)로 한정됩니다. 외부 사용을 막지는 않지만 외부 importer 호환성은 보장하지 않으며, 스택 내 소비자가 0인 exported API는 major 승격 없이 minor 릴리스에서 제거될 수 있습니다.
+> **호환성 정책**: 이 모듈의 호환성 보장 대상은 iris-stack 내부 소비자(`hololive-bot`, `chat-bot-go-kakao`, `iris-console`)로 한정됩니다. 외부 사용을 막지는 않지만 외부 importer 호환성은 보장하지 않으며, 스택 내 소비자가 0인 exported API는 major 승격 없이 minor 릴리스에서 제거될 수 있습니다.
 
 신규 `core`·`postgres`·`transport`·`openai` 모듈은 독립적인 안정 버전과 모듈별 태그를 사용합니다. 스택 소비자를 같은 배포에서 함께 이전할 수 있는 API 변경은 minor로 게시하고, major 전환(모듈 경로 변경)은 스택 밖 사용자가 직접 조치해야 하는 비호환 변경에만 쓰며, 위 정책대로 외부 importer의 API 호환성은 여기에 들어가지 않습니다. 단계 판단이 갈리면 낮은 단계를 고릅니다. 최초 경로 이전은 스택 소비자 8개 모듈의 동시 전환입니다. 구경로 forwarding·alias·영구 `replace`는 제공하지 않습니다.
 
@@ -77,7 +77,7 @@ go get github.com/park285/shared-go/v2@latest
 | 구분 | 키 | 소유 |
 |---|---|---|
 | 기본 마스킹(credential) | `password`·`pwd`·`passwd`·`secret`·`client_secret`·`token`·`bot_token`·`access_token`·`refresh_token`·`api_key`·`apikey`·`private_key`·`secret_key`·`authorization`·`auth_header`·`cookie`·`webhook_url`·`database_url`·`postgres_dsn`·`connection_url`, 접미 `_token`·`_secret`·`_password`·`_pwd`·`_passwd`·`_api_key`·`_private_key`·`_secret_key`, 값이 비밀처럼 보이는 `key` | shared-go `logging` |
-| 서비스 privacy 키 | 서비스가 `logging.Options.PrivacyKeys`로 넘긴 키(예: chat `room`·`session_thread_id`, twentyq `sender`) | 각 서비스 |
+| 서비스 privacy 키 | 서비스가 `logging.Options.PrivacyKeys`로 넘긴 키(예: chat `room`·`session_thread_id`) | 각 서비스 |
 | 보존 | 위 두 행에 없는 키. `room_id`·`user_id`·`request_id`·`trace_id` 같은 상관관계 ID는 서비스가 넘기지 않는 한 보존하며 `*_id` 접미 일괄 마스킹은 하지 않음 | — |
 
 라이브러리는 업무 식별자 privacy 키를 내장하지 않습니다. `NewLogger()`와 `PrivacyKeys`를 비운 logger는 credential 규칙만 적용합니다.

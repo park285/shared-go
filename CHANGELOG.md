@@ -6,6 +6,7 @@ release 섹션은 최신 순으로 배치합니다. 이 문서는 `미출시`와
 
 ## 미출시
 
+- **완료된 채택 문서 퇴역:** 소비자 채택이 끝난 `docs/adoption/shared-go-v1.27.0-admin-surface.md`를 지웠습니다.
 - 의존성을 최신 안정판으로 올렸습니다. `golang.org/x/net` v0.63.0, `openai/openai-go/v3` v3.105.0(`openai` 모듈) 등 Go 모듈과, promptguard 규칙 팩의 YAML 파서를 `go.yaml.in/yaml/v4` v4.0.0으로 옮겼습니다. CI의 `actions/setup-go`·`actions/setup-python`은 v7.1.0, uv는 0.13.9, govulncheck 핀은 v1.10.0입니다. 공개 Go API는 바뀌지 않습니다.
 - depguard로 `unsafe` 패키지 가져오기를 기본 금지했습니다. 공통 린트 행렬도 명시적 `unsafe` import와 cgo 사용을 거부하며 해당 파일의 경로를 출력합니다.
 - 로컬·CI·릴리스 게이트에서 golangci-lint와 govulncheck를 스택 공통 resolver로 해석합니다. 두 버전 핀은 `scripts/ci/pre-push-gate.sh`에 선언하며 도구 경로 재정의는 거부합니다. 오프라인 설치와 캐시 검증도 공통 resolver가 담당합니다. Make는 실행 파일과 고정 버전을 공통 행렬에 함께 전달합니다. 행렬은 루트 `.golangci.yml`로 각 구성의 모듈 전체와 테스트를 검사하고, 단독 생성기도 검사해 실제 로더 입력으로 커버리지를 확인합니다. `make fmt`는 선택한 모듈의 현재 빌드 구성에 자동 수정을 적용합니다.
@@ -19,6 +20,7 @@ release 섹션은 최신 순으로 배치합니다. 이 문서는 `미출시`와
 - 결정 기록 목록을 폐기했습니다. 과거 결정은 Git 이력에서 확인할 수 있습니다.
 - 운영 Go 코드의 PostgreSQL 규칙을 스택 golangci-lint forbidigo 규칙으로 받습니다. `pgxpool`·`pgx`·`pgxdb.Querier`의 `Exec`·`Query`·`QueryRow`와 `pgx.Batch.Queue`를 직접 부르지 못하게 해 SQL은 `pgxdb.Statement`로만 실행됩니다. `pgx.BeginFunc`·`BeginTxFunc`, 트랜잭션 직접 `Rollback`, `pgxpool.New`·`NewWithConfig`도 거부합니다. `postgres/pgxdb`의 실행 래퍼와 `OpenPool`만 줄 단위 `nolint`로 예외를 둡니다. 이 규칙이 스택 ast-grep 규칙 `go-postgres-conventions.yml`을 대신하므로 그 사본을 지웠습니다.
 - **형식 검증 동기화:** `InboxClaim`의 동기화 커밋을 `00182e5`로 옮겼습니다. `pgxdb.Statement` 이관 전후의 렌더한 SQL이 같아 모델은 바꾸지 않았고, 정상 모델 통과와 음성 대조 두 건의 위반을 다시 확인했습니다.
+- **TwentyQ 퇴역:** 렌더한 `.golangci.yml`에서 twentyq 경계 규칙을 지우고 README의 소비자 목록과 예시에서 twentyq-bot을 뺐습니다. 공개 API는 바뀌지 않습니다.
 
 ## postgres/v1.0.4 - 2026-11-25
 

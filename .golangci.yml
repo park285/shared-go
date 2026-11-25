@@ -113,19 +113,6 @@ linters:
               desc: hololive-api와 저장 template 실행기는 외부 process를 실행하지 않는다. 외부 실행이 필요한 작업은 alarm-worker·collector처럼 별도 runtime이 소유한다
             - pkg: plugin
               desc: hololive-api와 저장 template 실행기는 native plugin을 적재하지 않는다
-        twentyq-boundaries:
-          list-mode: lax
-          files:
-            - "**/twentyq-bot/**"
-          deny:
-            - pkg: github.com/valkey-io/valkey-go
-              desc: TwentyQ 상태는 PostgreSQL(pgx, internal/twentyq/pgstate)만 쓴다. Redis/Valkey를 추가하지 않는다
-            - pkg: github.com/redis/go-redis
-              desc: TwentyQ 상태는 PostgreSQL(pgx, internal/twentyq/pgstate)만 쓴다. Redis/Valkey를 추가하지 않는다
-            - pkg: github.com/park285/shared-go/openai
-              desc: TwentyQ LLM provider는 Vertex(google.golang.org/genai) 하나다
-            - pkg: github.com/openai/openai-go
-              desc: TwentyQ LLM provider는 Vertex(google.golang.org/genai) 하나다
 
     forbidigo:
       analyze-types: true
