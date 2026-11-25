@@ -1,6 +1,6 @@
 # InboxClaim: 누가 다음 메시지를 처리할 수 있는가
 
-동기화 커밋: e47dac354d493c2a633f52048188c0f5911b8810
+동기화 커밋: 00182e5bb49ea5583416496fc93d21317219f264
 
 **결과:** 기본 설정의 여덟 속성이 모두 통과했다. 같은 키에서는 수락 시각이 역행해도 미정산 행을 추월하지 않는다. 서로 다른 키에서는 단건 claim이 나중에 재예약된 head보다 먼저 도래한 head를 고른다. 임대 만료만으로 현재 토큰이 폐기되지는 않지만, 재획득으로 교체된 토큰으로는 갱신하거나 완료할 수 없다.
 
@@ -43,6 +43,8 @@ TLC_WORKERS=2 bash scripts/ci/verify-tools.sh tlc verification/tla/InboxClaim/In
 ```
 
 `a39addb0590552e916cd450e5ddec5e03f345533`의 기존 설정은 종료 0(생성 6,365개·고유 1,606개·깊이 10)이었지만 수락 시각 역행과 늦은 커밋을 표현하지 못했다. 이를 표현한 중간 모델도 종료 0(생성 36,126개·고유 8,280개·깊이 11)이었지만 재예약·키 간 선발은 검사하지 않았다. `Defer`와 선발 순위를 반영한 기본 설정은 작업자 2개로 상태 102,388개를 생성하고 고유 상태 23,000개를 깊이 12까지 탐색했다. 남은 상태 0개, 종료 **0**이었다.
+
+#124가 `pgstore`의 SQL 실행을 `pgxdb.Statement`로 옮긴 뒤 `queries/*.sql`은 그대로이고, `e47dac3`과 `00182e5`에서 렌더한 inbox·nonce·reply 문장 27개는 바이트 단위로 같다. 기본 설정은 같은 수(생성 102,388개·고유 23,000개)로 통과했고, `Precedes`의 시각순 복원과 `HigherPriority`의 `j < i` 대체는 각각 `OrderingKeyFIFO`와 `ReadyHeadsByPriority`를 위반했다.
 
 PostgreSQL 18.6에서 `eligibility_test.go:TestInboxClaimDoesNotPassProcessingHeadAfterClockRollback`은 A 수락 후 B의 트랜잭션에서만 `clock_timestamp()`를 A보다 1µs 이르게 돌린다. B가 안 보일 때 별도 연결로 A를 확보하고 B를 커밋했다. 기존 SQL은 두 번째 claim에 B를 반환했다. 수정 후에는 준비 수와 두 번째 claim 모두 0이고, A 정산 후에야 B를 확보했다.
 

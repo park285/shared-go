@@ -18,6 +18,7 @@ release 섹션은 최신 순으로 배치합니다. 이 문서는 `미출시`와
 - **테스트:** 실제 시간을 기다리던 `time.Sleep` 9곳을 synctest·잠금 관측 동기화로 바꾸고 `httputil` body 상한 fuzz 대상을 추가했습니다.
 - 결정 기록 목록을 폐기했습니다. 과거 결정은 Git 이력에서 확인할 수 있습니다.
 - 운영 Go 코드의 PostgreSQL 규칙을 스택 golangci-lint forbidigo 규칙으로 받습니다. `pgxpool`·`pgx`·`pgxdb.Querier`의 `Exec`·`Query`·`QueryRow`와 `pgx.Batch.Queue`를 직접 부르지 못하게 해 SQL은 `pgxdb.Statement`로만 실행됩니다. `pgx.BeginFunc`·`BeginTxFunc`, 트랜잭션 직접 `Rollback`, `pgxpool.New`·`NewWithConfig`도 거부합니다. `postgres/pgxdb`의 실행 래퍼와 `OpenPool`만 줄 단위 `nolint`로 예외를 둡니다. 이 규칙이 스택 ast-grep 규칙 `go-postgres-conventions.yml`을 대신하므로 그 사본을 지웠습니다.
+- **형식 검증 동기화:** `InboxClaim`의 동기화 커밋을 `00182e5`로 옮겼습니다. `pgxdb.Statement` 이관 전후의 렌더한 SQL이 같아 모델은 바꾸지 않았고, 정상 모델 통과와 음성 대조 두 건의 위반을 다시 확인했습니다.
 
 ## postgres/v1.0.4 - 2026-11-25
 
