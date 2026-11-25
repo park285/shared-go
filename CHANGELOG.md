@@ -6,9 +6,7 @@ release 섹션은 최신 순으로 배치합니다. 이 문서는 `미출시`와
 
 ## 미출시
 
-- `postgres/pgxdb`에 `Statement`를 추가했습니다. `MustStatement(embed.FS, name)`는 embed한 SQL 파일에서만 만듭니다. 자리표시자는 다른 `Statement` 조각(`With`)이나 상수 리터럴(`WithToken`, 변수는 컴파일 오류)로만 바꾸며, 없는 자리표시자를 바꾸면 패키지 초기화 때 panic합니다. `pgxdb.Exec`·`Query`·`QueryRow`·`Queue`는 `Statement`만 받아 `pgxdb.Querier`(pool·tx·conn)로 실행하고, 빈 문장이나 남은 `{{…}}`는 DB에 보내지 않고 `ErrInvalidStatement`로 거절합니다(`Queue`는 panic). `pgstore`의 모든 운영 호출부를 이 API로 옮겼고 조립한 SQL은 이전과 같습니다. 소비 저장소가 옮겨 간 뒤 스택 golangci `forbidigo` 규칙이 pgx의 문자열 SQL 실행 메서드를 막고, ast-grep의 `go-postgres-conventions.yml`을 대체합니다. 기존 공개 API는 바뀌지 않습니다.
 - 의존성을 최신 안정판으로 올렸습니다. `golang.org/x/net` v0.63.0, `openai/openai-go/v3` v3.105.0(`openai` 모듈) 등 Go 모듈과, promptguard 규칙 팩의 YAML 파서를 `go.yaml.in/yaml/v4` v4.0.0으로 옮겼습니다. CI의 `actions/setup-go`·`actions/setup-python`은 v7.1.0, uv는 0.13.9, govulncheck 핀은 v1.10.0입니다. 공개 Go API는 바뀌지 않습니다.
-- 통합 시험과 `pgstore` 릴리스 게이트의 PostgreSQL 이미지를 `postgres:19.0-alpine`(digest 고정)으로 올렸습니다. 공개 Go API는 바뀌지 않습니다.
 - depguard로 `unsafe` 패키지 가져오기를 기본 금지했습니다. 공통 린트 행렬도 명시적 `unsafe` import와 cgo 사용을 거부하며 해당 파일의 경로를 출력합니다.
 - 로컬·CI·릴리스 게이트에서 golangci-lint와 govulncheck를 스택 공통 resolver로 해석합니다. 두 버전 핀은 `scripts/ci/pre-push-gate.sh`에 선언하며 도구 경로 재정의는 거부합니다. 오프라인 설치와 캐시 검증도 공통 resolver가 담당합니다. Make는 실행 파일과 고정 버전을 공통 행렬에 함께 전달합니다. 행렬은 루트 `.golangci.yml`로 각 구성의 모듈 전체와 테스트를 검사하고, 단독 생성기도 검사해 실제 로더 입력으로 커버리지를 확인합니다. `make fmt`는 선택한 모듈의 현재 빌드 구성에 자동 수정을 적용합니다.
 - CI는 형제 모듈 변경을 함께 검사하도록 체크아웃 안에 소스 `go.work`를 생성해 모듈별 린트에 전달합니다. Make와 독립 Go 게이트는 `GOWORK=off`를 기본값으로 강제해 상위 스택의 `go.work`가 검사 결과를 바꾸는 문제를 수정했습니다. CI의 소스 통합 검사에는 체크아웃 내부에서 생성하고 검증한 workspace를 명시적으로 전달합니다. CI·보안 행렬은 모든 모듈을 자동 발견하고 릴리스 대상 다섯 모듈의 경로와 모듈 선언을 확인합니다. 로컬 릴리스 게이트도 같은 계약 검사를 거쳐 발견한 모든 모듈을 검사하며, 상위 Make 설정을 지우고 각 단계에 대상 모듈을 명시합니다. Make 명령줄의 `MODULES`는 상속한 CI 모듈 선택보다 우선합니다.
@@ -21,6 +19,12 @@ release 섹션은 최신 순으로 배치합니다. 이 문서는 `미출시`와
 - 결정 기록 목록을 폐기했습니다. 과거 결정은 Git 이력에서 확인할 수 있습니다.
 - 스택 ast-grep 규칙 `.ast-grep/rules/go-postgres-conventions.yml`을 받았습니다. `verify-tools.sh scan`이 운영 Go 코드의 인라인 SQL, `pgx.BeginFunc`·`BeginTxFunc`, 트랜잭션 직접 `Rollback`, `pgxpool.New`를 거부합니다. `postgres/pgxdb`는 롤백과 풀 생성을 소유하므로 두 규칙에서 제외합니다. 현재 위반은 없습니다.
 
+## postgres/v1.0.4 - 2026-11-25
+
+- `postgres/pgxdb`에 `Statement`를 추가했습니다. `MustStatement(embed.FS, name)`는 embed한 SQL 파일에서만 만듭니다. 자리표시자는 다른 `Statement` 조각(`With`)이나 상수 리터럴(`WithToken`, 변수는 컴파일 오류)로만 바꾸며, 없는 자리표시자를 바꾸면 패키지 초기화 때 panic합니다. `pgxdb.Exec`·`Query`·`QueryRow`·`Queue`는 `Statement`만 받아 `pgxdb.Querier`(pool·tx·conn)로 실행하고, 빈 문장이나 남은 `{{…}}`는 DB에 보내지 않고 `ErrInvalidStatement`로 거절합니다(`Queue`는 panic). `pgstore`의 모든 운영 호출부를 이 API로 옮겼고 조립한 SQL은 이전과 같습니다. 소비 저장소가 옮겨 간 뒤 스택 golangci `forbidigo` 규칙이 pgx의 문자열 SQL 실행 메서드를 막고, ast-grep의 `go-postgres-conventions.yml`을 대체합니다. 기존 공개 API는 바뀌지 않습니다.
+- 통합 시험과 `pgstore` 릴리스 게이트의 PostgreSQL 이미지를 `postgres:19.0-alpine`(digest 고정)으로 올렸습니다. 공개 Go API는 바뀌지 않습니다.
+- `postgres` 모듈은 루트 `v2.25.0`과 `github.com/xdg-go/stringprep` v1.0.5를 요구합니다.
+
 ## postgres/v1.0.3 - 2026-11-19
 
 - **Inbox 수락 순서(`postgres` 모듈):** 같은 `(scope, ordering_key)`의 선두를 수락 시각이 아니라 키 잠금 아래에서 발급한 수락 순번(id)으로 고릅니다. DB 시계가 역행해도 뒤에 수락한 행이 앞 행의 정산 전에 처리권을 얻지 못합니다. 서로 다른 키 사이의 선발 순서 `(available_at, created_at, id)`와 공개 Go API는 그대로입니다. Fallback delta: none.
@@ -32,11 +36,3 @@ release 섹션은 최신 순으로 배치합니다. 이 문서는 `미출시`와
 ## transport/v1.0.1 - 2026-11-18
 
 - 루트 `v2.25.0`의 `httputil.ReadAllAndClose`가 healthprobe body 정리를 단독 소유합니다. 성공·실패·panic에서 body를 한 번만 닫으며 중복 backstop과 별도 정리 구현은 두지 않습니다. body 상한과 오류 분류는 유지합니다. Fallback delta: 없음.
-
-## v2.25.0 / postgres/v1.0.2 / openai/v1.0.1 - 2026-11-18
-
-- `httputil.ReadAllAndClose`와 `DrainAndClose`가 read·drain panic에서도 body를 정확히 한 번 닫고 원래 panic을 전파합니다. read·drain·close 오류의 원인은 함께 보존합니다.
-- 스택 내 호출자가 없는 `ReadAllAndCloseWithDrainLimit`를 비공개화합니다. 기본 close API와 close 소유권을 호출자가 유지하는 `ReadAllAndDrain`은 유지합니다.
-- 분리 모듈에 이관된 미사용 테스트 helper와 API 이름 존재 여부만 검사하던 reflection 시험을 제거합니다. 릴리스 스크립트는 ShellCheck가 source 파일의 위치를 해석하도록 경로를 명시합니다.
-- PostgreSQL SCRAM은 pgx의 Unicode 3.2 미할당 문자 원문 보존 규칙을 따릅니다. pool timeout의 두 설정 시험은 서로 다른 listener에서 실행합니다.
-- OpenAI 완료 텍스트 선택은 제외한 미완료 message를 fallback에서 다시 사용하지 않고, status 생략 응답의 집계와 tool envelope 제외 동작을 유지합니다. Fallback delta: 제외 대상의 재등장 제거.
