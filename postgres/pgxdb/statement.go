@@ -83,7 +83,7 @@ func Exec(ctx context.Context, q Querier, s Statement, args ...any) (pgconn.Comm
 		return pgconn.CommandTag{}, err
 	}
 
-	return q.Exec(ctx, s.sql, args...) //nolint:wrapcheck,forbidigo // 호출부가 동작 이름으로 오류를 감싸고, 이 래퍼만 Statement를 pgx에 넘긴다.
+	return q.Exec(ctx, s.sql, args...) //nolint:forbidigo // 이 래퍼만 Statement를 pgx에 넘긴다.
 }
 
 func Query(ctx context.Context, q Querier, s Statement, args ...any) (pgx.Rows, error) {
@@ -91,7 +91,7 @@ func Query(ctx context.Context, q Querier, s Statement, args ...any) (pgx.Rows, 
 		return nil, err
 	}
 
-	return q.Query(ctx, s.sql, args...) //nolint:wrapcheck,forbidigo // 호출부가 동작 이름으로 오류를 감싸고, 이 래퍼만 Statement를 pgx에 넘긴다.
+	return q.Query(ctx, s.sql, args...) //nolint:forbidigo // 이 래퍼만 Statement를 pgx에 넘긴다.
 }
 
 func QueryRow(ctx context.Context, q Querier, s Statement, args ...any) pgx.Row {

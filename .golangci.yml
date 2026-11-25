@@ -345,6 +345,7 @@ linters:
         - net/netip
         - github.com/jackc/pgx/v5
         - github.com/jackc/pgx/v5/*
+        - github.com/park285/shared-go/postgres/pgxdb
         - github.com/go-playground/validator/v10
         - github.com/panjf2000/ants/*
         - github.com/stretchr/testify/*
@@ -392,7 +393,7 @@ linters:
     generated: strict
     warn-unused: true
     rules:
-      - path: (_test\.go$|(^|/)(testsupport|[^/]*dbtest|e2e)/)
+      - path: (_test\.go$|(^|/)(testsupport|[^/]*dbtest|e2e|mocks|testdata|fixtures)/)
         linters:
           - forbidigo
         text: pgxdb\.
