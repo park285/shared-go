@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/park285/shared-go/postgres/pgxdb"
 )
 
 func (s *Store) ClaimBatch(ctx context.Context, limit int) ([]InboxClaim, error) {
@@ -21,7 +23,7 @@ func (s *Store) ClaimBatch(ctx context.Context, limit int) ([]InboxClaim, error)
 		return nil, err
 	}
 
-	rows, err := s.db.Query(ctx, claimInboxSQL, s.opts.Scope, token, s.opts.Lease.Seconds(), limit, s.opts.InboxExplicitRecovery)
+	rows, err := pgxdb.Query(ctx, s.db, claimInboxSQL, s.opts.Scope, token, s.opts.Lease.Seconds(), limit, s.opts.InboxExplicitRecovery)
 	if err != nil {
 		return nil, &ClaimBatchError{Token: token, Err: fmt.Errorf("pgstore: claim inbox batch: %w", err)}
 	}
@@ -64,7 +66,7 @@ func (s *Store) ReleaseClaimToken(ctx context.Context, token string, keep []int6
 		return 0, errors.New("pgstore: release claim token requires a token")
 	}
 
-	tag, err := s.db.Exec(ctx, releaseClaimTokenSQL, s.opts.Scope, token, keep)
+	tag, err := pgxdb.Exec(ctx, s.db, releaseClaimTokenSQL, s.opts.Scope, token, keep)
 	if err != nil {
 		return 0, fmt.Errorf("pgstore: release claim token: %w", err)
 	}
@@ -146,7 +148,7 @@ func (s *Store) ApplyInboxRecovery(ctx context.Context, decisions []InboxRecover
 		reasons[i] = decision.Reason
 	}
 
-	tag, err := s.db.Exec(ctx, applyInboxRecoverySQL, s.opts.Scope,
+	tag, err := pgxdb.Exec(ctx, s.db, applyInboxRecoverySQL, s.opts.Scope,
 		ids, messageIDs, tokens, attempts, leases, statuses, reasons, s.opts.DiscardInboxManualReviewPayload)
 	if err != nil {
 		return fmt.Errorf("pgstore: apply inbox recovery: %w", err)
@@ -172,7 +174,7 @@ func (s *Store) pruneInbox(ctx context.Context, action string, before any, limit
 		return 0, fmt.Errorf("pgstore: %s requires Options.InboxTerminalRetention", action)
 	}
 
-	tag, err := s.db.Exec(ctx, pruneInboxCompletedSQL, s.opts.Scope, s.opts.InboxTerminalRetention.Seconds(), limit, before)
+	tag, err := pgxdb.Exec(ctx, s.db, pruneInboxCompletedSQL, s.opts.Scope, s.opts.InboxTerminalRetention.Seconds(), limit, before)
 	if err != nil {
 		return 0, fmt.Errorf("pgstore: %s completed: %w", action, err)
 	}
@@ -184,7 +186,7 @@ func (s *Store) pruneInbox(ctx context.Context, action string, before any, limit
 		return deleted, nil
 	}
 
-	tag, err = s.db.Exec(ctx, pruneInboxManualReviewSQL, s.opts.Scope, s.opts.InboxManualReviewRetention.Seconds(), remaining, before)
+	tag, err = pgxdb.Exec(ctx, s.db, pruneInboxManualReviewSQL, s.opts.Scope, s.opts.InboxManualReviewRetention.Seconds(), remaining, before)
 	if err != nil {
 		return deleted, fmt.Errorf("pgstore: %s manual review: %w", action, err)
 	}

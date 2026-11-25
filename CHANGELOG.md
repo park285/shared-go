@@ -6,6 +6,7 @@ release 섹션은 최신 순으로 배치합니다. 이 문서는 `미출시`와
 
 ## 미출시
 
+- `postgres/pgxdb`에 `Statement`를 추가했습니다. `MustStatement(embed.FS, name)`는 embed한 SQL 파일에서만 만듭니다. 자리표시자는 다른 `Statement` 조각(`With`)이나 상수 리터럴(`WithToken`, 변수는 컴파일 오류)로만 바꾸며, 없는 자리표시자를 바꾸면 패키지 초기화 때 panic합니다. `pgxdb.Exec`·`Query`·`QueryRow`·`Queue`는 `Statement`만 받아 `pgxdb.Querier`(pool·tx·conn)로 실행하고, 빈 문장이나 남은 `{{…}}`는 DB에 보내지 않고 `ErrInvalidStatement`로 거절합니다(`Queue`는 panic). `pgstore`의 모든 운영 호출부를 이 API로 옮겼고 조립한 SQL은 이전과 같습니다. 소비 저장소가 옮겨 간 뒤 스택 golangci `forbidigo` 규칙이 pgx의 문자열 SQL 실행 메서드를 막고, ast-grep의 `go-postgres-conventions.yml`을 대체합니다. 기존 공개 API는 바뀌지 않습니다.
 - 의존성을 최신 안정판으로 올렸습니다. `golang.org/x/net` v0.63.0, `openai/openai-go/v3` v3.105.0(`openai` 모듈) 등 Go 모듈과, promptguard 규칙 팩의 YAML 파서를 `go.yaml.in/yaml/v4` v4.0.0으로 옮겼습니다. CI의 `actions/setup-go`·`actions/setup-python`은 v7.1.0, uv는 0.13.9, govulncheck 핀은 v1.10.0입니다. 공개 Go API는 바뀌지 않습니다.
 - 통합 시험과 `pgstore` 릴리스 게이트의 PostgreSQL 이미지를 `postgres:19.0-alpine`(digest 고정)으로 올렸습니다. 공개 Go API는 바뀌지 않습니다.
 - depguard로 `unsafe` 패키지 가져오기를 기본 금지했습니다. 공통 린트 행렬도 명시적 `unsafe` import와 cgo 사용을 거부하며 해당 파일의 경로를 출력합니다.

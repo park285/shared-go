@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/park285/shared-go/postgres/pgxdb"
 
 	"github.com/park285/shared-go/v2/pkg/irisdurable"
 	"github.com/park285/shared-go/v2/pkg/workercontract"
@@ -34,7 +35,7 @@ func (s *Store) Admit(ctx context.Context, input irisdurable.AdmissionInput) (wo
 
 	var id int64
 
-	err := s.db.QueryRow(ctx, admitInboxSQL, s.opts.Scope, input.MessageID, input.OrderingKey, string(input.Payload)).Scan(&id)
+	err := pgxdb.QueryRow(ctx, s.db, admitInboxSQL, s.opts.Scope, input.MessageID, input.OrderingKey, string(input.Payload)).Scan(&id)
 
 	switch {
 	case err == nil:
@@ -72,7 +73,7 @@ func (s *Store) Claim(ctx context.Context) (claim InboxClaim, ok bool, err error
 
 	var payload string
 
-	row := s.db.QueryRow(ctx, claimInboxSQL, s.opts.Scope, token, s.opts.Lease.Seconds(), 1, s.opts.InboxExplicitRecovery)
+	row := pgxdb.QueryRow(ctx, s.db, claimInboxSQL, s.opts.Scope, token, s.opts.Lease.Seconds(), 1, s.opts.InboxExplicitRecovery)
 
 	err = row.Scan(&claim.ID, &claim.MessageID, &claim.OrderingKey, &payload, &claim.ClaimToken, &claim.Attempts, &claim.CreatedAt, &claim.EligibleAt)
 
@@ -152,7 +153,7 @@ func (s *Store) RuntimeSnapshot(ctx context.Context) (InboxRuntimeSnapshot, erro
 		ageSecs  float64
 	)
 
-	err := s.db.QueryRow(ctx, inboxRuntimeSnapshotSQL, s.opts.Scope).
+	err := pgxdb.QueryRow(ctx, s.db, inboxRuntimeSnapshotSQL, s.opts.Scope).
 		Scan(&snapshot.Pending, &snapshot.Processing, &snapshot.ManualReview, &snapshot.Due, &ageSecs)
 	if err != nil {
 		return InboxRuntimeSnapshot{}, fmt.Errorf("pgstore: inbox runtime snapshot: %w", err)
@@ -167,13 +168,13 @@ func (s *Store) InboxReadySnapshot(ctx context.Context) (ReadySnapshot, error) {
 	return s.readySnapshot(ctx, "inbox ready snapshot", inboxReadySnapshotSQL, s.opts.Scope, s.opts.InboxExplicitRecovery)
 }
 
-func (s *Store) readySnapshot(ctx context.Context, action, sql string, args ...any) (ReadySnapshot, error) {
+func (s *Store) readySnapshot(ctx context.Context, action string, statement pgxdb.Statement, args ...any) (ReadySnapshot, error) {
 	var (
 		snapshot ReadySnapshot
 		ageSecs  float64
 	)
 
-	if err := s.db.QueryRow(ctx, sql, args...).Scan(&snapshot.Ready, &ageSecs); err != nil {
+	if err := pgxdb.QueryRow(ctx, s.db, statement, args...).Scan(&snapshot.Ready, &ageSecs); err != nil {
 		return ReadySnapshot{}, fmt.Errorf("pgstore: %s: %w", action, err)
 	}
 
@@ -190,8 +191,8 @@ func secondsToDuration(seconds float64) time.Duration {
 	return time.Duration(seconds * float64(time.Second))
 }
 
-func (s *Store) execFenced(ctx context.Context, action, sql string, args ...any) error {
-	tag, err := s.db.Exec(ctx, sql, args...)
+func (s *Store) execFenced(ctx context.Context, action string, statement pgxdb.Statement, args ...any) error {
+	tag, err := pgxdb.Exec(ctx, s.db, statement, args...)
 	if err != nil {
 		return fmt.Errorf("pgstore: %s: %w", action, err)
 	}
