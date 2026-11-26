@@ -6,6 +6,8 @@ release 섹션은 최신 순으로 배치합니다. 이 문서는 `미출시`와
 
 ## 미출시
 
+## v2.26.0 - 2026-11-26
+
 - **SSE 프레임 reader:** 새 `pkg/sse`의 `Events(r, Limits)`가 `text/event-stream` 응답을 `Event{Type, Data}` 반복자로 돌려줍니다. 이벤트 데이터 바이트·`event` 길이·데이터 줄 수 상한을 넘거나 0 이하 상한을 받으면 오류로 멈추며, 상한 초과는 `ErrEventTooLarge`로 구분합니다. 필드 값은 SSE 규격대로 앞 공백 하나만 떼고, 주석·`id`·`retry` 줄은 무시하며, 마지막 이벤트는 빈 줄 없이 끝나도 전달합니다. chat-bot-go-kakao의 OpenAI Responses·이미지 스트림과 Anthropic Messages grounding이 각자 두던 파서 대신 이 reader를 씁니다. 기존 공개 API는 바뀌지 않습니다.
 - **완료된 채택 문서 퇴역:** 소비자 채택이 끝난 `docs/adoption/shared-go-v1.27.0-admin-surface.md`를 지웠습니다.
 - 의존성을 최신 안정판으로 올렸습니다. `golang.org/x/net` v0.63.0, `openai/openai-go/v3` v3.105.0(`openai` 모듈) 등 Go 모듈과, promptguard 규칙 팩의 YAML 파서를 `go.yaml.in/yaml/v4` v4.0.0으로 옮겼습니다. CI의 `actions/setup-go`·`actions/setup-python`은 v7.1.0, uv는 0.13.9, govulncheck 핀은 v1.10.0입니다. 공개 Go API는 바뀌지 않습니다.
@@ -22,6 +24,7 @@ release 섹션은 최신 순으로 배치합니다. 이 문서는 `미출시`와
 - 운영 Go 코드의 PostgreSQL 규칙을 스택 golangci-lint forbidigo 규칙으로 받습니다. `pgxpool`·`pgx`·`pgxdb.Querier`의 `Exec`·`Query`·`QueryRow`와 `pgx.Batch.Queue`를 직접 부르지 못하게 해 SQL은 `pgxdb.Statement`로만 실행됩니다. `pgx.BeginFunc`·`BeginTxFunc`, 트랜잭션 직접 `Rollback`, `pgxpool.New`·`NewWithConfig`도 거부합니다. `postgres/pgxdb`의 실행 래퍼와 `OpenPool`만 줄 단위 `nolint`로 예외를 둡니다. 이 규칙이 스택 ast-grep 규칙 `go-postgres-conventions.yml`을 대신하므로 그 사본을 지웠습니다.
 - **형식 검증 동기화:** `InboxClaim`의 동기화 커밋을 `00182e5`로 옮겼습니다. `pgxdb.Statement` 이관 전후의 렌더한 SQL이 같아 모델은 바꾸지 않았고, 정상 모델 통과와 음성 대조 두 건의 위반을 다시 확인했습니다.
 - **TwentyQ 퇴역:** 렌더한 `.golangci.yml`에서 twentyq 경계 규칙을 지우고 README의 소비자 목록과 예시에서 twentyq-bot을 뺐습니다. 공개 API는 바뀌지 않습니다.
+- 루트 모듈은 `v2.25.0` 이후 위 변경을 담습니다. `core`·`postgres`·`transport`·`openai` 모듈은 이번에 게시하지 않습니다.
 
 ## postgres/v1.0.4 - 2026-11-25
 
@@ -36,7 +39,3 @@ release 섹션은 최신 순으로 배치합니다. 이 문서는 `미출시`와
   - 구·신 claim 구현을 동시에 실행하지 않습니다. 전환과 롤백은 수락·claim·만료 복구를 멈춘 상태에서 README "Inbox 수락 순서"의 확인 SQL이 0행일 때만 합니다. 이 조회는 만료 복구로 `pending`이 된 재시도 행까지 포함해 두 순서의 선두가 다른 파티션을 찾습니다.
   - 참조 스키마(`postgres/pgstore/testdata/schema.sql`)의 주석을 지웠습니다.
 - `postgres` 모듈의 Go·SQL 소스에서 기계 지시문을 뺀 주석과 doc 주석을 지웠습니다. 동작 변경은 위 항목뿐입니다.
-
-## transport/v1.0.1 - 2026-11-18
-
-- 루트 `v2.25.0`의 `httputil.ReadAllAndClose`가 healthprobe body 정리를 단독 소유합니다. 성공·실패·panic에서 body를 한 번만 닫으며 중복 backstop과 별도 정리 구현은 두지 않습니다. body 상한과 오류 분류는 유지합니다. Fallback delta: 없음.
