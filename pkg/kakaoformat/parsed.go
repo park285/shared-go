@@ -12,12 +12,6 @@ import (
 	"github.com/yuin/goldmark/v2/util"
 )
 
-const (
-	emphasisItalic = 1
-	emphasisBold   = 2
-	emphasisStrike = 4
-)
-
 var plainParser = parser.New(
 	parser.WithExtensions(extension.NewTableParser(), extension.NewTaskListItemParser(), extension.NewFootnoteParser()),
 	parser.WithInlineParsers(
@@ -27,52 +21,20 @@ var plainParser = parser.New(
 	parser.WithParseDelimiterFunc(parseEmphasisDelimiter),
 )
 
-type (
-	spanShape     struct{ italic, bold bool }
-	plainDocument struct {
-		source     []byte
-		shapes     map[ast.Node]spanShape
-		tableLines int
-	}
-)
+type plainDocument struct {
+	source     []byte
+	code       *store
+	tableLines int
+}
 
 func render(input string) string {
 	literal := newStore("NEUTRALIZED")
 	code := newStore("CODE")
 	source := []byte(escapeDateListMarkers(protectCodeRanges(protectNeutralizedMarkers(input, literal), code)))
 	root := plainParser.Parse(source)
-	document := plainDocument{source: source}
-	document.measure(root)
+	document := plainDocument{source: source, code: code}
 
-	return literal.Restore(code.Restore(cleanupSpacing(document.blocks(root, 0))))
-}
-
-func (d *plainDocument) measure(node ast.Node) spanShape {
-	shape := spanShape{true, true}
-
-	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
-		part := d.measure(child)
-
-		shape.italic = shape.italic && part.italic
-		shape.bold = shape.bold && part.bold
-	}
-
-	switch n := node.(type) {
-	case *ast.Text:
-		value := n.Value.Value(d.source)
-
-		shape = spanShape{convertible(value, false), convertible(value, true)}
-	case *ast.Link, *ast.Image, *ast.AutoLink, *ast.CodeSpan, *ast.RawHTML, *literalURL:
-		shape = spanShape{}
-	case *ast.Emphasis, *ast.Strong:
-		if d.shapes == nil {
-			d.shapes = make(map[ast.Node]spanShape)
-		}
-
-		d.shapes[node] = shape
-	}
-
-	return shape
+	return literal.Restore(code.Restore(strings.TrimSpace(cleanupSpacing(document.blocks(root, 0)))))
 }
 
 func (d *plainDocument) blocks(parent ast.Node, level int) string {
@@ -110,30 +72,19 @@ func (d *plainDocument) blocks(parent ast.Node, level int) string {
 func (d *plainDocument) block(node ast.Node, level int) string {
 	switch n := node.(type) {
 	case *ast.Paragraph:
-		return d.inline(node, 0)
+		return d.inline(node)
 	case *ast.Heading:
-		return "【" + d.inline(node, 0) + "】"
+		return d.inline(node)
 	case *ast.ThematicBreak:
-		return strings.Repeat("━", 20)
+		return "---"
 	case *ast.Blockquote:
-		return prefixLines(d.blocks(node, level), "  ‖ ")
+		return prefixLines(d.blocks(node, level), "> ")
 	case *ast.List:
 		return d.list(n, level)
 	case *extast.Table:
 		return d.table(n)
 	case *ast.CodeBlock:
-		if n.CodeBlockKind == ast.CodeBlockKindIndented {
-			return n.Value.Str(d.source)
-		}
-
-		body := strings.TrimSuffix(n.Value.Str(d.source), "\n")
-		language, _ := n.Language(d.source)
-
-		if language == "" {
-			language = "Code"
-		}
-
-		return strings.TrimSpace(codeBox("", language, body))
+		return d.codeBlock(n.Value.Str(d.source))
 	case *ast.HTMLBlock:
 		if n.HTMLBlockKind == ast.HTMLBlockKind2 {
 			return ""
@@ -145,6 +96,15 @@ func (d *plainDocument) block(node ast.Node, level int) string {
 	default:
 		return d.blocks(node, level)
 	}
+}
+
+func (d *plainDocument) codeBlock(value string) string {
+	lines := strings.Split(strings.TrimSuffix(value, "\n"), "\n")
+	for index, line := range lines {
+		lines[index] = d.code.Put(line)
+	}
+
+	return strings.Join(lines, "\n")
 }
 
 func prefixLines(input, prefix string) string {
@@ -179,7 +139,7 @@ func (d *plainDocument) list(node *ast.List, level int) string {
 			output.WriteByte('\n')
 		}
 
-		marker := bulletFor(level) + " "
+		marker := "- "
 
 		if node.IsOrdered() {
 			marker = strconv.Itoa(number) + ". "
@@ -188,10 +148,10 @@ func (d *plainDocument) list(node *ast.List, level int) string {
 
 		first := item.FirstChild()
 		if status, ok := extension.TaskStatusOf(item); ok {
-			marker = "✖ "
-
 			if status == extension.TaskStatusCompleted {
-				marker = "✔ "
+				marker += "[x] "
+			} else {
+				marker += "[ ] "
 			}
 		}
 
@@ -207,7 +167,9 @@ func (d *plainDocument) list(node *ast.List, level int) string {
 			}
 
 			value := d.block(child, level+1)
-			if child != first && child.Kind() != ast.KindList {
+			if child == first && child.Kind() != ast.KindList {
+				value = strings.ReplaceAll(value, "\n", "\n"+listIndent(level)+strings.Repeat(" ", len(marker)))
+			} else if child.Kind() != ast.KindList {
 				value = prefixLines(value, listIndent(level+1))
 			}
 
@@ -218,17 +180,17 @@ func (d *plainDocument) list(node *ast.List, level int) string {
 	return output.String()
 }
 
-func (d *plainDocument) inline(parent ast.Node, style int) string {
+func (d *plainDocument) inline(parent ast.Node) string {
 	var output strings.Builder
 
-	d.inlines(&output, parent, style)
+	d.inlines(&output, parent)
 
 	return output.String()
 }
 
-func (d *plainDocument) inlines(output *strings.Builder, parent ast.Node, style int) {
+func (d *plainDocument) inlines(output *strings.Builder, parent ast.Node) {
 	for child := parent.FirstChild(); child != nil; child = child.NextSibling() {
-		if end, value, ok := d.scriptTag(child, style); ok {
+		if end, value, ok := d.scriptTag(child); ok {
 			output.WriteString(value)
 
 			child = end
@@ -236,116 +198,47 @@ func (d *plainDocument) inlines(output *strings.Builder, parent ast.Node, style 
 			continue
 		}
 
-		d.inlineNode(output, child, style)
+		d.inlineNode(output, child)
 	}
 }
 
-func (d *plainDocument) inlineNode(output *strings.Builder, node ast.Node, style int) {
+func (d *plainDocument) inlineNode(output *strings.Builder, node ast.Node) {
 	switch n := node.(type) {
 	case *ast.Text:
-		output.WriteString(styledText(n.Value.Value(d.source), style))
+		output.WriteString(n.Value.Value(d.source))
 
 		if n.SoftLineBreak() || n.HardLineBreak() {
 			output.WriteByte('\n')
 		}
-	case *ast.Emphasis:
-		d.emphasis(output, n, emphasisItalic, style)
-	case *ast.Strong:
-		d.emphasis(output, n, emphasisBold, style)
-	case *extast.Strikethrough:
-		d.inlines(output, node, style|emphasisStrike)
 	case *ast.Link:
-		d.link(output, node, n.Destination.Value(d.source), style)
+		d.link(output, node, n.Destination.Value(d.source))
 	case *ast.Image:
-		d.link(output, node, n.Destination.Value(d.source), style)
+		d.link(output, node, n.Destination.Value(d.source))
 	case *literalURL:
 		output.WriteString(TransformEscapes(n.segment.Str(d.source), func(value string) string { return value }))
 	case *ast.AutoLink:
 		output.WriteString(n.Label.Value(d.source))
 	case *ast.CodeSpan:
-		output.WriteString("⦗ " + n.Value.Value(d.source) + " ⦘")
+		output.WriteString(n.Value.Value(d.source))
 	case *ast.RawHTML:
 		output.WriteString(rawHTMLText(n.Value.Value(d.source)))
 	case *extast.FootnoteReference:
 		output.WriteString("[" + n.Label.Str(d.source) + "]")
 	default:
-		d.inlines(output, node, style)
+		d.inlines(output, node)
 	}
 }
 
-func (d *plainDocument) emphasis(output *strings.Builder, node ast.Node, style, inherited int) {
-	current := node
+func (d *plainDocument) link(output *strings.Builder, node ast.Node, destination string) {
+	label := d.inline(node)
 
-	for current.ChildCount() == 1 {
-		nested := current.FirstChild()
-		switch nested.(type) {
-		case *ast.Emphasis:
-			style |= emphasisItalic
-		case *ast.Strong:
-			style |= emphasisBold
-		default:
-			nested = nil
-		}
-
-		if nested == nil {
-			break
-		}
-
-		current = nested
-	}
-
-	shape := d.shapes[node]
-	convertibleSpan := shape.italic
-
-	if style&emphasisBold != 0 {
-		convertibleSpan = shape.bold
-	}
-
-	open, end := "", ""
-
-	if !convertibleSpan && style&^inherited != 0 {
-		switch style {
-		case emphasisItalic:
-			open, end = "❬", "❭"
-		case emphasisBold:
-			open, end = "❪", "❫"
-		default:
-			open, end = "❮", "❯"
-		}
-	}
-
-	output.WriteString(open)
-	d.inlines(output, current, inherited|style)
-	output.WriteString(end)
-}
-
-func (d *plainDocument) link(output *strings.Builder, node ast.Node, destination string, style int) {
-	label := d.inline(node, style)
-
-	if label == "" || strings.EqualFold(d.inline(node, 0), destination) {
+	if label == "" || strings.EqualFold(label, destination) {
 		output.WriteString(destination)
 	} else if destination == "" {
 		output.WriteString(label)
 	} else {
 		output.WriteString(label + "( " + destination + " )")
 	}
-}
-
-func styledText(input string, style int) string {
-	switch style & (emphasisItalic | emphasisBold) {
-	case emphasisItalic:
-		input = styleItalic(input)
-	case emphasisBold:
-		input = styleBold(input)
-	case emphasisBold | emphasisItalic:
-		input = styleBoldItalic(input)
-	}
-
-	if style&emphasisStrike != 0 {
-		input = mapOutsidePlaceholders(input, strikeText)
-	}
-
-	return input
 }
 
 func blockNode(node ast.Node) ast.BlockNode {
@@ -400,36 +293,54 @@ func (d *plainDocument) table(node *extast.Table) string {
 
 	d.tableLines += columns * (rows + 2)
 
-	values := make([][]string, 0, rows+1)
+	var output strings.Builder
 
 	for row := range tableRows(node) {
+		if output.Len() > 0 {
+			output.WriteByte('\n')
+		}
+
 		cells := make([]string, 0, columns)
 
 		for cell := row.FirstChild(); cell != nil; cell = cell.NextSibling() {
-			cells = append(cells, strings.ReplaceAll(d.inline(cell, 0), "\n", "\n        "))
+			cells = append(cells, d.inline(cell))
 		}
 
-		values = append(values, cells)
+		output.WriteString(tableRow(cells))
+	}
+
+	return output.String()
+}
+
+func tableRow(cells []string) string {
+	lines := make([][]string, len(cells))
+	height := 0
+
+	for column, cell := range cells {
+		lines[column] = strings.Split(cell, "\n")
+		height = max(height, len(lines[column]))
 	}
 
 	var output strings.Builder
 
-	for column, name := range values[0] {
-		if column > 0 {
+	for line := range height {
+		if line > 0 {
 			output.WriteByte('\n')
 		}
 
-		if name == "" {
-			name = "열 " + strconv.Itoa(column+1)
+		for column, values := range lines {
+			if column > 0 {
+				output.WriteString(" | ")
+			}
+
+			if line < len(values) {
+				if len(lines) == 1 && values[line] == "" {
+					output.WriteByte('|')
+				} else {
+					output.WriteString(values[line])
+				}
+			}
 		}
-
-		output.WriteString("【" + name + "】\n")
-
-		for row := 1; row < len(values); row++ {
-			output.WriteString("    《" + strconv.Itoa(row) + "》 " + values[row][column] + "\n")
-		}
-
-		output.WriteString("-------------------------")
 	}
 
 	return output.String()

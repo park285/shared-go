@@ -7,10 +7,10 @@ func TestRenderLinkAndCodeBoundaries(t *testing.T) {
 
 	for _, tc := range []struct{ input, want string }{
 		{"[x](https://example.com/`item`)", "x( https://example.com/`item` )"},
-		{"`[x](https://example.com/item)`", "⦗ [x](https://example.com/item) ⦘"},
-		{"**https://example.com/path**", "❪https://example.com/path❫"},
-		{"__https://example.com/path__", "❪https://example.com/path❫"},
-		{"See **https://example.com/path** now", "See ❪https://example.com/path❫ now"},
+		{"`[x](https://example.com/item)`", "[x](https://example.com/item)"},
+		{"**https://example.com/path**", "https://example.com/path"},
+		{"__https://example.com/path__", "https://example.com/path"},
+		{"See **https://example.com/path** now", "See https://example.com/path now"},
 		{"https://example.com/a*b*", "https://example.com/a*b*"},
 		{"https://example.com/a_b_c", "https://example.com/a_b_c"},
 		{"[x](https://example.com/a**)", "x( https://example.com/a** )"},

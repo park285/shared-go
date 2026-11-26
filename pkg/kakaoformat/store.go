@@ -92,33 +92,3 @@ func (s *store) match(text string, start int) (string, int, bool) {
 func (s *store) token(i int) string {
 	return "\x00" + s.kind + strconv.Itoa(i) + "\x00"
 }
-
-func mapOutsidePlaceholders(text string, transform func(string) string) string {
-	var output strings.Builder
-
-	output.Grow(len(text))
-
-	for {
-		start := strings.IndexByte(text, '\x00')
-		if start < 0 {
-			output.WriteString(transform(text))
-
-			break
-		}
-
-		end := strings.IndexByte(text[start+1:], '\x00')
-		if end < 0 {
-			output.WriteString(transform(text))
-
-			break
-		}
-
-		end += start + 2
-		output.WriteString(transform(text[:start]))
-		output.WriteString(text[start:end])
-
-		text = text[end:]
-	}
-
-	return output.String()
-}

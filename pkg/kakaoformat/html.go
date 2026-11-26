@@ -28,7 +28,7 @@ func rawHTMLText(value string) string {
 	}
 }
 
-func (d *plainDocument) scriptTag(node ast.Node, style int) (ast.Node, string, bool) {
+func (d *plainDocument) scriptTag(node ast.Node) (ast.Node, string, bool) {
 	open, ok := node.(*ast.RawHTML)
 	if !ok {
 		return nil, "", false
@@ -48,7 +48,7 @@ func (d *plainDocument) scriptTag(node ast.Node, style int) (ast.Node, string, b
 			return current, scriptText(body.String(), name), true
 		}
 
-		d.inlineNode(&body, current, style)
+		d.inlineNode(&body, current)
 	}
 
 	return nil, "", false

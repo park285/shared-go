@@ -6,6 +6,9 @@ release 섹션은 최신 순으로 배치합니다. 이 문서는 `미출시`와
 
 ## 미출시
 
+- **평문 서식 모사 퇴역:** `kakaoformat.Render`가 강조·기울임을 수학용 Unicode 알파벳이나 괄호로 바꾸고 결합 취소선을 붙이던 처리를 제거했습니다. 제목 장식, 단계별 특수 글머리표, 인용 장식, 코드 박스와 표의 열별 장식도 제거했습니다. 평문은 원래 문자와 URL을 유지하고, 목록·할 일 상태·인용·표는 일반 문자로 구조를 보존합니다. 코드 본문은 원문 공백과 줄바꿈을 보호하며 넓은 fence 안의 내부 fence·언어 이름을 재작성하지 않습니다. 위·아래 첨자 등 수식의 의미 표기는 유지합니다.
+- `Render` 등 공개 API와 소비자의 방 유형·RichText 선택 정책은 유지합니다. Markdown 파서, CJK 경계 처리, 코드 범위 탐색과 이스케이프 API는 평문·리터럴 보호에 계속 필요합니다. 네이티브 RichText는 원문을 Iris에 전달하며 이 평문 변환을 먼저 적용하지 않습니다. 새 출력 계약은 소비자가 다음 릴리스로 pin을 갱신하거나 변경된 shared-go 소스를 workspace에서 사용할 때 적용됩니다.
+
 ## v2.26.0 - 2026-11-26
 
 - **SSE 프레임 reader:** 새 `pkg/sse`의 `Events(r, Limits)`가 `text/event-stream` 응답을 `Event{Type, Data}` 반복자로 돌려줍니다. 이벤트 데이터 바이트·`event` 길이·데이터 줄 수 상한을 넘거나 0 이하 상한을 받으면 오류로 멈추며, 상한 초과는 `ErrEventTooLarge`로 구분합니다. 필드 값은 SSE 규격대로 앞 공백 하나만 떼고, 주석·`id`·`retry` 줄은 무시하며, 마지막 이벤트는 빈 줄 없이 끝나도 전달합니다. chat-bot-go-kakao의 OpenAI Responses·이미지 스트림과 Anthropic Messages grounding이 각자 두던 파서 대신 이 reader를 씁니다. 기존 공개 API는 바뀌지 않습니다.

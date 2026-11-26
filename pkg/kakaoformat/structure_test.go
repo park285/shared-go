@@ -1,9 +1,6 @@
 package kakaoformat
 
-import (
-	"strings"
-	"testing"
-)
+import "testing"
 
 func TestRenderPreservesInvalidInput(t *testing.T) {
 	t.Parallel()
@@ -23,7 +20,7 @@ func TestRenderPreservesNestedFenceSurroundings(t *testing.T) {
 	const body = "before\n```go\nx\n```\nafter\n\n\n"
 
 	got := Render(input)
-	if !strings.Contains(got, body) || !strings.HasPrefix(got, "┏━━━━━ text ━━━━━┓") {
+	if got != body {
 		t.Fatalf("fence contents were changed: %q", got)
 	}
 }

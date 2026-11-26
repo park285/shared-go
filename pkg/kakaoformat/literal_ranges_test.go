@@ -51,9 +51,9 @@ func TestRenderListContentIndentIsNotIndentedCode(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct{ name, input, want string }{
-		{"paragraph", "- 항목\n\n    설명 **굵게**\n\n- 다음", "⦁ 항목\n\n  설명 ❪굵게❫\n⦁ 다음"},
-		{"nested paragraph", "- 상위\n\n    - 하위\n\n        하위 **문단**", "⦁ 상위\n\n  ￮ 하위\n\n    하위 ❪문단❫"},
-		{"top level code after list", "- 항목\n\n본문\n\n    **코드**", "⦁ 항목\n\n본문\n\n    **코드**"},
+		{"paragraph", "- 항목\n\n    설명 **굵게**\n\n- 다음", "- 항목\n\n  설명 굵게\n- 다음"},
+		{"nested paragraph", "- 상위\n\n    - 하위\n\n        하위 **문단**", "- 상위\n\n  - 하위\n\n    하위 문단"},
+		{"top level code after list", "- 항목\n\n본문\n\n    **코드**", "- 항목\n\n본문\n\n    **코드**"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -72,7 +72,7 @@ func TestRenderListContentIndentIsNotIndentedCode(t *testing.T) {
 	}
 
 	got := Render(input)
-	if !strings.Contains(got, "┏━━━━━ bash ━━━━━┓") || !strings.Contains(got, "**pip** install") || strings.Contains(got, "```") {
-		t.Fatalf("Render() = %q, want boxed list fence", got)
+	if !strings.Contains(got, "**pip** install") || strings.Contains(got, "```") || strings.Contains(got, "bash") {
+		t.Fatalf("Render() = %q, want literal list fence body", got)
 	}
 }
