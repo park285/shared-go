@@ -6,6 +6,7 @@ release 섹션은 최신 순으로 배치합니다. 이 문서는 `미출시`와
 
 ## 미출시
 
+- **SSE 프레임 reader:** 새 `pkg/sse`의 `Events(r, Limits)`가 `text/event-stream` 응답을 `Event{Type, Data}` 반복자로 돌려줍니다. 이벤트 데이터 바이트·`event` 길이·데이터 줄 수 상한을 넘거나 0 이하 상한을 받으면 오류로 멈추며, 상한 초과는 `ErrEventTooLarge`로 구분합니다. 필드 값은 SSE 규격대로 앞 공백 하나만 떼고, 주석·`id`·`retry` 줄은 무시하며, 마지막 이벤트는 빈 줄 없이 끝나도 전달합니다. chat-bot-go-kakao의 OpenAI Responses·이미지 스트림과 Anthropic Messages grounding이 각자 두던 파서 대신 이 reader를 씁니다. 기존 공개 API는 바뀌지 않습니다.
 - **완료된 채택 문서 퇴역:** 소비자 채택이 끝난 `docs/adoption/shared-go-v1.27.0-admin-surface.md`를 지웠습니다.
 - 의존성을 최신 안정판으로 올렸습니다. `golang.org/x/net` v0.63.0, `openai/openai-go/v3` v3.105.0(`openai` 모듈) 등 Go 모듈과, promptguard 규칙 팩의 YAML 파서를 `go.yaml.in/yaml/v4` v4.0.0으로 옮겼습니다. CI의 `actions/setup-go`·`actions/setup-python`은 v7.1.0, uv는 0.13.9, govulncheck 핀은 v1.10.0입니다. 공개 Go API는 바뀌지 않습니다.
 - depguard로 `unsafe` 패키지 가져오기를 기본 금지했습니다. 공통 린트 행렬도 명시적 `unsafe` import와 cgo 사용을 거부하며 해당 파일의 경로를 출력합니다.
