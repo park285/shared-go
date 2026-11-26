@@ -33,8 +33,12 @@ run_stage bash scripts/ci/verify-tools.sh scan
 run_stage bash scripts/ci/verify-tools.sh formal
 
 for module in "${modules[@]}"; do
-  printf '[release] module %s\n' "$module"
   run_stage make tidy-check MODULES="$module"
+done
+run_stage make lint MODULES="${modules[*]}"
+
+for module in "${modules[@]}"; do
+  printf '[release] module %s\n' "$module"
   if [[ "$module" == . ]]; then
     run_stage go run ./pkg/internal/guardtext/genconfusables.go \
       -confusables-source ./pkg/internal/guardtext/testdata/confusables-17.0.0.txt.gz \
@@ -45,7 +49,7 @@ for module in "${modules[@]}"; do
     run_stage make test-allocations MODULES="$module"
   fi
   run_stage bash scripts/check-sql-ownership.sh "$module"
-  run_stage make build MODULES="$module"
+  run_stage go -C "$module" build ./...
   if [[ "$module" == postgres ]]; then
     run_stage bash scripts/ci/pgstore-release-gate.sh
   else
