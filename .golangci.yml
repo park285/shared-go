@@ -342,7 +342,7 @@ linters:
         - google.golang.org/grpc/*
         - golang.org/x/sync/*
         - github.com/kapu/hololive-collector/internal/runtime/collecterr
-        - github.com/park285/iris-client-go/v5/internal/*
+        - github.com/park285/iris-client-go/v6/internal/*
         - github.com/park285/iris-console/internal/apierr
         - github.com/park285/iris-console/internal/value
 
