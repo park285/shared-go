@@ -30,7 +30,8 @@ type plainDocument struct {
 func render(input string) string {
 	literal := newStore("NEUTRALIZED")
 	code := newStore("CODE")
-	source := []byte(escapeDateListMarkers(protectCodeRanges(protectNeutralizedMarkers(input, literal), code)))
+	protected, containers := protectCodeRanges(protectNeutralizedMarkers(input, literal), code)
+	source := []byte(escapeDateListMarkers(protected, containers))
 	root := plainParser.Parse(source)
 	document := plainDocument{source: source, code: code}
 
@@ -78,7 +79,7 @@ func (d *plainDocument) block(node ast.Node, level int) string {
 	case *ast.ThematicBreak:
 		return "---"
 	case *ast.Blockquote:
-		return prefixLines(d.blocks(node, level), "> ")
+		return d.prefixLines(d.blocks(node, level), "> ")
 	case *ast.List:
 		return d.list(n, level)
 	case *extast.Table:
@@ -101,10 +102,16 @@ func (d *plainDocument) block(node ast.Node, level int) string {
 func (d *plainDocument) codeBlock(value string) string {
 	lines := strings.Split(strings.TrimSuffix(value, "\n"), "\n")
 	for index, line := range lines {
-		lines[index] = d.code.Put(line)
+		lines[index] = d.code.Put(d.code.Restore(line))
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+func (d *plainDocument) prefixLines(input, prefix string) string {
+	d.code.indentFollowingLines(input, prefix)
+
+	return prefixLines(input, prefix)
 }
 
 func prefixLines(input, prefix string) string {
@@ -168,9 +175,12 @@ func (d *plainDocument) list(node *ast.List, level int) string {
 
 			value := d.block(child, level+1)
 			if child == first && child.Kind() != ast.KindList {
-				value = strings.ReplaceAll(value, "\n", "\n"+listIndent(level)+strings.Repeat(" ", len(marker)))
+				indent := listIndent(level) + strings.Repeat(" ", len(marker))
+				d.code.indentFollowingLines(value, indent)
+
+				value = strings.ReplaceAll(value, "\n", "\n"+indent)
 			} else if child.Kind() != ast.KindList {
-				value = prefixLines(value, listIndent(level+1))
+				value = d.prefixLines(value, listIndent(level+1))
 			}
 
 			output.WriteString(value)

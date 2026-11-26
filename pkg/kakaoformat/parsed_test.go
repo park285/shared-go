@@ -102,7 +102,7 @@ func TestOversizedTableKeepsEmptyLastRow(t *testing.T) {
 }
 
 func FuzzRenderMarkdown(f *testing.F) {
-	for _, input := range []string{"**강조**입니다.", "**굵게 *기울임***", "https://example.com/a*b*", "[x](url)", "| A |\n|---|\n| b |", "\x00CODE0\x00", string([]byte{0xff})} {
+	for _, input := range []string{"**강조**입니다.", "**굵게 *기울임***", "https://example.com/a*b*", "[x](url)", "| A |\n|---|\n| b |", "\x00CODE0\x00", string([]byte{0xff}), ">     `b`", "# 제목\n    `npm i`", "- 설정:\n  ```yaml\n  a:\n    b: 1\n  ```"} {
 		f.Add(input)
 	}
 

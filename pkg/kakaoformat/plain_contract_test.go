@@ -36,6 +36,12 @@ func TestRenderPlainCodePreservesWhitespaceAndContainers(t *testing.T) {
 		{"indented block", "    **literal**  \n    [x](y)\t", "    **literal**  \n    [x](y)\t"},
 		{"quoted fence", "> ```go\n> **literal**  \n> x\t\n> ```", "> **literal**  \n> x\t"},
 		{"list fence", "- ```go\n  **literal**  \n  x\t\n  ```", "- **literal**  \n  x\t"},
+		{"list fence date", "- ```\n  2026. 11. 26. 기준\n  ```", "- 2026. 11. 26. 기준"},
+		{"fence under list text", "- 설정:\n  ```yaml\n  a:\n    b: 1\n  ```", "- 설정:\n  a:\n    b: 1"},
+		{"fence under numbered text", "1. 실행:\n   ```python\n   def f():\n       return 1\n   ```\n2. 끝", "1. 실행:\n   def f():\n       return 1\n2. 끝"},
+		{"fence after quote text", "> 예:\n```\na\n  b\n```", "> 예:\n> a\n>   b"},
+		{"inline code in quoted indented block", "> " + "    `b`", "> b"},
+		{"inline code in indented block after heading", "# 제목\n    `npm i`", "제목\n\nnpm i"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

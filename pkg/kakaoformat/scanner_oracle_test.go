@@ -80,7 +80,7 @@ func checkScannersMatchOracle(t *testing.T, input string) {
 		t.Fatalf("literalDestinations(%q) = %v, want %v", input, got, want)
 	}
 
-	if got, want := escapeDateListMarkers(input), oracleEscapeDateListMarkers(input); got != want {
+	if got, want := escapeDateListMarkers(input, nil), oracleEscapeDateListMarkers(input); got != want {
 		t.Fatalf("escapeDateListMarkers(%q) = %q, want %q", input, got, want)
 	}
 

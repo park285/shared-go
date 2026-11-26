@@ -39,7 +39,7 @@ func (s *store) Restore(text string) string {
 
 		start := next + offset
 
-		value, end, ok := s.match(text, start)
+		index, end, ok := s.match(text, start)
 		if !ok {
 			next = start + 1
 
@@ -51,7 +51,7 @@ func (s *store) Restore(text string) string {
 		}
 
 		output.WriteString(text[last:start])
-		output.WriteString(value)
+		output.WriteString(s.values[index])
 
 		last = end
 		next = end
@@ -66,10 +66,38 @@ func (s *store) Restore(text string) string {
 	return output.String()
 }
 
-func (s *store) match(text string, start int) (string, int, bool) {
+func (s *store) indentFollowingLines(text, prefix string) {
+	for next := 0; ; {
+		offset := strings.IndexByte(text[next:], '\x00')
+		if offset < 0 {
+			return
+		}
+
+		start := next + offset
+
+		index, end, ok := s.match(text, start)
+		if !ok {
+			next = start + 1
+
+			continue
+		}
+
+		lines := strings.Split(strings.TrimSuffix(s.values[index], "\n"), "\n")
+		for line := 1; line < len(lines); line++ {
+			if lines[line] != "" {
+				lines[line] = prefix + lines[line]
+			}
+		}
+
+		s.values[index] = strings.Join(lines, "\n")
+		next = end
+	}
+}
+
+func (s *store) match(text string, start int) (int, int, bool) {
 	digits, ok := strings.CutPrefix(text[start+1:], s.kind)
 	if !ok {
-		return "", 0, false
+		return 0, 0, false
 	}
 
 	index, width := 0, 0
@@ -78,15 +106,15 @@ func (s *store) match(text string, start int) (string, int, bool) {
 		width++
 
 		if index >= len(s.values) {
-			return "", 0, false
+			return 0, 0, false
 		}
 	}
 
 	if width == 0 || width == len(digits) || digits[width] != '\x00' || (width > 1 && digits[0] == '0') {
-		return "", 0, false
+		return 0, 0, false
 	}
 
-	return s.values[index], start + 1 + len(s.kind) + width + 1, true
+	return index, start + 1 + len(s.kind) + width + 1, true
 }
 
 func (s *store) token(i int) string {

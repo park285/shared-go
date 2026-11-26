@@ -2,8 +2,11 @@ package kakaoformat
 
 import "strings"
 
-func protectCodeRanges(input string, dst *store) string {
-	var output strings.Builder
+func protectCodeRanges(input string, dst *store) (string, [][2]int) {
+	var (
+		output     strings.Builder
+		containers [][2]int
+	)
 
 	output.Grow(len(input))
 
@@ -13,6 +16,10 @@ func protectCodeRanges(input string, dst *store) string {
 
 	for _, code := range CodeRanges(input) {
 		if code.Container {
+			offset := output.Len() + code.Start - last
+
+			containers = append(containers, [2]int{offset, offset + code.End - code.Start})
+
 			continue
 		}
 
@@ -39,7 +46,7 @@ func protectCodeRanges(input string, dst *store) string {
 
 	output.WriteString(input[last:])
 
-	return output.String()
+	return output.String(), containers
 }
 
 func formatCodeRange(input string, code CodeRange) string {
@@ -51,5 +58,20 @@ func formatCodeRange(input string, code CodeRange) string {
 		return input[code.Start:code.End]
 	}
 
-	return input[code.BodyStart:code.BodyEnd]
+	return dedentLines(input[code.BodyStart:code.BodyEnd], len(code.Indent))
+}
+
+func dedentLines(body string, width int) string {
+	if width == 0 {
+		return body
+	}
+
+	lines := strings.Split(body, "\n")
+	for index, line := range lines {
+		prefix := line[:min(width, len(line))]
+
+		lines[index] = line[len(prefix)-len(strings.TrimLeft(prefix, " ")):]
+	}
+
+	return strings.Join(lines, "\n")
 }
