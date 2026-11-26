@@ -81,6 +81,8 @@ go get github.com/park285/shared-go/v2@latest
 
 `Render`, `EscapeMarkdown`, `TransformEscapes`, `CodeRanges`, `CodeRange`, `IsOpenChat`의 공개 API는 그대로입니다. 명령어·URL·코드 리터럴 보호와 CJK 강조 경계 처리를 위해 Markdown 파서와 관련 의존성은 계속 사용합니다. 이 변경을 쓰는 소비자는 새 shared-go 릴리스로 의존성을 갱신하거나 변경된 소스를 사용하는 스택 workspace에서 함께 빌드해야 합니다.
 
+원문 Markdown만 저장하고 재시도마다 `Render`를 호출하는 소비자는 최종 전송 본문이 렌더러 버전에 따라 달라질 수 있습니다. 업그레이드와 롤백 전에 이전 버전으로 미완료 요청과 결과 불명 요청을 기존 확인·복구 절차에 따라 처리해야 같은 `clientRequestId`에 다른 본문을 보내는 충돌을 막을 수 있습니다. 이미 최종 전송 본문을 저장한 요청은 그대로 재사용합니다. cbgk는 [렌더러 전환 절차](https://github.com/park285/chat-bot-go-kakao/blob/main/docs/current/runbooks/webhook-inbox.md#markdown-renderer-retirement)에 따라 inbox·답변 outbox·멘션 claim을 각각 확인합니다.
+
 ## 로그 마스킹 키
 
 보존·마스킹 키의 정본은 이 표입니다. key는 대소문자·`-`·`.`·공백을 정규화해 비교하며, 일치한 attr·group은 `LogValuer` 실행 전에 `***REDACTED***`로 바꿉니다.
