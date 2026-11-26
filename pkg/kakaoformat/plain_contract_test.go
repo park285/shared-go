@@ -52,6 +52,7 @@ func TestRenderPlainListsKeepTaskStatusAndStartingNumber(t *testing.T) {
 
 	input := "3. [x] 완료\n4. [ ] 대기\n   - **하위**\n     - *다음*"
 	want := "3. [x] 완료\n4. [ ] 대기\n  - 하위\n    - 다음"
+
 	if got := Render(input); got != want {
 		t.Fatalf("Render() = %q, want %q", got, want)
 	}
