@@ -17,27 +17,20 @@ func TestRenderConvertsPlainMarkdown(t *testing.T) {
 		{
 			name: "basic",
 			in:   "# 제목\n- **강조** 항목\n- `code`\n[링크](https://example.com)",
-			want: "【제목】\n\n" +
-				"⦁ ❪강조❫ 항목\n" +
-				"⦁ ⦗ code ⦘\n" +
-				"링크( https://example.com )",
+			want: "제목\n\n" +
+				"- 강조 항목\n" +
+				"- code\n" +
+				"  링크( https://example.com )",
 		},
 		{
 			name: "table",
 			in:   "| Name | Score |\n| --- | --- |\n| Kim | 10 |\n| Lee | 20 |",
-			want: "【Name】\n" +
-				"    《1》 Kim\n" +
-				"    《2》 Lee\n" +
-				"-------------------------\n" +
-				"【Score】\n" +
-				"    《1》 10\n" +
-				"    《2》 20\n" +
-				"-------------------------",
+			want: "Name | Score\nKim | 10\nLee | 20",
 		},
 		{
 			name: "rule and checkbox",
 			in:   "---\n- [x] done\n- [ ] todo",
-			want: "━━━━━━━━━━━━━━━━━━━━\n✔ done\n✖ todo",
+			want: "---\n- [x] done\n- [ ] todo",
 		},
 		{
 			name: "image",
@@ -47,17 +40,17 @@ func TestRenderConvertsPlainMarkdown(t *testing.T) {
 		{
 			name: "ascii emphasis",
 			in:   "***abc*** **abc** *abc* ~~abc~~",
-			want: "𝙖𝙗𝙘 𝗮𝗯𝗰 𝘢𝘣𝘤 a̶b̶c̶",
+			want: "abc abc abc abc",
 		},
 		{
 			name: "hololive alarm",
 			in:   "## 🔴 **비비** 방송 시작\n[제목](https://short.holoshi.com/l/abc)",
-			want: "【🔴 ❪비비❫ 방송 시작】\n\n제목( https://short.holoshi.com/l/abc )",
+			want: "🔴 비비 방송 시작\n\n제목( https://short.holoshi.com/l/abc )",
 		},
 		{
 			name: "mixed hangul and ascii bold",
 			in:   "**비비** live **abc123**",
-			want: "❪비비❫ live 𝗮𝗯𝗰𝟭𝟮𝟯",
+			want: "비비 live abc123",
 		},
 	}
 
@@ -90,7 +83,7 @@ func TestRenderKeepsCodeLiteral(t *testing.T) {
 
 	got := Render("```tex\n\\frac{x}{y}\n```\n`\\pi`")
 
-	for _, want := range []string{`\frac{x}{y}`, `⦗ \pi ⦘`} {
+	for _, want := range []string{`\frac{x}{y}`, `\pi`} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("Render(code) = %q, want %q", got, want)
 		}
@@ -102,10 +95,9 @@ func TestRenderTableKeepsPipeInsideInlineCode(t *testing.T) {
 
 	got := Render("| Expr | Value |\n| --- | --- |\n| `x|y` | ok |")
 
-	for _, want := range []string{"【Expr】", "《1》 ⦗ x|y ⦘", "【Value】", "《1》 ok"} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("Render(table) = %q, want %q", got, want)
-		}
+	want := "Expr | Value\nx|y | ok"
+	if got != want {
+		t.Fatalf("Render(table) = %q, want %q", got, want)
 	}
 }
 
@@ -113,7 +105,7 @@ func TestRenderWrappedCodeBlock(t *testing.T) {
 	t.Parallel()
 
 	got := Render("````\n```js\nconst x=1\n```\n````")
-	want := "┏━━━━━ js ━━━━━┓\n```\nconst x=1\n```\n┗━━━━━━━━━━━┛"
+	want := "```js\nconst x=1\n```\n"
 
 	if got != want {
 		t.Fatalf("Render(wrapped) = %q, want %q", got, want)
@@ -128,24 +120,19 @@ func TestRenderKeepsMalformedThenConvertsValidBold(t *testing.T) {
 		t.Fatalf("Render() = %q, want raw malformed delimiter", got)
 	}
 
-	if !strings.Contains(got, "𝗼𝗸") && !strings.Contains(got, "❪𝗼𝗸❫") {
+	if got != "**bold__ and ok" {
 		t.Fatalf("Render() = %q, want converted valid bold", got)
 	}
 }
 
-func TestRenderDoesNotKeepMarkdownTokens(t *testing.T) {
+func TestRenderKeepsPlainBlockStructure(t *testing.T) {
 	t.Parallel()
 
 	got := Render("# 제목\n- **강조**\n> 인용")
 
-	for _, want := range []string{"【제목】", "❪강조❫", "  ‖ 인용"} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("Render() = %q, want %q", got, want)
-		}
-	}
-
-	if strings.Contains(got, "**【제목】**") {
-		t.Fatalf("Render() kept kakao markdown heading: %q", got)
+	want := "제목\n\n- 강조\n> 인용"
+	if got != want {
+		t.Fatalf("Render() = %q, want %q", got, want)
 	}
 }
 
@@ -202,7 +189,7 @@ func TestRenderKoreanTextConventions(t *testing.T) {
 
 	for _, tc := range []struct{ name, input, want string }{
 		{"tilde ranges", "기간은 3~5일이고, 비용은 10~20만 원입니다.", "기간은 3~5일이고, 비용은 10~20만 원입니다."},
-		{"double tilde strike", "~~취소~~와 ~단일~", "취̶소̶와 ~단일~"},
+		{"double tilde strike", "~~취소~~와 ~단일~", "취소와 ~단일~"},
 		{"date line", "2026. 10. 4. 기준입니다.\n1. 첫째\n2. 둘째", "2026. 10. 4. 기준입니다.\n1. 첫째\n2. 둘째"},
 		{"footnote", "근거[^1]입니다.\n\n[^1]: 출처 문서", "근거[1]입니다.\n\n[1] 출처 문서"},
 	} {
@@ -227,7 +214,7 @@ func TestRenderInlineHTMLMeaning(t *testing.T) {
 		{
 			"table cell break",
 			"| a | b |\n|---|---|\n| 1<br>2 | 3 |",
-			"【a】\n    《1》 1\n        2\n-------------------------\n【b】\n    《1》 3\n-------------------------",
+			"a | b\n1 | 3\n2 |",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

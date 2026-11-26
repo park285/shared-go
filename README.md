@@ -41,7 +41,7 @@ go get github.com/park285/shared-go/v2@latest
 | `pkg/irisdurable` | Iris webhook durability 계약(admission·nonce·reply outbox 어휘, bounded reissue ladder). Iris admission 보존·replay 지평의 정본은 Iris 계약 파일과 iris-client-go 공개 상수이며 이 모듈은 사본을 두지 않음 |
 | `pkg/irisdurable/contracttest` | irisdurable 계약을 봇별 저장소 구현에 적용하는 재사용 테스트 스위트(admission 멱등성, nonce set-once, outcome_unknown 보존, bounded reissue, 보존·지평) |
 | `postgres/pgstore` | irisdurable 계약의 PostgreSQL 구현(ordering key FIFO inbox, nonce set-once TTL, reply outbox claim fence·redrive·retire·prune). 정책 기본값이 없어 `Options`의 lease·시도 상한·백오프·보존·`IrisAdmissionRetention`·`IrisAutomaticReplayHorizon`을 호출자가 넘기고, 0인 값을 쓰는 연산은 오류를 반환한다. inbox 종단 보존은 Iris admission 보존보다 길어야 하고, 자동 replay 지평은 정본 지평 이하이며 정본 지평은 admission 보존보다 짧아야 한다. `ClaimBatch`가 결과 미상 오류(`*ClaimBatchError`)를 내거나 후속 처리가 실패하면 소비자가 계속 처리할 claim id를 keep으로 넘겨 `ReleaseClaimToken(ctx, token, keep)`으로 나머지 claim만 즉시 반납한다. 테이블 DDL은 소비 저장소 migration이 소유하고 `testdata/schema.sql`이 참조 스키마다 |
-| `pkg/kakaoformat` | Markdown 표현을 카카오 일반 채팅용 평문과 링크로 변환하는 formatter |
+| `pkg/kakaoformat` | Markdown에서 본문·URL·목록·표를 보존하는 평문 변환과 리터럴 보호 |
 | `pkg/llm` | SDK 없이 사용하는 `Message`·`Usage`, 지시 계층 변환과 공개 empty/refusal 오류 값의 단일 정의 |
 | `openai/openaipreset` | OpenAI Responses API 응답을 공통 형태로 바꾸는 도우미(`CompletionFromResponse`, `CompletionRole`, `UsageFromResponseUsage`, `LooksLikeToolCallEnvelope`) |
 | `pkg/logging` | Slog 기반의 구조화된 로깅 모듈 (비동기 처리, credential 마스킹과 서비스가 `Options.PrivacyKeys`로 넘긴 개인 식별자 키 마스킹, 실시간 로그 로테이션 지원) |
@@ -70,6 +70,18 @@ go get github.com/park285/shared-go/v2@latest
 - 설정은 struct 옵션을 기본으로 하고, 선택지가 계속 늘어나는 열린 집합일 때만 functional option을 씁니다.
 - `*slog.Logger`를 받는 API는 nil이면 `slog.Default()`를 씁니다.
 - 반환 오류 문자열은 `<pkg>: ` 접두로 시작합니다. 콜백 오류를 그대로 돌려주는 것이 계약인 함수(`panicguard.RunE`·`logging.RunOperation`·`dbmigrate.WithAdvisoryLock`)의 콜백 오류와 `io.Reader` 계약상 그대로 전달하는 하위 reader 오류(`io.EOF` 등)는 감싸지 않습니다. 호출자가 접두를 정하는 helper(`logging.LogAndWrapError`·`httpserver.Shutdown`)는 그 접두를 씁니다.
+
+## Markdown 평문 경로
+
+`kakaoformat.Render`는 소비자가 일반채팅·미확인 방·서식 비활성 설정에 선택하는 평문 경로입니다. 네이티브 RichText 경로는 원문 Markdown을 Iris에 보내고, 이 함수를 먼저 적용하지 않습니다. 방 유형과 RichText 활성화 여부는 각 소비자가 계속 결정합니다.
+
+평문 변환은 강조·기울임·취소선의 본문을 원래 문자로 출력합니다. `**Hello 123**`은 `Hello 123`, `**'구급차'**과`는 `'구급차'과`가 됩니다. 수학용 Unicode 알파벳으로 글꼴을 흉내 내거나 강조용 괄호·결합 취소선을 덧붙이지 않습니다. 입력에 원래 있던 Unicode 문자와 수식의 위·아래 첨자 의미는 보존합니다.
+
+제목은 본문으로, 인용은 `> `, 목록은 `- ` 또는 원래 시작 번호로 표시합니다. 할 일 상태는 `[x]`·`[ ]`로 남기고, 표는 원래 행 순서와 열을 ` | `로 구분합니다. 링크·이미지는 라벨과 URL을 보존합니다. 인라인 코드와 코드 블록은 코드 박스나 언어 이름을 덧붙이지 않고 본문을 출력하며, 코드 안의 Markdown 기호·공백·줄바꿈은 다시 해석하지 않습니다. 기존 표 크기 제한과 초과 표의 원문 보존도 유지합니다.
+
+`Render`, `EscapeMarkdown`, `TransformEscapes`, `CodeRanges`, `CodeRange`, `IsOpenChat`의 공개 API는 그대로입니다. 명령어·URL·코드 리터럴 보호와 CJK 강조 경계 처리를 위해 Markdown 파서와 관련 의존성은 계속 사용합니다. 이 변경을 쓰는 소비자는 새 shared-go 릴리스로 의존성을 갱신하거나 변경된 소스를 사용하는 스택 workspace에서 함께 빌드해야 합니다.
+
+원문 Markdown만 저장하고 재시도마다 `Render`를 호출하는 소비자는 최종 전송 본문이 렌더러 버전에 따라 달라질 수 있습니다. 업그레이드와 롤백 전에 이전 버전으로 미완료 요청과 결과 불명 요청을 기존 확인·복구 절차에 따라 처리해야 같은 `clientRequestId`에 다른 본문을 보내는 충돌을 막을 수 있습니다. 이미 최종 전송 본문을 저장한 요청은 그대로 재사용합니다. cbgk는 [렌더러 전환 절차](https://github.com/park285/chat-bot-go-kakao/blob/main/docs/current/runbooks/webhook-inbox.md#markdown-renderer-retirement)에 따라 inbox·답변 outbox·멘션 claim을 각각 확인합니다.
 
 ## 로그 마스킹 키
 

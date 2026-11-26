@@ -10,5 +10,5 @@ func Render(input string) string {
 		return input
 	}
 
-	return strings.TrimSpace(render(input))
+	return render(input)
 }

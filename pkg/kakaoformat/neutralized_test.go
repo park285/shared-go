@@ -42,7 +42,7 @@ func TestRenderNeutralizedTextKeepsMarkdownCodeURLsAndFoldPadding(t *testing.T) 
 	input := "**Live**\n" + padding + "\n" + literal + "\n" + url + "\n\n`" + literal + "`"
 	got := Render(input)
 
-	for _, want := range []string{"𝗟𝗶𝘃𝗲", padding, literal, "\n" + url + "\n", "⦗ " + literal + " ⦘"} {
+	for _, want := range []string{"Live", padding, literal, "\n" + url + "\n"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("lost existing rendering contract %q: %q", want, got)
 		}
@@ -61,7 +61,7 @@ func TestRepeatedNeutralizedTextKeepsCodeAndLinkBoundaries(t *testing.T) {
 	input := strings.Repeat(literal+"\n", 100) + "\n`" + literal + "`\n[링크](https://youtu.be/a_b#c)\n" + literal
 	output := Render(input)
 
-	if strings.Count(output, literal) != 102 || !strings.Contains(output, "⦗ "+literal+" ⦘") ||
+	if strings.Count(output, literal) != 102 ||
 		!strings.Contains(output, "링크( https://youtu.be/a_b#c )") || strings.ContainsRune(output, 0) {
 		t.Fatalf("repeated literal changed code or link rendering: %q", output)
 	}

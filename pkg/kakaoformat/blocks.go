@@ -4,12 +4,23 @@ import (
 	"strings"
 )
 
-func escapeDateListMarkers(input string) string {
+func escapeDateListMarkers(input string, literal [][2]int) string {
 	var output strings.Builder
 
 	last := 0
 
 	for start := 0; ; {
+		for len(literal) > 0 && literal[0][1] <= start {
+			literal = literal[1:]
+		}
+
+		if len(literal) > 0 && literal[0][0] <= start {
+			start = literal[0][1]
+			if start >= len(input) {
+				break
+			}
+		}
+
 		if dot := dateListYearDot(input, start); dot >= 0 {
 			if last == 0 {
 				output.Grow(len(input) + 8)
@@ -79,17 +90,4 @@ func skipDigits(input string, i, limit int) int {
 
 func listIndent(level int) string {
 	return strings.Repeat("  ", level)
-}
-
-func bulletFor(level int) string {
-	switch {
-	case level <= 0:
-		return "⦁"
-	case level == 1:
-		return "￮"
-	case level == 2:
-		return "▸"
-	default:
-		return "▹"
-	}
 }
