@@ -6,6 +6,8 @@ release 섹션은 최신 순으로 배치합니다. 이 문서는 `미출시`와
 
 ## 미출시
 
+## v2.26.1 - 2026-11-26
+
 - **평문 서식 모사 퇴역:** `kakaoformat.Render`가 강조·기울임을 수학용 Unicode 알파벳이나 괄호로 바꾸고 결합 취소선을 붙이던 처리를 제거했습니다. 제목 장식, 단계별 특수 글머리표, 인용 장식, 코드 박스와 표의 열별 장식도 제거했습니다. 평문은 원래 문자와 URL을 유지하고, 목록·할 일 상태·인용·표는 일반 문자로 구조를 보존합니다. 코드 본문은 원문 공백과 줄바꿈을 보호하며 넓은 fence 안의 내부 fence·언어 이름을 재작성하지 않습니다. 위·아래 첨자 등 수식의 의미 표기는 유지합니다.
 - `Render` 등 공개 API와 소비자의 방 유형·RichText 선택 정책은 유지합니다. Markdown 파서, CJK 경계 처리, 코드 범위 탐색과 이스케이프 API는 평문·리터럴 보호에 계속 필요합니다. 네이티브 RichText는 원문을 Iris에 전달하며 이 평문 변환을 먼저 적용하지 않습니다. 새 출력 계약은 소비자가 다음 릴리스로 pin을 갱신하거나 변경된 shared-go 소스를 workspace에서 사용할 때 적용됩니다.
 - 원문 Markdown만 저장하는 소비자는 재시도 때 최종 본문이 달라질 수 있으므로, 새 렌더러 적용과 롤백 전에 기존 미완료 요청을 이전 버전의 확인·복구 절차로 처리합니다. cbgk의 inbox·답변 outbox·멘션 claim 전환 조건은 README의 연결 문서를 따릅니다.
@@ -35,11 +37,3 @@ release 섹션은 최신 순으로 배치합니다. 이 문서는 `미출시`와
 - `postgres/pgxdb`에 `Statement`를 추가했습니다. `MustStatement(embed.FS, name)`는 embed한 SQL 파일에서만 만듭니다. 자리표시자는 다른 `Statement` 조각(`With`)이나 상수 리터럴(`WithToken`, 변수는 컴파일 오류)로만 바꾸며, 없는 자리표시자를 바꾸면 패키지 초기화 때 panic합니다. `pgxdb.Exec`·`Query`·`QueryRow`·`Queue`는 `Statement`만 받아 `pgxdb.Querier`(pool·tx·conn)로 실행하고, 빈 문장이나 남은 `{{…}}`는 DB에 보내지 않고 `ErrInvalidStatement`로 거절합니다(`Queue`는 panic). `pgstore`의 모든 운영 호출부를 이 API로 옮겼고 조립한 SQL은 이전과 같습니다. 소비 저장소가 옮겨 간 뒤 스택 golangci `forbidigo` 규칙이 pgx의 문자열 SQL 실행 메서드를 막고, ast-grep의 `go-postgres-conventions.yml`을 대체합니다. 기존 공개 API는 바뀌지 않습니다.
 - 통합 시험과 `pgstore` 릴리스 게이트의 PostgreSQL 이미지를 `postgres:19.0-alpine`(digest 고정)으로 올렸습니다. 공개 Go API는 바뀌지 않습니다.
 - `postgres` 모듈은 루트 `v2.25.0`과 `github.com/xdg-go/stringprep` v1.0.5를 요구합니다.
-
-## postgres/v1.0.3 - 2026-11-19
-
-- **Inbox 수락 순서(`postgres` 모듈):** 같은 `(scope, ordering_key)`의 선두를 수락 시각이 아니라 키 잠금 아래에서 발급한 수락 순번(id)으로 고릅니다. DB 시계가 역행해도 뒤에 수락한 행이 앞 행의 정산 전에 처리권을 얻지 못합니다. 서로 다른 키 사이의 선발 순서 `(available_at, created_at, id)`와 공개 Go API는 그대로입니다. Fallback delta: none.
-  - 소비자는 전환 전에 부분 인덱스 `idx_iris_webhook_inbox_head_by_id (scope, ordering_key, id) WHERE status IN ('pending', 'processing')`를 추가합니다. 기존 `idx_iris_webhook_inbox_head`는 유지합니다.
-  - 구·신 claim 구현을 동시에 실행하지 않습니다. 전환과 롤백은 수락·claim·만료 복구를 멈춘 상태에서 README "Inbox 수락 순서"의 확인 SQL이 0행일 때만 합니다. 이 조회는 만료 복구로 `pending`이 된 재시도 행까지 포함해 두 순서의 선두가 다른 파티션을 찾습니다.
-  - 참조 스키마(`postgres/pgstore/testdata/schema.sql`)의 주석을 지웠습니다.
-- `postgres` 모듈의 Go·SQL 소스에서 기계 지시문을 뺀 주석과 doc 주석을 지웠습니다. 동작 변경은 위 항목뿐입니다.
