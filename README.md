@@ -272,7 +272,7 @@ make source-tidy-check
 
 공통 resolver는 호스트 CPU 기본 수준과 `CGO_ENABLED=0`으로 도구를 빌드하고, 사용자 캐시의 소유권·권한과 실행 파일의 SHA-256·Go 빌드 정보를 확인합니다. 고정 Go 툴체인과 모듈 소스·의존성·검증 정보가 로컬에 있으면 `GOPROXY=off make lint`로 오프라인에서도 도구를 설치하고 사용할 수 있습니다. 실제 취약점 검사에는 취약점 데이터베이스도 필요합니다.
 
-Make는 실행 파일 경로와 고정 버전을 각각 `--golangci-lint`와 `--golangci-lint-version`으로 전달합니다. 공통 행렬은 루트 `.golangci.yml`을 사용하며 파일 이름과 빌드 제약에서 도출한 각 구성에서 모듈 전체(`./...`)와 테스트를 `-mod=readonly`로 검사합니다. 단독 생성기는 파일 단위로 검사합니다. 형제 모듈 변경을 함께 검사하려면 체크아웃 안에 대상 모듈을 모두 `use`하는 workspace를 만들고 `LINT_GOWORK="$PWD/go.work" make lint`를 실행합니다. `go list`의 컴파일 입력과 린터가 실제로 읽은 파일을 대조해 모듈별 커버리지를 출력합니다. 누락된 파일은 경로와 사유를 보고하고 실패합니다. `.golangci.yml`의 `run.build-tags`는 비워 둡니다.
+Make는 실행 파일 경로와 고정 버전을 각각 `--golangci-lint`와 `--golangci-lint-version`으로 전달합니다. 공통 행렬은 루트 `.golangci.yml`을 사용하며 호스트 구성에서는 모듈 전체(`./...`)와 테스트를, 파일 이름과 빌드 제약에서 도출한 다른 구성에서는 그 구성을 요구한 파일이 있는 패키지와 테스트를 `-mod=readonly`로 검사합니다. 따라서 플랫폼과 무관한 패키지는 호스트 외 플랫폼에서 타입 검사하지 않습니다. 단독 생성기는 파일 단위로 검사합니다. 형제 모듈 변경을 함께 검사하려면 체크아웃 안에 대상 모듈을 모두 `use`하는 workspace를 만들고 `LINT_GOWORK="$PWD/go.work" make lint`를 실행합니다. `go list`의 컴파일 입력과 린터가 실제로 읽은 파일을 대조해 모듈별 커버리지를 출력합니다. 누락된 파일은 경로와 사유를 보고하고 실패합니다. `.golangci.yml`의 `run.build-tags`는 비워 둡니다.
 
 `make fmt`는 선택한 모듈의 현재 빌드 구성에 `golangci-lint run --fix ./...`를 적용합니다. 수정 후 전체 빌드 구성의 커버리지는 `make lint`로 확인합니다.
 

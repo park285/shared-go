@@ -482,8 +482,13 @@ def go_list(module, env, tags, targets, flags, fields):
         yield package
 
 
-def list_packages(module, env, tags, active, tool):
-    targets = ["./" + str(path) for path in tool] if tool is not None else ["./..."]
+def list_packages(module, env, tags, active, tool, scope):
+    if tool is not None:
+        targets = ["./" + str(path) for path in tool]
+    elif scope is not None:
+        targets = ["./" + str(path) for path in scope]
+    else:
+        targets = ["./..."]
     fields = ("Dir", *CGO_INPUTS)
     found = list(go_list(module, env, tags, targets, ["-find"], fields))
     if tool is None:
@@ -562,10 +567,10 @@ def run_linter(binary, module, env, tags, targets, packages):
     return loaded, skipped_files
 
 
-def lint_group(module, binary, config, env, planned, tracked, reasons, failed, tool):
+def lint_group(module, binary, config, env, planned, tracked, reasons, failed, tool, scope=None):
     tags = config.build_tags()
     module_dir = module.resolve()
-    patterns, listed = list_packages(module, env, tags, planned, tool)
+    patterns, listed = list_packages(module, env, tags, planned, tool, scope)
     manifest = (module_dir / "go.mod").resolve()
     compiled = set()
     cgo = set()
@@ -719,6 +724,10 @@ def plan_module(module, sources, env, lint_version, violations, workspace_key):
                 ordinary.add(path)
             if main and matrix.matches(config, expr, True):
                 tools.append((path,))
+    for config, (ordinary, _) in groups.items():
+        if config != matrix.host:
+            directories = {path.parent for path in origins[config]}
+            ordinary.difference_update([path for path in ordinary if path.parent not in directories])
     return ModulePlan(matrix, groups, reasons, origins)
 
 
@@ -734,7 +743,8 @@ def lint_module(module, binary, plan):
     ok = True
     for config, (planned, tools) in plan.groups.items():
         env = plan.matrix.environment(config)
-        if not lint_group(module, binary, config, env, planned, ordinary, reasons, failed, None):
+        scope = None if config == plan.matrix.host else sorted({path.parent for path in planned})
+        if (scope is None or scope) and not lint_group(module, binary, config, env, planned, ordinary, reasons, failed, None, scope):
             ok = False
         for tool in tools:
             if not lint_group(module, binary, config, env, set(tool), set(tool), reasons, failed, tool):
