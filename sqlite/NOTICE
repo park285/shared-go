@@ -1,0 +1,13 @@
+shared-go sqlite
+
+이 모듈은 shared-go의 SQLite 연결 관리(sqlitedb)와 irisdurable inbox·nonce 저장소(sqlitestore)를 포함한다.
+프로젝트 라이선스는 동봉한 Apache License 2.0(LICENSE)을 따른다.
+
+직접·간접 외부 의존성은 go.mod의 고정 버전으로 배포되며 각 원본 모듈의 라이선스를 따른다.
+- github.com/ncruces/go-sqlite3: MIT
+- github.com/ncruces/go-sqlite3-wasm/v6: MIT-0 (SQLite 원본은 public domain)
+- github.com/ncruces/julianday: MIT
+- golang.org/x/sys: BSD-3-Clause
+- github.com/park285/shared-go/v2: Apache-2.0
+
+서비스 DDL은 각 서비스가 소유하며 sqlitestore 테스트의 스키마는 테스트 fixture다.

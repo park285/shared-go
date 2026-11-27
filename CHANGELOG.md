@@ -9,6 +9,12 @@ release 섹션은 최신 순으로 배치합니다. 이 문서는 `미출시`와
 - **비호스트 lint 범위 축소와 CI lint 캐시:** lint 행렬의 호스트 외 설정(plan9·windows·darwin·illumos·wasip1)은 모듈 전체 대신 그 설정을 요구한 파일이 있는 패키지만 검사합니다. 호스트 설정은 그대로 모듈 전체를 검사하고, 커버리지도 371/371로 같습니다. 플랫폼과 무관한 패키지는 호스트 외 플랫폼에서 더 이상 타입 검사하지 않습니다. `module-gate`는 lint 행렬 캐시를 `actions/cache` v6.1.0으로 복원하고, main push에서만 저장합니다. 빈 캐시에서 `make lint MODULES=.`는 로컬 측정으로 90.1초에서 59.8초가 됐습니다.
 - **릴리스 게이트 lint 통합:** `release-gate.sh`가 선택한 모듈의 lint를 한 번에 실행하고 각 모듈은 `go build`로 빌드합니다. 단독 `make build`는 계속 lint를 먼저 실행합니다.
 
+## sqlite/v1.0.0 - 2026-11-28
+
+- **새 `sqlite` 모듈(`github.com/park285/shared-go/sqlite`):** `sqlitedb`가 CGO 없는 `ncruces/go-sqlite3` v0.38.1로 SQLite 파일 하나를 엽니다. `<경로>.lock` flock으로 한 프로세스만 `Open`하고, 쓰기 연결 1개(`BEGIN IMMEDIATE` `WriteTx`, 콜백이 panic해도 롤백)와 `query_only` 읽기 풀, WAL·`synchronous=FULL`·`foreign_keys=ON`, 내장 마이그레이션 원장(`sqlitedb_migrations`), 결과 불명 COMMIT의 `ErrCommit`을 제공합니다. 주기 WAL checkpoint는 writer를 기다리게 하지 않는 PASSIVE이고 닫을 때만 TRUNCATE합니다. `Attach`는 잠금 파일 없이 기존 파일에 붙는 운영 명령용입니다.
+- `sqlitestore`는 irisdurable inbox·nonce 계약의 SQLite 구현입니다. 만료된 lease를 자동 회수하지 않으며(`pgstore`의 `InboxExplicitRecovery=true`에 해당) 소비자가 `ApplyInboxRecovery`로 정리합니다. 커밋이 실패하거나 롤백되면 prune·claim 해제 건수는 0입니다.
+- 릴리스 workflow·번들 스크립트·계약 모듈 목록에 `sqlite/v1.*`를 추가했습니다. 첫 소비자는 chat-bot-go-kakao와 hololive-bot입니다.
+
 ## v2.26.1 - 2026-11-26
 
 - **평문 서식 모사 퇴역:** `kakaoformat.Render`가 강조·기울임을 수학용 Unicode 알파벳이나 괄호로 바꾸고 결합 취소선을 붙이던 처리를 제거했습니다. 제목 장식, 단계별 특수 글머리표, 인용 장식, 코드 박스와 표의 열별 장식도 제거했습니다. 평문은 원래 문자와 URL을 유지하고, 목록·할 일 상태·인용·표는 일반 문자로 구조를 보존합니다. 코드 본문은 원문 공백과 줄바꿈을 보호하며 넓은 fence 안의 내부 fence·언어 이름을 재작성하지 않습니다. 위·아래 첨자 등 수식의 의미 표기는 유지합니다.
@@ -34,9 +40,3 @@ release 섹션은 최신 순으로 배치합니다. 이 문서는 `미출시`와
 - **형식 검증 동기화:** `InboxClaim`의 동기화 커밋을 `00182e5`로 옮겼습니다. `pgxdb.Statement` 이관 전후의 렌더한 SQL이 같아 모델은 바꾸지 않았고, 정상 모델 통과와 음성 대조 두 건의 위반을 다시 확인했습니다.
 - **TwentyQ 퇴역:** 렌더한 `.golangci.yml`에서 twentyq 경계 규칙을 지우고 README의 소비자 목록과 예시에서 twentyq-bot을 뺐습니다. 공개 API는 바뀌지 않습니다.
 - 루트 모듈은 `v2.25.0` 이후 위 변경을 담습니다. `core`·`postgres`·`transport`·`openai` 모듈은 이번에 게시하지 않습니다.
-
-## postgres/v1.0.4 - 2026-11-25
-
-- `postgres/pgxdb`에 `Statement`를 추가했습니다. `MustStatement(embed.FS, name)`는 embed한 SQL 파일에서만 만듭니다. 자리표시자는 다른 `Statement` 조각(`With`)이나 상수 리터럴(`WithToken`, 변수는 컴파일 오류)로만 바꾸며, 없는 자리표시자를 바꾸면 패키지 초기화 때 panic합니다. `pgxdb.Exec`·`Query`·`QueryRow`·`Queue`는 `Statement`만 받아 `pgxdb.Querier`(pool·tx·conn)로 실행하고, 빈 문장이나 남은 `{{…}}`는 DB에 보내지 않고 `ErrInvalidStatement`로 거절합니다(`Queue`는 panic). `pgstore`의 모든 운영 호출부를 이 API로 옮겼고 조립한 SQL은 이전과 같습니다. 소비 저장소가 옮겨 간 뒤 스택 golangci `forbidigo` 규칙이 pgx의 문자열 SQL 실행 메서드를 막고, ast-grep의 `go-postgres-conventions.yml`을 대체합니다. 기존 공개 API는 바뀌지 않습니다.
-- 통합 시험과 `pgstore` 릴리스 게이트의 PostgreSQL 이미지를 `postgres:19.0-alpine`(digest 고정)으로 올렸습니다. 공개 Go API는 바뀌지 않습니다.
-- `postgres` 모듈은 루트 `v2.25.0`과 `github.com/xdg-go/stringprep` v1.0.5를 요구합니다.

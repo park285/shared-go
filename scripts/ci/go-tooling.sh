@@ -63,7 +63,7 @@ for module, document in metadata.items():
     if re.fullmatch(r"v[0-9]+", declared.rsplit("/", 1)[-1]) and not re.fullmatch(r"v(?:[2-9]|[1-9][0-9]+)", declared.rsplit("/", 1)[-1]):
         raise SystemExit(f"{module}/go.mod: {declared} ends in an invalid major version element")
 if action == "release-modules":
-    for directory in (".", "core", "postgres", "transport", "openai"):
+    for directory in (".", "core", "postgres", "transport", "openai", "sqlite"):
         if directory not in modules:
             raise SystemExit(f"required release module missing: {directory}/go.mod")
         expected = "github.com/park285/shared-go/" + ("v2" if directory == "." else directory)

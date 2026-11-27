@@ -10,7 +10,7 @@ release_identity() {
   }
   case "$tag" in
     v2.*) module_name=root; module_dir=.; module_path="github.com/${repository}/v2"; version="$tag" ;;
-    core/v1.*|postgres/v1.*|transport/v1.*|openai/v1.*)
+    core/v1.*|postgres/v1.*|transport/v1.*|openai/v1.*|sqlite/v1.*)
       module_name="${tag%%/*}"
       module_dir="$module_name"
       module_path="github.com/${repository}/${module_name}"

@@ -145,8 +145,14 @@ def allowed_sql_asset(path: Path) -> bool:
     return False
 
 
-def migration_command_asset(path: Path) -> bool:
-    return rel(path).startswith("pkg/dbmigrate/queries/")
+SQLITE_OPERATOR_ASSETS = {
+    "sqlite/sqlitedb/queries/create_migration_ledger.sql",
+    "sqlite/sqlitedb/queries/wal_checkpoint.sql",
+}
+
+
+def operator_command_asset(path: Path) -> bool:
+    return rel(path).startswith("pkg/dbmigrate/queries/") or rel(path) in SQLITE_OPERATOR_ASSETS
 
 
 def excerpt(value: str) -> str:
@@ -180,7 +186,7 @@ def check_sql_asset_locations(modules: tuple[str, ...]) -> list[Finding]:
         if not allowed_sql_asset(path):
             findings.append(Finding(path, 1, "SQL asset is outside allowed locations", ""))
             continue
-        if "queries" in path.relative_to(ROOT).parts and DDL_RE.search(text) and not migration_command_asset(path):
+        if "queries" in path.relative_to(ROOT).parts and DDL_RE.search(text) and not operator_command_asset(path):
             findings.append(Finding(path, 1, "runtime query asset contains DDL/operator SQL", excerpt(text)))
     return findings
 
