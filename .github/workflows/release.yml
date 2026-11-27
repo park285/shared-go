@@ -8,6 +8,7 @@ on:
       - "postgres/v1.*"
       - "transport/v1.*"
       - "openai/v1.*"
+      - "sqlite/v1.*"
 
 permissions:
   contents: read

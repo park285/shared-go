@@ -16,6 +16,7 @@ build metadata는 받지 않는다. 모듈 디렉터리·태그/ref·산출물 �
 | `postgres` | `github.com/park285/shared-go/postgres` | `postgres/v1.*.*` | `shared-go-postgres-v1.0.0` |
 | `transport` | `github.com/park285/shared-go/transport` | `transport/v1.*.*` | `shared-go-transport-v1.0.0` |
 | `openai` | `github.com/park285/shared-go/openai` | `openai/v1.*.*` | `shared-go-openai-v1.0.0` |
+| `sqlite` | `github.com/park285/shared-go/sqlite` | `sqlite/v1.*.*` | `shared-go-sqlite-v1.0.0` |
 
 최초 전환은 provider-free 루트 `v2.24.0`을 먼저 게시하고 이를 요구하는 어댑터의
 `v1.0.0`을 게시한 뒤 소비자의 실제 pin을 전환한다. core는 루트 의존성이 없다.
@@ -23,7 +24,7 @@ build metadata는 받지 않는다. 모듈 디렉터리·태그/ref·산출물 �
 
 ## CI와 로컬 검증
 
-PR·main CI는 checkout의 다섯 모듈로 일회용 workspace를 만들고 각 모듈의 source
+PR·main CI는 checkout의 여섯 모듈로 일회용 workspace를 만들고 각 모듈의 source
 tidy drift·lint·race를 실행한다. main·주간·수동 보안 검사도 같은 source workspace에서
 모듈별 govulncheck를 실행한다. 미게시 루트를 요구하는 최초 전환 PR도 검사할 수 있다.
 `go-tooling.sh source-workspace <새 go.work 경로>`는 각 go.mod가 실제 요구하는 sibling 버전만
@@ -52,7 +53,7 @@ bash scripts/ci/release-gate.sh
 bash scripts/ci/release-gate.sh .
 ```
 
-`make`의 모듈 대상은 기본적으로 `. core postgres transport openai`다.
+`make`의 모듈 대상은 기본적으로 발견한 모든 모듈(`. core postgres transport openai sqlite`)이다.
 `MODULES=postgres`처럼 좁힐 수 있다. `make source-tidy-check`는 기존 go-tooling
 스크립트에서 임시 modfile에만 sibling replace를 넣어 tidy한 뒤, 삽입한 replace만
 제거하고 canonical go.mod와 비교한다. go.sum도 비교하되 그 로컬 sibling의 게시
@@ -75,7 +76,7 @@ GitHub의 immutable release 설정도 필요하다. SBOM은 기존 Syft v1.57.0�
 ## 번들과 서명
 
 각 번들은 결정적 소스 archive, SPDX JSON SBOM, schemaVersion 2 identity manifest,
-`SHA256SUMS`로 구성된다. 루트 archive는 네 하위 모듈을 제외한다. 하위 모듈
+`SHA256SUMS`로 구성된다. 루트 archive는 `go.mod`가 있는 모든 하위 디렉터리를 제외한다. 하위 모듈
 archive는 해당 모듈 디렉터리와 저장소의 `LICENSE`·`THIRD_PARTY_NOTICES.md`만
 포함한다. 선택한 모듈의 `go.mod`·`go.sum`과 라이선스 메타데이터가 없으면 거부한다.
 SBOM은 checkout 전체가 아니라 이 archive를 풀어 놓은 디렉터리만 스캔하므로 다른

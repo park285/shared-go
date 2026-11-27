@@ -6,7 +6,7 @@ Iris Stack의 Go 프로젝트들(`hololive-bot`, `chat-bot-go-kakao`, `iris-cons
 
 > **호환성 정책**: 이 모듈의 호환성 보장 대상은 iris-stack 내부 소비자(`hololive-bot`, `chat-bot-go-kakao`, `iris-console`)로 한정됩니다. 외부 사용을 막지는 않지만 외부 importer 호환성은 보장하지 않으며, 스택 내 소비자가 0인 exported API는 major 승격 없이 minor 릴리스에서 제거될 수 있습니다.
 
-신규 `core`·`postgres`·`transport`·`openai` 모듈은 독립적인 안정 버전과 모듈별 태그를 사용합니다. 스택 소비자를 같은 배포에서 함께 이전할 수 있는 API 변경은 minor로 게시하고, major 전환(모듈 경로 변경)은 스택 밖 사용자가 직접 조치해야 하는 비호환 변경에만 쓰며, 위 정책대로 외부 importer의 API 호환성은 여기에 들어가지 않습니다. 단계 판단이 갈리면 낮은 단계를 고릅니다. 최초 경로 이전은 스택 소비자 8개 모듈의 동시 전환입니다. 구경로 forwarding·alias·영구 `replace`는 제공하지 않습니다.
+신규 `core`·`postgres`·`transport`·`openai`·`sqlite` 모듈은 독립적인 안정 버전과 모듈별 태그를 사용합니다. 스택 소비자를 같은 배포에서 함께 이전할 수 있는 API 변경은 minor로 게시하고, major 전환(모듈 경로 변경)은 스택 밖 사용자가 직접 조치해야 하는 비호환 변경에만 쓰며, 위 정책대로 외부 importer의 API 호환성은 여기에 들어가지 않습니다. 단계 판단이 갈리면 낮은 단계를 고릅니다. 최초 경로 이전은 스택 소비자 8개 모듈의 동시 전환입니다. 구경로 forwarding·alias·영구 `replace`는 제공하지 않습니다.
 
 | 모듈 | 소유 패키지 | 최초 전환 대상 |
 |---|---|---|
@@ -15,8 +15,9 @@ Iris Stack의 Go 프로젝트들(`hololive-bot`, `chat-bot-go-kakao`, `iris-cons
 | `github.com/park285/shared-go/postgres` | `pgxdb`, `pgstore` | `postgres/v1.0.0` |
 | `github.com/park285/shared-go/transport` | `h3`, `healthprobe` | `transport/v1.0.0` |
 | `github.com/park285/shared-go/openai` | `openaipreset` | `openai/v1.0.0` |
+| `github.com/park285/shared-go/sqlite` | `sqlitedb`, `sqlitestore` | `sqlite/v1.0.0` |
 
-위 최초 전환 태그는 모두 게시했으며 공식 Go checksum, immutable 릴리스와 산출물 서명을 검증했습니다. 소비자 8개 모듈의 실제 공개 pin 검증도 완료했습니다. 상세 결과와 운영 검증 한계는 [실행 기록](docs/agent-workflows/plans/2026-11-17-shared-go-boundaries-and-security.md)에 있습니다. 모듈 간 버전 숫자는 맞추지 않으며 무관한 비보안 변경 때문에 모든 소비자 pin을 갱신하지 않습니다.
+`sqlite`를 뺀 위 최초 전환 태그는 2026-11-17 전환에서 게시했으며 공식 Go checksum, immutable 릴리스와 산출물 서명을 검증했습니다. 소비자 8개 모듈의 실제 공개 pin 검증도 완료했습니다. 상세 결과와 운영 검증 한계는 [실행 기록](docs/agent-workflows/plans/2026-11-17-shared-go-boundaries-and-security.md)에 있습니다. 모듈 간 버전 숫자는 맞추지 않으며 무관한 비보안 변경 때문에 모든 소비자 pin을 갱신하지 않습니다.
 
 `core`의 생산 코드는 표준 라이브러리만 사용합니다. 테스트에는 testify와 그 의존성이 있습니다. 루트는 어댑터를 생산·테스트 의존성으로 요구하지 않고, 어댑터가 루트 계약을 사용합니다.
 
@@ -40,6 +41,8 @@ go get github.com/park285/shared-go/v2@latest
 | `pkg/httputil` | HTTP 클라이언트 커넥션 풀링 및 프로파일 구성 도구, 관리 API key 인증(`X-API-Key` 헤더만 수용, `Authorization: Bearer`는 거부) |
 | `pkg/irisdurable` | Iris webhook durability 계약(admission·nonce·reply outbox 어휘, bounded reissue ladder). Iris admission 보존·replay 지평의 정본은 Iris 계약 파일과 iris-client-go 공개 상수이며 이 모듈은 사본을 두지 않음 |
 | `pkg/irisdurable/contracttest` | irisdurable 계약을 봇별 저장소 구현에 적용하는 재사용 테스트 스위트(admission 멱등성, nonce set-once, outcome_unknown 보존, bounded reissue, 보존·지평) |
+| `sqlite/sqlitedb` | `ncruces/go-sqlite3`(CGO 없음) 기반 SQLite 파일 하나의 연결 관리. `<경로>.lock` flock으로 프로세스 하나만 `Open`하고, 쓰기 연결 1개(`BEGIN IMMEDIATE` `WriteTx`)와 `query_only` 읽기 풀을 연다. WAL·`synchronous=FULL`·`foreign_keys=ON`·busy timeout을 적용한 뒤 실제 값을 확인하고, 부모 디렉터리가 소유자 전용이 아니면 거절한다. 내장 SQL 마이그레이션 원장(`sqlitedb_migrations`)을 소유하고, 주기 WAL checkpoint는 writer를 기다리게 하지 않는 PASSIVE로, 닫을 때는 TRUNCATE로 실행한다. 결과를 알 수 없는 COMMIT은 `ErrCommit`으로 돌려준다. `Attach`는 운영 명령용으로, 잠금 파일과 디렉터리 권한 검사 없이 기존 파일에 붙는다 |
+| `sqlite/sqlitestore` | irisdurable inbox·nonce 계약의 SQLite 구현. 모든 쓰기를 단일 writer transaction 하나에서 실행한다. 정책 `Options`는 `postgres/pgstore`의 일부(scope·admission 보존·lease·inbox 종단과 manual review 보존·manual review payload 폐기)만 받으며 기본값이 없다. 만료된 lease는 자동 회수하지 않으므로 `processing` 행은 소비자가 `ApplyInboxRecovery`로 정리할 때까지 그 ordering key를 막는다(pgstore의 `InboxExplicitRecovery=true`와 같다). `ApplyInboxRecovery`는 `WithTx`로 묶은 호출자 transaction 안에서만 실행한다. 테이블 DDL은 소비 저장소 migration이 소유한다 |
 | `postgres/pgstore` | irisdurable 계약의 PostgreSQL 구현(ordering key FIFO inbox, nonce set-once TTL, reply outbox claim fence·redrive·retire·prune). 정책 기본값이 없어 `Options`의 lease·시도 상한·백오프·보존·`IrisAdmissionRetention`·`IrisAutomaticReplayHorizon`을 호출자가 넘기고, 0인 값을 쓰는 연산은 오류를 반환한다. inbox 종단 보존은 Iris admission 보존보다 길어야 하고, 자동 replay 지평은 정본 지평 이하이며 정본 지평은 admission 보존보다 짧아야 한다. `ClaimBatch`가 결과 미상 오류(`*ClaimBatchError`)를 내거나 후속 처리가 실패하면 소비자가 계속 처리할 claim id를 keep으로 넘겨 `ReleaseClaimToken(ctx, token, keep)`으로 나머지 claim만 즉시 반납한다. 테이블 DDL은 소비 저장소 migration이 소유하고 `testdata/schema.sql`이 참조 스키마다 |
 | `pkg/kakaoformat` | Markdown에서 본문·URL·목록·표를 보존하는 평문 변환과 리터럴 보호 |
 | `pkg/llm` | SDK 없이 사용하는 `Message`·`Usage`, 지시 계층 변환과 공개 empty/refusal 오류 값의 단일 정의 |
@@ -278,10 +281,10 @@ Make는 실행 파일 경로와 고정 버전을 각각 `--golangci-lint`와 `--
 
 공통 행렬은 `import "C"` 또는 `import "unsafe"`가 있는 파일의 경로를 출력하고 실패합니다.
 
-**CI 정책:** `ci.yml`은 PR 및 `main` push마다 체크아웃 안에 소스 `go.work`를 생성합니다. `LINT_GOWORK`에 지정한 경로를 Make가 `--gowork`로 전달하므로 모듈별 린트에서 같은 PR의 형제 모듈 변경도 검사합니다. CI의 race·할당 상한과 보안 워크플로의 취약점 검사는 Make 명령줄의 `SOURCE_GOWORK`로, PostgreSQL 소스 검사는 `--gowork`로 생성된 경로를 전달합니다. 각 단계는 실제 파일이 체크아웃 안에 있고 검사 대상 모듈을 `use`하는지 확인합니다. tidy drift는 임시 모듈 파일의 로컬 치환으로 검사합니다. CI와 보안 워크플로는 `--list-modules`로 모듈을 발견하며, 루트(`github.com/park285/shared-go/v2`)와 `core`·`postgres`·`transport`·`openai`(각각 `github.com/park285/shared-go/<디렉터리>`)의 경로와 모듈 선언이 일치해야 행렬을 생성합니다. 새로 발견한 모듈도 행렬에 포함합니다. PostgreSQL 모듈은 일회용 실제 DB에서 pgxdb·pgstore를 skip 없이 검사합니다. 루트의 고정 Unicode 생성·할당 상한, SQL ownership 검사와 `security.yml`의 `main` push·주간 스케줄·수동 dispatch 및 `govulncheck`를 유지합니다.
+**CI 정책:** `ci.yml`은 PR 및 `main` push마다 체크아웃 안에 소스 `go.work`를 생성합니다. `LINT_GOWORK`에 지정한 경로를 Make가 `--gowork`로 전달하므로 모듈별 린트에서 같은 PR의 형제 모듈 변경도 검사합니다. CI의 race·할당 상한과 보안 워크플로의 취약점 검사는 Make 명령줄의 `SOURCE_GOWORK`로, PostgreSQL 소스 검사는 `--gowork`로 생성된 경로를 전달합니다. 각 단계는 실제 파일이 체크아웃 안에 있고 검사 대상 모듈을 `use`하는지 확인합니다. tidy drift는 임시 모듈 파일의 로컬 치환으로 검사합니다. CI와 보안 워크플로는 `--list-modules`로 모듈을 발견하며, 루트(`github.com/park285/shared-go/v2`)와 `core`·`postgres`·`transport`·`openai`·`sqlite`(각각 `github.com/park285/shared-go/<디렉터리>`)의 경로와 모듈 선언이 일치해야 행렬을 생성합니다. 새로 발견한 모듈도 행렬에 포함합니다. PostgreSQL 모듈은 일회용 실제 DB에서 pgxdb·pgstore를 skip 없이 검사합니다. 루트의 고정 Unicode 생성·할당 상한, SQL ownership 검사와 `security.yml`의 `main` push·주간 스케줄·수동 dispatch 및 `govulncheck`를 유지합니다.
 
 보호된 main이 요구하는 상태 검사 이름은 `fast-gate`로 유지합니다. CI는 Linux, Darwin, Windows의 amd64에서 로그·메트릭 패키지에 대해 `go vet`과 테스트 빌드를 수행합니다. Windows 러너에서는 파일 로깅 거부와 메트릭 출력도 실행해 검증합니다. 모든 `module-gate`와 `logging-platforms` 작업의 결과가 `success`일 때만 집계 job이 통과하며, 실패·취소·건너뜀을 성공으로 바꾸지 않습니다.
 
 파일 줄 수(800)와 함수 길이 상한은 `.golangci.yml`의 revive `file-length-limit`과 `funlen`이 검사합니다. 별도 구조 예산은 두지 않습니다. Workflow 보안 정책(action 전체 SHA 고정, `id-token`·`attestations` 권한은 `release.yml`만, PR의 secret 사용 금지)은 iris-stack의 `tools/checks/check-workflow-policy.py`가 검증합니다. 로컬 릴리스 게이트도 `make test-allocations`로 race 빌드에서 빠지는 할당 상한을 검증합니다.
 
-`bash scripts/ci/release-gate.sh [모듈...]`은 선택한 모듈을 실제 pin과 `GOWORK=off`로 검증하며, 인자를 생략하면 `--list-modules`가 발견한 모든 모듈을 검사합니다. CI와 같은 릴리스 계약 검사로 다섯 모듈의 경로·선언을 먼저 확인합니다. 명시한 디렉터리도 발견 목록에 있어야 하며, 각 Make 단계에는 선택한 모듈을 명령줄로 전달합니다. `postgres`는 rootless Podman의 일회용 PostgreSQL에서 pgxdb·pgstore race와 필수 사례 pass·전체 skip=0을 요구합니다. 소스 workspace의 성공은 게시 pin·서명·immutable release 성공을 대신하지 않습니다. 태그·SBOM·attestation 규칙은 [release provenance](docs/release-provenance.md)를 따릅니다.
+`bash scripts/ci/release-gate.sh [모듈...]`은 선택한 모듈을 실제 pin과 `GOWORK=off`로 검증하며, 인자를 생략하면 `--list-modules`가 발견한 모든 모듈을 검사합니다. CI와 같은 릴리스 계약 검사로 여섯 모듈의 경로·선언을 먼저 확인합니다. 명시한 디렉터리도 발견 목록에 있어야 하며, 각 Make 단계에는 선택한 모듈을 명령줄로 전달합니다. `postgres`는 rootless Podman의 일회용 PostgreSQL에서 pgxdb·pgstore race와 필수 사례 pass·전체 skip=0을 요구합니다. 소스 workspace의 성공은 게시 pin·서명·immutable release 성공을 대신하지 않습니다. 태그·SBOM·attestation 규칙은 [release provenance](docs/release-provenance.md)를 따릅니다.
