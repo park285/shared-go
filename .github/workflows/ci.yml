@@ -57,8 +57,23 @@ jobs:
           bash scripts/ci/go-tooling.sh source-workspace "$work_dir/go.work"
           printf 'CI_SOURCE_WORKSPACE=%s/go.work\n' "$work_dir" >>"$GITHUB_ENV"
 
+      - name: Restore lint matrix cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ~/.cache/go-build/iris-go-lint-matrix
+          key: go-lint-matrix-${{ runner.os }}-${{ matrix.module }}-${{ github.sha }}
+          restore-keys: |
+            go-lint-matrix-${{ runner.os }}-${{ matrix.module }}-
+
       - name: Lint tracked Go files in the source workspace
         run: env -u GNUMAKEFLAGS -u MAKEFLAGS -u MFLAGS -u MAKEOVERRIDES LINT_GOWORK="$CI_SOURCE_WORKSPACE" make lint
+
+      - name: Save lint matrix cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ~/.cache/go-build/iris-go-lint-matrix
+          key: go-lint-matrix-${{ runner.os }}-${{ matrix.module }}-${{ github.sha }}
 
       - name: Source module graph tidy drift
         run: env -u GNUMAKEFLAGS -u MAKEFLAGS -u MFLAGS -u MAKEOVERRIDES make source-tidy-check

@@ -6,6 +6,7 @@ release 섹션은 최신 순으로 배치합니다. 이 문서는 `미출시`와
 
 ## 미출시
 
+- **비호스트 lint 범위 축소와 CI lint 캐시:** lint 행렬의 호스트 외 설정(plan9·windows·darwin·illumos·wasip1)은 모듈 전체 대신 그 설정을 요구한 파일이 있는 패키지만 검사합니다. 호스트 설정은 그대로 모듈 전체를 검사하고, 커버리지도 371/371로 같습니다. 플랫폼과 무관한 패키지는 호스트 외 플랫폼에서 더 이상 타입 검사하지 않습니다. `module-gate`는 lint 행렬 캐시를 `actions/cache` v6.1.0으로 복원하고, main push에서만 저장합니다. 빈 캐시에서 `make lint MODULES=.`는 로컬 측정으로 90.1초에서 59.8초가 됐습니다.
 - **릴리스 게이트 lint 통합:** `release-gate.sh`가 선택한 모듈의 lint를 한 번에 실행하고 각 모듈은 `go build`로 빌드합니다. 단독 `make build`는 계속 lint를 먼저 실행합니다.
 
 ## v2.26.1 - 2026-11-26
