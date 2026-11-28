@@ -9,8 +9,22 @@ import (
 
 var ErrCommit = errors.New("sqlitedb: commit failed")
 
-func (db *DB) WriteTx(ctx context.Context, fn func(*sql.Tx) error) (resultErr error) {
-	tx, err := db.write.BeginTx(ctx, nil)
+type txBeginner interface {
+	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
+}
+
+func (db *DB) WriteTx(ctx context.Context, fn func(*sql.Tx) error) error {
+	if err := db.gate.acquire(ctx); err != nil {
+		return fmt.Errorf("sqlitedb: begin: %w", withContextError(ctx, err))
+	}
+
+	defer db.gate.release()
+
+	return runTx(ctx, db.write, fn)
+}
+
+func runTx(ctx context.Context, beginner txBeginner, fn func(*sql.Tx) error) (resultErr error) {
+	tx, err := beginner.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("sqlitedb: begin: %w", withContextError(ctx, err))
 	}
