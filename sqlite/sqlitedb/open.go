@@ -18,6 +18,8 @@ import (
 	"github.com/ncruces/go-sqlite3/driver"
 )
 
+const optimizeInterval = time.Hour
+
 var (
 	ErrInUse                = errors.New("sqlitedb: database is open in another process")
 	ErrSharedDirectory      = errors.New("sqlitedb: database directory is accessible to group or others")
@@ -58,7 +60,13 @@ func Open(ctx context.Context, opts Options) (*DB, error) {
 	loopCtx, stop := context.WithCancel(context.WithoutCancel(ctx))
 	db := &DB{write: write, read: read, lock: lock, logger: loggerOf(opts), stop: stop, stopped: make(chan struct{})}
 
-	go db.runCheckpoints(loopCtx, opts.CheckpointInterval)
+	if err := db.optimize(ctx, optimizeOpenSQL); err != nil {
+		stop()
+
+		return nil, errors.Join(err, read.Close(), write.Close(), lock.Close())
+	}
+
+	go db.runMaintenance(loopCtx, opts.CheckpointInterval)
 
 	return db, nil
 }
@@ -115,6 +123,24 @@ func (db *DB) checkpointPassive(ctx context.Context) error {
 
 	if err := db.write.QueryRowContext(ctx, walCheckpointPassiveSQL).Scan(&busy, &frames, &checkpointed); err != nil {
 		return fmt.Errorf("sqlitedb: passive wal checkpoint: %w", err)
+	}
+
+	return nil
+}
+
+func (db *DB) optimize(ctx context.Context, query string) error {
+	if err := db.gate.acquire(ctx); err != nil {
+		return fmt.Errorf("sqlitedb: optimize: %w", withContextError(ctx, err))
+	}
+
+	defer db.gate.release()
+
+	return db.optimizeHoldingGate(ctx, query)
+}
+
+func (db *DB) optimizeHoldingGate(ctx context.Context, query string) error {
+	if _, err := db.write.ExecContext(ctx, query); err != nil {
+		return fmt.Errorf("sqlitedb: optimize: %w", err)
 	}
 
 	return nil
@@ -186,19 +212,26 @@ func (db *DB) Close(ctx context.Context) error {
 	return db.closeErr
 }
 
-func (db *DB) runCheckpoints(ctx context.Context, interval time.Duration) {
+func (db *DB) runMaintenance(ctx context.Context, checkpointInterval time.Duration) {
 	defer close(db.stopped)
 
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+	checkpoints := time.NewTicker(checkpointInterval)
+	defer checkpoints.Stop()
+
+	statistics := time.NewTicker(optimizeInterval)
+	defer statistics.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-checkpoints.C:
 			if err := db.checkpointPassive(ctx); err != nil && ctx.Err() == nil {
 				db.logger.Warn("sqlitedb: periodic wal checkpoint failed", slog.Any("error", err))
+			}
+		case <-statistics.C:
+			if err := db.optimize(ctx, optimizeSQL); err != nil && ctx.Err() == nil {
+				db.logger.Warn("sqlitedb: periodic optimize failed", slog.Any("error", err))
 			}
 		}
 	}

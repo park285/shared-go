@@ -1,6 +1,6 @@
 UPDATE iris_webhook_inbox
 SET status = 'manual_review',
-    payload = CASE WHEN ?5 THEN '{}' ELSE payload END,
+    payload = iif(?5, '{}', payload),
     claim_token = NULL,
     lease_until = NULL,
     terminal_at = ?6,
