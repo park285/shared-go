@@ -21,6 +21,8 @@ var (
 	foreignKeysStateSQL      = MustQuery(queryFS, "queries/foreign_keys_state.sql")
 	foreignKeyCheckSQL       = MustQuery(queryFS, "queries/foreign_key_check.sql")
 	noBusyWaitSQL            = MustQuery(queryFS, "queries/no_busy_wait.sql")
+	optimizeOpenSQL          = MustQuery(queryFS, "queries/optimize_open.sql")
+	optimizeSQL              = MustQuery(queryFS, "queries/optimize.sql")
 )
 
 func MustQuery(fsys fs.FS, name string) string {

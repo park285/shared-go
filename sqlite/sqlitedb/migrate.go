@@ -75,11 +75,15 @@ func (db *DB) Migrate(ctx context.Context, migrations []Migration) error {
 		return fmt.Errorf("sqlitedb: migration connection: %w", withContextError(ctx, err))
 	}
 
-	return withForeignKeysOff(ctx, conn, func() error {
+	if err := withForeignKeysOff(ctx, conn, func() error {
 		return runTx(ctx, conn, func(tx *sql.Tx) error {
 			return applyMigrations(ctx, tx, migrations)
 		})
-	})
+	}); err != nil {
+		return err
+	}
+
+	return db.optimizeHoldingGate(ctx, optimizeSQL)
 }
 
 func applyMigrations(ctx context.Context, tx *sql.Tx, migrations []Migration) error {

@@ -1,12 +1,9 @@
 UPDATE iris_webhook_inbox
 SET status = ?6,
-    payload = CASE
-        WHEN ?6 = 'completed' OR (?6 = 'manual_review' AND ?8) THEN '{}'
-        ELSE payload
-    END,
+    payload = iif(?6 = 'completed' OR (?6 = 'manual_review' AND ?8), '{}', payload),
     claim_token = NULL,
     lease_until = NULL,
-    terminal_at = CASE WHEN ?6 = 'pending' THEN NULL ELSE ?9 END,
+    terminal_at = iif(?6 = 'pending', NULL, ?9),
     terminal_reason = NULLIF(?7, ''),
     available_at = ?9,
     updated_at = ?9
