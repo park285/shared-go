@@ -72,7 +72,7 @@ func startPostgres() (string, string, error) {
 		"--platform", platform,
 		"-e", "POSTGRES_PASSWORD=sharedgo-local-test-placeholder",
 		"-e", "POSTGRES_DB=sharedgo_test",
-		"-p", "127.0.0.1::5432", "docker.io/library/postgres:19.0-alpine@sha256:8b0ff4cdf221f0c53d7fcda681d3b461be725c492cd881c5ec9c0ad25023f188",
+		"-p", "127.0.0.1::5432", "docker.io/library/postgres:19.0-alpine@sha256:cac45fb483caee3668946088a1c0532db89d5285c28dbfeac889b4068296e06f",
 	).Output()
 	if err != nil {
 		return "", "", fmt.Errorf("podman run: %w: %s", err, commandStderr(err))
