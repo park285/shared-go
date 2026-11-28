@@ -33,6 +33,7 @@ type DB struct {
 	stopped   chan struct{}
 	closeOnce sync.Once
 	closeErr  error
+	gate      writeGate
 }
 
 func Open(ctx context.Context, opts Options) (*DB, error) {
@@ -119,6 +120,36 @@ func (db *DB) checkpointPassive(ctx context.Context) error {
 	return nil
 }
 
+func (db *DB) truncateWithoutWaiting(ctx context.Context) (resultErr error) {
+	conn, err := db.write.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("sqlitedb: closing wal checkpoint: %w", err)
+	}
+
+	defer func() { resultErr = errors.Join(resultErr, discardConn(conn)) }()
+
+	if _, err := conn.ExecContext(ctx, noBusyWaitSQL); err != nil {
+		return fmt.Errorf("sqlitedb: closing wal checkpoint: %w", err)
+	}
+
+	var busy, frames, checkpointed int64
+
+	if err := conn.QueryRowContext(ctx, walCheckpointSQL).Scan(&busy, &frames, &checkpointed); err != nil {
+		return fmt.Errorf("sqlitedb: closing wal checkpoint: %w", err)
+	}
+
+	if busy != 0 {
+		if inUse := db.read.Stats().InUse; inUse > 0 {
+			return fmt.Errorf("%w: %d readers of this process are still open", ErrCheckpointIncomplete, inUse)
+		}
+
+		db.logger.Warn("sqlitedb: wal kept at close because another connection holds it",
+			slog.Int64("frames", frames), slog.Int64("checkpointed", checkpointed))
+	}
+
+	return nil
+}
+
 func (db *DB) Close(ctx context.Context) error {
 	db.closeOnce.Do(func() {
 		owner := db.lock != nil
@@ -134,7 +165,7 @@ func (db *DB) Close(ctx context.Context) error {
 		}
 
 		if owner {
-			if err := db.Checkpoint(ctx); err != nil {
+			if err := db.truncateWithoutWaiting(ctx); err != nil {
 				errs = append(errs, err)
 			}
 		}
