@@ -29,6 +29,9 @@ CREATE TABLE iris_webhook_inbox (
 CREATE INDEX idx_iris_webhook_inbox_head ON iris_webhook_inbox (scope, ordering_key, id)
     WHERE status IN ('pending', 'processing');
 
+CREATE INDEX idx_iris_webhook_inbox_pending_age ON iris_webhook_inbox (scope, created_at, id)
+    WHERE status = 'pending';
+
 CREATE INDEX idx_iris_webhook_inbox_prune ON iris_webhook_inbox (scope, terminal_at, id)
     WHERE status = 'completed';
 

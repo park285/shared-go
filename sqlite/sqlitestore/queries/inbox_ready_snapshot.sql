@@ -7,6 +7,6 @@ WITH heads AS (
 )
 SELECT count(*), min(current_row.available_at)
 FROM heads
-JOIN iris_webhook_inbox AS current_row ON current_row.id = heads.id
+CROSS JOIN iris_webhook_inbox AS current_row NOT INDEXED ON current_row.id = heads.id
 WHERE current_row.available_at <= ?2
   AND current_row.status = 'pending'

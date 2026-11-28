@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -437,4 +439,77 @@ func TestPruneNonceRemovesExpiredKeys(t *testing.T) {
 			t.Fatalf("an unexpired key stays a duplicate: %v, %v", duplicate, err)
 		}
 	})
+}
+
+func TestInboxHeadReadsLookUpEachHeadAfterIdleStatistics(t *testing.T) {
+	_, db := openStore(t)
+
+	err := db.WriteTx(t.Context(), func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(t.Context(), `INSERT INTO iris_webhook_inbox (scope, message_id, ordering_key, payload, status, attempts, available_at, terminal_at, created_at, updated_at)
+SELECT ?1, 'done-' || value, 'room-' || (value % 100), '{}', 'completed', 1, value, value, value, value FROM generate_series(1, 2000)`, testScope); err != nil {
+			return fmt.Errorf("insert terminal rows: %w", err)
+		}
+
+		if _, err := tx.ExecContext(t.Context(), "ANALYZE"); err != nil {
+			return fmt.Errorf("analyze: %w", err)
+		}
+
+		if _, err := tx.ExecContext(t.Context(), `INSERT INTO iris_webhook_inbox (scope, message_id, ordering_key, payload, status, available_at, created_at, updated_at)
+SELECT ?1, 'wait-' || value, 'room-' || (value % 100), '{}', 'pending', 0, 3000 + value, 3000 + value FROM generate_series(1, 500)`, testScope); err != nil {
+			return fmt.Errorf("insert pending rows: %w", err)
+		}
+
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	queries := os.DirFS("queries")
+
+	for name, args := range map[string][]any{
+		"claim_candidates.sql":     {testScope, int64(1) << 40, 32},
+		"inbox_ready_snapshot.sql": {testScope, int64(1) << 40},
+	} {
+		query, readErr := fs.ReadFile(queries, name)
+		if readErr != nil {
+			t.Fatalf("read %s: %v", name, readErr)
+		}
+
+		for _, detail := range queryPlan(t, db, string(query), args...) {
+			if strings.HasPrefix(detail, "SCAN current_row") {
+				t.Errorf("%s scans the inbox for every head once idle statistics call the pending index empty: %s", name, detail)
+			}
+		}
+	}
+}
+
+func queryPlan(t *testing.T, db *sqlitedb.DB, query string, args ...any) []string {
+	t.Helper()
+
+	rows, err := db.Reader().QueryContext(t.Context(), "EXPLAIN QUERY PLAN "+query, args...)
+	if err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	defer rows.Close()
+
+	var details []string
+
+	for rows.Next() {
+		var id, parent, unused int
+
+		var detail string
+
+		if scanErr := rows.Scan(&id, &parent, &unused, &detail); scanErr != nil {
+			t.Fatalf("scan plan: %v", scanErr)
+		}
+
+		details = append(details, detail)
+	}
+
+	if rowsErr := rows.Err(); rowsErr != nil {
+		t.Fatalf("read plan: %v", rowsErr)
+	}
+
+	return details
 }
